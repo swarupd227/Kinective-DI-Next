@@ -559,7 +559,11 @@ export class Concierge {
     const goal = approval.operation === 'report.share' || approval.operation === 'referral.create.batch' ? this.goalThreads.get(d.threadId) : undefined;
     const closeGoal = (update: Pick<StepUpdate, 'state' | 'resultSummary'>) => {
       if (!goal) return;
-      if (goal.planId) sink.step(goal.planId, { id: goal.approvalStep ?? 'send', ...update });
+      if (goal.planId) {
+        sink.step(goal.planId, { id: goal.approvalStep ?? 'send', ...update });
+        for (const id of goal.waiting) sink.step(goal.planId, { id, state: update.state === 'done' ? 'done' : 'skipped' });
+      }
+      goal.waiting = [];
       goal.status = 'closed';
       goal.note = undefined;
       goal.followUps = undefined;

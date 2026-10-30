@@ -1,4 +1,5 @@
 // Common block envelope (spec 9.2). Every agent block is data only: no markup, no code (spec 9.1).
+import './zod-config.ts';
 import { z } from 'zod';
 
 export const BLOCK_TYPES = [

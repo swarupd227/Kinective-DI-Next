@@ -324,6 +324,39 @@ describe.skipIf(!up)('goal work against the warehouse', () => {
   describe('through the Concierge', () => {
     const turn = (text: string, threadId: string) => ({ threadId, runId: `R-${threadId}-${text.length}`, text, context: [], user, tenant: { key: 'test_cu', name: 'Harborview', institutionType: 'credit_union', semantic, reports: { gateway } } as unknown as TenantRuntime, apps: ALL_APPS, canViewSql: false });
 
+    it('leaves no step of the plan open once the user decides', async () => {
+      const referrals = new ReferralService(pool, 'credit_union');
+      const relationship = new RelationshipService(pool, 'test_cu', 'credit_union');
+      const wf = { referrals, relationship, gateway: new ToolGateway({ referrals, relationship, approvals }) };
+      const replies = [
+        [['set_plan', { steps: ['Find them', 'Prepare follow-ups', 'Stop for approval'] }]],
+        [['find_at_risk', { step: 1 }]],
+        [['request_follow_ups', { step: 2, member_refs: ['MBR_20'] }]],
+      ];
+      let i = 0;
+      const model: ModelClient = {
+        structured: async () => {
+          throw new Error('not used');
+        },
+        turn: async (req) => ({ message: { content: replies[i++]!.map(([name, args], n) => ({ type: 'tool_use', id: `tu_${i}_${n}`, name, input: args })), stop_reason: 'tool_use' } as never, usage: { model: 'm', role: req.role, inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 } }),
+      };
+      const concierge = new Concierge({ model, audit: new AuditLog() });
+      const tenant = { ...turn('', '').tenant, workflow: wf };
+      const r = recorder();
+      const out = await concierge.handle({ ...turn('Find members at risk of leaving and draft follow-ups', 'thr_goalz'), tenant }, r.sink);
+      if (out.kind !== 'handled' || !out.approval) throw new Error('expected an approval');
+      expect(r.steps.filter((s) => s.id === 's3')).toEqual([]);
+
+      const after = recorder();
+      const finished = new Promise<void>((resolve) => (after.sink.done = () => resolve()));
+      await concierge.resolveApproval({ approvalId: out.approval.approvalId, decision: 'approve', previewHash: out.approval.card.data.previewHash, threadId: 'thr_goalz', runId: 'R-z', user, tenant }, after.sink);
+      await finished;
+      expect(after.steps).toEqual([
+        { id: 's2', state: 'done', resultSummary: '1 follow-up sent' },
+        { id: 's3', state: 'done' },
+      ]);
+    });
+
     it('routes a goal to the agent, an instruction during the work to the steer queue, and a note edit back to it', async () => {
       const concierge = new Concierge({ model: null, audit: new AuditLog() });
       const r = recorder();
