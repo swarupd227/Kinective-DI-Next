@@ -1,0 +1,49 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--color-scrim);
+  z-index: var(--z-overlay);
+}
+
+.dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  justify-items: start;
+  gap: var(--space-4);
+  width: min(400px, calc(100vw - 32px));
+  padding: var(--space-7);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-raised);
+  box-shadow: var(--elevation-3);
+  transform: translate(-50%, -50%);
+  z-index: var(--z-overlay);
+}
+
+.icon {
+  color: var(--color-accent-text);
+}
+
+.title {
+  font-size: var(--type-h2-size);
+  line-height: var(--type-h2-line);
+  font-weight: var(--weight-semibold);
+}
+
+.text {
+  color: var(--color-text-secondary);
+}
+
+.ended {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  background: var(--color-bg-app);
+  text-align: center;
+  z-index: var(--z-toast);
+}

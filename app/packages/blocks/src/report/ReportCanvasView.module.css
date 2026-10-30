@@ -1,0 +1,186 @@
+/* report_canvas (spec 8.9): the report frame, controls, review bar and 12-column grid. */
+
+.report {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.titles {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.name {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--type-h2-size);
+  font-weight: var(--weight-semibold);
+  line-height: var(--type-h2-line);
+}
+
+.description,
+.origin,
+.muted {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.origin {
+  font-style: italic;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+}
+
+.control {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  font-weight: var(--weight-medium);
+}
+
+.control select {
+  min-width: 160px;
+  min-height: var(--density-control-height);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-input);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--type-body-size);
+}
+
+.busy {
+  color: var(--color-text-muted);
+  font-size: var(--type-caption-size);
+}
+
+.error {
+  margin: 0;
+  color: var(--color-status-danger-text);
+  font-size: var(--type-caption-size);
+}
+
+.review {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-accent-default);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-agent);
+}
+
+.reviewTitle {
+  margin: 0;
+  color: var(--color-accent-text);
+  font-weight: var(--weight-semibold);
+}
+
+.edits {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.edits li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.editActions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.cell {
+  display: grid;
+  grid-column: span var(--span, 12);
+  gap: var(--space-2);
+  min-width: 0;
+  border-radius: var(--radius-lg);
+}
+
+/* An agent change stays outlined until it is accepted or reverted (FE-BLD-003). */
+.changed {
+  outline: 2px solid var(--color-accent-default);
+  outline-offset: 3px;
+}
+
+.widgetTools {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+
+.queries summary {
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.sql {
+  overflow-x: auto;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-sunken);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--type-mono-size);
+}
+
+@media (width < 900px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cell {
+    grid-column: 1 / -1;
+  }
+}

@@ -1,0 +1,9 @@
+# Tenant overrides for Coastal Community Bank (spec 16.6). Published model 1.0.0+t1.
+tenant: test_bank
+stock_version: 1.0.0
+revision: 1
+synonyms:
+  loan_category: [ "portfolio segment" ]
+labels:
+  deposit_category: Deposit product
+settings: {}

@@ -1,0 +1,116 @@
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+  background: var(--color-bg-app);
+}
+
+.skip {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-default);
+  color: var(--color-text-on-accent);
+  transform: translateY(-200%);
+  z-index: var(--z-toast);
+}
+
+.skip:focus {
+  transform: none;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-7);
+  height: 56px;
+  padding: 0 var(--space-6);
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-surface);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.mark {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-default);
+  color: var(--color-text-on-accent);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+}
+
+.brandText {
+  display: grid;
+}
+
+.product {
+  font-weight: var(--weight-semibold);
+  font-size: var(--type-body-size);
+  line-height: var(--type-caption-line);
+}
+
+.sub {
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  color: var(--color-text-muted);
+}
+
+.tabs {
+  display: flex;
+  align-self: stretch;
+  gap: var(--space-2);
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-4);
+  border-bottom: 2px solid transparent;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  font-weight: var(--weight-medium);
+}
+
+.tab:hover {
+  color: var(--color-text-primary);
+}
+
+.tab[aria-current='page'] {
+  border-bottom-color: var(--color-accent-default);
+  color: var(--color-text-primary);
+}
+
+.prefs {
+  display: flex;
+  gap: var(--space-4);
+  margin-left: auto;
+}
+
+.main {
+  min-height: 0;
+  overflow: hidden;
+  outline: none;
+}
+
+@media (width < 768px) {
+  .topbar {
+    gap: var(--space-4);
+    padding: 0 var(--space-4);
+  }
+
+  .brandText {
+    display: none;
+  }
+}

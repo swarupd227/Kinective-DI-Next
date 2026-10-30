@@ -1,0 +1,60 @@
+.shell {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+  height: 100dvh;
+
+  /* clip, not hidden: a hidden container can still be scrolled by scrollIntoView and focus. */
+  overflow: clip;
+  background: var(--color-bg-app);
+}
+
+.skip {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-default);
+  color: var(--color-text-on-accent);
+  transform: translateY(-200%);
+  z-index: var(--z-toast);
+}
+
+.skip:focus {
+  transform: none;
+}
+
+.body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 0;
+  overflow: clip;
+}
+
+.withWorkspace {
+  grid-template-columns: auto minmax(0, 1fr) minmax(320px, var(--ws-width)) auto;
+}
+
+.canvasCol {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.canvas {
+  min-height: 0;
+  overflow-y: auto;
+  outline: none;
+  scroll-padding-bottom: var(--space-8);
+}
+
+.hidden {
+  visibility: hidden;
+}
+
+.phone .body {
+  grid-template-columns: minmax(0, 1fr);
+}

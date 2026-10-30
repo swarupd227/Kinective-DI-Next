@@ -1,0 +1,114 @@
+// Experience Layer REST shapes used by the shell (spec 11.3, 12.1). Shared by the client and the
+// mock server so both sides of the contract stay in step.
+import type { Block } from './blocks.ts';
+
+export type InstitutionType = 'credit_union' | 'bank';
+
+/** Apps in the navigation rail (spec 6.2). Business modules appear only when licensed. */
+export type AppId =
+  | 'home'
+  | 'conversations'
+  | 'reports'
+  | 'tables'
+  | 'workflows'
+  | 'calendar'
+  | 'files'
+  | 'datalogs'
+  | 'queries'
+  | 'users'
+  | 'admin'
+  | 'rm'
+  | 'referrals'
+  | 'lap'
+  | 'gi'
+  | 'seg'
+  | 'callreport';
+
+export interface BuildStatus {
+  state: 'completed' | 'running' | 'failed' | 'late';
+  /** Time of the build the data comes from (the last successful one when this one failed). */
+  asOf: string;
+  buildId: string;
+  expectedBy?: string;
+  message?: string;
+}
+
+/** GET /v1/session (spec 11.3). Access is enforced by the server; the client only shows or hides. */
+export interface Session {
+  user: { id: string; name: string; firstName: string; initials: string; persona: string; title: string };
+  tenant: { id: string; name: string; institutionType: InstitutionType };
+  apps: AppId[];
+  permissions: { queryBrowser: boolean; dashboardAdmin: boolean };
+  slashCommands: string[];
+  flags: { voiceMediumConfirm: boolean; handsFree: boolean };
+  /**
+   * Voice for this user (spec 7). `available` is false when the tenant has voice off or no speech
+   * service is configured; the client then shows why instead of a working microphone.
+   * `speakByDefault` is false for branch-floor classes (FE-VOICE-081).
+   */
+  voice: { available: boolean; reason?: string; speakByDefault: boolean };
+  build: BuildStatus;
+  timeouts: { idleMinutes: number; absoluteHours: number };
+  /** Mock only: personas a developer can switch between. */
+  personas?: { id: string; label: string }[];
+}
+
+export interface ThreadSummary {
+  threadId: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  archived: boolean;
+  turns: number;
+}
+
+/** GET /v1/home: the per-user briefing assembled after each nightly build (spec 6.3). */
+export interface HomeBriefing {
+  greeting: string;
+  build: BuildStatus;
+  sections: HomeSection[];
+  tabs: { id: string; label: string; blocks: Block[] }[];
+  suggestions: string[];
+}
+
+export type HomeSectionId = 'build_notice' | 'approvals' | 'what_changed' | 'look_at' | 'your_work' | 'scheduled_reports';
+
+export interface HomeSection {
+  id: HomeSectionId;
+  title: string;
+  blocks: Block[];
+}
+
+export type SearchResultKind = 'report' | 'table' | 'view' | 'member' | 'employee' | 'branch' | 'workflow' | 'thread' | 'dashboard';
+
+/** GET /v1/search: typed results within the user's purview (spec 8.3). */
+export interface SearchResult {
+  kind: SearchResultKind;
+  id: string;
+  label: string;
+  detail?: string;
+  /** A DI Next deep link; member links use opaque tokens, never member numbers (FE-ARCH-011). */
+  link: string;
+}
+
+export type NotificationGroup = 'approvals' | 'workflow' | 'system' | 'agent_runs';
+
+export interface AppNotification {
+  id: string;
+  group: NotificationGroup;
+  title: string;
+  detail?: string;
+  at: string;
+  link?: string;
+  read: boolean;
+}
+
+/** GET /v1/tables/{id}: a workspace grid's rows for small tables (client-side row model). */
+export interface TableData {
+  tableId: string;
+  label: string;
+  columns: { field: string; headerName: string; type: 'text' | 'number' | 'currency' | 'percent' | 'count' | 'date' | 'days' }[];
+  rows: Record<string, string | number | null>[];
+  rowCount: number;
+  freshnessAsOf: string;
+}

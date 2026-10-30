@@ -1,0 +1,96 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mock-stream-server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "app",
+        "-w",
+        "@dinext/mock-stream-server",
+        "run",
+        "start"
+      ],
+      "port": 8787
+    },
+    {
+      "name": "experience-offline",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "app",
+        "-w",
+        "@dinext/mock-stream-server",
+        "run",
+        "start:offline"
+      ],
+      "port": 8787
+    },
+    {
+      "name": "experience-demo-voice",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "app",
+        "-w",
+        "@dinext/mock-stream-server",
+        "run",
+        "start:demo-voice"
+      ],
+      "port": 8787
+    },
+    {
+      "name": "workbench",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "app",
+        "-w",
+        "@dinext/gallery",
+        "run",
+        "dev"
+      ],
+      "port": 5173
+    },
+    {
+      "name": "shell",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "app",
+        "-w",
+        "@dinext/shell",
+        "run",
+        "dev"
+      ],
+      "port": 5174
+    },
+    {
+      "name": "shell-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "app",
+        "-w",
+        "@dinext/shell",
+        "run",
+        "preview"
+      ],
+      "port": 4174
+    },
+    {
+      "name": "workbench-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "app",
+        "-w",
+        "@dinext/gallery",
+        "run",
+        "preview"
+      ],
+      "port": 4173
+    }
+  ]
+}

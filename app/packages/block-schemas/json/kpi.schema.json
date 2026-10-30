@@ -1,0 +1,423 @@
+{
+  "$id": "https://schemas.dinext.kinective.internal/block/kpi/1",
+  "title": "DI Next kpi block v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^blk_[A-Za-z0-9]{12,32}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "subtitle": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "dataRef": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string"
+        },
+        "rowCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        }
+      },
+      "required": [
+        "handle",
+        "rowCount"
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "runId": {
+          "type": "string"
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sources": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "table",
+                  "view",
+                  "metric",
+                  "report",
+                  "template",
+                  "model",
+                  "file",
+                  "workflow"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "ref": {
+                "type": "string"
+              },
+              "accessible": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "label"
+            ]
+          }
+        },
+        "filters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "purviewApplied": {
+          "type": "boolean"
+        },
+        "semanticQueryId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent",
+        "sources"
+      ]
+    },
+    "freshness": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "nightly_build",
+            "workflow_event",
+            "static",
+            "none"
+          ]
+        },
+        "asOf": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        },
+        "buildId": {
+          "type": "string"
+        },
+        "stale": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    "actions": {
+      "maxItems": 12,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "pin",
+              "explain",
+              "open_workspace",
+              "export",
+              "share_link",
+              "drill",
+              "ask_followup",
+              "open_record",
+              "run_operation",
+              "download",
+              "copy",
+              "speak"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "operation": {
+            "type": "string"
+          },
+          "params": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "riskTier": {
+            "type": "string",
+            "enum": [
+              "read",
+              "low",
+              "medium",
+              "high"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "label"
+        ]
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "properties": {
+        "requires": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "pinnable": {
+          "type": "boolean"
+        },
+        "exportable": {
+          "type": "boolean"
+        },
+        "shareable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "controls": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "period",
+              "hierarchy",
+              "select",
+              "multiselect",
+              "date_range",
+              "toggle",
+              "number"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "value": {},
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "label"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ]
+      }
+    },
+    "a11y": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "type": "string",
+          "maxLength": 600
+        }
+      },
+      "required": [
+        "summary"
+      ]
+    },
+    "speakable": {
+      "type": "string",
+      "maxLength": 600
+    },
+    "dqStatus": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "warning",
+        "failed",
+        "unknown"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "streaming",
+        "complete",
+        "error"
+      ]
+    },
+    "type": {
+      "type": "string",
+      "const": "kpi"
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "value": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "unit": {
+          "type": "string",
+          "enum": [
+            "currency",
+            "percent",
+            "count",
+            "bp",
+            "days",
+            "number"
+          ]
+        },
+        "format": {
+          "type": "object",
+          "properties": {
+            "decimals": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4
+            },
+            "compact": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "comparison": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "type": "string",
+              "maxLength": 60
+            },
+            "value": {
+              "type": "number"
+            },
+            "unit": {
+              "type": "string",
+              "enum": [
+                "currency",
+                "percent",
+                "count",
+                "bp",
+                "days",
+                "number"
+              ]
+            },
+            "direction": {
+              "type": "string",
+              "enum": [
+                "up",
+                "down",
+                "flat"
+              ]
+            },
+            "goodWhen": {
+              "type": "string",
+              "enum": [
+                "up",
+                "down"
+              ]
+            }
+          },
+          "required": [
+            "label",
+            "value",
+            "direction",
+            "goodWhen"
+          ],
+          "additionalProperties": false
+        },
+        "sparkline": {
+          "maxItems": 60,
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "metricRef": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "value",
+        "unit"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "provenance",
+    "freshness",
+    "type",
+    "data"
+  ],
+  "additionalProperties": false
+}

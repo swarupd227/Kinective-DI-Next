@@ -1,0 +1,295 @@
+# DI Next stock semantic model (spec 16). Kinective-owned; tenants pin a version and override or
+# extend it in models/tenants/<tenant>/overrides.yaml. Formulas follow the spec 16.5 examples and
+# must be confirmed by Kinective's finance specialists (assumption CA-26).
+version: 1.0.0
+
+settings:
+  delinquency_basis_days:
+    type: integer
+    default: 60
+    description: Days past due at which a loan counts as delinquent for the headline ratio.
+
+# Physical sources. "current" sources read the curated tables as of the last nightly build;
+# "history" sources read month-end rollups (FinBI history, spec 14.9).
+sources:
+  loan_current:
+    kind: current
+    table: cdm_loan
+    alias: l
+    joins: ['JOIN cdm_location AS loc ON loc.int_id = l.branch_id']
+    filters: ['l.close_date IS NULL', 'l.charge_off_date IS NULL']
+    purview_column: l.branch_id
+    lineage: [cdm_loan, cdm_location]
+  loan_history:
+    kind: history
+    table: hist_loan_month
+    alias: h
+    joins: ['JOIN cdm_location AS loc ON loc.int_id = h.branch_id']
+    time_column: h.month_end
+    purview_column: h.branch_id
+    lineage: [hist_loan_month, cdm_location]
+  deposit_current:
+    kind: current
+    table: cdm_deposit_account
+    alias: d
+    joins: ['JOIN cdm_location AS loc ON loc.int_id = d.branch_id']
+    filters: ['d.close_date IS NULL']
+    purview_column: d.branch_id
+    lineage: [cdm_deposit_account, cdm_location]
+  deposit_history:
+    kind: history
+    table: hist_deposit_month
+    alias: hd
+    joins: ['JOIN cdm_location AS loc ON loc.int_id = hd.branch_id']
+    time_column: hd.month_end
+    purview_column: hd.branch_id
+    lineage: [hist_deposit_month, cdm_location]
+  party_current:
+    kind: current
+    table: cdm_party
+    alias: p
+    joins: ['JOIN cdm_location AS loc ON loc.int_id = p.primary_branch_id']
+    filters: ['p.is_member = 1']
+    purview_column: p.primary_branch_id
+    lineage: [cdm_party, cdm_location]
+  party_history:
+    kind: history
+    table: hist_party_month
+    alias: hp
+    joins: ['JOIN cdm_location AS loc ON loc.int_id = hp.branch_id']
+    time_column: hp.month_end
+    purview_column: hp.branch_id
+    lineage: [hist_party_month, cdm_location]
+
+dimensions:
+  branch:
+    label: Branch
+    description: The branch that owns the account or member relationship.
+    synonyms: [location, office, branches]
+    hierarchy: location
+    exprs:
+      loan_current: loc.name
+      loan_history: loc.name
+      deposit_current: loc.name
+      deposit_history: loc.name
+      party_current: loc.name
+      party_history: loc.name
+    values_sql: SELECT name FROM cdm_location ORDER BY int_id
+  region:
+    label: Region
+    description: The region a branch belongs to.
+    synonyms: [area, market]
+    exprs:
+      loan_current: loc.region
+      loan_history: loc.region
+      deposit_current: loc.region
+      deposit_history: loc.region
+      party_current: loc.region
+      party_history: loc.region
+    values_sql: SELECT DISTINCT region FROM cdm_location ORDER BY region
+  loan_category:
+    label: Loan category
+    description: The product family of a loan, such as Auto, Mortgage or HELOC.
+    synonyms: [loan type, product, loan product, lending product]
+    exprs:
+      loan_current: l.loan_category
+      loan_history: h.loan_category
+    values_sql: SELECT DISTINCT loan_category FROM cdm_loan ORDER BY loan_category
+  origination_channel:
+    label: Origination channel
+    description: Whether a loan came directly from the institution or indirectly through a dealer.
+    synonyms: [indirect, direct, dealer, channel]
+    exprs:
+      loan_current: "CASE WHEN l.is_indirect = 1 THEN 'Indirect' ELSE 'Direct' END"
+      loan_history: "CASE WHEN h.is_indirect = 1 THEN 'Indirect' ELSE 'Direct' END"
+    values: [Direct, Indirect]
+  deposit_category:
+    label: Deposit category
+    labels_by_type: { credit_union: Share category }
+    description: The deposit product family, such as savings, checking, money market or certificates.
+    synonyms: [deposit type, product type, share type, account type, product]
+    exprs:
+      deposit_current: d.deposit_category
+      deposit_history: hd.deposit_category
+    values_sql: SELECT DISTINCT deposit_category FROM cdm_deposit_account ORDER BY deposit_category
+  segment:
+    label: Member segment
+    labels_by_type: { bank: Customer segment }
+    description: The relationship segment assigned to the member or customer.
+    synonyms: [segment, member type, customer type]
+    exprs:
+      party_current: p.segment_code
+    values_sql: SELECT DISTINCT segment_code FROM cdm_party ORDER BY segment_code
+
+# Aggregations per source. {{ setting.x }} reads a tenant setting; values are never user input.
+measures:
+  loan_balance_sum:
+    unit: usd
+    exprs:
+      loan_current: SUM(l.balance)
+      loan_history: SUM(h.balance)
+  delinquent_loan_balance_sum:
+    unit: usd
+    exprs:
+      loan_current: 'SUM(CASE WHEN l.days_delinquent >= {{ setting.delinquency_basis_days }} THEN l.balance ELSE 0 END)'
+      loan_history: SUM(h.delinquent_60_balance)
+  loan_count:
+    unit: count
+    exprs:
+      loan_current: COUNT(*)
+      loan_history: SUM(h.loan_count)
+  loan_rate_weighted:
+    unit: number
+    exprs:
+      loan_current: SUM(l.rate * l.balance)
+  new_loan_amount_sum:
+    unit: usd
+    flow: true
+    exprs:
+      loan_history: SUM(h.new_loan_amount)
+  new_loan_count_sum:
+    unit: count
+    flow: true
+    exprs:
+      loan_history: SUM(h.new_loan_count)
+  deposit_balance_sum:
+    unit: usd
+    exprs:
+      deposit_current: SUM(d.balance)
+      deposit_history: SUM(hd.balance)
+  deposit_account_count:
+    unit: count
+    exprs:
+      deposit_current: COUNT(*)
+      deposit_history: SUM(hd.account_count)
+  member_count:
+    unit: count
+    exprs:
+      party_current: COUNT(*)
+      party_history: SUM(hp.member_count)
+  new_member_count_sum:
+    unit: count
+    flow: true
+    exprs:
+      party_history: SUM(hp.new_member_count)
+
+metrics:
+  loan_balance:
+    label: Total loan balance
+    type: simple
+    measure: loan_balance_sum
+    format: currency
+    description: Sum of the current balance of every open loan. Closed and charged-off loans are excluded.
+    synonyms: [loans, total loans, loans outstanding, loan portfolio, loan book, lending, loan growth, loan balances]
+    owner: Finance data team
+    dimensions_allowed: [branch, region, loan_category, origination_channel]
+  loan_count:
+    label: Number of open loans
+    type: simple
+    measure: loan_count
+    format: count
+    description: Count of open loans. Closed and charged-off loans are excluded.
+    synonyms: [loan count, how many loans, number of loans, loans open]
+    owner: Finance data team
+    dimensions_allowed: [branch, region, loan_category, origination_channel]
+  delinquency_ratio_60_plus:
+    label: Delinquency ratio (60+ days)
+    type: ratio
+    numerator: delinquent_loan_balance_sum
+    denominator: loan_balance_sum
+    format: percent_2
+    description: Balance of open loans 60 or more days past due, divided by the balance of all open loans.
+    regulatory_basis: NCUA 5300 basis - loans 60 or more days delinquent divided by total loans and leases, at period end. Charged-off loans are excluded.
+    synonyms: [delinquency, delinquency rate, dq, past due, 60+, late loans, delinquent loans, loans that are behind]
+    owner: Finance data team
+    dimensions_allowed: [branch, region, loan_category, origination_channel]
+  delinquent_loan_balance:
+    label: Delinquent loan balance (60+ days)
+    type: simple
+    measure: delinquent_loan_balance_sum
+    format: currency
+    description: Balance of open loans 60 or more days past due.
+    synonyms: [delinquent balance, past due balance, dollars delinquent]
+    owner: Finance data team
+    dimensions_allowed: [branch, region, loan_category, origination_channel]
+  average_loan_rate:
+    label: Weighted average loan rate
+    type: ratio
+    numerator: loan_rate_weighted
+    denominator: loan_balance_sum
+    format: rate
+    description: Interest rate of open loans, weighted by balance.
+    synonyms: [loan yield, average rate, interest rate, loan rate, pricing]
+    owner: Finance data team
+    dimensions_allowed: [branch, region, loan_category, origination_channel]
+    current_only: true
+  new_loan_amount:
+    label: New loan dollars
+    type: simple
+    measure: new_loan_amount_sum
+    format: currency
+    description: Original amount of loans opened in the period. Complete months only.
+    synonyms: [originations, new loans, loan production, new lending, funded loans, booked loans, new loan volume]
+    owner: Lending data team
+    dimensions_allowed: [branch, region, loan_category, origination_channel]
+  new_loan_count:
+    label: New loans opened
+    type: simple
+    measure: new_loan_count_sum
+    format: count
+    description: Number of loans opened in the period. Complete months only.
+    synonyms: [number of new loans, loans opened, originations count]
+    owner: Lending data team
+    dimensions_allowed: [branch, region, loan_category, origination_channel]
+  deposit_balance:
+    label: Total deposit balance
+    labels_by_type: { credit_union: Total share balance }
+    type: simple
+    measure: deposit_balance_sum
+    format: currency
+    description: Sum of the balance of every open deposit account.
+    synonyms: [deposits, shares, total shares, total deposits, deposit balances, savings, funding]
+    owner: Finance data team
+    dimensions_allowed: [branch, region, deposit_category]
+  deposit_account_count:
+    label: Number of deposit accounts
+    labels_by_type: { credit_union: Number of share accounts }
+    type: simple
+    measure: deposit_account_count
+    format: count
+    description: Count of open deposit accounts.
+    synonyms: [accounts, deposit accounts, share accounts, how many accounts]
+    owner: Finance data team
+    dimensions_allowed: [branch, region, deposit_category]
+  loan_to_share_ratio:
+    label: Loan-to-share ratio
+    labels_by_type: { bank: Loan-to-deposit ratio }
+    type: ratio
+    numerator: loan_balance_sum
+    denominator: deposit_balance_sum
+    format: percent_1
+    description: Total loans divided by total deposits. Institution level only, because branch ratios mislead.
+    regulatory_basis: NCUA basis - total loans divided by total shares and deposits.
+    synonyms: [loan to share, loan to deposit, ltd, lts, liquidity]
+    owner: Finance data team
+    dimensions_allowed: []
+  member_count:
+    label: Members
+    labels_by_type: { bank: Customers }
+    type: simple
+    measure: member_count
+    format: count
+    description: People who hold an open primary relationship with the institution.
+    synonyms: [members, customers, membership, how many members, member base, customer base]
+    owner: Member experience team
+    dimensions_allowed: [branch, region, segment]
+  new_members:
+    label: New members
+    labels_by_type: { bank: New customers }
+    type: simple
+    measure: new_member_count_sum
+    format: count
+    description: Members who joined in the period. Complete months only.
+    synonyms: [new members, members joined, new customers, member growth, growth, joiners]
+    owner: Member experience team
+    dimensions_allowed: [branch, region]

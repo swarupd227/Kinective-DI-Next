@@ -1,0 +1,120 @@
+.tile {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.labelRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--target-min);
+}
+
+.label {
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  font-weight: var(--weight-medium);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.value {
+  font-size: var(--type-kpi-size);
+  line-height: var(--type-kpi-line);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+}
+
+.delta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.deltaPill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.deltaLabel {
+  color: var(--color-text-muted);
+}
+
+.good .deltaPill {
+  background: var(--color-status-success-subtle);
+  color: var(--color-status-success-text);
+}
+
+.bad .deltaPill {
+  background: var(--color-status-danger-subtle);
+  color: var(--color-status-danger-text);
+}
+
+.neutral .deltaPill {
+  background: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
+}
+
+.spark {
+  width: 100%;
+  height: 28px;
+  margin-top: var(--space-1);
+  overflow: visible;
+}
+
+.sparkLine {
+  fill: none;
+  stroke: var(--color-chart-1);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.sparkArea {
+  fill: var(--color-chart-1);
+  opacity: 0.08;
+}
+
+.sparkDot {
+  fill: var(--color-chart-1);
+}
+
+.kpiGroup {
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--space-5);
+}
+
+.kpiGroup > * + * {
+  padding-left: var(--space-5);
+  border-left: 1px solid var(--color-border-subtle);
+}
+
+.grid {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+.grid > * + * {
+  padding-left: 0;
+  border-left: 0;
+}
+
+@container (width < 420px) {
+  .kpiGroup > * + * {
+    padding-left: 0;
+    border-left: 0;
+  }
+}

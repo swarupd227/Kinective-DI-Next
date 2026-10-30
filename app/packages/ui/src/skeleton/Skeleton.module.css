@@ -1,0 +1,33 @@
+.skeleton {
+  display: block;
+  background: linear-gradient(
+    90deg,
+    var(--color-skeleton-base) 0%,
+    var(--color-skeleton-shine) 50%,
+    var(--color-skeleton-base) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+.sm {
+  border-radius: var(--radius-sm);
+}
+
+.md {
+  border-radius: var(--radius-md);
+}
+
+.full {
+  border-radius: var(--radius-full);
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: -100% 0;
+  }
+}

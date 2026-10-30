@@ -1,0 +1,98 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  min-height: var(--density-control-height);
+  min-width: var(--target-min);
+  padding: 0 var(--space-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-weight: var(--weight-medium);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color var(--motion-duration-micro) var(--motion-easing-standard),
+    border-color var(--motion-duration-micro) var(--motion-easing-standard),
+    box-shadow var(--motion-duration-micro) var(--motion-easing-standard),
+    transform var(--motion-duration-micro) var(--motion-easing-standard);
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.sm {
+  min-height: var(--target-min);
+  padding: 0 var(--space-3);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  gap: var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.primary {
+  background: var(--color-accent-default);
+  color: var(--color-text-on-accent);
+  box-shadow: var(--elevation-1);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+}
+
+.secondary {
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  border-color: var(--color-border-default);
+}
+
+.secondary:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+  border-color: var(--color-border-input);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
+.ghost:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.danger {
+  background: var(--color-status-danger-fill);
+  color: var(--color-text-on-accent);
+}
+
+.danger:hover:not(:disabled) {
+  filter: brightness(0.92);
+}
+
+.busy {
+  cursor: progress;
+}
+
+.label {
+  display: inline-block;
+}
+
+.spin {
+  animation: spin 900ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

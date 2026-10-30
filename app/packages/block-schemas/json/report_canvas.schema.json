@@ -1,0 +1,2654 @@
+{
+  "$id": "https://schemas.dinext.kinective.internal/block/report_canvas/1",
+  "title": "DI Next report_canvas block v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^blk_[A-Za-z0-9]{12,32}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 120
+    },
+    "subtitle": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "dataRef": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string"
+        },
+        "rowCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        }
+      },
+      "required": [
+        "handle",
+        "rowCount"
+      ]
+    },
+    "provenance": {
+      "type": "object",
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "runId": {
+          "type": "string"
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "sources": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "table",
+                  "view",
+                  "metric",
+                  "report",
+                  "template",
+                  "model",
+                  "file",
+                  "workflow"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "ref": {
+                "type": "string"
+              },
+              "accessible": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "label"
+            ]
+          }
+        },
+        "filters": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "purviewApplied": {
+          "type": "boolean"
+        },
+        "semanticQueryId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent",
+        "sources"
+      ]
+    },
+    "freshness": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "nightly_build",
+            "workflow_event",
+            "static",
+            "none"
+          ]
+        },
+        "asOf": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        },
+        "buildId": {
+          "type": "string"
+        },
+        "stale": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    "actions": {
+      "maxItems": 12,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "pin",
+              "explain",
+              "open_workspace",
+              "export",
+              "share_link",
+              "drill",
+              "ask_followup",
+              "open_record",
+              "run_operation",
+              "download",
+              "copy",
+              "speak"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "operation": {
+            "type": "string"
+          },
+          "params": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "riskTier": {
+            "type": "string",
+            "enum": [
+              "read",
+              "low",
+              "medium",
+              "high"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "label"
+        ]
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "properties": {
+        "requires": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "pinnable": {
+          "type": "boolean"
+        },
+        "exportable": {
+          "type": "boolean"
+        },
+        "shareable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "controls": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "period",
+              "hierarchy",
+              "select",
+              "multiselect",
+              "date_range",
+              "toggle",
+              "number"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "value": {},
+          "options": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "label"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ]
+      }
+    },
+    "a11y": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "type": "string",
+          "maxLength": 600
+        }
+      },
+      "required": [
+        "summary"
+      ]
+    },
+    "speakable": {
+      "type": "string",
+      "maxLength": 600
+    },
+    "dqStatus": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "warning",
+        "failed",
+        "unknown"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "streaming",
+        "complete",
+        "error"
+      ]
+    },
+    "type": {
+      "type": "string",
+      "const": "report_canvas"
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "templateRef": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]{3,60}$"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 300
+        },
+        "folder": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "stock",
+            "published",
+            "draft"
+          ]
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "read",
+            "edit"
+          ]
+        },
+        "version": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "periodLabel": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "controls": {
+          "maxItems": 6,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "enum": [
+                  "period",
+                  "node"
+                ]
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "period",
+                  "hierarchy"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "value": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "options": {
+                "minItems": 1,
+                "maxItems": 40,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string",
+                      "maxLength": 40
+                    },
+                    "label": {
+                      "type": "string",
+                      "maxLength": 60
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "label"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "label",
+              "value",
+              "options"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "widgets": {
+          "maxItems": 24,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]{1,30}$"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "gridPos": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 11
+                  },
+                  "y": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 200
+                  },
+                  "w": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 12
+                  },
+                  "h": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 12
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "w",
+                  "h"
+                ],
+                "additionalProperties": false
+              },
+              "view": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^blk_[A-Za-z0-9]{12,32}$"
+                      },
+                      "version": {
+                        "type": "string",
+                        "pattern": "^\\d+\\.\\d+\\.\\d+$"
+                      },
+                      "title": {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      "subtitle": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "dataRef": {
+                        "type": "object",
+                        "properties": {
+                          "handle": {
+                            "type": "string"
+                          },
+                          "rowCount": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "expiresAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          }
+                        },
+                        "required": [
+                          "handle",
+                          "rowCount"
+                        ]
+                      },
+                      "provenance": {
+                        "type": "object",
+                        "properties": {
+                          "agent": {
+                            "type": "string"
+                          },
+                          "runId": {
+                            "type": "string"
+                          },
+                          "operations": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "sources": {
+                            "maxItems": 20,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "table",
+                                    "view",
+                                    "metric",
+                                    "report",
+                                    "template",
+                                    "model",
+                                    "file",
+                                    "workflow"
+                                  ]
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 80
+                                },
+                                "ref": {
+                                  "type": "string"
+                                },
+                                "accessible": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "label"
+                              ]
+                            }
+                          },
+                          "filters": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "purviewApplied": {
+                            "type": "boolean"
+                          },
+                          "semanticQueryId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "agent",
+                          "sources"
+                        ]
+                      },
+                      "freshness": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "nightly_build",
+                              "workflow_event",
+                              "static",
+                              "none"
+                            ]
+                          },
+                          "asOf": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          },
+                          "buildId": {
+                            "type": "string"
+                          },
+                          "stale": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ]
+                      },
+                      "actions": {
+                        "maxItems": 12,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "pin",
+                                "explain",
+                                "open_workspace",
+                                "export",
+                                "share_link",
+                                "drill",
+                                "ask_followup",
+                                "open_record",
+                                "run_operation",
+                                "download",
+                                "copy",
+                                "speak"
+                              ]
+                            },
+                            "label": {
+                              "type": "string",
+                              "maxLength": 40
+                            },
+                            "operation": {
+                              "type": "string"
+                            },
+                            "params": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "riskTier": {
+                              "type": "string",
+                              "enum": [
+                                "read",
+                                "low",
+                                "medium",
+                                "high"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "label"
+                          ]
+                        }
+                      },
+                      "permissions": {
+                        "type": "object",
+                        "properties": {
+                          "requires": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "pinnable": {
+                            "type": "boolean"
+                          },
+                          "exportable": {
+                            "type": "boolean"
+                          },
+                          "shareable": {
+                            "type": "boolean"
+                          }
+                        }
+                      },
+                      "controls": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "period",
+                                "hierarchy",
+                                "select",
+                                "multiselect",
+                                "date_range",
+                                "toggle",
+                                "number"
+                              ]
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "value": {},
+                            "options": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "value": {
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "value",
+                                  "label"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind"
+                          ]
+                        }
+                      },
+                      "a11y": {
+                        "type": "object",
+                        "properties": {
+                          "summary": {
+                            "type": "string",
+                            "maxLength": 600
+                          }
+                        },
+                        "required": [
+                          "summary"
+                        ]
+                      },
+                      "speakable": {
+                        "type": "string",
+                        "maxLength": 600
+                      },
+                      "dqStatus": {
+                        "type": "string",
+                        "enum": [
+                          "ok",
+                          "warning",
+                          "failed",
+                          "unknown"
+                        ]
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "streaming",
+                          "complete",
+                          "error"
+                        ]
+                      },
+                      "type": {
+                        "type": "string",
+                        "const": "kpi"
+                      },
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "maxLength": 80
+                          },
+                          "value": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "unit": {
+                            "type": "string",
+                            "enum": [
+                              "currency",
+                              "percent",
+                              "count",
+                              "bp",
+                              "days",
+                              "number"
+                            ]
+                          },
+                          "format": {
+                            "type": "object",
+                            "properties": {
+                              "decimals": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 4
+                              },
+                              "compact": {
+                                "type": "boolean"
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "comparison": {
+                            "type": "object",
+                            "properties": {
+                              "label": {
+                                "type": "string",
+                                "maxLength": 60
+                              },
+                              "value": {
+                                "type": "number"
+                              },
+                              "unit": {
+                                "type": "string",
+                                "enum": [
+                                  "currency",
+                                  "percent",
+                                  "count",
+                                  "bp",
+                                  "days",
+                                  "number"
+                                ]
+                              },
+                              "direction": {
+                                "type": "string",
+                                "enum": [
+                                  "up",
+                                  "down",
+                                  "flat"
+                                ]
+                              },
+                              "goodWhen": {
+                                "type": "string",
+                                "enum": [
+                                  "up",
+                                  "down"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "label",
+                              "value",
+                              "direction",
+                              "goodWhen"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "sparkline": {
+                            "maxItems": 60,
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            }
+                          },
+                          "metricRef": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "label",
+                          "value",
+                          "unit"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version",
+                      "provenance",
+                      "freshness",
+                      "type",
+                      "data"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^blk_[A-Za-z0-9]{12,32}$"
+                      },
+                      "version": {
+                        "type": "string",
+                        "pattern": "^\\d+\\.\\d+\\.\\d+$"
+                      },
+                      "title": {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      "subtitle": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "dataRef": {
+                        "type": "object",
+                        "properties": {
+                          "handle": {
+                            "type": "string"
+                          },
+                          "rowCount": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "expiresAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          }
+                        },
+                        "required": [
+                          "handle",
+                          "rowCount"
+                        ]
+                      },
+                      "provenance": {
+                        "type": "object",
+                        "properties": {
+                          "agent": {
+                            "type": "string"
+                          },
+                          "runId": {
+                            "type": "string"
+                          },
+                          "operations": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "sources": {
+                            "maxItems": 20,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "table",
+                                    "view",
+                                    "metric",
+                                    "report",
+                                    "template",
+                                    "model",
+                                    "file",
+                                    "workflow"
+                                  ]
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 80
+                                },
+                                "ref": {
+                                  "type": "string"
+                                },
+                                "accessible": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "label"
+                              ]
+                            }
+                          },
+                          "filters": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "purviewApplied": {
+                            "type": "boolean"
+                          },
+                          "semanticQueryId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "agent",
+                          "sources"
+                        ]
+                      },
+                      "freshness": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "nightly_build",
+                              "workflow_event",
+                              "static",
+                              "none"
+                            ]
+                          },
+                          "asOf": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          },
+                          "buildId": {
+                            "type": "string"
+                          },
+                          "stale": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ]
+                      },
+                      "actions": {
+                        "maxItems": 12,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "pin",
+                                "explain",
+                                "open_workspace",
+                                "export",
+                                "share_link",
+                                "drill",
+                                "ask_followup",
+                                "open_record",
+                                "run_operation",
+                                "download",
+                                "copy",
+                                "speak"
+                              ]
+                            },
+                            "label": {
+                              "type": "string",
+                              "maxLength": 40
+                            },
+                            "operation": {
+                              "type": "string"
+                            },
+                            "params": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "riskTier": {
+                              "type": "string",
+                              "enum": [
+                                "read",
+                                "low",
+                                "medium",
+                                "high"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "label"
+                          ]
+                        }
+                      },
+                      "permissions": {
+                        "type": "object",
+                        "properties": {
+                          "requires": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "pinnable": {
+                            "type": "boolean"
+                          },
+                          "exportable": {
+                            "type": "boolean"
+                          },
+                          "shareable": {
+                            "type": "boolean"
+                          }
+                        }
+                      },
+                      "controls": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "period",
+                                "hierarchy",
+                                "select",
+                                "multiselect",
+                                "date_range",
+                                "toggle",
+                                "number"
+                              ]
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "value": {},
+                            "options": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "value": {
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "value",
+                                  "label"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind"
+                          ]
+                        }
+                      },
+                      "a11y": {
+                        "type": "object",
+                        "properties": {
+                          "summary": {
+                            "type": "string",
+                            "maxLength": 600
+                          }
+                        },
+                        "required": [
+                          "summary"
+                        ]
+                      },
+                      "speakable": {
+                        "type": "string",
+                        "maxLength": 600
+                      },
+                      "dqStatus": {
+                        "type": "string",
+                        "enum": [
+                          "ok",
+                          "warning",
+                          "failed",
+                          "unknown"
+                        ]
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "streaming",
+                          "complete",
+                          "error"
+                        ]
+                      },
+                      "type": {
+                        "type": "string",
+                        "const": "chart"
+                      },
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "chartType": {
+                            "type": "string",
+                            "enum": [
+                              "line",
+                              "bar",
+                              "stacked_bar",
+                              "area",
+                              "pie",
+                              "donut",
+                              "scatter",
+                              "heatmap",
+                              "combo"
+                            ]
+                          },
+                          "dataset": {
+                            "type": "object",
+                            "properties": {
+                              "dimensions": {
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "displayName": {
+                                      "type": "string"
+                                    },
+                                    "type": {
+                                      "type": "string",
+                                      "enum": [
+                                        "ordinal",
+                                        "number",
+                                        "time"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "name"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "source": {
+                                "maxItems": 5000,
+                                "type": "array",
+                                "items": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": [
+                                      "string",
+                                      "number",
+                                      "boolean",
+                                      "null"
+                                    ]
+                                  }
+                                }
+                              }
+                            },
+                            "required": [
+                              "dimensions",
+                              "source"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "series": {
+                            "minItems": 1,
+                            "maxItems": 20,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string",
+                                  "maxLength": 60
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "line",
+                                    "bar",
+                                    "area",
+                                    "scatter"
+                                  ]
+                                },
+                                "encode": {
+                                  "type": "object",
+                                  "properties": {
+                                    "x": {
+                                      "type": "string"
+                                    },
+                                    "y": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "x",
+                                    "y"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "stack": {
+                                  "type": "string"
+                                },
+                                "yAxisIndex": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 1
+                                },
+                                "comparison": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "encode"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "axes": {
+                            "type": "object",
+                            "properties": {
+                              "x": {
+                                "type": "object",
+                                "properties": {
+                                  "title": {
+                                    "type": "string"
+                                  }
+                                },
+                                "additionalProperties": false
+                              },
+                              "y": {
+                                "maxItems": 2,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "unit": {
+                                      "type": "string",
+                                      "enum": [
+                                        "currency",
+                                        "percent",
+                                        "count",
+                                        "bp",
+                                        "days",
+                                        "number"
+                                      ]
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                }
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "legend": {
+                            "type": "boolean"
+                          },
+                          "markLines": {
+                            "maxItems": 4,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "value": {
+                                  "type": "number"
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 40
+                                }
+                              },
+                              "required": [
+                                "value",
+                                "label"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "sampled": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "chartType",
+                          "dataset",
+                          "series"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version",
+                      "provenance",
+                      "freshness",
+                      "type",
+                      "data"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^blk_[A-Za-z0-9]{12,32}$"
+                      },
+                      "version": {
+                        "type": "string",
+                        "pattern": "^\\d+\\.\\d+\\.\\d+$"
+                      },
+                      "title": {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      "subtitle": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "dataRef": {
+                        "type": "object",
+                        "properties": {
+                          "handle": {
+                            "type": "string"
+                          },
+                          "rowCount": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "expiresAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          }
+                        },
+                        "required": [
+                          "handle",
+                          "rowCount"
+                        ]
+                      },
+                      "provenance": {
+                        "type": "object",
+                        "properties": {
+                          "agent": {
+                            "type": "string"
+                          },
+                          "runId": {
+                            "type": "string"
+                          },
+                          "operations": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "sources": {
+                            "maxItems": 20,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "table",
+                                    "view",
+                                    "metric",
+                                    "report",
+                                    "template",
+                                    "model",
+                                    "file",
+                                    "workflow"
+                                  ]
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 80
+                                },
+                                "ref": {
+                                  "type": "string"
+                                },
+                                "accessible": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "label"
+                              ]
+                            }
+                          },
+                          "filters": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "purviewApplied": {
+                            "type": "boolean"
+                          },
+                          "semanticQueryId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "agent",
+                          "sources"
+                        ]
+                      },
+                      "freshness": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "nightly_build",
+                              "workflow_event",
+                              "static",
+                              "none"
+                            ]
+                          },
+                          "asOf": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          },
+                          "buildId": {
+                            "type": "string"
+                          },
+                          "stale": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ]
+                      },
+                      "actions": {
+                        "maxItems": 12,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "pin",
+                                "explain",
+                                "open_workspace",
+                                "export",
+                                "share_link",
+                                "drill",
+                                "ask_followup",
+                                "open_record",
+                                "run_operation",
+                                "download",
+                                "copy",
+                                "speak"
+                              ]
+                            },
+                            "label": {
+                              "type": "string",
+                              "maxLength": 40
+                            },
+                            "operation": {
+                              "type": "string"
+                            },
+                            "params": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "riskTier": {
+                              "type": "string",
+                              "enum": [
+                                "read",
+                                "low",
+                                "medium",
+                                "high"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "label"
+                          ]
+                        }
+                      },
+                      "permissions": {
+                        "type": "object",
+                        "properties": {
+                          "requires": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "pinnable": {
+                            "type": "boolean"
+                          },
+                          "exportable": {
+                            "type": "boolean"
+                          },
+                          "shareable": {
+                            "type": "boolean"
+                          }
+                        }
+                      },
+                      "controls": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "period",
+                                "hierarchy",
+                                "select",
+                                "multiselect",
+                                "date_range",
+                                "toggle",
+                                "number"
+                              ]
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "value": {},
+                            "options": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "value": {
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "value",
+                                  "label"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind"
+                          ]
+                        }
+                      },
+                      "a11y": {
+                        "type": "object",
+                        "properties": {
+                          "summary": {
+                            "type": "string",
+                            "maxLength": 600
+                          }
+                        },
+                        "required": [
+                          "summary"
+                        ]
+                      },
+                      "speakable": {
+                        "type": "string",
+                        "maxLength": 600
+                      },
+                      "dqStatus": {
+                        "type": "string",
+                        "enum": [
+                          "ok",
+                          "warning",
+                          "failed",
+                          "unknown"
+                        ]
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "streaming",
+                          "complete",
+                          "error"
+                        ]
+                      },
+                      "type": {
+                        "type": "string",
+                        "const": "table"
+                      },
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "columns": {
+                            "minItems": 1,
+                            "maxItems": 60,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "field": {
+                                  "type": "string"
+                                },
+                                "headerName": {
+                                  "type": "string",
+                                  "maxLength": 60
+                                },
+                                "type": {
+                                  "default": "text",
+                                  "type": "string",
+                                  "enum": [
+                                    "text",
+                                    "number",
+                                    "currency",
+                                    "percent",
+                                    "bp",
+                                    "count",
+                                    "date",
+                                    "days"
+                                  ]
+                                },
+                                "pinned": {
+                                  "type": "string",
+                                  "enum": [
+                                    "left",
+                                    "right"
+                                  ]
+                                },
+                                "hidden": {
+                                  "type": "boolean"
+                                },
+                                "width": {
+                                  "type": "integer",
+                                  "minimum": 48,
+                                  "maximum": 600
+                                }
+                              },
+                              "required": [
+                                "field",
+                                "headerName"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "rows": {
+                            "maxItems": 500,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean",
+                                  "null"
+                                ]
+                              }
+                            }
+                          },
+                          "sort": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "field": {
+                                  "type": "string"
+                                },
+                                "dir": {
+                                  "type": "string",
+                                  "enum": [
+                                    "asc",
+                                    "desc"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "field",
+                                "dir"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "rowCount": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "columns",
+                          "rowCount"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version",
+                      "provenance",
+                      "freshness",
+                      "type",
+                      "data"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^blk_[A-Za-z0-9]{12,32}$"
+                      },
+                      "version": {
+                        "type": "string",
+                        "pattern": "^\\d+\\.\\d+\\.\\d+$"
+                      },
+                      "title": {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      "subtitle": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "dataRef": {
+                        "type": "object",
+                        "properties": {
+                          "handle": {
+                            "type": "string"
+                          },
+                          "rowCount": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "expiresAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          }
+                        },
+                        "required": [
+                          "handle",
+                          "rowCount"
+                        ]
+                      },
+                      "provenance": {
+                        "type": "object",
+                        "properties": {
+                          "agent": {
+                            "type": "string"
+                          },
+                          "runId": {
+                            "type": "string"
+                          },
+                          "operations": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "sources": {
+                            "maxItems": 20,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "table",
+                                    "view",
+                                    "metric",
+                                    "report",
+                                    "template",
+                                    "model",
+                                    "file",
+                                    "workflow"
+                                  ]
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 80
+                                },
+                                "ref": {
+                                  "type": "string"
+                                },
+                                "accessible": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "label"
+                              ]
+                            }
+                          },
+                          "filters": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "purviewApplied": {
+                            "type": "boolean"
+                          },
+                          "semanticQueryId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "agent",
+                          "sources"
+                        ]
+                      },
+                      "freshness": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "nightly_build",
+                              "workflow_event",
+                              "static",
+                              "none"
+                            ]
+                          },
+                          "asOf": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          },
+                          "buildId": {
+                            "type": "string"
+                          },
+                          "stale": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ]
+                      },
+                      "actions": {
+                        "maxItems": 12,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "pin",
+                                "explain",
+                                "open_workspace",
+                                "export",
+                                "share_link",
+                                "drill",
+                                "ask_followup",
+                                "open_record",
+                                "run_operation",
+                                "download",
+                                "copy",
+                                "speak"
+                              ]
+                            },
+                            "label": {
+                              "type": "string",
+                              "maxLength": 40
+                            },
+                            "operation": {
+                              "type": "string"
+                            },
+                            "params": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "riskTier": {
+                              "type": "string",
+                              "enum": [
+                                "read",
+                                "low",
+                                "medium",
+                                "high"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "label"
+                          ]
+                        }
+                      },
+                      "permissions": {
+                        "type": "object",
+                        "properties": {
+                          "requires": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "pinnable": {
+                            "type": "boolean"
+                          },
+                          "exportable": {
+                            "type": "boolean"
+                          },
+                          "shareable": {
+                            "type": "boolean"
+                          }
+                        }
+                      },
+                      "controls": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "period",
+                                "hierarchy",
+                                "select",
+                                "multiselect",
+                                "date_range",
+                                "toggle",
+                                "number"
+                              ]
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "value": {},
+                            "options": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "value": {
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "value",
+                                  "label"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind"
+                          ]
+                        }
+                      },
+                      "a11y": {
+                        "type": "object",
+                        "properties": {
+                          "summary": {
+                            "type": "string",
+                            "maxLength": 600
+                          }
+                        },
+                        "required": [
+                          "summary"
+                        ]
+                      },
+                      "speakable": {
+                        "type": "string",
+                        "maxLength": 600
+                      },
+                      "dqStatus": {
+                        "type": "string",
+                        "enum": [
+                          "ok",
+                          "warning",
+                          "failed",
+                          "unknown"
+                        ]
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "streaming",
+                          "complete",
+                          "error"
+                        ]
+                      },
+                      "type": {
+                        "type": "string",
+                        "const": "text"
+                      },
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "markdown": {
+                            "type": "string",
+                            "maxLength": 8000
+                          },
+                          "citations": {
+                            "type": "array",
+                            "items": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          }
+                        },
+                        "required": [
+                          "markdown"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version",
+                      "provenance",
+                      "freshness",
+                      "type",
+                      "data"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^blk_[A-Za-z0-9]{12,32}$"
+                      },
+                      "version": {
+                        "type": "string",
+                        "pattern": "^\\d+\\.\\d+\\.\\d+$"
+                      },
+                      "title": {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      "subtitle": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "dataRef": {
+                        "type": "object",
+                        "properties": {
+                          "handle": {
+                            "type": "string"
+                          },
+                          "rowCount": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "expiresAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          }
+                        },
+                        "required": [
+                          "handle",
+                          "rowCount"
+                        ]
+                      },
+                      "provenance": {
+                        "type": "object",
+                        "properties": {
+                          "agent": {
+                            "type": "string"
+                          },
+                          "runId": {
+                            "type": "string"
+                          },
+                          "operations": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "sources": {
+                            "maxItems": 20,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "table",
+                                    "view",
+                                    "metric",
+                                    "report",
+                                    "template",
+                                    "model",
+                                    "file",
+                                    "workflow"
+                                  ]
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 80
+                                },
+                                "ref": {
+                                  "type": "string"
+                                },
+                                "accessible": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "label"
+                              ]
+                            }
+                          },
+                          "filters": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "purviewApplied": {
+                            "type": "boolean"
+                          },
+                          "semanticQueryId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "agent",
+                          "sources"
+                        ]
+                      },
+                      "freshness": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "nightly_build",
+                              "workflow_event",
+                              "static",
+                              "none"
+                            ]
+                          },
+                          "asOf": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          },
+                          "buildId": {
+                            "type": "string"
+                          },
+                          "stale": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "kind"
+                        ]
+                      },
+                      "actions": {
+                        "maxItems": 12,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "pin",
+                                "explain",
+                                "open_workspace",
+                                "export",
+                                "share_link",
+                                "drill",
+                                "ask_followup",
+                                "open_record",
+                                "run_operation",
+                                "download",
+                                "copy",
+                                "speak"
+                              ]
+                            },
+                            "label": {
+                              "type": "string",
+                              "maxLength": 40
+                            },
+                            "operation": {
+                              "type": "string"
+                            },
+                            "params": {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "riskTier": {
+                              "type": "string",
+                              "enum": [
+                                "read",
+                                "low",
+                                "medium",
+                                "high"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "label"
+                          ]
+                        }
+                      },
+                      "permissions": {
+                        "type": "object",
+                        "properties": {
+                          "requires": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "pinnable": {
+                            "type": "boolean"
+                          },
+                          "exportable": {
+                            "type": "boolean"
+                          },
+                          "shareable": {
+                            "type": "boolean"
+                          }
+                        }
+                      },
+                      "controls": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "period",
+                                "hierarchy",
+                                "select",
+                                "multiselect",
+                                "date_range",
+                                "toggle",
+                                "number"
+                              ]
+                            },
+                            "label": {
+                              "type": "string"
+                            },
+                            "value": {},
+                            "options": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "value": {
+                                    "type": "string"
+                                  },
+                                  "label": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "value",
+                                  "label"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind"
+                          ]
+                        }
+                      },
+                      "a11y": {
+                        "type": "object",
+                        "properties": {
+                          "summary": {
+                            "type": "string",
+                            "maxLength": 600
+                          }
+                        },
+                        "required": [
+                          "summary"
+                        ]
+                      },
+                      "speakable": {
+                        "type": "string",
+                        "maxLength": 600
+                      },
+                      "dqStatus": {
+                        "type": "string",
+                        "enum": [
+                          "ok",
+                          "warning",
+                          "failed",
+                          "unknown"
+                        ]
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "streaming",
+                          "complete",
+                          "error"
+                        ]
+                      },
+                      "type": {
+                        "type": "string",
+                        "const": "notice"
+                      },
+                      "data": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "info",
+                              "warning",
+                              "error",
+                              "no_access",
+                              "no_data",
+                              "not_supported",
+                              "uncertain",
+                              "beta",
+                              "build_status"
+                            ]
+                          },
+                          "message": {
+                            "type": "string",
+                            "maxLength": 600
+                          },
+                          "detail": {
+                            "type": "string",
+                            "maxLength": 1200
+                          },
+                          "permission": {
+                            "type": "string",
+                            "maxLength": 120
+                          },
+                          "referenceId": {
+                            "type": "string",
+                            "maxLength": 40
+                          },
+                          "retryable": {
+                            "type": "boolean"
+                          },
+                          "options": {
+                            "maxItems": 6,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "maxLength": 80
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "label"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "version",
+                      "provenance",
+                      "freshness",
+                      "type",
+                      "data"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "editId": {
+                "type": "string",
+                "maxLength": 20
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "gridPos",
+              "view"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "pendingEdits": {
+          "maxItems": 24,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 20
+              },
+              "widgetId": {
+                "type": "string",
+                "maxLength": 30
+              },
+              "summary": {
+                "type": "string",
+                "maxLength": 160
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "change",
+                  "remove",
+                  "move"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "widgetId",
+              "summary",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "origin": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "queries": {
+          "maxItems": 24,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "widgetId": {
+                "type": "string"
+              },
+              "sql": {
+                "type": "string",
+                "maxLength": 4000
+              }
+            },
+            "required": [
+              "widgetId",
+              "sql"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "templateRef",
+        "name",
+        "folder",
+        "status",
+        "mode",
+        "version",
+        "periodLabel",
+        "controls",
+        "widgets",
+        "pendingEdits"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "provenance",
+    "freshness",
+    "type",
+    "data"
+  ],
+  "additionalProperties": false
+}

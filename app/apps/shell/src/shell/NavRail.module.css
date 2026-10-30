@@ -1,0 +1,107 @@
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 60px;
+  padding: var(--space-3) var(--space-3);
+  overflow-y: auto;
+  border-right: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-surface);
+  outline: none;
+  transition: width var(--motion-duration-panel) var(--motion-easing-standard);
+}
+
+.expanded {
+  width: 232px;
+}
+
+.drawer {
+  position: fixed;
+  top: 52px;
+  bottom: 0;
+  left: 0;
+  width: min(300px, 86vw);
+  z-index: var(--z-overlay);
+  box-shadow: var(--elevation-3);
+  animation: slide-in var(--motion-duration-panel) var(--motion-easing-standard);
+}
+
+.scrim {
+  position: fixed;
+  inset: 52px 0 0;
+  border: 0;
+  background: var(--color-scrim);
+  z-index: var(--z-overlay);
+}
+
+.group ul {
+  display: grid;
+  gap: var(--space-1);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.groupLabel {
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.sep {
+  display: block;
+  height: 1px;
+  margin: var(--space-3) var(--space-2);
+  background: var(--color-border-subtle);
+}
+
+.group:first-child .sep {
+  display: none;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.item:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+/* Teal accent for the active app, as in today's DI (spec 10.1). */
+.item[aria-current='page'] {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-text);
+  font-weight: var(--weight-medium);
+}
+
+.icon {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 18px;
+}
+
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(-12px);
+    opacity: 0;
+  }
+}

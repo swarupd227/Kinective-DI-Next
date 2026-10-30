@@ -1,0 +1,18 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.vite/
+~$*
+
+# Local agent audit log and unmatched questions (spec 26.10)
+.data/
+
+# The specification, backlog and feature inventory stay local; this repository publishes the code.
+DI_Feature_Inventory.docx
+DI_Next_Backlog.docx
+DI_Next_Backlog.xlsx
+DI_Next_Specification.docx

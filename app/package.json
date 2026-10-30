@@ -1,0 +1,51 @@
+{
+  "name": "dinext",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run tokens && concurrently -k -n mock,shell -c cyan,magenta \"npm -w @dinext/mock-stream-server run dev\" \"npm -w @dinext/shell run dev\"",
+    "dev:workbench": "npm run tokens && concurrently -k -n mock,gallery -c cyan,magenta \"npm -w @dinext/mock-stream-server run dev\" \"npm -w @dinext/gallery run dev\"",
+    "db:up": "docker compose up -d --wait",
+    "db:seed": "npm -w @dinext/tenant-db run seed",
+    "tokens": "node packages/tokens/scripts/build.mjs",
+    "schemas": "npm -w @dinext/block-schemas run build:json",
+    "build": "npm run tokens && npm -w @dinext/shell run build && npm -w @dinext/gallery run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint . && stylelint \"packages/**/*.css\" \"apps/**/*.css\"",
+    "test": "vitest run",
+    "budget": "node build/check-bundle.mjs apps/shell/dist",
+    "check": "node packages/tokens/scripts/build.mjs --check && npm run typecheck && npm run lint && npm run test && npm run build && npm run budget"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "@vitest/coverage-v8": "^5.0.5",
+    "axe-core": "^4.14.0",
+    "concurrently": "^10.0.6",
+    "eslint": "^9.39.5",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "jsdom": "^29.1.1",
+    "stylelint": "^17.16.0",
+    "stylelint-config-standard": "^40.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}

@@ -1,0 +1,15 @@
+.wrap {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.more {
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  color: var(--color-text-muted);
+}
+
+.fixed {
+  height: 360px;
+}

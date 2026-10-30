@@ -1,0 +1,30 @@
+{
+  "name": "@dinext/shell",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@dinext/block-schemas": "0.1.0",
+    "@dinext/blocks": "0.1.0",
+    "@dinext/stream-client": "0.1.0",
+    "@dinext/tokens": "0.1.0",
+    "@dinext/ui": "0.1.0",
+    "@dinext/voice": "0.1.0",
+    "@radix-ui/react-dialog": "^1.3.1",
+    "@radix-ui/react-popover": "^1.3.1",
+    "@tanstack/react-query": "^5.105.0",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "lucide-react": "^1.61.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router": "^7.18.4",
+    "zod": "^4.6.7",
+    "zustand": "^5.0.16"
+  }
+}

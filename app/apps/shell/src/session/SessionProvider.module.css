@@ -1,0 +1,39 @@
+.splash {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--space-4);
+  min-height: 100vh;
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-lg);
+  background: var(--color-accent-default);
+  color: var(--color-text-on-accent);
+  font-weight: var(--weight-semibold);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+.title {
+  font-size: var(--type-h2-size);
+  line-height: var(--type-h2-line);
+  font-weight: var(--weight-semibold);
+}
+
+.detail {
+  max-width: 48ch;
+  color: var(--color-text-secondary);
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.55;
+    transform: scale(0.96);
+  }
+}

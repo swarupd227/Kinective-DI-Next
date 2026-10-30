@@ -1,0 +1,132 @@
+.pane {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-surface);
+  outline: none;
+}
+
+.overlay,
+.sheet,
+.max {
+  position: absolute;
+  z-index: var(--z-sticky);
+  top: 0;
+  right: 0;
+  bottom: 88px;
+  box-shadow: var(--elevation-3);
+  animation: pane-in var(--motion-duration-panel) var(--motion-easing-standard);
+}
+
+.overlay {
+  width: 60%;
+}
+
+.sheet {
+  left: 0;
+  bottom: 0;
+  z-index: var(--z-overlay);
+  border-left: 0;
+}
+
+/* Maximised: the canvas gives way and only the conversation bar stays visible (spec 6.2). */
+.max {
+  left: 0;
+  border-left: 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+  box-shadow: none;
+  animation: none;
+}
+
+.separator {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 1;
+}
+
+.separator::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background-color var(--motion-duration-micro) var(--motion-easing-standard);
+}
+
+.separator:hover::after,
+.separator:focus-visible::after {
+  background: var(--color-accent-default);
+}
+
+.separator:focus-visible {
+  outline: none;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 52px;
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-5);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.titles {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.eyebrow {
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.title {
+  overflow: hidden;
+  font-size: var(--type-h3-size);
+  line-height: var(--type-h3-line);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fullLink {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+}
+
+.fullLink:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.body {
+  min-height: 0;
+  padding: var(--space-4);
+  overflow: auto;
+}
+
+@keyframes pane-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}

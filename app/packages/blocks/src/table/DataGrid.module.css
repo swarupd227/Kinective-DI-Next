@@ -1,0 +1,40 @@
+/* Every grid colour is a design token, so theme switches need no grid re-render. */
+.grid {
+  --ag-font-family: var(--font-family-sans);
+  --ag-font-size: var(--type-body-compact-size);
+  --ag-foreground-color: var(--color-text-primary);
+  --ag-secondary-foreground-color: var(--color-text-secondary);
+  --ag-background-color: var(--color-bg-surface);
+  --ag-odd-row-background-color: var(--color-bg-surface);
+  --ag-header-background-color: var(--color-bg-subtle);
+  --ag-header-foreground-color: var(--color-text-secondary);
+  --ag-border-color: var(--color-border-subtle);
+  --ag-row-border-color: var(--color-border-subtle);
+  --ag-row-hover-color: var(--color-bg-hover);
+  --ag-selected-row-background-color: var(--color-bg-selected);
+  --ag-range-selection-border-color: var(--color-focus-ring);
+  --ag-input-focus-border-color: var(--color-focus-ring);
+  --ag-active-color: var(--color-accent-default);
+  --ag-wrapper-border-radius: var(--radius-sm);
+  --ag-border-radius: var(--radius-sm);
+  --ag-cell-horizontal-padding: var(--space-4);
+  --ag-header-column-resize-handle-color: var(--color-border-default);
+
+  /* Variables the grid reads that the static Quartz sheet does not define. */
+  --ag-header-height: var(--density-row-height);
+  --ag-row-border: 1px solid var(--color-border-subtle);
+  --ag-pinned-row-border: 1px solid var(--color-border-default);
+  --ag-header-row-border: 1px solid var(--color-border-subtle);
+  --ag-auto-height-max-body-height: 100000px;
+}
+
+.grid :global(.ag-header-cell-text) {
+  font-size: var(--type-caption-size);
+  font-weight: var(--weight-semibold);
+}
+
+.fill {
+  height: 100%;
+  min-height: 240px;
+}
+

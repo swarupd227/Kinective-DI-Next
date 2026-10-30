@@ -1,0 +1,59 @@
+.table {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  height: 100%;
+  min-height: 320px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.filter {
+  flex: 1;
+  min-width: 180px;
+  max-width: 320px;
+}
+
+.meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.fullLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  color: var(--color-text-link);
+  font-size: var(--type-caption-size);
+}
+
+.gridArea {
+  min-height: 0;
+}
+
+.count {
+  color: var(--color-text-muted);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.member {
+  display: grid;
+  align-content: start;
+  gap: var(--space-4);
+}
+
+.message {
+  padding: var(--space-5);
+  color: var(--color-text-secondary);
+}

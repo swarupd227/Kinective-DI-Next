@@ -1,0 +1,15 @@
+{
+  "name": "@dinext/stream-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "sideEffects": false,
+  "dependencies": {
+    "@dinext/block-schemas": "0.1.0",
+    "fast-json-patch": "^3.1.1",
+    "zustand": "^5.0.16"
+  }
+}

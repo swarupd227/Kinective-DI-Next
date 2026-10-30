@@ -1,0 +1,10 @@
+# Tenant overrides for Harborview Federal Credit Union (spec 16.6). Every entry is shown as a
+# difference from stock. Revision increments on each publish: published model 1.0.0+t3.
+tenant: test_cu
+stock_version: 1.0.0
+revision: 3
+synonyms:
+  branch: [ "store" ]
+  delinquency_ratio_60_plus: [ "watch list ratio" ]
+labels: {}
+settings: {}

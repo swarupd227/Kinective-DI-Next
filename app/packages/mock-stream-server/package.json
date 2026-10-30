@@ -1,0 +1,28 @@
+{
+  "name": "@dinext/mock-stream-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
+    "start": "tsx --env-file-if-exists=../../.env src/main.ts",
+    "start:offline": "tsx --env-file-if-exists=../../.env src/main.ts --offline",
+    "start:demo-voice": "tsx --env-file-if-exists=../../.env src/main.ts --offline --fake-voice"
+  },
+  "dependencies": {
+    "@dinext/agents": "0.1.0",
+    "@dinext/block-schemas": "0.1.0",
+    "@dinext/di-core": "0.1.0",
+    "@dinext/semantic": "0.1.0",
+    "@dinext/tenant-db": "0.1.0",
+    "@dinext/voice": "0.1.0",
+    "exceljs": "^4.4.0",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.2"
+  }
+}

@@ -1,0 +1,67 @@
+.prose {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 72ch;
+  color: var(--color-text-primary);
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+}
+
+.prose ul,
+.prose ol {
+  display: grid;
+  gap: var(--space-2);
+  padding-left: var(--space-7);
+}
+
+.prose li::marker {
+  color: var(--color-text-muted);
+}
+
+.prose strong {
+  font-weight: var(--weight-semibold);
+}
+
+.prose code {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+  font-family: var(--font-family-mono);
+  font-size: var(--type-mono-size);
+}
+
+.link {
+  color: var(--color-text-link);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.link:hover {
+  text-decoration-thickness: 2px;
+}
+
+.blockedLink {
+  color: var(--color-text-secondary);
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.tableWrap table {
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.tableWrap th,
+.tableWrap td {
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border-subtle);
+  text-align: left;
+}
+
+.skeleton {
+  display: grid;
+  gap: var(--space-3);
+}

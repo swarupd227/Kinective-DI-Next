@@ -1,0 +1,24 @@
+{
+  "name": "@dinext/blocks",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./grid": "./src/table/DataGrid.tsx"
+  },
+  "dependencies": {
+    "@dinext/block-schemas": "0.1.0",
+    "@dinext/tokens": "0.1.0",
+    "@dinext/ui": "0.1.0",
+    "ag-grid-community": "^36.2.0",
+    "ag-grid-react": "^36.2.0",
+    "echarts": "^6.1.0",
+    "fast-json-patch": "^3.1.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ]
+}

@@ -1,0 +1,47 @@
+.turn {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: var(--space-4);
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-agent);
+  border: 1px solid var(--color-accent-subtle);
+  color: var(--color-accent-text);
+}
+
+.body {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 28px;
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-secondary);
+}
+
+.arrow {
+  color: var(--color-text-muted);
+}
+
+.agent {
+  color: var(--color-accent-text);
+}
+
+.blocks {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
