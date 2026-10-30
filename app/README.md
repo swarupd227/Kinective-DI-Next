@@ -105,9 +105,14 @@ The plan, outputs and sources sit beside the conversation, and the pack opens th
 - **Asking when stuck:** if DI can't tell which meeting you mean, it asks and carries on from your answer.
 - **Same guardrails:** code computes every figure, the note's figures are checked line by line against what was computed, purview applies to every query, and nothing is sent without approval. Sending records a row in `esp_report_shares`; delivery is simulated.
 
+Two member goals use the same plan, progress and outputs:
+
+- **"Prepare me for my meeting with Suzanne Jackson":** finds the person, opens their record beside the conversation, ranks what to raise and writes talking points and a short briefing. Nothing needs approval, and a referral is only suggested, because the member has not agreed to anything yet.
+- **"Find members at risk of leaving and draft follow-ups":** lists high attrition scores within your purview, looks for what they share, and prepares retention follow-ups for the top five as one approval. Say "only the top 3" or "remove" a name to change the list. Each follow-up goes to the member's branch team, nobody gets a second open follow-up, and someone without Referrals access stops at the list.
+
 The live agent chooses its own steps through the same work as the offline planner, so the two cannot disagree on a figure.
 
-Slice 8 adds a table: run `npm run db:seed` once locally, or start the seeding job again on Azure.
+Slice 8 adds a table and a referral type: run `npm run db:seed` once locally, or start the seeding job again on Azure.
 
 ### Things to try in the shell
 

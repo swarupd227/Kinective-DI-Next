@@ -37,7 +37,7 @@ export function ThreadPage() {
   const wide = bp === 'desktop' || bp === 'laptop';
   const blocks = thread?.blocks;
   const hasPlan = Object.values(blocks ?? {}).some((b) => b.envelope.type === 'plan_steps' && b.envelope.output);
-  const report = Object.values(blocks ?? {}).find((b) => b.envelope.type === 'report_canvas' && b.envelope.output && b.status === 'complete');
+  const report = Object.values(blocks ?? {}).find((b) => (b.envelope.type === 'report_canvas' || b.envelope.type === 'member_360') && b.envelope.output && b.status === 'complete');
   const openTask = () => useUi.getState().openWorkspace({ kind: 'task', threadId, label: 'This task' });
   const shown = useRef(new Set<string>());
   useEffect(() => {
@@ -49,6 +49,8 @@ export function ThreadPage() {
     if (report && !shown.current.has(report.envelope.id)) {
       shown.current.add(report.envelope.id);
       useUi.getState().openWorkspace({ kind: 'output', threadId, blockId: report.envelope.id, label: report.envelope.output!.label });
+      // A member a task reviewed goes on the composer, so "refer her" means them (FE-RM-003).
+      if (report.envelope.type === 'member_360') useUi.getState().addContext(threadId, { type: 'member', ref: String(report.envelope.data.memberRef), label: String(report.envelope.data.displayName) });
     }
   });
   // A task's pane belongs to that task.

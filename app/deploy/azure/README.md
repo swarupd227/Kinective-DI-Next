@@ -1,6 +1,6 @@
 # Deploy DI Next to Azure (demo)
 
-Run these in **Azure Cloud Shell (Bash)** from the Azure portal. Every step starts from a fresh shell: it sets the subscription and reads the names saved in step 1 from `~/dinext.env`, which stays in your Cloud Shell home between sessions.
+Run these in **Azure Cloud Shell (Bash)** from the Azure portal. Every step sets the subscription and reads the names saved in step 1 from `~/dinext.env`. Cloud Shell without a storage account loses that file when the session ends. If it is gone, see [Recovering `~/dinext.env`](#recovering-dinextenv).
 
 What gets created, all in **East US 2**, in one resource group:
 
@@ -155,6 +155,28 @@ az containerapp logs show --name $APP --resource-group $RG --tail 20
 It should include `live agents on Claude` (or `offline planner`) and `voice: azure` (or `off`).
 
 ---
+
+## Recovering `~/dinext.env`
+
+Everything the update steps need can be read back from Azure. The database passwords stay in the job's and the app's secrets, so updating does not need them.
+
+```bash
+az account set --subscription "Microsoft Azure Sponsorship"
+RG=rg-dinext-demo
+APP=dinext-app
+cat > ~/dinext.env <<EOF
+RG=$RG
+APP=$APP
+JOB=dinext-seed
+ENVIRONMENT=cae-dinext
+ACR=$(az acr list --resource-group $RG --query "[0].name" -o tsv)
+MYSQL=$(az mysql flexible-server list --resource-group $RG --query "[0].name" -o tsv)
+ACCESS_CODE=$(az containerapp secret show --name $APP --resource-group $RG --secret-name access-code --query value -o tsv)
+REPO=https://github.com/swarupd227/Kinective-DI-Next.git
+TAG=
+EOF
+chmod 600 ~/dinext.env
+```
 
 ## Updating after new commits
 

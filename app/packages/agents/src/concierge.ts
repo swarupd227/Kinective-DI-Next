@@ -10,7 +10,7 @@ import { AGENT_NAME, runAnalytics, type MemoryTurn } from './analytics.ts';
 import type { AuditLog, AuditRecord, ToolCallRecord } from './audit.ts';
 import { BRIEFING_AGENT, buildBriefing } from './briefing.ts';
 import type { ReferralPayload, ToolGateway } from './gateway.ts';
-import { GOAL_AGENT, GOAL_REQUEST, NOTE_EDIT, newGoalThread, runGoal, runGoalOffline, type GoalOutcome, type GoalThread } from './goal.ts';
+import { GOAL_AGENT, GOAL_REQUEST, LIST_EDIT, NOTE_EDIT, newGoalThread, runGoal, runGoalOffline, type GoalOutcome, type GoalThread } from './goal.ts';
 import { RELATIONSHIP_AGENT } from './member.ts';
 import type { ModelClient, Usage } from './model.ts';
 import { runOffline } from './offline.ts';
@@ -23,7 +23,7 @@ import type { RunSink, StepUpdate } from './sink.ts';
 
 /** Agents the Concierge can route to. Scripted ones are placeholders until their slices land. */
 export const ROUTES = [
-  { agent: 'goal', name: GOAL_AGENT, live: true, intents: ['goal_request'], app: null, examples: ['Get me ready for Thursday’s ALCO meeting', 'Prepare the board pack and draft a note to the executive team', 'Find out why delinquency rose and tell the branch managers'] },
+  { agent: 'goal', name: GOAL_AGENT, live: true, intents: ['goal_request'], app: null, examples: ['Get me ready for Thursday’s ALCO meeting', 'Prepare the board pack and draft a note to the executive team', 'Find out why delinquency rose and tell the branch managers', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups'] },
   { agent: 'analytics_qa', name: AGENT_NAME, live: true, intents: ['data_question'], app: null, examples: ['Show loan growth by branch for Q3 vs Q2', 'What did deposit balances do by product type over the last two quarters?', 'How is the delinquency ratio calculated?'] },
   { agent: 'dashboard_briefing', name: BRIEFING_AGENT, live: true, intents: ['briefing'], app: null, examples: ['Brief me', 'What changed overnight?'] },
   { agent: 'report_builder', name: REPORT_AGENT, live: true, intents: ['report_request'], app: 'reports', examples: ['Open the September branch scorecard for Westport', 'Build me a monthly ALCO pack with loan balance trend, deposit mix and delinquency ratio', 'Send this to me every Monday', 'Which reports are scheduled for me?'] },
@@ -215,7 +215,7 @@ export class Concierge {
         await sink.text('Got it, I’ll work that in.', GOAL_AGENT);
         return { kind: 'handled' };
       }
-      if (goal?.status === 'asking' || (goal?.status === 'awaiting_approval' && NOTE_EDIT.test(screened.text))) {
+      if (goal?.status === 'asking' || (goal?.status === 'awaiting_approval' && (goal.followUps ? LIST_EDIT.test(screened.text) : NOTE_EDIT.test(screened.text)))) {
         classification = { intent: 'goal_request', agent: 'goal', confidence: 1, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' };
         return await this.goal(turn, screened.text, sink, usage, (r) => {
           toolCalls = r.toolCalls;
@@ -255,7 +255,9 @@ export class Concierge {
         return { kind: 'handled' };
       }
 
-      classification = this.deps.model ? await this.classify(turn, screened.text, usage) : keywordClassify(screened.text, turn.context.some((c) => c.type === 'member'));
+      // A plain goal needs no model to recognise, and must not land on a one-step specialist.
+      const memberChip = turn.context.some((c) => c.type === 'member');
+      classification = this.deps.model && !GOAL_REQUEST.test(screened.text) ? await this.classify(turn, screened.text, usage) : keywordClassify(screened.text, memberChip);
       if (classification.needs_clarification || classification.confidence < CONFIDENCE_THRESHOLD) {
         sink.routing('DI Concierge', 'Clarifying');
         await sink.block(noticeBlock('uncertain', 'Which of these did you mean?', 'DI Concierge', turn.runId, { options: classification.options.slice(0, 3).map((o, i) => ({ id: `o${i + 1}`, label: o })) }));
@@ -427,15 +429,24 @@ export class Concierge {
     if (open && prior.status === 'asking') state.goal = `${state.goal} (${text})`;
     state.status = 'running';
     this.goalThreads.set(turn.threadId, state);
-    const input = { runId: turn.runId, threadId: turn.threadId, text, user: turn.user, tenant: { name: turn.tenant.name, institutionType: turn.tenant.institutionType }, apps: turn.apps, purviewBranches: turn.purviewBranches, canViewSql: turn.canViewSql };
+    const wf = turn.tenant.workflow;
+    const people = wf?.relationship ? { gateway: wf.gateway, relationship: wf.relationship, members: this.membersFor(turn.threadId) } : null;
+    const chip = await this.memberFromContext(turn);
+    const input = { runId: turn.runId, threadId: turn.threadId, text, user: turn.user, tenant: { name: turn.tenant.name, institutionType: turn.tenant.institutionType }, apps: turn.apps, purviewBranches: turn.purviewBranches, canViewSql: turn.canViewSql, focus: chip ? { ref: chip.ref, name: chip.name } : undefined };
     let r: GoalOutcome;
     try {
-      r = this.deps.model ? await runGoal(input, { model: this.deps.model, gateway }, state, sink) : await runGoalOffline(input, { gateway, beatMs: this.deps.beatMs }, state, sink);
+      r = this.deps.model ? await runGoal(input, { model: this.deps.model, gateway, people }, state, sink) : await runGoalOffline(input, { gateway, beatMs: this.deps.beatMs, people }, state, sink);
     } catch (e) {
       state.status = 'closed';
       throw e;
     }
     if (r.outcome === 'cancelled' || r.outcome === 'failed') state.status = 'closed';
+    // After a meeting prep, "refer her" and "why is her risk medium?" mean the member just reviewed.
+    if (state.member) {
+      const rel = this.relationshipThreads.get(turn.threadId) ?? newRelationshipThread(this.membersFor(turn.threadId));
+      rel.focus = state.member;
+      this.relationshipThreads.set(turn.threadId, rel);
+    }
     usage.push(...r.usage);
     report(r);
     if (r.outcome === 'failed') await sink.block(noticeBlock('error', 'I couldn’t finish that work.', GOAL_AGENT, turn.runId, { detail: 'Nothing was sent. What I finished is still here; ask me to pick it up again.', retryable: true }));
@@ -520,8 +531,9 @@ export class Concierge {
     // Follow-on text streams after the HTTP answer, so approval.resolved reaches the thread first.
     const later = (fn: () => Promise<void>) => setTimeout(() => void fn().catch(() => {}), 0);
     if (d.decision === 'edit') {
-      const note = this.goalThreads.get(d.threadId)?.status === 'awaiting_approval';
-      later(() => (note ? sink.text('Tell me what to change, for example “make it shorter” or “mention the Westport review”. I’ll prepare a new card.', GOAL_AGENT) : sink.text('Tell me what to change, for example “make it email instead” or “add a note that she’s refinancing”. I’ll prepare a new card.', REFERRAL_AGENT)));
+      const waiting = this.goalThreads.get(d.threadId);
+      const note = waiting?.status === 'awaiting_approval';
+      later(() => (note ? sink.text(waiting.followUps ? 'Tell me what to change, for example “only the top 3” or “remove” a name. I’ll prepare a new card.' : 'Tell me what to change, for example “make it shorter” or “mention the Westport review”. I’ll prepare a new card.', GOAL_AGENT) : sink.text('Tell me what to change, for example “make it email instead” or “add a note that she’s refinancing”. I’ll prepare a new card.', REFERRAL_AGENT)));
       return { status: 200, body: { decision: 'returned', by: d.user.name, at: new Date().toISOString() } };
     }
     const decision = d.decision === 'approve' ? 'approved' : d.decision === 'deny' ? 'denied' : 'returned';
@@ -544,12 +556,13 @@ export class Concierge {
     const isDecline = approval.operation === 'relationship.suggestion.decline';
     const isReport = approval.operation.startsWith('report.');
     // A note from a goal: the plan's last step and the goal itself end with this decision.
-    const goal = approval.operation === 'report.share' ? this.goalThreads.get(d.threadId) : undefined;
+    const goal = approval.operation === 'report.share' || approval.operation === 'referral.create.batch' ? this.goalThreads.get(d.threadId) : undefined;
     const closeGoal = (update: Pick<StepUpdate, 'state' | 'resultSummary'>) => {
       if (!goal) return;
-      if (goal.planId) sink.step(goal.planId, { id: 'send', ...update });
+      if (goal.planId) sink.step(goal.planId, { id: goal.approvalStep ?? 'send', ...update });
       goal.status = 'closed';
       goal.note = undefined;
+      goal.followUps = undefined;
     };
     const agent = isReport ? REPORT_AGENT : isDecline ? RELATIONSHIP_AGENT : REFERRAL_AGENT;
     if (decision === 'approved' && isReport && d.tenant.reports) {
@@ -601,6 +614,15 @@ export class Concierge {
           sink.done?.(null);
           return;
         }
+        if (executed.operation === 'referral.create.batch') {
+          const n = executed.created.length;
+          void this.deps.audit.event({ eventType: 'ai.action.executed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, operation: approval.operation, resultRef: `com:${executed.created.map((c) => c.comId).join(',')}` });
+          closeGoal({ state: 'done', resultSummary: `${n} ${n === 1 ? 'follow-up' : 'follow-ups'} sent` });
+          const lines = executed.created.map((c) => `- **#${c.comId}** ${c.name}: ${c.queueName}${c.assignee ? `, ${c.assignee}` : ''}`);
+          await sink.text(`Sent ${n} ${n === 1 ? 'follow-up' : 'follow-ups'}:\n\n${lines.join('\n')}${executed.failed.length ? `\n\nI couldn’t send these, because they’re outside your access: ${executed.failed.join(', ')}.` : ''}`, GOAL_AGENT, [{ kind: 'workflow', label: 'Referrals', ref: 'workflow:referrals' }]);
+          sink.done?.(null);
+          return;
+        }
         const created = executed.created;
         void this.deps.audit.event({ eventType: 'ai.action.executed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, operation: approval.operation, resultRef: `com:${created.comId}`, replayed: created.replayed });
         const payload = approval.payload as ReferralPayload;
@@ -613,6 +635,7 @@ export class Concierge {
         sink.done?.({ comId: created.comId, queueName: created.queueName, assignee: created.assignee?.name ?? null });
       } catch (err) {
         void this.deps.audit.event({ eventType: 'ai.action.failed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, error: err instanceof Error ? err.message : String(err) });
+        closeGoal({ state: 'failed', resultSummary: 'Nothing was sent' });
         await sink.block(noticeBlock('error', isDecline ? 'The decline could not be saved.' : 'The referral could not be created.', agent, d.runId, { detail: `${isDecline ? 'Nothing was saved.' : 'Nothing was sent.'} The approval was not used, so you can ask again.`, referenceId: d.runId.slice(-12) }));
         sink.done?.(null);
       }

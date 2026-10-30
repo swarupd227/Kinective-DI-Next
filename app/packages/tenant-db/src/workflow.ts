@@ -114,6 +114,7 @@ export const REFERRAL_TYPES: ReferralType[] = [
   { typeId: 'mortgage', category: 'Mortgage', label: 'First mortgage', description: 'Purchase or refinance of a first mortgage', route: { kind: 'queue', queueId: 'q_mortgage' }, fields: [amount('Estimated loan amount'), ...contact] },
   { typeId: 'credit_card', category: 'Cards', label: 'Credit card', description: 'New credit card or limit increase', route: { kind: 'by_location', queue: 'service', fallbackQueue: 'q_card_services' }, fields: contact },
   { typeId: 'certificate', category: 'Deposits', label: 'Certificate', description: 'New certificate or renewal conversation', route: { kind: 'by_location', queue: 'service', fallbackQueue: 'q_member_services' }, fields: [amount('Estimated deposit'), ...contact] },
+  { typeId: 'retention_follow_up', category: 'Retention', label: 'Retention follow-up', description: 'A personal check-in with someone who may be about to leave', route: { kind: 'by_location', queue: 'service', fallbackQueue: 'q_member_services' }, fields: contact },
   { typeId: 'business_account', category: 'Business', label: 'Business account', description: 'Business checking, savings or lending', route: { kind: 'queue', queueId: 'q_business' }, fields: contact },
 ];
 

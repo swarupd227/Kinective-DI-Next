@@ -3,10 +3,10 @@
 // loop with a scripted model, and the Concierge routing around it. No real model calls are made.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateBlock, type Block } from '@dinext/block-schemas';
-import { ApprovalStore, ReportStore } from '@dinext/di-core';
+import { ApprovalStore, ReferralService, RelationshipService, ReportStore } from '@dinext/di-core';
 import { SemanticService } from '@dinext/semantic';
 import { createPool, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
-import { AuditLog, Concierge, GOAL_REQUEST, newGoalThread, newReportThread, ReportGateway, reviseNote, runGoal, runGoalOffline, type GoalInput, type ModelClient, type RunSink, type StepUpdate, type TenantRuntime } from '../src/index.ts';
+import { AuditLog, Concierge, GOAL_REQUEST, LIST_EDIT, newGoalThread, newReportThread, ReportGateway, reviseFollowUps, reviseNote, runGoal, runGoalOffline, ToolGateway, type GoalInput, type ModelClient, type RunSink, type StepUpdate, type TenantRuntime } from '../src/index.ts';
 
 const SCHEMA = 'dinext_t_test_cu';
 const up = await warehouseAvailable(SCHEMA);
@@ -39,6 +39,22 @@ describe('recognising a goal', () => {
     expect(GOAL_REQUEST.test('prepare for the board meeting')).toBe(true);
     expect(GOAL_REQUEST.test('Show delinquency by branch')).toBe(false);
     expect(GOAL_REQUEST.test('Open the ALCO monthly pack')).toBe(false);
+    expect(GOAL_REQUEST.test('Prepare me for my meeting with Suzanne Jackson')).toBe(true);
+    expect(GOAL_REQUEST.test('Find members at risk of leaving and draft follow-ups')).toBe(true);
+    expect(GOAL_REQUEST.test('Find certificates at risk of leaving')).toBe(false);
+    expect(GOAL_REQUEST.test('Pull up Suzanne Jackson at Westport')).toBe(false);
+  });
+});
+
+describe('changing the follow-ups by talking', () => {
+  const list = { refs: ['MBR_1', 'MBR_2', 'MBR_3'], names: ['Nancy Hill (…1234)', 'Omar Reyes (…2345)', 'Lee Park (…3456)'] };
+  it('keeps the top few, or drops a name', () => {
+    expect(reviseFollowUps(list, 'only the top 2')).toEqual(['MBR_1', 'MBR_2']);
+    expect(reviseFollowUps(list, 'just the first three')).toEqual(['MBR_1', 'MBR_2', 'MBR_3']);
+    expect(reviseFollowUps(list, 'remove Omar Reyes')).toEqual(['MBR_1', 'MBR_3']);
+    expect(LIST_EDIT.test('only the top 3')).toBe(true);
+    expect(LIST_EDIT.test('remove Omar')).toBe(true);
+    expect(LIST_EDIT.test('show delinquency by branch')).toBe(false);
   });
 });
 
@@ -72,6 +88,8 @@ describe.skipIf(!up)('goal work against the warehouse', () => {
   });
   afterAll(async () => {
     await admin.query('DELETE FROM esp_report_shares WHERE user_id = ?', [user.id]);
+    await admin.query('DELETE FROM esp_com_lines WHERE by_user_id = ?', [user.id]);
+    await admin.query('DELETE FROM esp_com_items WHERE sender_user_id = ?', [user.id]);
     await clean();
     await pool.end();
     await admin.end();
@@ -202,6 +220,8 @@ describe.skipIf(!up)('goal work against the warehouse', () => {
       const out = await runGoal(input(state.goal, 'thr_goal7'), { model, gateway }, state, sink);
       expect(out.outcome).toBe('answer');
       expect(JSON.stringify(model.seen)).toContain('The user just added: Focus on deposits');
+      // A step the model covered in its own words does not stay "waiting".
+      expect(r.steps.filter((s) => s.id === 's2').map((s) => s.state)).toEqual(['done']);
     });
 
     it('asks for the plan first', async () => {
@@ -210,6 +230,94 @@ describe.skipIf(!up)('goal work against the warehouse', () => {
       const state = newGoalThread('Check', newReportThread());
       await runGoal(input(state.goal, 'thr_goal8'), { model, gateway }, state, r.sink);
       expect(JSON.stringify(model.seen[1])).toContain('Call set_plan first');
+    });
+  });
+
+  describe('member goals', () => {
+    const people = () => {
+      const referrals = new ReferralService(pool, 'credit_union');
+      const relationship = new RelationshipService(pool, 'test_cu', 'credit_union');
+      return { gateway: new ToolGateway({ referrals, relationship, approvals }), relationship, members: new Map<string, number>() };
+    };
+
+    it('prepares for a meeting: the record, talking points and a briefing, with nothing to approve', async () => {
+      const r = recorder();
+      const state = newGoalThread('Prepare me for my meeting with Suzanne Jackson at Westport', newReportThread());
+      const out = await runGoalOffline(input(state.goal, 'thr_goalm1'), { gateway, people: people() }, state, r.sink);
+      expect(out.outcome).toBe('answer');
+      expect(out.approval).toBeUndefined();
+      expect(state.status).toBe('closed');
+      expect(r.plans[0]!.steps.map((s) => s.id)).toEqual(['find', 'review', 'topics', 'brief']);
+      for (const b of r.blocks) expect(validateBlock(b).ok).toBe(true);
+      expect(r.blocks.filter((b) => b.output).map((b) => b.type)).toEqual(['member_360', 'list']);
+      expect(r.texts.join(' ')).toContain('Suzanne Jackson');
+      expect(state.member?.name).toBe('Suzanne Jackson');
+    });
+
+    it('never opens a record outside the purview: it reads as not found', async () => {
+      const r = recorder();
+      const state = newGoalThread('Prepare me for my meeting with Suzanne Jackson', newReportThread());
+      const out = await runGoalOffline(input(state.goal, 'thr_goalm3', { purviewBranches: ['Northgate'] }), { gateway, people: people() }, state, r.sink);
+      expect(out.outcome).toBe('answer');
+      expect(r.blocks.some((b) => b.type === 'member_360')).toBe(false);
+    });
+
+    it('finds people at risk, stops at one approval for the list, and creates each follow-up once', async () => {
+      const deps = { gateway, people: people() };
+      const r = recorder();
+      const state = newGoalThread('Find members at risk of leaving and draft follow-ups', newReportThread());
+      const out = await runGoalOffline(input(state.goal, 'thr_goalm4'), deps, state, r.sink);
+      expect(out.outcome).toBe('approval');
+      for (const b of r.blocks) expect(validateBlock(b).ok).toBe(true);
+      const list = r.blocks.find((b) => b.type === 'list');
+      expect(list?.output?.label).toBe('Members at risk');
+      const card = out.approval!.card;
+      expect(card.data.operation).toBe('referral.create.batch');
+      expect(card.data.preview).toMatchObject({ kind: 'bulk', count: 5 });
+      const count = async () => {
+        const [rows] = await pool.query('SELECT COUNT(*) AS n FROM esp_com_items WHERE sender_user_id = ?', [user.id]);
+        return (rows as { n: number }[])[0]!.n;
+      };
+      expect(await count()).toBe(0);
+
+      // "Only the top 2" replaces the card.
+      const edit = recorder();
+      state.status = 'running';
+      const second = await runGoalOffline(input('only the top 2', 'thr_goalm4'), deps, state, edit.sink);
+      expect(second.superseded).toEqual([out.approval!.record.approvalId]);
+      expect(second.approval!.card.data.preview).toMatchObject({ count: 2 });
+
+      const a = await approvals.decide(second.approval!.record.approvalId, { decision: 'approved', userId: user.id, payloadHash: second.approval!.record.payloadHash });
+      const first = await deps.people.gateway.execute(a, { user });
+      expect(first).toMatchObject({ operation: 'referral.create.batch', failed: [] });
+      expect(await count()).toBe(2);
+
+      // A second run does not double up on people who already have an open follow-up.
+      const again = recorder();
+      const rerun = newGoalThread('Find members at risk of leaving and draft follow-ups', newReportThread());
+      const third = await runGoalOffline(input(rerun.goal, 'thr_goalm5'), deps, rerun, again.sink);
+      const preview = third.approval!.card.data.preview as unknown as { count: number; sample: { who: string }[] };
+      const sent = (second.approval!.card.data.preview as unknown as { sample: { who: string }[] }).sample.map((x) => x.who);
+      expect(preview.count).toBe(5);
+      expect(preview.sample.map((x) => x.who)).not.toEqual(expect.arrayContaining([sent[0]]));
+      expect(again.texts.join(' ')).toContain('already');
+    });
+
+    it('keeps a branch manager to their own branch', async () => {
+      const r = recorder();
+      const state = newGoalThread('Find members at risk of leaving and draft follow-ups', newReportThread());
+      await runGoalOffline(input(state.goal, 'thr_goalm6', { purviewBranches: ['Westport'] }), { gateway, people: people() }, state, r.sink);
+      const list = r.blocks.find((b) => b.type === 'list');
+      if (list?.type === 'list') for (const item of list.data.items) expect(item.subtitle).toMatch(/^Westport/);
+      expect(list?.provenance.purviewApplied).toBe(true);
+    });
+
+    it('stops at the list for someone without referrals', async () => {
+      const r = recorder();
+      const state = newGoalThread('Find members at risk of leaving', newReportThread());
+      const out = await runGoalOffline(input(state.goal, 'thr_goalm7', { apps: ['home', 'rm'] }), { gateway, people: people() }, state, r.sink);
+      expect(out.outcome).toBe('answer');
+      expect(r.plans[0]!.steps.map((s) => s.id)).toEqual(['find', 'why']);
     });
   });
 

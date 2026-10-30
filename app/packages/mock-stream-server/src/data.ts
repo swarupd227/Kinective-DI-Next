@@ -49,7 +49,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       apps: ['home', 'conversations', 'reports', 'tables', 'workflows', 'calendar', 'files', 'rm', 'referrals', 'lap', 'gi', 'seg', 'callreport'],
       permissions: { queryBrowser: false, dashboardAdmin: true },
     },
-    suggestions: ['Get me ready for Thursday’s ALCO meeting', 'Brief me', 'Show delinquency by branch', 'Show loan growth by branch for Q3 vs Q2'],
+    suggestions: ['Get me ready for Thursday’s ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'Prepare me for my meeting with Suzanne Jackson', 'Brief me'],
   },
   analyst: {
     session: {
@@ -68,7 +68,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       permissions: { queryBrowser: false, dashboardAdmin: false },
     },
     purview: ['Westport'],
-    suggestions: ['Who on my team is behind on goals?', 'Refer Suzanne Jackson for a HELOC, she prefers a call after 5 pm', 'Show my overdue onboarding touch points', 'Show Northgate loan detail'],
+    suggestions: ['Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups', 'Refer Suzanne Jackson for a HELOC, she prefers a call after 5 pm', 'Show my overdue onboarding touch points', 'Show Northgate loan detail'],
   },
   bank_cfo: {
     session: {

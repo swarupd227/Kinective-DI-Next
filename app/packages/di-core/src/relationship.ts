@@ -130,6 +130,19 @@ export const OPPORTUNITY_THRESHOLD = 6;
 /** "Member declined" suppresses a suggestion for 90 days by default [Assumption AS-091]. */
 export const DECLINE_DAYS = 90;
 
+/** A score at or above this reads as High (see attritionBand). */
+export const HIGH_ATTRITION = 7;
+
+export interface AtRiskMember {
+  partyId: number;
+  name: string;
+  firstName: string;
+  branch: string;
+  last4: string;
+  score: number;
+  reasons: string[];
+}
+
 export const attritionBand = (score: number): AttritionScore['band'] => (score >= 7 ? 'High' : score >= 4 ? 'Medium' : 'Low');
 
 const DAY = 86_400_000;
@@ -161,6 +174,32 @@ export class RelationshipService {
 
   token(partyId: number) {
     return memberToken(this.tenant, partyId);
+  }
+
+  /**
+   * relationship.attrition.list: people with a high attrition score, highest first, limited to the
+   * purview. Names, masked numbers and the model's reasons only; balances stay in the record.
+   */
+  async atRisk(ctx: CoreContext, limit = 25): Promise<{ total: number; items: AtRiskMember[] }> {
+    const scope = ctx.purviewBranches ? 'AND b.name IN (?)' : '';
+    const params = ctx.purviewBranches ? [ctx.purviewBranches] : [];
+    const from = `FROM cdm_attrition_score s JOIN cdm_party p ON p.party_id = s.party_id JOIN cdm_location b ON b.int_id = p.primary_branch_id WHERE s.score >= ${HIGH_ATTRITION} ${scope}`;
+    const [count] = await this.pool.query(`SELECT COUNT(*) AS n ${from}`, params);
+    const [rows] = await this.pool.query(`SELECT s.party_id, s.score, s.factors, p.first_name, p.last_name, b.name AS branch ${from} ORDER BY s.score DESC, s.party_id LIMIT ?`, [...params, limit]);
+    return {
+      total: Number((count as { n: number }[])[0]!.n),
+      items: (rows as { party_id: number; score: number; factors: unknown; first_name: string; last_name: string; branch: string }[]).map((m) => ({
+        partyId: m.party_id,
+        name: `${m.first_name} ${m.last_name}`,
+        firstName: m.first_name,
+        branch: m.branch,
+        last4: last4Of(m.party_id),
+        score: m.score,
+        reasons: json<ScoreFactor[]>(m.factors)
+          .filter((f) => f.weight > 0)
+          .map((f) => f.label),
+      })),
+    };
   }
 
   /** The party behind a token, within purview. A token outside the purview reads as not found. */

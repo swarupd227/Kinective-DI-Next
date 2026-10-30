@@ -3,9 +3,9 @@
 // never runs from a model call: it returns approval_required, and only an approved, unchanged
 // payload is executed, once, with the approval ID as its idempotency key.
 import { z } from 'zod';
-import { ApprovalStore, CoreError, type ApprovalRecord, type MemberProfile, type PartyHit, type ReferralService, type RelationshipService, type RiskTier, type RouteResult, type Topic } from '@dinext/di-core';
+import { ApprovalStore, CoreError, type ApprovalRecord, type AtRiskMember, type MemberProfile, type PartyHit, type ReferralService, type RelationshipService, type RiskTier, type RouteResult, type Topic } from '@dinext/di-core';
 
-export type AgentId = 'referral' | 'relationship';
+export type AgentId = 'referral' | 'relationship' | 'goal';
 
 export interface ToolDef<I extends z.ZodType = z.ZodType> {
   name: string;
@@ -22,6 +22,10 @@ export interface ToolDef<I extends z.ZodType = z.ZodType> {
   /** Agents whose tool list includes this tool; defaults to the Referral agent. */
   agents?: AgentId[];
 }
+
+/** One approval covers at most this many people, so the list can be read before it is approved. */
+export const FOLLOW_UP_CAP = 5;
+export const FOLLOW_UP_TYPE = 'retention_follow_up';
 
 const memberRef = z.string().regex(/^MBR_\d{1,4}$/).describe('A member_ref from relationship_party_search, such as MBR_1');
 const fieldValues = z.record(z.string(), z.union([z.string().max(200), z.number()])).describe('Values for the type’s form fields, keyed by field id');
@@ -49,7 +53,7 @@ export const REFERRAL_TOOLS = [
     requiredApp: ['referrals', 'rm'],
     purviewScope: 'com',
     maxResultRowsToModel: 5,
-    agents: ['referral', 'relationship'],
+    agents: ['referral', 'relationship', 'goal'],
   },
   {
     name: 'referral_route',
@@ -81,7 +85,34 @@ export const ExplainInput = z.object({ member_ref: memberRef, score: z.enum(['at
 export const DeclineInput = z.object({ member_ref: memberRef, product: z.string().min(2).max(60).describe('The suggested product the member declined, as listed in the profile’s opportunities') }).strict();
 
 /** Relationship agent tools (spec 24.15). Viewing a record is a read and is logged (spec 8.24). */
+export const AtRiskInput = z.object({ limit: z.number().int().min(1).max(25).default(25) }).strict();
+export const BatchInput = z.object({ member_refs: z.array(memberRef).min(1).max(FOLLOW_UP_CAP), notes: z.string().max(300).optional() }).strict();
+
 export const RELATIONSHIP_TOOLS = [
+  {
+    name: 'relationship_at_risk',
+    operation: 'relationship.attrition.list',
+    description: 'List people with a high attrition score that the user may see, highest first, with the reasons the model gives.',
+    input: AtRiskInput,
+    sideEffect: 'read',
+    riskTier: 'none',
+    requiredApp: 'rm',
+    purviewScope: 'report_viewer',
+    maxResultRowsToModel: 25,
+    agents: ['goal'],
+  },
+  {
+    name: 'retention_follow_ups_create',
+    operation: 'referral.create.batch',
+    description: 'Prepare a retention follow-up for each person, sent to their branch to work. Returns approval_required with the list shown in full; nothing is sent until the user approves.',
+    input: BatchInput,
+    sideEffect: 'write',
+    riskTier: 'medium',
+    requiredApp: 'referrals',
+    purviewScope: 'com',
+    maxResultRowsToModel: 1,
+    agents: ['goal'],
+  },
   {
     name: 'relationship_profile_get',
     operation: 'relationship.profile.get',
@@ -92,7 +123,7 @@ export const RELATIONSHIP_TOOLS = [
     requiredApp: 'rm',
     purviewScope: 'report_viewer',
     maxResultRowsToModel: 1,
-    agents: ['relationship'],
+    agents: ['relationship', 'goal'],
   },
   {
     name: 'relationship_next_best_conversation',
@@ -104,7 +135,7 @@ export const RELATIONSHIP_TOOLS = [
     requiredApp: 'rm',
     purviewScope: 'report_viewer',
     maxResultRowsToModel: 5,
-    agents: ['relationship'],
+    agents: ['relationship', 'goal'],
   },
   {
     name: 'predictive_scores_explain',
@@ -173,6 +204,18 @@ export interface DraftResult {
   superseded: string[];
 }
 
+export interface BatchPayload {
+  items: (ReferralPayload & { name: string; branch: string; to: string; reason: string })[];
+}
+
+export interface BatchDraft {
+  approval: ApprovalRecord;
+  payload: BatchPayload;
+  /** Asked for, but already holding an open follow-up. */
+  skipped: string[];
+  superseded: string[];
+}
+
 export interface DeclinePayload {
   partyId: number;
   suggestionId: number;
@@ -187,10 +230,10 @@ export interface DeclineDraft {
 }
 
 export type GatewayResult =
-  | { ok: true; content: unknown; draft?: DraftResult; decline?: DeclineDraft; hits?: (PartyHit & { matchedOn?: string })[]; profile?: MemberProfile; topics?: Topic[]; explained?: ReturnType<RelationshipService['explain']> }
+  | { ok: true; content: unknown; draft?: DraftResult; decline?: DeclineDraft; batch?: BatchDraft; atRisk?: { total: number; items: (AtRiskMember & { ref: string; followedUp: boolean })[] }; hits?: (PartyHit & { matchedOn?: string })[]; profile?: MemberProfile; topics?: Topic[]; explained?: ReturnType<RelationshipService['explain']> }
   | { ok: false; code: 'UNKNOWN_TOOL' | 'NOT_ALLOWED' | 'INVALID_INPUT' | 'RESERVED_KEY' | 'UNKNOWN_REF' | 'NO_ACCESS' | 'NOT_FOUND' | 'FORM_INCOMPLETE'; content: unknown };
 
-export type Executed = { operation: 'referral.create'; created: Awaited<ReturnType<ReferralService['create']>> } | { operation: 'relationship.suggestion.decline'; declined: { product: string; until: string }; partyId: number };
+export type Executed = { operation: 'referral.create'; created: Awaited<ReturnType<ReferralService['create']>> } | { operation: 'referral.create.batch'; created: { comId: number; name: string; queueName: string; assignee: string | null }[]; failed: string[] } | { operation: 'relationship.suggestion.decline'; declined: { product: string; until: string }; partyId: number };
 
 const round = (n: number) => (Math.abs(n) >= 1000 ? Math.round(n / 100) * 100 : Math.round(n));
 
@@ -269,6 +312,41 @@ export class ToolGateway {
           const hits = rm ? await rm.search(String(args.name), ctx, def.maxResultRowsToModel) : await this.deps.referrals.searchParties(String(args.name), ctx, def.maxResultRowsToModel);
           const out = hits.map((h) => ({ member_ref: this.refFor(h.partyId, ctx), name: h.name, branch: h.branch, member_since: h.memberSince, number_ends: h.last4, products: h.products }));
           return { ok: true, content: { matches: out, count: out.length }, hits };
+        }
+        case 'relationship.attrition.list': {
+          const found = await this.deps.relationship!.atRisk(ctx, Number(args.limit));
+          const open = await this.deps.referrals.openFor(FOLLOW_UP_TYPE, found.items.map((m) => m.partyId));
+          const items = found.items.map((m) => ({ ...m, ref: this.refFor(m.partyId, ctx), followedUp: open.has(m.partyId) }));
+          for (const m of items) this.deps.onProfileView?.(m.partyId, ctx);
+          return { ok: true, content: { total: found.total, members: items.map((m) => ({ member_ref: m.ref, name: m.name, branch: m.branch, score: m.score, reasons: m.reasons, has_open_follow_up: m.followedUp })) }, atRisk: { total: found.total, items } };
+        }
+        case 'referral.create.batch': {
+          const rm = this.deps.relationship!;
+          const a = args as z.infer<typeof BatchInput>;
+          const ids = a.member_refs.map((ref) => ctx.members.get(ref));
+          if (ids.some((id) => id === undefined)) return { ok: false, code: 'UNKNOWN_REF', content: { error: 'UNKNOWN_REF', message: 'Use member_refs returned by relationship_at_risk or relationship_party_search.' } };
+          const open = await this.deps.referrals.openFor(FOLLOW_UP_TYPE, ids as number[]);
+          const items: BatchPayload['items'] = [];
+          const skipped: string[] = [];
+          for (const id of ids as number[]) {
+            const p = await rm.profile(id, ctx);
+            if (open.has(id)) {
+              skipped.push(p.name);
+              continue;
+            }
+            // The form takes the contact method on file; "Mail" has no follow-up channel, so it becomes a call.
+            const preferred = ['Phone', 'Email', 'Text'].includes(p.contact.preferred) ? p.contact.preferred : 'Phone';
+            const check = await this.deps.referrals.check({ typeId: FOLLOW_UP_TYPE, fields: { preferred_contact: preferred } });
+            const route = await this.deps.referrals.route(FOLLOW_UP_TYPE, id);
+            const reason = p.attrition.factors.find((f) => f.weight > 0)?.label ?? 'High attrition score';
+            items.push({ typeId: FOLLOW_UP_TYPE, partyId: id, fields: check.fields, notes: (a.notes ?? `Attrition score ${p.attrition.score} of 10: ${reason}.`).slice(0, 300), priority: 'High', toQueueId: route.queueId, name: `${p.name} (…${p.last4})`, branch: p.branch, to: route.queueName, reason });
+          }
+          if (!items.length) return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: 'Everyone on that list already has an open follow-up.', skipped } };
+          const payload: BatchPayload = { items };
+          const tier = effectiveTier(def, this.deps.tenantRaise);
+          const approval = await this.deps.approvals.request({ operation: def.operation, payload, riskTier: tier === 'none' ? 'low' : tier, requestedBy: ctx.user.id, runId: ctx.runId, threadId: ctx.threadId });
+          const superseded = await this.deps.approvals.supersede(ctx.threadId, approval.approvalId);
+          return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId, follow_ups: items.length, already_open: skipped, note: 'Nothing has been sent. The user approves on screen.' }, batch: { approval, payload, skipped, superseded } };
         }
         case 'relationship.profile.get':
         case 'relationship.next_best_conversation':
@@ -358,6 +436,24 @@ export class ToolGateway {
         const created = await this.deps.referrals.create(approval.payload as ReferralPayload, { approvalId: approval.approvalId, runId: approval.runId, userId: ctx.user.id, userName: ctx.user.name }, ctx);
         await this.deps.approvals.markExecuted(approval.approvalId, `com:${created.comId}`);
         return { operation: 'referral.create', created };
+      }
+      if (approval.operation === 'referral.create.batch') {
+        // One approval, several records: each has its own key, so a retry resumes rather than repeats.
+        const created: Extract<Executed, { operation: 'referral.create.batch' }>['created'] = [];
+        const failed: string[] = [];
+        const { items } = approval.payload as BatchPayload;
+        for (const [i, item] of items.entries()) {
+          try {
+            const c = await this.deps.referrals.create(item, { approvalId: `${approval.approvalId}.${i}`, runId: approval.runId, userId: ctx.user.id, userName: ctx.user.name }, ctx);
+            created.push({ comId: c.comId, name: item.name, queueName: c.queueName, assignee: c.assignee?.name ?? null });
+          } catch (e) {
+            if (!(e instanceof CoreError)) throw e;
+            failed.push(item.name);
+          }
+        }
+        if (!created.length) throw new Error('No follow-up could be created.');
+        await this.deps.approvals.markExecuted(approval.approvalId, `com:${created.map((c) => c.comId).join(',')}`.slice(0, 60));
+        return { operation: 'referral.create.batch', created, failed };
       }
       if (approval.operation === 'relationship.suggestion.decline' && this.deps.relationship) {
         const p = approval.payload as DeclinePayload;

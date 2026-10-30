@@ -256,6 +256,13 @@ export class ReferralService {
     }
   }
 
+  /** Who already has an open referral of this type, so a repeat run does not double up. */
+  async openFor(typeId: string, partyIds: number[]) {
+    if (!partyIds.length) return new Set<number>();
+    const [rows] = await this.pool.query("SELECT DISTINCT party_id FROM esp_com_items WHERE definition = 'referral' AND type_id = ? AND stage = 'New Referral' AND party_id IN (?)", [typeId, partyIds]);
+    return new Set((rows as { party_id: number }[]).map((r) => r.party_id));
+  }
+
   /** referral.get */
   async get(comId: number) {
     const [rows] = await this.pool.query(
