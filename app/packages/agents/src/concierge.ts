@@ -10,6 +10,7 @@ import { AGENT_NAME, runAnalytics, type MemoryTurn } from './analytics.ts';
 import type { AuditLog, AuditRecord, ToolCallRecord } from './audit.ts';
 import { BRIEFING_AGENT, buildBriefing } from './briefing.ts';
 import type { ReferralPayload, ToolGateway } from './gateway.ts';
+import { GOAL_AGENT, GOAL_REQUEST, NOTE_EDIT, newGoalThread, runGoal, runGoalOffline, type GoalOutcome, type GoalThread } from './goal.ts';
 import { RELATIONSHIP_AGENT } from './member.ts';
 import type { ModelClient, Usage } from './model.ts';
 import { runOffline } from './offline.ts';
@@ -18,10 +19,11 @@ import { newReferralThread, REFERRAL_AGENT, runReferral, runReferralOffline, typ
 import { newRelationshipThread, runRelationship, runRelationshipOffline, type RelationshipOutcome, type RelationshipThread } from './relationship.ts';
 import { describeSchedule, newReportThread, REPORT_AGENT, type ReportGateway, type ReportThread } from './report.ts';
 import { runReportAgent, runReportOffline, type ReportOutcome } from './reportAgent.ts';
-import type { RunSink } from './sink.ts';
+import type { RunSink, StepUpdate } from './sink.ts';
 
 /** Agents the Concierge can route to. Scripted ones are placeholders until their slices land. */
 export const ROUTES = [
+  { agent: 'goal', name: GOAL_AGENT, live: true, intents: ['goal_request'], app: null, examples: ['Get me ready for Thursday’s ALCO meeting', 'Prepare the board pack and draft a note to the executive team', 'Find out why delinquency rose and tell the branch managers'] },
   { agent: 'analytics_qa', name: AGENT_NAME, live: true, intents: ['data_question'], app: null, examples: ['Show loan growth by branch for Q3 vs Q2', 'What did deposit balances do by product type over the last two quarters?', 'How is the delinquency ratio calculated?'] },
   { agent: 'dashboard_briefing', name: BRIEFING_AGENT, live: true, intents: ['briefing'], app: null, examples: ['Brief me', 'What changed overnight?'] },
   { agent: 'report_builder', name: REPORT_AGENT, live: true, intents: ['report_request'], app: 'reports', examples: ['Open the September branch scorecard for Westport', 'Build me a monthly ALCO pack with loan balance trend, deposit mix and delinquency ratio', 'Send this to me every Monday', 'Which reports are scheduled for me?'] },
@@ -34,8 +36,8 @@ export const ROUTES = [
 export type RouteAgent = (typeof ROUTES)[number]['agent'] | 'help' | 'none';
 
 export const Classification = z.object({
-  intent: z.enum(['data_question', 'briefing', 'report_request', 'member_lookup', 'workflow_action', 'module_task', 'admin_task', 'navigation', 'help', 'small_talk', 'core_write', 'out_of_scope', 'unclear']),
-  agent: z.enum(['analytics_qa', 'dashboard_briefing', 'report_builder', 'relationship', 'referral', 'goals_incentives', 'deposit_retention', 'help', 'none']),
+  intent: z.enum(['goal_request', 'data_question', 'briefing', 'report_request', 'member_lookup', 'workflow_action', 'module_task', 'admin_task', 'navigation', 'help', 'small_talk', 'core_write', 'out_of_scope', 'unclear']),
+  agent: z.enum(['goal', 'analytics_qa', 'dashboard_briefing', 'report_builder', 'relationship', 'referral', 'goals_incentives', 'deposit_retention', 'help', 'none']),
   confidence: z.number().min(0).max(1),
   needs_clarification: z.boolean(),
   options: z.array(z.string()).max(3).describe('Up to three complete questions the user might mean, when unclear.'),
@@ -113,6 +115,7 @@ const ABOUT_MEMBER = /\b(her|him|his|their|she|he|they|this (member|customer)|at
 function keywordClassify(text: string, memberInContext = false): Classification {
   const t = text.toLowerCase();
   const base = { confidence: 0.7, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' as const };
+  if (GOAL_REQUEST.test(text)) return { ...base, intent: 'goal_request', agent: 'goal' };
   if (/\brefer\b|referral/.test(t)) return { ...base, intent: 'workflow_action', agent: 'referral', risk_hint: 'write' };
   if (REPORT_WORDS.test(t)) return { ...base, intent: 'report_request', agent: 'report_builder' };
   if (MEMBER_LOOKUP.test(text) || (memberInContext && ABOUT_MEMBER.test(text)) || /\btell me about [A-Z][a-z'-]+ [A-Z][a-z'-]+/.test(text)) return { ...base, intent: 'member_lookup', agent: 'relationship' };
@@ -134,6 +137,7 @@ ${routes.map((r) => `- ${r.agent} (${r.name}): ${r.intents.join(', ')}. Examples
 - help: what DI can do.
 - none: small talk, or out of scope (legal advice, credit decisions about named people, general web questions).
 
+A goal with several steps or something to deliver ("get me ready for the ALCO meeting", "find out why X moved and tell the team") goes to goal. A single question or a single report does not.
 Opening, running, building, changing, saving, scheduling or exporting a report, pack or scorecard goes to report_builder. A one-off data question without the word report goes to analytics_qa.
 Questions about one specific person (a member or customer named in the message, or the one in context when the user says "her", "him" or "this member") go to relationship, including what to talk to them about, why their scores are what they are, their household, and "she declined the offer". Requests to refer or send a person to a team go to referral.
 Use intent "core_write" for requests to change data in the core system (addresses, rates, account details); DI reads the core and never writes to it.
@@ -148,6 +152,8 @@ const auditOutcome = (r: ReferralOutcome): AuditRecord['outcome'] =>
 
 const reportAudit = (r: ReportOutcome): AuditRecord['outcome'] => (r.outcome === 'approval' ? 'approval_requested' : r.outcome === 'clarify' ? 'clarify' : r.outcome === 'report' || r.outcome === 'list' ? 'answer' : r.outcome);
 
+const goalAudit = (r: GoalOutcome): AuditRecord['outcome'] => (r.outcome === 'approval' ? 'approval_requested' : r.outcome);
+
 const relationshipAudit = (r: RelationshipOutcome): AuditRecord['outcome'] =>
   r.outcome === 'decline_drafted' ? 'approval_requested' : r.outcome === 'choose' || r.outcome === 'needs_info' ? 'clarify' : r.outcome === 'not_found' || r.outcome === 'not_supported' || r.outcome === 'cancelled' || r.outcome === 'failed' ? r.outcome : 'answer';
 
@@ -156,6 +162,7 @@ export class Concierge {
   private readonly referralThreads = new Map<string, ReferralThread>();
   private readonly relationshipThreads = new Map<string, RelationshipThread>();
   private readonly reportThreads = new Map<string, ReportThread>();
+  private readonly goalThreads = new Map<string, GoalThread>();
   /** Reference tokens per thread (MBR_n → party), shared by the agents so a member keeps one name. */
   private readonly members = new Map<string, Map<string, number>>();
   private readonly counter = { n: 0 };
@@ -178,7 +185,7 @@ export class Concierge {
     return { ref, partyId: party.partyId, name: party.name, branch: party.branch };
   }
 
-  constructor(private readonly deps: { model: ModelClient | null; audit: AuditLog }) {}
+  constructor(private readonly deps: { model: ModelClient | null; audit: AuditLog; beatMs?: number }) {}
 
   get live() {
     return this.deps.model !== null;
@@ -200,6 +207,23 @@ export class Concierge {
         outcome = 'not_supported';
         return { kind: 'handled' };
       }
+      // A goal in progress takes the next message: an added instruction, an answer, or a change to the note.
+      const goal = this.goalThreads.get(turn.threadId);
+      if (goal?.status === 'running') {
+        goal.steers.push(screened.text);
+        sink.routing(GOAL_AGENT, 'An instruction during the work');
+        await sink.text('Got it, I’ll work that in.', GOAL_AGENT);
+        return { kind: 'handled' };
+      }
+      if (goal?.status === 'asking' || (goal?.status === 'awaiting_approval' && NOTE_EDIT.test(screened.text))) {
+        classification = { intent: 'goal_request', agent: 'goal', confidence: 1, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' };
+        return await this.goal(turn, screened.text, sink, usage, (r) => {
+          toolCalls = r.toolCalls;
+          outcome = goalAudit(r);
+          error = r.error;
+        });
+      }
+
       // An open referral answers its own follow-ups: "by email" or "change the note" edit the draft,
       // they are not requests to write to the core.
       const referral = this.referralThreads.get(turn.threadId);
@@ -240,6 +264,12 @@ export class Concierge {
       }
 
       switch (classification.agent) {
+        case 'goal':
+          return await this.goal(turn, screened.text, sink, usage, (r) => {
+            toolCalls = r.toolCalls;
+            outcome = goalAudit(r);
+            error = r.error;
+          });
         case 'help':
           await this.help(turn, sink);
           return { kind: 'handled' };
@@ -381,6 +411,43 @@ export class Concierge {
     }
   }
 
+  /** Works toward a goal, live or offline. The run stays open while a note waits for approval. */
+  private async goal(turn: ConciergeTurn, text: string, sink: RunSink, usage: Usage[], report: (r: GoalOutcome) => void): Promise<ConciergeDecision> {
+    const gateway = turn.tenant.reports?.gateway;
+    if (!gateway) {
+      sink.routing(GOAL_AGENT, 'Reports not loaded');
+      await sink.block(noticeBlock('not_supported', 'That work needs the report data, which isn’t loaded in this environment.', GOAL_AGENT, turn.runId, { detail: 'Run npm run db:seed to load it, then restart the server.' }));
+      return { kind: 'handled' };
+    }
+    const reports = this.reportThreads.get(turn.threadId) ?? newReportThread();
+    this.reportThreads.set(turn.threadId, reports);
+    const prior = this.goalThreads.get(turn.threadId);
+    const open = prior && prior.status !== 'closed';
+    const state = open ? prior : newGoalThread(text, reports);
+    if (open && prior.status === 'asking') state.goal = `${state.goal} (${text})`;
+    state.status = 'running';
+    this.goalThreads.set(turn.threadId, state);
+    const input = { runId: turn.runId, threadId: turn.threadId, text, user: turn.user, tenant: { name: turn.tenant.name, institutionType: turn.tenant.institutionType }, apps: turn.apps, purviewBranches: turn.purviewBranches, canViewSql: turn.canViewSql };
+    let r: GoalOutcome;
+    try {
+      r = this.deps.model ? await runGoal(input, { model: this.deps.model, gateway }, state, sink) : await runGoalOffline(input, { gateway, beatMs: this.deps.beatMs }, state, sink);
+    } catch (e) {
+      state.status = 'closed';
+      throw e;
+    }
+    if (r.outcome === 'cancelled' || r.outcome === 'failed') state.status = 'closed';
+    usage.push(...r.usage);
+    report(r);
+    if (r.outcome === 'failed') await sink.block(noticeBlock('error', 'I couldn’t finish that work.', GOAL_AGENT, turn.runId, { detail: 'Nothing was sent. What I finished is still here; ask me to pick it up again.', retryable: true }));
+    for (const id of r.superseded) void this.deps.audit.event({ eventType: 'ai.approval.superseded', tenant: turn.tenant.key, userId: turn.user.id, threadId: turn.threadId, runId: turn.runId, approvalId: id });
+    if (r.approval) {
+      const a = r.approval.record;
+      void this.deps.audit.event({ eventType: 'ai.approval.requested', tenant: turn.tenant.key, userId: turn.user.id, threadId: turn.threadId, runId: turn.runId, approvalId: a.approvalId, operation: a.operation, riskTier: a.riskTier, payloadHash: a.payloadHash });
+      return { kind: 'handled', approval: { approvalId: a.approvalId, card: r.approval.card }, superseded: r.superseded };
+    }
+    return { kind: 'handled', superseded: r.superseded };
+  }
+
   /** Runs the Referral agent, live or offline, and reports what the run is waiting for. */
   private async referral(turn: ConciergeTurn, text: string, sink: RunSink, usage: Usage[], report: (r: ReferralOutcome) => void): Promise<ConciergeDecision> {
     const wf = turn.tenant.workflow!;
@@ -453,7 +520,8 @@ export class Concierge {
     // Follow-on text streams after the HTTP answer, so approval.resolved reaches the thread first.
     const later = (fn: () => Promise<void>) => setTimeout(() => void fn().catch(() => {}), 0);
     if (d.decision === 'edit') {
-      later(() => sink.text('Tell me what to change, for example “make it email instead” or “add a note that she’s refinancing”. I’ll prepare a new card.', REFERRAL_AGENT));
+      const note = this.goalThreads.get(d.threadId)?.status === 'awaiting_approval';
+      later(() => (note ? sink.text('Tell me what to change, for example “make it shorter” or “mention the Westport review”. I’ll prepare a new card.', GOAL_AGENT) : sink.text('Tell me what to change, for example “make it email instead” or “add a note that she’s refinancing”. I’ll prepare a new card.', REFERRAL_AGENT)));
       return { status: 200, body: { decision: 'returned', by: d.user.name, at: new Date().toISOString() } };
     }
     const decision = d.decision === 'approve' ? 'approved' : d.decision === 'deny' ? 'denied' : 'returned';
@@ -475,13 +543,21 @@ export class Concierge {
     }
     const isDecline = approval.operation === 'relationship.suggestion.decline';
     const isReport = approval.operation.startsWith('report.');
+    // A note from a goal: the plan's last step and the goal itself end with this decision.
+    const goal = approval.operation === 'report.share' ? this.goalThreads.get(d.threadId) : undefined;
+    const closeGoal = (update: Pick<StepUpdate, 'state' | 'resultSummary'>) => {
+      if (!goal) return;
+      if (goal.planId) sink.step(goal.planId, { id: 'send', ...update });
+      goal.status = 'closed';
+      goal.note = undefined;
+    };
     const agent = isReport ? REPORT_AGENT : isDecline ? RELATIONSHIP_AGENT : REFERRAL_AGENT;
     if (decision === 'approved' && isReport && d.tenant.reports) {
       const gw = d.tenant.reports.gateway;
       later(async () => {
         try {
           const x = await gw.execute(approval, { user: d.user });
-          const ref = x.operation === 'report.template.create' ? `report:${x.template.templateId}` : x.operation === 'report.export' ? `export:${x.exportId}` : `schedule:${x.schedule.scheduleId}`;
+          const ref = x.operation === 'report.template.create' ? `report:${x.template.templateId}` : x.operation === 'report.export' ? `export:${x.exportId}` : x.operation === 'report.share' ? `share:${x.shareId}` : `schedule:${x.schedule.scheduleId}`;
           void this.deps.audit.event({ eventType: 'ai.action.executed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, operation: approval.operation, resultRef: ref });
           const source = [{ kind: 'template' as const, label: 'Reports', ref: 'report:library' }];
           // The saved report replaces the draft as the one on screen, so "schedule it" means it.
@@ -489,11 +565,15 @@ export class Concierge {
           if (x.operation === 'report.template.create' && rs?.current) rs.current = { templateId: x.template.templateId, controls: rs.current.controls };
           if (x.operation === 'report.template.create') await sink.text(`Saved **${x.template.name}** in ${x.template.folder}. [Open it](/reports/${x.template.templateId}) any time from Reports.`, REPORT_AGENT, source);
           else if (x.operation === 'report.schedule.create') await sink.text(`Scheduled **${x.schedule.templateName}**: ${describeSchedule(x.schedule).toLowerCase()}, after the nightly build, ${x.schedule.format.toUpperCase()} to ${x.schedule.recipientCount} ${x.schedule.recipientCount === 1 ? 'recipient' : 'recipients'}. It’s schedule #${x.schedule.scheduleId} under [Reports › Schedules](/reports?tab=schedules).`, REPORT_AGENT, source);
-          else if (x.operation === 'report.schedule.cancel') await sink.text(`Stopped schedule #${x.schedule.scheduleId} for **${x.schedule.templateName}**. Nothing more will be sent.`, REPORT_AGENT, source);
+          else if (x.operation === 'report.share') {
+            closeGoal({ state: 'done', resultSummary: `Sent to ${x.recipientCount} ${x.recipientCount === 1 ? 'person' : 'people'}` });
+            await sink.text(`Sent the **${x.templateName}** and your note to ${x.recipientCount} ${x.recipientCount === 1 ? 'person' : 'people'}. Each of them opens it in DI under their own access. Delivery is simulated in this demo.`, GOAL_AGENT, source);
+          } else if (x.operation === 'report.schedule.cancel') await sink.text(`Stopped schedule #${x.schedule.scheduleId} for **${x.schedule.templateName}**. Nothing more will be sent.`, REPORT_AGENT, source);
           else await sink.text(`Your ${x.format === 'xlsx' ? 'Excel' : 'CSV'} export of **${x.templateName}** is ready: [Download it](/v1/exports/${x.exportId}). The download is logged.`, REPORT_AGENT, source);
           sink.done?.(null);
         } catch (err) {
           void this.deps.audit.event({ eventType: 'ai.action.failed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, error: err instanceof Error ? err.message : String(err) });
+          closeGoal({ state: 'failed', resultSummary: 'Nothing was sent' });
           await sink.block(noticeBlock('error', 'That could not be completed.', REPORT_AGENT, d.runId, { detail: 'Nothing was saved or sent. The approval was not used, so you can ask again.', referenceId: d.runId.slice(-12) }));
           sink.done?.(null);
         }
@@ -503,6 +583,8 @@ export class Concierge {
     if (decision !== 'approved') {
       later(async () => {
         const nothing = isReport ? 'Nothing was saved or sent.' : isDecline ? 'Nothing was saved.' : 'Nothing was sent.';
+        if (decision === 'denied') closeGoal({ state: 'skipped', resultSummary: 'You decided not to send it' });
+        else if (goal) goal.status = 'asking';
         await sink.text(decision === 'denied' ? nothing : `Returned with your note. ${nothing} Tell me what to change and I’ll prepare a new card.`, agent);
         sink.done?.(null);
       });

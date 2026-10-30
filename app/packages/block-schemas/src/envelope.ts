@@ -119,6 +119,8 @@ export const envelopeFields = {
   controls: z.array(control).optional(),
   a11y: z.object({ summary: z.string().max(600) }).optional(),
   speakable: z.string().max(600).optional(),
+  /** A finished piece of work: the conversation shows a card for it and it opens beside the thread. */
+  output: z.object({ label: z.string().max(80), summary: z.string().max(160).optional() }).optional(),
   dqStatus: z.enum(['ok', 'warning', 'failed', 'unknown']).optional(),
   status: z.enum(['streaming', 'complete', 'error']).optional(),
 };

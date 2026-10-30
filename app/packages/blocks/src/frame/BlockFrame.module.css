@@ -5,16 +5,20 @@
   min-width: 0;
   padding: var(--density-block-padding);
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: var(--color-bg-surface);
-  box-shadow: var(--elevation-1);
+}
+
+.prose {
+  padding: 0;
+  border: 0;
+  background: none;
 }
 
 .approval {
   padding: 0;
   overflow: hidden;
   border-color: var(--color-border-default);
-  box-shadow: var(--elevation-2);
 }
 
 .header {
@@ -98,6 +102,11 @@
   gap: var(--space-3);
   padding-top: var(--space-3);
   border-top: 1px solid var(--color-border-subtle);
+}
+
+.prose .footer {
+  padding-top: 0;
+  border-top: 0;
 }
 
 .approval .footer {

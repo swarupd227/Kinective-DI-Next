@@ -53,7 +53,7 @@ export interface BlockFrameProps {
   bare?: boolean;
   /** Extra controls for the header, e.g. the chart/table view toggle. */
   headerExtra?: ReactNode;
-  tone?: 'default' | 'approval';
+  tone?: 'default' | 'approval' | 'prose';
   children: ReactNode;
 }
 
@@ -80,7 +80,7 @@ export function BlockFrame({ block, status = 'complete', progressText, bare, hea
 
   return (
     <article
-      className={clsx(styles.frame, tone === 'approval' && styles.approval)}
+      className={clsx(styles.frame, tone === 'approval' && styles.approval, tone === 'prose' && styles.prose)}
       aria-labelledby={title ? headingId : undefined}
       aria-label={title ? undefined : `${block.provenance.agent} result`}
       aria-busy={status === 'loading' || status === 'streaming' || undefined}

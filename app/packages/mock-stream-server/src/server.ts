@@ -325,6 +325,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         // With the warehouse up, "What changed" and "Things to look at" come from real figures.
         const real = await live?.home(persona).catch((err) => (console.error('[home]', err), null));
         if (real) {
+          home.narrative = real.narrative;
           for (const s of home.sections) {
             if (s.id === 'what_changed') s.blocks = [real.kpis];
             if (s.id === 'look_at' && real.lookAt.data.items.length) s.blocks = [real.lookAt];

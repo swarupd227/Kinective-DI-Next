@@ -42,8 +42,12 @@ function updateBlock(s: ThreadState, blockId: string, fn: (b: BlockEntry) => Blo
 }
 
 function findPlanBlock(s: ThreadState, runId: string): string | undefined {
-  const turn = agentTurn(s, runId);
-  return turn?.blockIds.find((id) => s.blocks[id]?.envelope.type === 'plan_steps');
+  for (const t of s.turns) {
+    if (t.kind !== 'agent' || t.runId !== runId) continue;
+    const id = t.blockIds.find((b) => s.blocks[b]?.envelope.type === 'plan_steps');
+    if (id) return id;
+  }
+  return undefined;
 }
 
 function setPlanState(s: ThreadState, runId: string, state: RunState): Record<string, BlockEntry> {
@@ -79,10 +83,16 @@ export function reduce(s: ThreadState, e: StreamEvent): ThreadState {
 
     case 'block.start': {
       const envelope = { ...e.block, status: 'streaming' as const };
+      const runId = e.runId ?? envelope.provenance.runId;
+      const target = agentTurn(s, runId);
+      // A long run keeps working after a message the user added: what comes next follows that message.
+      const continued = target && s.turns.at(-1) !== target && !target.blockIds.includes(envelope.id);
+      const turns: Turn[] = continued ? [...s.turns, { ...target, id: `${target.id}:${s.turns.length}`, blockIds: [] }] : s.turns;
+      const withTurn = { ...s, turns };
       return {
         ...next,
         blocks: { ...s.blocks, [envelope.id]: { envelope, status: 'streaming' } },
-        turns: updateTurn(s, e.runId ?? envelope.provenance.runId, (t) => (t.blockIds.includes(envelope.id) ? t : { ...t, blockIds: [...t.blockIds, envelope.id] })),
+        turns: updateTurn(withTurn, runId, (t) => (t.blockIds.includes(envelope.id) ? t : { ...t, blockIds: [...t.blockIds, envelope.id] })),
       };
     }
 
@@ -125,11 +135,13 @@ export function reduce(s: ThreadState, e: StreamEvent): ThreadState {
           const exists = steps.some((st) => st.id === e.step.id);
           const merged = (st: Record<string, unknown>) => ({
             ...st,
-            ...Object.fromEntries(Object.entries(e.step).filter(([k, v]) => v !== undefined && k !== 'operation')),
+            ...Object.fromEntries(Object.entries(e.step).filter(([k, v]) => v !== undefined && k !== 'operation' && k !== 'before')),
             ...(e.step.state === 'running' && !st.startedAt ? { startedAt: e.ts } : {}),
             ...(['done', 'failed', 'skipped'].includes(e.step.state) ? { endedAt: e.ts } : {}),
           });
-          const nextSteps = exists ? steps.map((st) => (st.id === e.step.id ? merged(st) : st)) : [...steps, merged({ id: e.step.id, agent: e.step.agent ?? '', label: e.step.label ?? '' })];
+          const added = merged({ id: e.step.id, agent: e.step.agent ?? '', label: e.step.label ?? '' });
+          const at = steps.findIndex((st) => st.id === e.step.before);
+          const nextSteps = exists ? steps.map((st) => (st.id === e.step.id ? merged(st) : st)) : at >= 0 ? [...steps.slice(0, at), added, ...steps.slice(at)] : [...steps, added];
           return { ...b, envelope: { ...b.envelope, data: { ...b.envelope.data, steps: nextSteps } } };
         }),
       };

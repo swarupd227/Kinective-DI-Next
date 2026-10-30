@@ -9,13 +9,15 @@ export interface StepUpdate {
   state: 'waiting' | 'running' | 'done' | 'skipped' | 'failed' | 'needs_input';
   operation?: string;
   resultSummary?: string;
+  /** A step added while the work runs goes before this one instead of at the end. */
+  before?: string;
 }
 
 export interface RunSink {
   readonly signal: AbortSignal;
   routing(agent: string, reason?: string): void;
-  /** Opens a plan_steps block and returns its block id. */
-  plan(title: string, agent: string, steps: StepUpdate[]): string;
+  /** Opens a plan_steps block and returns its block id. `task` marks the plan of a whole goal. */
+  plan(title: string, agent: string, steps: StepUpdate[], opts?: { task?: boolean }): string;
   step(planBlockId: string, update: StepUpdate): void;
   /** Streams verified Markdown as a text block. */
   text(markdown: string, agent: string, sources?: Block['provenance']['sources']): Promise<void>;

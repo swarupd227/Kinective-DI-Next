@@ -1,5 +1,5 @@
-// Workspace pane (spec 6.2): a classic view beside the canvas, 40% wide by default and resizable
-// from 30% to 70%. Below 1280 px it overlays the canvas; on tablets and phones it is a sheet.
+// The pane beside the conversation (spec 6.2): a task's progress and outputs, or a classic view,
+// resizable from 30% to 70%. On tablets and phones it is a sheet.
 import { lazy, Suspense, useRef, type KeyboardEvent, type PointerEvent } from 'react';
 import { Link, useMatch } from 'react-router';
 import clsx from 'clsx';
@@ -13,11 +13,13 @@ import styles from './WorkspacePane.module.css';
 const MemberRecord = lazy(() => import('../workspace/MemberRecord.tsx').then((m) => ({ default: m.MemberRecord })));
 
 const BlockGrid = lazy(() => import('../workspace/BlockGrid.tsx'));
+const TaskPanel = lazy(() => import('../workspace/TaskPanel.tsx').then((m) => ({ default: m.TaskPanel })));
+const TaskOutput = lazy(() => import('../workspace/TaskPanel.tsx').then((m) => ({ default: m.TaskOutput })));
 
-export type PaneMode = 'side' | 'overlay' | 'sheet' | 'max';
+export type PaneMode = 'side' | 'sheet' | 'max';
 
 export function WorkspacePane({ mode }: { mode: PaneMode }) {
-  const { workspace, workspaceWidth, setWorkspaceWidth, workspaceMaximized, toggleWorkspaceMax, closeWorkspace } = useUi();
+  const { workspace, workspaceWidth, setWorkspaceWidth, workspaceMaximized, toggleWorkspaceMax, closeWorkspace, openWorkspace } = useUi();
   const paneRef = useRef<HTMLElement>(null);
   if (!workspace) return null;
 
@@ -65,11 +67,12 @@ export function WorkspacePane({ mode }: { mode: PaneMode }) {
       )}
       {/* eslint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}
       <header className={styles.header}>
-        {mode === 'sheet' && (
-          <IconButton label="Back to conversation" icon={<ArrowLeft size={18} aria-hidden />} onClick={closeWorkspace} />
+        {workspace.kind === 'output' ? (
+          <IconButton label="Back to progress" icon={<ArrowLeft size={18} aria-hidden />} onClick={() => openWorkspace({ kind: 'task', threadId: workspace.threadId, label: 'This task' })} />
+        ) : (
+          mode === 'sheet' && <IconButton label="Back to conversation" icon={<ArrowLeft size={18} aria-hidden />} onClick={closeWorkspace} />
         )}
         <div className={styles.titles}>
-          <span className={styles.eyebrow}>Workspace</span>
           <h2 className={styles.title}>{workspace.label}</h2>
         </div>
         {workspace.kind === 'member' && <FullRecordLink token={workspace.ref} />}
@@ -102,6 +105,9 @@ function WorkspaceContent({ view }: { view: WorkspaceView }) {
   // Actions in the pane (Refer, Why?) continue the conversation beside it.
   const threadId = useMatch('/c/:threadId/*')?.params.threadId;
   if (view.kind === 'table') return <TableWorkspace key={view.tableId} tableId={view.tableId} />;
+  if (view.kind === 'task' || view.kind === 'output') {
+    return <Suspense fallback={<Skeleton height="240px" radius="md" />}>{view.kind === 'task' ? <TaskPanel threadId={view.threadId} /> : <TaskOutput threadId={view.threadId} blockId={view.blockId} />}</Suspense>;
+  }
   if (view.kind === 'member') {
     return (
       <Suspense fallback={<Skeleton height="240px" radius="md" />}>

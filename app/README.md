@@ -9,6 +9,7 @@ The DI Next code lives in this folder. The specification, backlog and feature in
 - **Slice 4, push-to-talk voice:** a voice gateway in the Experience server with an Azure AI Speech adapter, banking-aware transcript normalisation, spoken answers with live captions and barge-in, and the spec's voice rules for approvals.
 - **Slice 6, Reports and the Report Builder:** one report definition format (settings plus widgets on a 12-column grid, each a semantic query), stock periodic reports, the `report_canvas` block with controls that re-run in place and agent edits you accept or revert, the Report Builder agent on Claude, approved save, schedule and export (Excel and CSV), and the Reports app.
 - **Slice 5, Member 360 and the Relationship agent:** relationship data in the warehouse, a DI Core relationship service (search by name, number, phone or email; the 360 profile; score explanations; the next best conversation; "Member declined"), the `member_card` and `member_360` blocks, the Relationship agent on Claude, a member workspace and page, and the spoken-number picker.
+- **Slice 8, the agent you hand work to:** a Goal agent that plans, works across data and reports, takes instructions while it runs and stops for approval; a task-based layout with your tasks on the left, the conversation in the middle and progress and outputs beside it; a new Home; and a warmer visual language with a serif voice for the agent.
 
 **Azure demo:** one container (the Experience server serving the built shell) on Azure Container Apps, with Azure Database for MySQL, behind a demo access code. [`deploy/azure/README.md`](deploy/azure/README.md) has the Cloud Shell commands. Try the image locally with `docker build -t dinext .` and `docker run -p 8788:8787 -e DI_DB_URL=mysql://dinext:dinext_local@host.docker.internal:3307 -e DI_DEMO_ACCESS_CODE=letmein dinext`.
 
@@ -89,8 +90,28 @@ Run `npm run db:seed` once after pulling this slice: it adds the report tables a
 4. **Saving, scheduling and exporting are approved writes.** Save is medium risk and records the origin ("Created by Report Builder, approved by …"). A schedule always runs after the nightly build; the card shows when, the format, the recipients, what happens when there is no data, and that each recipient sees only their own data. More than 25 recipients or an outside address is high risk and needs the count typed. An export is medium risk; the approved file downloads from a link only its approver can use, and every download is logged.
 5. **The Reports app** (`/reports`) has the library by folder, your drafts, and **Schedules** with each one's last result. **Run now** on the Schedules tab runs every schedule as the nightly build would, so the last-result column and Home's "Scheduled reports" can be seen working locally.
 
+### Working toward a goal (Slice 8)
+
+DI takes an outcome as well as a question. "Get me ready for Thursday's ALCO meeting" goes to the Goal agent (`packages/agents/src/goal.ts`), which lays out a plan and works through it:
+
+1. Compares headline measures with the prior month-end and ranks what moved.
+2. Finds where the largest splittable change came from, by branch and then by category.
+3. Runs the pack, drafts a note in the user's voice, and stops at an approval card that shows the note in full.
+
+The plan, outputs and sources sit beside the conversation, and the pack opens there when it is ready. Each output appears in the conversation as a card.
+
+- **Instructions during the work:** a message sent while a task runs joins that run rather than starting another. "Look at Westport too" adds a step; anything else goes in the note.
+- **Changing the note by talking:** "make it shorter", "mention the Westport review" or "send it to the Finance team" prepare a new card and retire the old one.
+- **Asking when stuck:** if DI can't tell which meeting you mean, it asks and carries on from your answer.
+- **Same guardrails:** code computes every figure, the note's figures are checked line by line against what was computed, purview applies to every query, and nothing is sent without approval. Sending records a row in `esp_report_shares`; delivery is simulated.
+
+The live agent chooses its own steps through the same work as the offline planner, so the two cannot disagree on a figure.
+
+Slice 8 adds a table: run `npm run db:seed` once locally, or start the seeding job again on Azure.
+
 ### Things to try in the shell
 
+- **Hand over a task:** "Get me ready for Thursday's ALCO meeting" from Home. Add "Look at Westport too" while it works, say "make it shorter" at the note, then Approve.
 - **Home** shows the briefing: approvals first (Review expands the card), what changed, things to look at with "Why?", your work, scheduled reports, pinned tabs and suggested questions.
 - **Brief me**, a suggested question, or the conversation bar starts a thread. Try "Total loans by branch", "Show loan growth by branch for Q3 vs Q2", "How is the delinquency ratio calculated?", or, as Marcus, "Show Northgate loan balance" (refused: outside his purview).
 - **Ctrl+K** opens the palette. It searches reports, tables, members, branches and threads, and Enter on free text asks DI.
@@ -99,9 +120,9 @@ Run `npm run db:seed` once after pulling this slice: it adds the report tables a
 - **Referrals (real):** "Refer Suzanne Jackson for a HELOC, about $60k, she prefers a call after 5 pm". Then try "make it email instead", Approve, Deny or Return with note. "Refer Maria Gomez for a mortgage" asks how she prefers to be contacted. As Marcus, "Refer Robert Jackson for a mortgage" finds nobody, because Robert banks at Northgate. Elena (bank) has no Referrals app and is told so.
 - **Reports (real):** open **Reports** and a standard report, then change Month or Branch. In a conversation: "Open the August branch scorecard for Northgate", "Export it to Excel" (approve, then Download), "Send this report to the ALCO group and All lending staff monthly on the third business day" (high risk: type 38). "Build me a monthly ALCO pack with loan balance trend, deposit mix, certificate share and delinquency ratio", then "Make the deposit mix a bar chart", Revert or Accept, and "Save it in Finance / ALCO".
 - **Members (real):** as Marcus, "Pull up Suzanne Jackson at Westport", then "What should I talk to her about?", "Why is her attrition risk medium?", **Refer: Credit card** on the card, and **Member declined** on Checking in the 360's Opportunities tab. "Pull up Jackson" asks which one. "Pull up Robert Jackson" finds nobody for Marcus (Northgate) but works for Dana. Try `4521` or `(555) 015-0461` in **Ctrl+K**.
-- **Approvals (scripted):** "Approve October incentive payouts for Westport" shows a high-risk card with typed confirmation. The activity rail opens by itself when a run needs approval.
+- **Approvals (scripted):** "Approve October incentive payouts for Westport" shows a high-risk card with typed confirmation. The task shows a hand in the sidebar while it waits for you.
 - **Developer persona switch** (user menu, mock only). Dana (executive), Priya (analyst, Query Browser), Marcus (Westport branch manager, Westport purview only), Elena (bank CFO: "customer" wording, no SEG or 5300, late nightly build) and Sam (administrator).
-- **Layouts:** resize below 1280 px, 1024 px and 768 px to see the laptop, tablet and phone layouts (spec 10.10). F6 cycles regions, and Esc stops a running run.
+- **Layouts:** resize below 1024 px and 768 px to see the tablet and phone layouts (spec 10.10). F6 cycles regions, and Esc stops a running run.
 
 ## Scripts
 

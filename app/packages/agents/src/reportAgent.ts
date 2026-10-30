@@ -75,7 +75,7 @@ function userMessage(input: ReportInput, state: ReportThread) {
   return `${history ? `Conversation so far:\n${history}\n` : ''}${current}\nMessage from ${input.user.name}: ${input.text}`;
 }
 
-const grounded = (text: string, corpus: string) => {
+export const grounded = (text: string, corpus: string) => {
   const known = new Set((corpus.match(/\d[\d,]*(?:\.\d+)?/g) ?? []).map((n) => n.replace(/,/g, '')));
   return text
     .split(/(?<=[.!?])\s+/)

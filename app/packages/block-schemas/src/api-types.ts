@@ -65,6 +65,8 @@ export interface ThreadSummary {
 /** GET /v1/home: the per-user briefing assembled after each nightly build (spec 6.3). */
 export interface HomeBriefing {
   greeting: string;
+  /** What changed, written out in a few sentences from computed values. */
+  narrative?: string;
   build: BuildStatus;
   sections: HomeSection[];
   tabs: { id: string; label: string; blocks: Block[] }[];

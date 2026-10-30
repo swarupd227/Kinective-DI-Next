@@ -7,7 +7,7 @@
 .bar {
   position: relative;
   display: grid;
-  max-width: 840px;
+  max-width: 760px;
   margin: 0 auto;
   padding: var(--space-3);
   border: 1px solid var(--color-border-default);
@@ -19,6 +19,20 @@
 
 .bar:focus-within {
   border-color: var(--color-accent-default);
+}
+
+.hero {
+  padding: 0;
+  background: none;
+}
+
+.hero .bar {
+  padding: var(--space-4);
+}
+
+.hero .input {
+  min-height: 56px;
+  font-size: var(--type-h3-size);
 }
 
 .barOpen {
@@ -184,7 +198,7 @@
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-  max-width: 840px;
+  max-width: 760px;
   min-height: 40px;
   margin: 0 auto;
   padding: 0 var(--space-4);

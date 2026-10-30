@@ -80,7 +80,7 @@ export interface LiveRuntime {
    * or refused it; `onDone` fires when any follow-on work (executing the write) has streamed.
    */
   decide(persona: PersonaId, req: { approvalId: string; threadId: string; runId: string; body: ApprovalDecisionRequest }, emit: (e: Emit) => void, onDone: (result: unknown) => void, speed: number): Promise<ApprovalDecisionResult>;
-  home(persona: PersonaId): Promise<{ kpis: KpiGroupBlock; lookAt: ListBlock; scheduled: ListBlock | null } | null>;
+  home(persona: PersonaId): Promise<{ kpis: KpiGroupBlock; narrative: string; lookAt: ListBlock; scheduled: ListBlock | null } | null>;
   /**
    * A member's 360 for the workspace or the member page (GET /v1/members/{token}). Null when the
    * relationship data is not loaded; NO_ACCESS for a token outside the purview. Logged as an access.
@@ -115,7 +115,7 @@ function streamSink(emit: (e: Emit) => void, runId: string, signal: AbortSignal,
   return {
     signal,
     routing: (agent, reason) => emit(e({ type: 'routing', runId, agent, reason: reason ?? '' })),
-    plan: (title, agent, steps) => {
+    plan: (title, agent, steps, opts) => {
       const id = blockId();
       startBlock({
         id,
@@ -125,6 +125,7 @@ function streamSink(emit: (e: Emit) => void, runId: string, signal: AbortSignal,
         status: 'streaming',
         provenance: { agent, runId, sources: [] },
         freshness: { kind: 'none' },
+        ...(opts?.task ? { output: { label: title } } : {}),
         data: { runId, cancellable: true, state: 'running', steps: steps.map((s) => ({ id: s.id, label: s.label ?? s.id, agent: s.agent ?? agent, state: s.state, operations: s.operation ? [{ name: s.operation }] : [] })) },
       } as StreamingEnvelope);
       emit(e({ type: 'block.end', runId, blockId: id }));
@@ -193,7 +194,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
   if (!tenants.size) return null;
 
   const model = hasClaudeCredentials() && !opts.offline ? new AnthropicModelClient() : null;
-  const concierge = new Concierge({ model, audit });
+  const concierge = new Concierge({ model, audit, beatMs: process.env.NODE_ENV === 'test' ? 0 : 1600 });
   const tenantFor = (p: PersonaId) => tenants.get(PERSONAS[p].session.tenant.id) ?? null;
 
   return {
@@ -371,7 +372,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
             },
           }
         : null;
-      return { kpis, lookAt, scheduled };
+      return { kpis, narrative: b.narrative, lookAt, scheduled };
     },
 
     async table(persona, tableId) {

@@ -4,7 +4,7 @@
 // gateway returns approval_required, and only the approved payload runs, once.
 import { z } from 'zod';
 import type { ApprovalCardBlock, Block, ReportCanvasBlock, ReportControl, ReportWidgetView } from '@dinext/block-schemas';
-import { ApprovalStore, CoreError, DELIVERY_GROUPS, SCHEDULE_RECIPIENT_CAP, type ApprovalRecord, type Recipient, type ReportStore, type RiskTier, type ScheduleDraft, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
+import { ApprovalStore, CoreError, DELIVERY_GROUPS, SCHEDULE_RECIPIENT_CAP, type ApprovalRecord, type Recipient, type ReportStore, type RiskTier, type ScheduleDraft, type ScheduleRow, type ShareDraft, type TemplateRow } from '@dinext/di-core';
 import { SemanticError, type SemanticService } from '@dinext/semantic';
 import type { ReportDefinition, ReportWidget, WidgetSize } from '@dinext/tenant-db';
 import { buildBlock, newBlockId, noticeBlock, type BlockSpec } from './answer.ts';
@@ -343,7 +343,7 @@ export function resolveRecipients(names: string[], user: { name: string }): Reci
 
 // ---- approval cards ----------------------------------------------------------------------------
 
-type CardInput = { approval: ApprovalRecord; runId: string; user: { id: string; name: string }; title: string; summary: string; fields: { label: string; value: string }[]; records: number; users: number; external: number; typed?: { prompt: string; expected: string } };
+type CardInput = { approval: ApprovalRecord; runId: string; user: { id: string; name: string }; title: string; summary: string; fields: { label: string; value: string }[]; records: number; users: number; external: number; typed?: { prompt: string; expected: string }; preview?: ApprovalCardBlock['data']['preview']; agent?: string };
 
 function card(c: CardInput, operation: string): ApprovalCardBlock {
   return {
@@ -351,15 +351,15 @@ function card(c: CardInput, operation: string): ApprovalCardBlock {
     type: 'approval_card',
     version: '1.2.0',
     title: c.title,
-    provenance: { agent: REPORT_AGENT, runId: c.runId, operations: [operation], sources: [{ kind: 'template', label: 'Reports', ref: 'report:library' }] },
+    provenance: { agent: c.agent ?? REPORT_AGENT, runId: c.runId, operations: [operation], sources: [{ kind: 'template', label: 'Reports', ref: 'report:library' }] },
     freshness: { kind: 'workflow_event' },
     data: {
       approvalId: c.approval.approvalId,
       summary: c.summary.slice(0, 200),
       riskTier: c.approval.riskTier,
       operation,
-      requestedBy: { kind: 'agent_run', runId: c.runId, agent: REPORT_AGENT, onBehalfOf: c.user.id, onBehalfOfName: c.user.name },
-      preview: { kind: 'record', fields: c.fields },
+      requestedBy: { kind: 'agent_run', runId: c.runId, agent: c.agent ?? REPORT_AGENT, onBehalfOf: c.user.id, onBehalfOfName: c.user.name },
+      preview: c.preview ?? { kind: 'record', fields: c.fields },
       affected: { records: c.records, users: c.users, external: c.external },
       // High risk (over 25 recipients or outside addresses) is confirmed on screen by typing the count.
       confirmation: { methods: c.approval.riskTier === 'high' ? ['click', 'keyboard'] : ['click', 'keyboard', 'voice'], typedValue: c.typed ?? null, stepUp: false, secondApprover: null, noteRequired: false },
@@ -412,6 +412,7 @@ export const REPORT_TOOLS = [
   },
   { name: 'report_schedule_list', operation: 'report.schedule.list', description: 'The user’s active report schedules, with the last result of each.', input: z.object({}).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 20, agents: [] },
   { name: 'report_schedule_cancel', operation: 'report.schedule.cancel', description: 'Stop one of the user’s schedules. Returns approval_required.', input: z.object({ schedule_id: z.number().int().positive() }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 1, agents: [] },
+  { name: 'report_share', operation: 'report.share', description: 'Send the report on screen once, with a covering note, to delivery groups or "me". Returns approval_required with the note shown in full; nothing is sent until the user approves.', input: z.object({ recipients: z.array(z.string().min(2).max(120)).min(1).max(6), subject: z.string().min(3).max(200), body: z.string().min(10).max(3000) }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: [] },
   { name: 'report_export', operation: 'report.export', description: 'Export the report on screen, as run, to Excel or CSV. Exports are logged and need approval.', input: z.object({ format: z.enum(['xlsx', 'csv']) }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: [] },
 ] satisfies ToolDef[];
 
@@ -422,6 +423,7 @@ export interface SavePayload {
   definition: ReportDefinition;
 }
 export type CancelPayload = { scheduleId: number; templateName: string };
+export type SharePayload = ShareDraft & { templateName: string };
 export type ExportPayload = { templateId: string; format: 'xlsx' | 'csv'; controls: Record<string, string> };
 
 export type ReportResult =
@@ -432,6 +434,7 @@ export type ReportExecuted =
   | { operation: 'report.template.create'; template: TemplateRow & { replayed: boolean } }
   | { operation: 'report.schedule.create'; schedule: ScheduleRow & { replayed: boolean } }
   | { operation: 'report.schedule.cancel'; schedule: ScheduleRow }
+  | { operation: 'report.share'; shareId: string; recipientCount: number; templateName: string }
   | { operation: 'report.export'; exportId: string; format: 'xlsx' | 'csv'; templateName: string };
 
 /** What the model sees of a report: titles and headline values, not every row. */
@@ -658,6 +661,37 @@ export class ReportGateway {
           const c = card({ approval, runId: ctx.runId, user: ctx.user, title: 'Stop schedule', summary: `Stop sending “${s.templateName}” ${describeSchedule(s).toLowerCase()}`, fields: [{ label: 'Report', value: s.templateName }, { label: 'Schedule', value: `${describeSchedule(s)}, ${FORMAT_LABEL[s.format]}` }, { label: 'Recipients', value: `${s.recipientCount}` }], records: 1, users: s.recipientCount, external: 0 }, def.operation);
           return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId }, card: c, approval, superseded };
         }
+        case 'report.share': {
+          const none = needCurrent();
+          if (none) return none;
+          const t = await store.get(current!.templateId, ctx.user.id);
+          if (t.status === 'draft') return { ok: false, code: 'INVALID', content: { error: 'INVALID', message: 'Save the draft before sending it.' } };
+          const recipients = resolveRecipients(a.recipients as string[], ctx.user);
+          const count = recipients.reduce((s, r) => s + r.count, 0);
+          const external = recipients.filter((r) => r.kind === 'external').length;
+          const payload: SharePayload = { templateId: t.templateId, templateName: t.name, recipients, subject: String(a.subject), body: String(a.body), controls: current!.controls as Record<string, string> };
+          const high = count > SCHEDULE_RECIPIENT_CAP || external > 0;
+          const { approval, superseded } = await approve(payload, tierOf(high ? 'high' : undefined));
+          const period = resolveControls(t.definition, current!.controls, semantic, ctx).periodLabel;
+          const c = card(
+            {
+              approval,
+              runId: ctx.runId,
+              user: ctx.user,
+              title: 'Send report',
+              summary: `Send “${t.name}” for ${period} to ${count} ${count === 1 ? 'person' : 'people'} with this note`,
+              fields: [],
+              agent: 'DI',
+              preview: { kind: 'message', to: recipients.map((r) => (r.kind === 'group' ? `${r.name} (${r.count})` : r.kind === 'external' ? `${r.name} (outside the institution)` : r.name)), subject: payload.subject, body: payload.body },
+              records: 1,
+              users: count,
+              external,
+              typed: high ? { prompt: 'Type the number of recipients to confirm', expected: String(count) } : undefined,
+            },
+            def.operation,
+          );
+          return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId, risk_tier: approval.riskTier, recipients: count }, card: c, approval, superseded };
+        }
         case 'report.export': {
           const none = needCurrent();
           if (none) return none;
@@ -708,6 +742,10 @@ export class ReportGateway {
         out = { operation: 'report.schedule.create', schedule: await this.deps.store.createSchedule(approval.payload as ScheduleDraft, meta) };
       } else if (approval.operation === 'report.schedule.cancel') {
         out = { operation: 'report.schedule.cancel', schedule: await this.deps.store.cancelSchedule((approval.payload as CancelPayload).scheduleId, ctx.user.id) };
+      } else if (approval.operation === 'report.share') {
+        const p = approval.payload as SharePayload;
+        const s = await this.deps.store.createShare(p, meta);
+        out = { operation: 'report.share', shareId: s.shareId, recipientCount: s.recipientCount, templateName: p.templateName };
       } else if (approval.operation === 'report.export') {
         const p = approval.payload as ExportPayload;
         const e = await this.deps.store.createExport(p, meta);

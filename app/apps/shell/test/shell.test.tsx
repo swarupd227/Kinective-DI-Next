@@ -75,7 +75,7 @@ async function noSeriousViolations(container: HTMLElement) {
 }
 
 beforeEach(() => {
-  useUi.setState({ contexts: {}, paletteOpen: false, prefill: null, mobileNavOpen: false, navExpanded: false });
+  useUi.setState({ contexts: {}, paletteOpen: false, prefill: null, mobileNavOpen: false, navCollapsed: false });
   // Desktop width: every min-width breakpoint query matches (spec 10.10).
   window.matchMedia = ((query: string) => ({
     matches: query.includes('min-width'),

@@ -49,7 +49,7 @@ export function BlockRenderer({ block, status = 'complete', progressText }: Bloc
   switch (b.type) {
     case 'text':
       return (
-        <BlockFrame block={b} status={status} progressText={progressText}>
+        <BlockFrame block={b} status={status} progressText={progressText} tone="prose">
           <Suspense fallback={<TextSkeleton />}>
             <TextBlockView block={{ ...b, data: { ...b.data, markdown: b.data?.markdown ?? '' } }} status={loading ? 'loading' : complete ? 'complete' : 'streaming'} />
           </Suspense>

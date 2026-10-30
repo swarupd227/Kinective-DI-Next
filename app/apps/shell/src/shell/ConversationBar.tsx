@@ -40,7 +40,7 @@ const AUTO_SEND_MS = 1500;
 /** Below this, the transcript waits for the user to check it (FE-VOICE-080). */
 const MIN_CONFIDENCE = 0.6;
 
-export function ConversationBar({ threadId, collapsedByDefault }: { threadId?: string; collapsedByDefault: boolean }) {
+export function ConversationBar({ threadId, collapsedByDefault, hero = false }: { threadId?: string; collapsedByDefault: boolean; hero?: boolean }) {
   const { session, api, send, startThread, stream, connState, terms } = useSession();
   const { announce } = useAnnouncer();
   const navigate = useNavigate();
@@ -448,7 +448,7 @@ export function ConversationBar({ threadId, collapsedByDefault }: { threadId?: s
   }
 
   return (
-    <div className={styles.wrap} data-region="bar" tabIndex={-1}>
+    <div className={clsx(styles.wrap, hero && styles.hero)} data-region="bar" tabIndex={-1}>
       {voice.available && (
         <VoiceOverlay
           review={review}
@@ -510,7 +510,7 @@ export function ConversationBar({ threadId, collapsedByDefault }: { threadId?: s
             ref={ref}
             rows={1}
             className={styles.input}
-            placeholder={threadId ? 'Ask a follow-up…' : bp === 'phone' ? 'Ask DI…' : `Ask DI or type / for commands, @ for a ${terms.person} or branch…`}
+            placeholder={running ? 'Add an instruction…' : threadId ? 'Ask a follow-up…' : bp === 'phone' ? 'Give DI a task…' : `Give DI a task or ask a question. @ for a ${terms.person} or branch`}
             value={text}
             onChange={(e) => {
               setText(e.target.value);

@@ -1,11 +1,13 @@
-// A conversation thread (spec 6.6, 6.8). The thread is rebuilt from the stream: following it
-// replays its events, so reloads, shared links and reconnects all land on the same state.
+// A task (spec 6.6, 6.8). The thread is rebuilt from the stream: following it replays its events, so
+// reloads, shared links and reconnects all land on the same state. A task with a plan opens its
+// progress beside the conversation, and the report it builds opens there when it is ready.
 import { useEffect, useLayoutEffect, useRef, type KeyboardEvent } from 'react';
 import { useParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ListChecks } from 'lucide-react';
 import { useStore } from 'zustand';
 import { BlockHostProvider } from '@dinext/blocks';
-import { useAnnouncer } from '@dinext/ui';
+import { Button, useAnnouncer } from '@dinext/ui';
 import { ApiError } from '@dinext/stream-client';
 import { useSession } from '../session/SessionProvider.tsx';
 import { useShellBlockHost } from '../shell/useShellBlockHost.ts';
@@ -30,6 +32,33 @@ export function ThreadPage() {
   useEffect(() => {
     if (summary.data) useUi.getState().visit({ kind: 'thread', path: `/c/${threadId}`, label: summary.data.title });
   }, [summary.data, threadId]);
+
+  const bp = useBreakpoint();
+  const wide = bp === 'desktop' || bp === 'laptop';
+  const blocks = thread?.blocks;
+  const hasPlan = Object.values(blocks ?? {}).some((b) => b.envelope.type === 'plan_steps' && b.envelope.output);
+  const report = Object.values(blocks ?? {}).find((b) => b.envelope.type === 'report_canvas' && b.envelope.output && b.status === 'complete');
+  const openTask = () => useUi.getState().openWorkspace({ kind: 'task', threadId, label: 'This task' });
+  const shown = useRef(new Set<string>());
+  useEffect(() => {
+    if (!wide) return;
+    if (hasPlan && !shown.current.has('plan')) {
+      shown.current.add('plan');
+      openTask();
+    }
+    if (report && !shown.current.has(report.envelope.id)) {
+      shown.current.add(report.envelope.id);
+      useUi.getState().openWorkspace({ kind: 'output', threadId, blockId: report.envelope.id, label: report.envelope.output!.label });
+    }
+  });
+  // A task's pane belongs to that task.
+  useEffect(
+    () => () => {
+      const w = useUi.getState().workspace;
+      if (w && (w.kind === 'task' || w.kind === 'output') && w.threadId === threadId) useUi.getState().closeWorkspace();
+    },
+    [threadId],
+  );
 
   // Keep the newest content in view unless the user has scrolled up to read.
   const pinned = useRef(true);
@@ -58,7 +87,6 @@ export function ThreadPage() {
   // "Response complete, 3 blocks: chart, table, approval needed" (spec 10.8).
   const announced = useRef(new Set<string>());
   const first = useRef(true);
-  const bp = useBreakpoint();
   const queryClient = useQueryClient();
   useEffect(() => {
     if (!thread) return;
@@ -106,6 +134,16 @@ export function ThreadPage() {
     // Esc cancels the running run from anywhere in the canvas (FE-EXP-090).
     // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <div className={styles.thread} role="log" aria-label={summary.data?.title ?? 'Conversation'} onKeyDown={onKeyDown}>
+      {summary.data && (
+        <header className={styles.head}>
+          <h1 className={styles.title}>{summary.data.title}</h1>
+          {hasPlan && (
+            <Button size="sm" variant="ghost" icon={<ListChecks size={14} aria-hidden />} onClick={openTask}>
+              Progress
+            </Button>
+          )}
+        </header>
+      )}
       {!thread?.turns.length && (
         <EmptyConversation title={summary.isPending ? 'Opening conversation…' : 'Ask DI anything'}>
           <p className={page.lede}>Type below, or press Ctrl+K to find a report, table or {terms.person}.</p>

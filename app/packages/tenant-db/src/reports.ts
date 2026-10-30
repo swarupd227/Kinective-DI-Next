@@ -106,9 +106,22 @@ export const REPORT_DDL = [
      downloads INT NOT NULL DEFAULT 0,
      UNIQUE KEY ux_export_approval (approval_id)
    )`,
+  `CREATE TABLE esp_report_shares (
+     share_id VARCHAR(40) PRIMARY KEY,
+     template_id VARCHAR(60) NOT NULL,
+     user_id VARCHAR(40) NOT NULL,
+     recipients JSON NOT NULL,
+     recipient_count INT NOT NULL,
+     subject VARCHAR(200) NOT NULL,
+     body TEXT NOT NULL,
+     controls JSON NOT NULL,
+     approval_id VARCHAR(40) NOT NULL,
+     created_at DATETIME(3) NOT NULL,
+     UNIQUE KEY ux_share_approval (approval_id)
+   )`,
 ];
 
-export const REPORT_WRITE_TABLES = ['esp_report_templates', 'esp_report_schedules', 'esp_report_exports'];
+export const REPORT_WRITE_TABLES = ['esp_report_templates', 'esp_report_schedules', 'esp_report_exports', 'esp_report_shares'];
 
 const settings = (periodType: 'month' | 'quarter', controlClasses: string[]): ReportSettings => ({
   app: 'reports',

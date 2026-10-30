@@ -1,84 +1,55 @@
 .page {
   display: grid;
   align-content: start;
-  gap: var(--space-8);
+  gap: var(--space-10);
   width: 100%;
-  max-width: 1120px;
+  max-width: 860px;
   margin: 0 auto;
-  padding: var(--space-8) var(--space-7) var(--space-8);
+  padding: var(--space-11) var(--space-7) var(--space-8);
 }
 
 .hero {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--space-5);
-}
-
-.heroText {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-6);
+  padding-bottom: var(--space-4);
 }
 
 .greeting {
+  font-family: var(--font-family-serif);
   font-size: var(--type-display-size);
   line-height: var(--type-display-line);
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-regular);
   letter-spacing: -0.015em;
+  text-align: center;
+}
+
+.narrative {
+  max-width: 68ch;
+  font-family: var(--font-family-serif);
+  font-size: var(--type-h2-size);
+  line-height: var(--type-h1-line);
+}
+
+.narrative strong {
+  font-weight: var(--weight-semibold);
 }
 
 .freshness {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  color: var(--color-text-secondary);
+  color: var(--color-text-muted);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
 }
 
 .freshness svg {
   color: var(--color-status-success-text);
 }
 
-.stale {
-  color: var(--color-status-warning-text);
-}
-
+.stale,
 .stale svg {
   color: var(--color-status-warning-text);
-}
-
-.heroActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
-.searchBox {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-width: 260px;
-  min-height: var(--density-control-height);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-surface);
-  color: var(--color-text-muted);
-  cursor: text;
-}
-
-.searchBox:hover {
-  border-color: var(--color-accent-default);
-}
-
-.searchBox kbd {
-  margin-left: auto;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-sm);
-  font-family: var(--font-family-sans);
-  font-size: var(--type-caption-size);
-  line-height: var(--type-caption-line);
 }
 
 .section {
@@ -92,12 +63,10 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  font-size: var(--type-caption-size);
-  line-height: var(--type-caption-line);
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--color-text-muted);
+  font-family: var(--font-family-serif);
+  font-size: var(--type-h1-size);
+  line-height: var(--type-h1-line);
+  font-weight: var(--weight-regular);
 }
 
 .count {
@@ -105,7 +74,9 @@
   border-radius: var(--radius-full);
   background: var(--color-status-warning-subtle);
   color: var(--color-status-warning-text);
-  letter-spacing: 0;
+  font-family: var(--font-family-sans);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-h1-line);
 }
 
 .blocks {
@@ -115,7 +86,7 @@
 }
 
 .approvals {
-  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   align-items: start;
 }
 
@@ -182,6 +153,7 @@
 .prompts {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: var(--space-3);
   padding: 0;
   margin: 0;
@@ -189,11 +161,11 @@
 }
 
 .prompt {
-  min-height: var(--density-control-height);
-  padding: 0 var(--space-5);
-  border: 1px solid var(--color-border-default);
+  min-height: 32px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-full);
-  background: var(--color-bg-surface);
+  background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
 }
@@ -225,20 +197,11 @@
 
 @media (width < 768px) {
   .page {
-    gap: var(--space-7);
-    padding: var(--space-6) var(--space-4);
+    gap: var(--space-8);
+    padding: var(--space-7) var(--space-4);
   }
 
   .approvals {
     grid-template-columns: 1fr;
-  }
-
-  .searchBox {
-    min-width: 0;
-    flex: 1;
-  }
-
-  .searchBox kbd {
-    display: none;
   }
 }

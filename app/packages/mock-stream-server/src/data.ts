@@ -49,7 +49,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       apps: ['home', 'conversations', 'reports', 'tables', 'workflows', 'calendar', 'files', 'rm', 'referrals', 'lap', 'gi', 'seg', 'callreport'],
       permissions: { queryBrowser: false, dashboardAdmin: true },
     },
-    suggestions: ['Brief me', 'How did we do against plan this month?', 'Which branches are behind on Q4 goals?', 'Show loan growth by branch for Q3 vs Q2'],
+    suggestions: ['Get me ready for Thursday’s ALCO meeting', 'Brief me', 'Show delinquency by branch', 'Show loan growth by branch for Q3 vs Q2'],
   },
   analyst: {
     session: {
@@ -78,7 +78,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       apps: ['home', 'conversations', 'reports', 'tables', 'workflows', 'files', 'rm', 'lap', 'gi'],
       permissions: { queryBrowser: false, dashboardAdmin: false },
     },
-    suggestions: ['Show deposit mix change vs last quarter', 'Brief me', 'Show loan growth by branch for Q3 vs Q2', 'Approve October incentive payouts for Westport'],
+    suggestions: ['Get me ready for Thursday’s ALCO meeting', 'Brief me', 'Show loan growth by branch for Q3 vs Q2', 'Approve October incentive payouts for Westport'],
   },
   admin: {
     session: {

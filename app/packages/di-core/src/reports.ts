@@ -57,6 +57,19 @@ export interface ExportRow {
   createdAt: string;
 }
 
+export interface ShareDraft {
+  templateId: string;
+  recipients: Recipient[];
+  subject: string;
+  body: string;
+  controls: Record<string, string>;
+}
+
+export interface ShareRow {
+  shareId: string;
+  recipientCount: number;
+}
+
 /** Directory of delivery groups (spec 18.9: users, classes or alert groups). Fictional. */
 export const DELIVERY_GROUPS: Record<string, number> = {
   'ALCO group': 7,
@@ -220,6 +233,18 @@ export class ReportStore {
     const exportId = `exp_${randomBytes(9).toString('base64url').replace(/[^A-Za-z0-9]/g, '').slice(0, 12).padEnd(12, '0')}`;
     await this.pool.query('INSERT INTO esp_report_exports (export_id, template_id, user_id, format, controls, approval_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [exportId, e.templateId, meta.userId, e.format, JSON.stringify(e.controls), meta.approvalId, sqlTime(new Date())]);
     return { ...(await this.export(exportId, meta.userId)), replayed: false };
+  }
+
+  /** report.share: records one delivery of a report and its note. Idempotent on the approval ID. */
+  async createShare(s: ShareDraft, meta: { approvalId: string; userId: string }): Promise<ShareRow & { replayed: boolean }> {
+    const [done] = await this.pool.query('SELECT share_id, recipient_count FROM esp_report_shares WHERE approval_id = ?', [meta.approvalId]);
+    const prior = (done as Row[])[0];
+    if (prior) return { shareId: prior.share_id as string, recipientCount: prior.recipient_count as number, replayed: true };
+    await this.get(s.templateId, meta.userId);
+    const shareId = `shr_${randomBytes(9).toString('base64url').replace(/[^A-Za-z0-9]/g, '').slice(0, 12).padEnd(12, '0')}`;
+    const count = s.recipients.reduce((n, r) => n + r.count, 0);
+    await this.pool.query('INSERT INTO esp_report_shares (share_id, template_id, user_id, recipients, recipient_count, subject, body, controls, approval_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [shareId, s.templateId, meta.userId, JSON.stringify(s.recipients), count, s.subject, s.body, JSON.stringify(s.controls), meta.approvalId, sqlTime(new Date())]);
+    return { shareId, recipientCount: count, replayed: false };
   }
 
   /** An export belongs to the user who approved it; anyone else gets "not found". */

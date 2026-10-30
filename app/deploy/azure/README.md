@@ -52,7 +52,7 @@ az account set --subscription "Microsoft Azure Sponsorship"
 source ~/dinext.env
 
 az group create --name $RG --location $LOCATION --output none
-az acr create --name $ACR --resource-group $RG --location $LOCATION --sku Basic --output none
+az acr create --name $ACR --resource-group $RG --location $LOCATION --sku Basic --admin-enabled true --output none
 
 rm -rf ~/Kinective-DI-Next && git clone --depth 1 $REPO ~/Kinective-DI-Next
 cd ~/Kinective-DI-Next
@@ -61,7 +61,7 @@ az acr build --registry $ACR --image dinext:$TAG --image dinext:latest --file ap
 echo "TAG=$TAG" >> ~/dinext.env
 ```
 
-The build runs in Azure (about 5 minutes); Cloud Shell needs no Docker.
+The build runs in Azure (about 5 minutes); Cloud Shell needs no Docker. The registry's admin login lets the app and the job pull the image without a role assignment, which this subscription's account isn't allowed to create.
 
 ## Step 3 · MySQL Flexible Server
 
@@ -94,10 +94,11 @@ az account set --subscription "Microsoft Azure Sponsorship"
 source ~/dinext.env
 DB_HOST=$MYSQL.mysql.database.azure.com
 ACR_SERVER=$(az acr show --name $ACR --query loginServer -o tsv)
+ACR_PASSWORD=$(az acr credential show --name $ACR --query "passwords[0].value" -o tsv)
 
 az containerapp job create --name $JOB --resource-group $RG --environment $ENVIRONMENT \
   --trigger-type Manual --replica-timeout 1800 --replica-retry-limit 0 --parallelism 1 --replica-completion-count 1 \
-  --image $ACR_SERVER/dinext:$TAG --registry-server $ACR_SERVER --registry-identity system \
+  --image $ACR_SERVER/dinext:$TAG --registry-server $ACR_SERVER --registry-username $ACR --registry-password "$ACR_PASSWORD" \
   --cpu 1 --memory 2Gi \
   --secrets "admin-url=mysql://$DB_ADMIN_USER:$DB_ADMIN_PASSWORD@$DB_HOST:3306" "app-url=mysql://dinext:$DB_APP_PASSWORD@$DB_HOST:3306" "app-password=$DB_APP_PASSWORD" \
   --env-vars DI_DB_ADMIN_URL=secretref:admin-url DI_DB_URL=secretref:app-url DI_DB_APP_PASSWORD=secretref:app-password DI_DB_SSL=1 \
@@ -105,7 +106,7 @@ az containerapp job create --name $JOB --resource-group $RG --environment $ENVIR
 
 az containerapp job start --name $JOB --resource-group $RG --output none
 echo "Seeding: this takes 2–5 minutes."
-until s=$(az containerapp job execution list --name $JOB --resource-group $RG --query "[0].properties.status" -o tsv); [ "$s" != "Running" ] && [ -n "$s" ]; do sleep 15; echo "  $s"; done
+until s=$(az containerapp job execution list --name $JOB --resource-group $RG --query "[0].properties.status" -o tsv); [[ "$s" =~ ^(Succeeded|Failed|Stopped|Degraded)$ ]]; do sleep 15; echo "  ${s:-starting}"; done
 echo "Seeding finished: $s"
 ```
 
@@ -121,6 +122,7 @@ az account set --subscription "Microsoft Azure Sponsorship"
 source ~/dinext.env
 DB_HOST=$MYSQL.mysql.database.azure.com
 ACR_SERVER=$(az acr show --name $ACR --query loginServer -o tsv)
+ACR_PASSWORD=$(az acr credential show --name $ACR --query "passwords[0].value" -o tsv)
 
 read -s -p "Claude API key (blank for offline): " ANTHROPIC_KEY; echo
 read -s -p "Azure Speech key (blank for no voice): " SPEECH_KEY; echo
@@ -132,7 +134,7 @@ ENVS=(DI_DB_URL=secretref:db-url DI_DB_SSL=1 DI_DEMO_ACCESS_CODE=secretref:acces
 [ -n "$SPEECH_KEY" ] && [ -n "$SPEECH_REGION" ] && SECRETS+=("speech-key=$SPEECH_KEY") && ENVS+=(DI_AZURE_SPEECH_KEY=secretref:speech-key DI_AZURE_SPEECH_REGION=$SPEECH_REGION)
 
 az containerapp create --name $APP --resource-group $RG --environment $ENVIRONMENT \
-  --image $ACR_SERVER/dinext:$TAG --registry-server $ACR_SERVER --registry-identity system \
+  --image $ACR_SERVER/dinext:$TAG --registry-server $ACR_SERVER --registry-username $ACR --registry-password "$ACR_PASSWORD" \
   --target-port 8787 --ingress external --transport auto \
   --min-replicas 1 --max-replicas 1 --cpu 1 --memory 2Gi \
   --secrets "${SECRETS[@]}" --env-vars "${ENVS[@]}" --output none
@@ -200,4 +202,4 @@ rm -f ~/dinext.env
 - **One replica, one shared demo session.** Conversations and the persona live in the server's memory. Everyone using the demo URL at the same time shares the persona switch, and a restart clears conversations (approvals, referrals, reports and schedules stay in MySQL).
 - **No sign-in.** The access code keeps the URL from being used by strangers; it does not identify people. Entra ID sign-in, per-user sessions and class-based access are on the backlog.
 - **Audit log is not durable.** It is written inside the container (`/tmp/dinext-data`) and lost on restart; production writes to tenant-encrypted storage (spec 26.10).
-- **Secrets are Container App secrets.** Key Vault with managed identity is the production step.
+- **Secrets are Container App secrets, and images are pulled with the registry's admin login.** Key Vault and a managed identity with `AcrPull` are the production step; both need an account that can assign roles.

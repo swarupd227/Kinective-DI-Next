@@ -3,8 +3,8 @@
 import { create } from 'zustand';
 import type { Block, ContextRef } from '@dinext/block-schemas';
 
-/** A table from the catalog, a block's own rows at full size ("Open grid"), or a member's 360 by token. */
-export type WorkspaceView = { kind: 'table'; tableId: string; label: string } | { kind: 'block'; block: Block; label: string } | { kind: 'member'; ref: string; label: string };
+/** A table from the catalog, a block's own rows at full size ("Open grid"), a member's 360 by token, a task's progress, or one of its outputs. */
+export type WorkspaceView = { kind: 'table'; tableId: string; label: string } | { kind: 'block'; block: Block; label: string } | { kind: 'member'; ref: string; label: string } | { kind: 'task'; threadId: string; label: string } | { kind: 'output'; threadId: string; blockId: string; label: string };
 
 export interface RecentItem {
   kind: 'thread' | 'view';
@@ -13,12 +13,11 @@ export interface RecentItem {
 }
 
 interface UiState {
-  navExpanded: boolean;
+  navCollapsed: boolean;
   mobileNavOpen: boolean;
-  railOpen: boolean;
   paletteOpen: boolean;
   workspace: WorkspaceView | null;
-  /** Workspace width as a percentage of the content area: 30-70, default 40 (spec 6.2). */
+  /** Workspace width as a percentage of the content area: 30-70, default 44 (spec 6.2). */
   workspaceWidth: number;
   workspaceMaximized: boolean;
   /** Context chips per conversation; "new" is the composer outside a thread (spec 6.7). */
@@ -30,7 +29,6 @@ interface UiState {
   setPrefill: (text: string | null) => void;
   toggleNav: () => void;
   setMobileNav: (open: boolean) => void;
-  setRail: (open: boolean) => void;
   setPalette: (open: boolean) => void;
   openWorkspace: (view: WorkspaceView) => void;
   closeWorkspace: () => void;
@@ -46,21 +44,19 @@ const sameRef = (a: ContextRef, b: ContextRef) => a.type === b.type && a.ref ===
 const clamp = (n: number) => Math.min(70, Math.max(30, Math.round(n)));
 
 export const useUi = create<UiState>((set) => ({
-  navExpanded: false,
+  navCollapsed: false,
   mobileNavOpen: false,
-  railOpen: false,
   paletteOpen: false,
   workspace: null,
-  workspaceWidth: 40,
+  workspaceWidth: 44,
   workspaceMaximized: false,
   contexts: {},
   recent: [],
   prefill: null,
 
   setPrefill: (text) => set({ prefill: text }),
-  toggleNav: () => set((s) => ({ navExpanded: !s.navExpanded })),
+  toggleNav: () => set((s) => ({ navCollapsed: !s.navCollapsed })),
   setMobileNav: (open) => set({ mobileNavOpen: open }),
-  setRail: (open) => set({ railOpen: open }),
   setPalette: (open) => set({ paletteOpen: open }),
   openWorkspace: (view) => set({ workspace: view }),
   closeWorkspace: () => set({ workspace: null, workspaceMaximized: false }),

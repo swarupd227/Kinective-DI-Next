@@ -25,7 +25,7 @@ export type StreamEvent =
   | (Base & { type: 'block.start'; block: StreamingEnvelope })
   | (Base & { type: 'block.patch'; blockId: string; ops: JsonPatchOp[] })
   | (Base & { type: 'block.end'; blockId: string })
-  | (Base & { type: 'tool.progress'; runId: string; blockId: string; step: { id: string; label?: string; agent?: string; state: string; operation?: string; resultSummary?: string } })
+  | (Base & { type: 'tool.progress'; runId: string; blockId: string; step: { id: string; label?: string; agent?: string; state: string; operation?: string; resultSummary?: string; before?: string } })
   | (Base & { type: 'approval.requested'; approvalId: string; blockId: string; riskTier: RiskTier; expiresAt: string })
   | (Base & {
       type: 'approval.resolved';

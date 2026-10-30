@@ -3,6 +3,7 @@
 .report {
   display: grid;
   gap: var(--space-5);
+  container-type: inline-size;
 }
 
 .head {
@@ -175,7 +176,7 @@
   font-size: var(--type-mono-size);
 }
 
-@media (width < 900px) {
+@container (width < 620px) {
   .grid {
     grid-template-columns: 1fr;
   }

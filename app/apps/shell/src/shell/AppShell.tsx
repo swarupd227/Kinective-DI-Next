@@ -1,5 +1,5 @@
-// The five-region shell (spec 6.2, FE-EXP-001): top bar, navigation rail, canvas with the
-// conversation bar, workspace pane and agent activity rail. Layout adapts per spec 10.10.
+// The shell: tasks and apps on the left, the conversation in the middle, and the work beside it.
+// Layout adapts per spec 10.10: below 1024 px the sidebar is a drawer and the work a sheet.
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation, useMatch } from 'react-router';
 import clsx from 'clsx';
@@ -7,7 +7,6 @@ import { TopBar } from './TopBar.tsx';
 import { NavRail } from './NavRail.tsx';
 import { ConversationBar } from './ConversationBar.tsx';
 import { WorkspacePane } from './WorkspacePane.tsx';
-import { ActivityRail } from './ActivityRail.tsx';
 import { IdleTimeout } from '../session/IdleTimeout.tsx';
 import { useUi } from './uiStore.ts';
 import { useBreakpoint } from './useBreakpoint.ts';
@@ -16,7 +15,7 @@ import styles from './AppShell.module.css';
 // The palette (cmdk and its dialog) loads the first time it opens.
 const CommandPalette = lazy(() => import('./CommandPalette.tsx').then((m) => ({ default: m.CommandPalette })));
 
-const REGIONS = ['topbar', 'nav', 'canvas', 'bar', 'workspace', 'rail'];
+const REGIONS = ['topbar', 'nav', 'canvas', 'bar', 'workspace'];
 
 export function AppShell() {
   const bp = useBreakpoint();
@@ -51,15 +50,18 @@ export function AppShell() {
 
   useEffect(() => setMobileNav(false), [location.pathname, setMobileNav]);
 
-  const side = workspace && bp === 'desktop' && !workspaceMaximized;
-  const overlay = workspace && !side ? (workspaceMaximized ? 'max' : bp === 'laptop' ? 'overlay' : 'sheet') : null;
+  const wide = bp === 'desktop' || bp === 'laptop';
+  const side = workspace && wide && !workspaceMaximized;
+  const overlay = workspace && !side ? (workspaceMaximized ? 'max' : 'sheet') : null;
+  // Home and a new task put the composer in the middle of the page instead.
+  const composerInPage = /^\/(home|c\/new)\b/.test(location.pathname);
 
   return (
     <div className={clsx(styles.shell, styles[bp])} style={{ ['--ws-width' as string]: `${workspaceWidth}%` }}>
       <a href="#canvas" className={styles.skip}>
         Skip to content
       </a>
-      <TopBar threadId={threadId} />
+      {!wide && <TopBar threadId={threadId} />}
       <div className={clsx(styles.body, side && styles.withWorkspace)}>
         <NavRail />
         <div className={styles.canvasCol}>
@@ -73,10 +75,9 @@ export function AppShell() {
             <Outlet />
           </div>
           {overlay && <WorkspacePane mode={overlay} />}
-          <ConversationBar threadId={threadId} collapsedByDefault={classic} />
+          {!composerInPage && <ConversationBar threadId={threadId} collapsedByDefault={classic} />}
         </div>
         {side && <WorkspacePane mode="side" />}
-        <ActivityRail />
       </div>
       {paletteUsed && (
         <Suspense fallback={null}>
