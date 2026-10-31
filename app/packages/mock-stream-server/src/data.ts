@@ -2,7 +2,6 @@
 // fictional. Personas follow spec 6.16 so the shell can be reviewed through different roles.
 import type {
   AppId,
-  AppNotification,
   ApprovalCardBlock,
   BuildStatus,
   HomeBriefing,
@@ -354,23 +353,6 @@ export function searchFor(id: PersonaId, q: string, threads: { threadId: string;
   ]
     .slice(0, 20)
     .map(({ kind, id: rid, label, detail, link }) => ({ kind, id: rid, label, detail, link }));
-}
-
-// ---- Notifications ------------------------------------------------------------------------------
-
-export function seedNotifications(id: PersonaId): AppNotification[] {
-  const at = (minAgo: number) => new Date(Date.now() - minAgo * 60_000).toISOString();
-  const items: AppNotification[] = [
-    { id: 'n1', group: 'workflow', title: 'New HELOC referral assigned to you', detail: 'Suzanne Jackson · Westport', at: at(25), link: '/workflows/referrals/inbox', read: false },
-    { id: 'n2', group: 'system', title: 'Nightly build completed', detail: 'Finished 04:10, 2 minutes early', at: at(300), read: true },
-    { id: 'n3', group: 'system', title: 'Branch scorecard failed', detail: 'No data for Eastgate', at: at(290), link: '/reports/branch_scorecard_monthly', read: false },
-    { id: 'n4', group: 'workflow', title: 'Follow-up due: Robert Jackson onboarding call', at: at(60), read: false },
-  ];
-  if (id === 'executive' || id === 'bank_cfo') {
-    items.unshift({ id: 'n0', group: 'approvals', title: '2 approvals waiting', detail: 'Data log #4471 · Incentive payouts', at: at(40), link: '/home', read: false });
-  }
-  if (id === 'bank_cfo') items.unshift({ id: 'n5', group: 'system', title: "Last night's build is late", detail: 'Expected by 05:00', at: at(10), read: false });
-  return items;
 }
 
 // ---- Tables ---------------------------------------------------------------------------------------

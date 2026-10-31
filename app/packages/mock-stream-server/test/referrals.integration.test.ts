@@ -79,6 +79,38 @@ describe.skipIf(!available)('Referrals app', () => {
     expect((await seen()).map((n) => n.title)).toContain(`Referral #${id} is Sold`);
   });
 
+  it('fills the bell from real work, with each person’s own overdue referrals', async () => {
+    const bell = async () => ((await (await fetch(`${base}/v1/notifications`)).json()) as { notifications: AppNotification[] }).notifications;
+    const id = await fresh();
+    await admin.query('UPDATE esp_com_items SET created_at = NOW(3) - INTERVAL 30 DAY WHERE com_id = ?', [id]);
+    await persona('msr');
+    const mine = await bell();
+    expect(mine.map((n) => n.title)).toContain(`Referral #${id} is overdue`);
+    expect(mine.some((n) => /HELOC|scorecard|Nightly/.test(n.title))).toBe(false);
+    const notice = mine.find((n) => n.title === `Referral #${id} is overdue`)!;
+    await fetch(`${base}/v1/notifications/read`, { method: 'POST', body: JSON.stringify({ ids: [notice.id] }) });
+    expect((await bell()).find((n) => n.id === notice.id)?.read).toBe(true);
+
+    await persona('branch');
+    expect((await bell()).some((n) => /team referrals? (is|are) overdue/.test(n.title))).toBe(true);
+    await persona('executive');
+    expect((await bell()).map((n) => n.title)).toEqual(['2 approvals waiting']);
+  });
+
+  it('keeps each person’s tasks to themselves', async () => {
+    const start = async () => ((await (await fetch(`${base}/v1/threads`, { method: 'POST', body: '{}' })).json()) as { threadId: string }).threadId;
+    const listed = async () => ((await (await fetch(`${base}/v1/threads`)).json()) as { threads: { threadId: string }[] }).threads.map((t) => t.threadId);
+    await persona('msr');
+    const sofias = await start();
+    expect(await listed()).toContain(sofias);
+    await persona('branch');
+    expect(await listed()).not.toContain(sofias);
+    expect((await fetch(`${base}/v1/threads/${sofias}`)).status).toBe(404);
+    expect((await fetch(`${base}/v1/threads/${sofias}/messages`, { method: 'POST', body: '{}' })).status).toBe(404);
+    await persona('msr');
+    expect((await fetch(`${base}/v1/threads/${sofias}`)).status).toBe(200);
+  });
+
   it('hides a referral outside the purview, and answers the same as one that does not exist', async () => {
     const id = await fresh();
     const [p] = await admin.query('SELECT party_id FROM cdm_party WHERE primary_branch_id = 2 LIMIT 1');

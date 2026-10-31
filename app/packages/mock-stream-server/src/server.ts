@@ -16,7 +16,7 @@ import type {
   ThreadSummary,
 } from '@dinext/block-schemas';
 import { pickScenario, scriptForAgent, type Script, type ScriptContext } from './scenarios.ts';
-import { homeApprovals, homeFor, isPersona, searchFor, seedNotifications, sessionFor, tableFor, usersToTell, type PersonaId } from './data.ts';
+import { homeApprovals, homeFor, isPersona, searchFor, sessionFor, tableFor, usersToTell, type PersonaId } from './data.ts';
 import type { LiveRuntime, Notice } from './live.ts';
 import { createSpeechTap } from './speech.ts';
 import type { VoiceGateway } from '@dinext/voice';
@@ -28,6 +28,8 @@ const BASE_VOCABULARY = ['HELOC', 'HELOAN', 'SEG', 'NCUA 5300', 'call report', '
 type Emit = Omit<StreamEvent, 'threadId' | 'seq' | 'ts'>;
 
 interface Thread {
+  /** Tasks are personal: the user who started it, and nobody else, sees it. */
+  owner: string;
   summary: ThreadSummary;
   events: StreamEvent[];
   seq: number;
@@ -78,6 +80,7 @@ const yourReferrals = (block: ListBlock, r: { open: number; overdue: number }): 
 });
 
 export function startMockServer({ port, speed = 1, live = null, voice = null, staticDir, accessCode }: MockServerOptions) {
+  const startedAt = new Date().toISOString();
   const gate = accessCode ? demoGate(accessCode) : null;
   const files = staticDir ? staticFiles(staticDir) : null;
   const threads = new Map<string, Thread>();
@@ -90,9 +93,11 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
 
   // The mock serves one signed-in developer; the persona is switched through GET /v1/session.
   let persona: PersonaId = 'executive';
-  let notifications = seedNotifications(persona);
-  /** For one person: these outlive the persona switch that shows them to that person. */
-  let addressed: AppNotification[] = [];
+  const me = () => sessionFor(persona).user.id;
+  /** Each for one person: these outlive the persona switch that shows them to that person. */
+  let notifications: AppNotification[] = [];
+  /** Read marks for the notices worked out from current work, as user and notice id. */
+  const readNotices = new Set<string>();
   let homeCards = homeApprovals(persona, id);
   const registerHomeCards = () => {
     for (const card of homeCards) approvals.set(card.data.approvalId, { threadId: null, runId: null, blockId: card.id, card });
@@ -102,7 +107,6 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
   const setPersona = (p: PersonaId) => {
     if (p === persona) return;
     persona = p;
-    notifications = seedNotifications(p);
     homeCards = homeApprovals(p, id);
     registerHomeCards();
   };
@@ -111,11 +115,14 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     let t = threads.get(threadId);
     if (!t) {
       const now = new Date().toISOString();
-      t = { summary: { threadId, title, createdAt: now, updatedAt: now, archived: false, turns: 0 }, events: [], seq: 0, deleted: false };
+      t = { owner: me(), summary: { threadId, title, createdAt: now, updatedAt: now, archived: false, turns: 0 }, events: [], seq: 0, deleted: false };
       threads.set(threadId, t);
     }
     return t;
   };
+
+  /** Someone else's task answers as if it did not exist. */
+  const foreign = (t: Thread | undefined) => t !== undefined && t.owner !== me();
 
   const broadcast = (threadId: string, json: string) => {
     for (const [ws, subs] of sockets) if (subs.has(threadId) && ws.readyState === ws.OPEN) ws.send(json);
@@ -134,20 +141,19 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     return event;
   };
 
-  const notify = (n: Omit<AppNotification, 'id' | 'at' | 'read'>) => {
-    const full: AppNotification = { ...n, id: id('ntf_', 10), at: new Date().toISOString(), read: false };
+  const notify = (userId: string, n: Omit<AppNotification, 'id' | 'at' | 'read' | 'userId'>) => {
+    const full: AppNotification = { ...n, id: id('ntf_', 10), at: new Date().toISOString(), read: false, userId };
     notifications.unshift(full);
+    if (userId !== me()) return;
     const json = JSON.stringify({ type: 'notification', notification: full });
     for (const ws of sockets.keys()) if (ws.readyState === ws.OPEN) ws.send(json);
   };
 
   /** Tells the people concerned, never the person who just did it. */
   const tell = (notices: Notice[]) => {
-    const me = sessionFor(persona).user.id;
     for (const n of notices) {
       for (const userId of new Set([...(n.userId ? [n.userId] : []), ...usersToTell(n.employeeId, n.branch)])) {
-        if (userId === me) continue;
-        addressed.unshift({ id: id('ntf_', 10), group: 'workflow', title: n.title, detail: n.detail, link: `/workflows/referrals/inbox?id=${n.comId}`, at: new Date().toISOString(), read: false, userId });
+        if (userId !== me()) notify(userId, { group: 'workflow', title: n.title, detail: n.detail, link: `/workflows/referrals/inbox?id=${n.comId}` });
       }
     }
   };
@@ -167,11 +173,11 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       finish: () => {
         if (run.done) return;
         run.done = true;
-        notify({ group: 'agent_runs', title: 'Answer ready', detail: thread(threadId).summary.title, link: `/c/${threadId}` });
+        notify(thread(threadId).owner, { group: 'agent_runs', title: 'Answer ready', detail: thread(threadId).summary.title, link: `/c/${threadId}` });
       },
       awaitApproval: (card, blockId, onResolved) => {
         approvals.set(card.data.approvalId, { threadId, runId, blockId, card, onResolved: (d) => onResolved(d, ctx) });
-        notify({ group: 'approvals', title: 'Approval needed', detail: card.data.summary, link: `/c/${threadId}` });
+        notify(thread(threadId).owner, { group: 'approvals', title: 'Approval needed', detail: card.data.summary, link: `/c/${threadId}` });
       },
     };
     for (const step of script(ctx)) {
@@ -218,11 +224,11 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         entry.expiryTimer = setTimeout(() => expireLive(approvalId), Math.max(0, new Date(card.data.expiresAt).getTime() - Date.now()));
         approvals.set(approvalId, entry);
         emit(threadId, { type: 'approval.requested', runId, approvalId, blockId: card.id, riskTier: card.data.riskTier, expiresAt: card.data.expiresAt } as Emit);
-        notify({ group: 'approvals', title: 'Approval needed', detail: card.data.summary, link: `/c/${threadId}` });
+        notify(thread(threadId).owner, { group: 'approvals', title: 'Approval needed', detail: card.data.summary, link: `/c/${threadId}` });
         return;
       }
       completeRun(runId, threadId);
-      notify({ group: 'agent_runs', title: 'Answer ready', detail: thread(threadId).summary.title, link: `/c/${threadId}` });
+      notify(thread(threadId).owner, { group: 'agent_runs', title: 'Answer ready', detail: thread(threadId).summary.title, link: `/c/${threadId}` });
     } catch (err) {
       if (signal.aborted) return;
       run.done = true;
@@ -268,7 +274,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         const done = result as { comId?: number; queueName?: string; assignee?: string | null; notify?: Notice[] } | null;
         tell(done?.notify ?? []);
         const created = done?.comId ? (done as { comId: number; queueName: string; assignee: string | null }) : null;
-        if (created) notify({ group: 'workflow', title: `Referral #${created.comId} ${created.assignee ? `assigned to ${created.assignee}` : 'sent'}`, detail: created.queueName, link: '/workflows/referrals/inbox' });
+        if (created) notify(me(), { group: 'workflow', title: `Referral #${created.comId} ${created.assignee ? `assigned to ${created.assignee}` : 'sent'}`, detail: created.queueName, link: '/workflows/referrals/inbox' });
       },
       speed,
     );
@@ -286,7 +292,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
   const decide = async (approvalId: string, key: string, body: ApprovalDecisionRequest): Promise<{ status: number; body: unknown }> => {
     if (idempotency.has(key)) return idempotency.get(key)!;
     const a = approvals.get(approvalId);
-    if (!a) return { status: 404, body: { code: 'NOT_FOUND' } };
+    if (!a || (a.threadId && foreign(threads.get(a.threadId)))) return { status: 404, body: { code: 'NOT_FOUND' } };
     const c = a.card.data.confirmation;
     if (a.decided) return a.decided.status === 410 ? { status: 410, body: { code: 'EXPIRED' } } : { status: 409, body: { code: 'ALREADY_DECIDED' } };
     if (new Date(a.card.data.expiresAt).getTime() < Date.now()) return { status: 410, body: { code: 'EXPIRED' } };
@@ -322,12 +328,21 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       homeCards = homeCards.filter((card) => card.data.approvalId !== approvalId);
     }
     if (decision === 'approved' && a.card.data.operation === 'workflow.item.create') {
-      notify({ group: 'workflow', title: 'Referral #88214 assigned to Ana Ruiz', detail: 'Westport lending queue', link: '/workflows/referrals/inbox' });
+      notify(me(), { group: 'workflow', title: 'Referral #88214 assigned to Ana Ruiz', detail: 'Westport lending queue', link: '/workflows/referrals/inbox' });
     }
     return result;
   };
 
-  const visibleThreads = () => [...threads.values()].filter((t) => !t.deleted);
+  const visibleThreads = () => [...threads.values()].filter((t) => !t.deleted && !foreign(t));
+  const pendingHomeCards = () => homeCards.filter((c) => !approvals.get(c.data.approvalId)?.decided);
+
+  /** The bell's view of work open right now, worked out on each read so it agrees with the screen. */
+  const currentNotices = async (): Promise<AppNotification[]> => {
+    const cards = pendingHomeCards();
+    const overdue = (await live?.overdueReferrals(persona).catch((err) => (console.error('[notifications]', err), null))) ?? [];
+    const open: Omit<AppNotification, 'read'>[] = cards.length ? [{ id: 'ntc_home_approvals', group: 'approvals', title: `${cards.length} ${cards.length === 1 ? 'approval' : 'approvals'} waiting`, detail: cards.map((c) => c.title).join(' · '), at: startedAt, link: '/home' }, ...overdue] : overdue;
+    return open.map((n) => ({ ...n, read: readNotices.has(`${me()}:${n.id}`) }));
+  };
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://localhost:${port}`);
@@ -343,7 +358,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         return json(res, 200, sessionFor(persona, voice?.status()));
       }
       if (method === 'GET' && path === '/v1/home') {
-        const home = homeFor(persona, homeCards.filter((c) => !approvals.get(c.data.approvalId)?.decided));
+        const home = homeFor(persona, pendingHomeCards());
         // With the warehouse up, "What changed" and "Things to look at" come from real figures.
         const real = await live?.home(persona).catch((err) => (console.error('[home]', err), null));
         if (real) {
@@ -446,13 +461,13 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         }
       }
       if (method === 'GET' && path === '/v1/notifications') {
-        const me = sessionFor(persona).user.id;
-        return json(res, 200, { notifications: [...addressed.filter((n) => n.userId === me), ...notifications] });
+        const all = [...notifications.filter((n) => n.userId === me()), ...(await currentNotices())];
+        return json(res, 200, { notifications: all.sort((a, b) => b.at.localeCompare(a.at)) });
       }
       if (method === 'POST' && path === '/v1/notifications/read') {
         const { ids } = await readBody<{ ids: string[] }>(req);
         notifications = notifications.map((n) => (ids.includes(n.id) ? { ...n, read: true } : n));
-        addressed = addressed.map((n) => (ids.includes(n.id) ? { ...n, read: true } : n));
+        for (const n of ids) readNotices.add(`${me()}:${n}`);
         return json(res, 204);
       }
       const table = /^\/v1\/tables\/([^/]+)$/.exec(path);
@@ -487,7 +502,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       const one = /^\/v1\/threads\/([^/]+)$/.exec(path);
       if (one) {
         const t = threads.get(decodeURIComponent(one[1]!));
-        if (!t || t.deleted) return json(res, 404, { code: 'NOT_FOUND' });
+        if (!t || t.deleted || foreign(t)) return json(res, 404, { code: 'NOT_FOUND' });
         if (method === 'GET') return json(res, 200, t.summary);
         if (method === 'PATCH') {
           const patch = await readBody<{ title?: string; archived?: boolean }>(req);
@@ -504,6 +519,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       const send = /^\/v1\/threads\/([^/]+)\/messages$/.exec(path);
       if (method === 'POST' && send) {
         const threadId = decodeURIComponent(send[1]!);
+        if (foreign(threads.get(threadId))) return json(res, 404, { code: 'NOT_FOUND' });
         const body = await readBody<SendMessageRequest>(req);
         const t = thread(threadId);
         if (t.summary.turns === 0 && t.summary.title === 'New conversation') t.summary.title = titleFrom(body.input.text);
@@ -560,7 +576,9 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
   });
 
   const replay = (ws: WebSocket, threadId: string, lastSeq: number) => {
-    for (const e of threads.get(threadId)?.events ?? []) if (e.seq > lastSeq) ws.send(JSON.stringify(e));
+    const t = threads.get(threadId);
+    if (foreign(t)) return;
+    for (const e of t?.events ?? []) if (e.seq > lastSeq) ws.send(JSON.stringify(e));
   };
 
   wss.on('connection', (ws) => {

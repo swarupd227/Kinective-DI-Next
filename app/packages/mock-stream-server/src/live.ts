@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto';
 import type { ApprovalCardBlock, ApprovalDecisionRequest, Block, KpiGroupBlock, ListBlock, Member360Block, SearchResult, StreamEvent, StreamingEnvelope, TableData } from '@dinext/block-schemas';
 import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, describeSchedule, hasClaudeCredentials, member360, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
 import { ApprovalStore, CoreError, ReferralService, RelationshipService, ReportStore, type InboxItem, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
-import type { ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
+import type { AppNotification, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
 import { renderExport } from './exports.ts';
 import { SemanticService } from '@dinext/semantic';
 import { tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
@@ -92,6 +92,8 @@ export interface LiveRuntime {
   reports(persona: PersonaId): Promise<{ templates: ReportSummary[]; schedules: ScheduleSummary[] } | null>;
   /** The Referrals app: a box of referrals with counts for the tabs (FE-REF-001). */
   referrals(persona: PersonaId, box: 'mine' | 'team' | 'sent'): Promise<ReferralsIndex | null>;
+  /** For the bell: each of your own overdue referrals, or a count for a branch lead. */
+  overdueReferrals(persona: PersonaId): Promise<Omit<AppNotification, 'read'>[]>;
   referral(persona: PersonaId, comId: number): Promise<ReferralDetail | null>;
   /** The user's own action on a referral, and who should hear about it. */
   referralAction(persona: PersonaId, comId: number, action: ReferralAction): Promise<{ detail: ReferralDetail; notify: Notice[] } | null>;
@@ -302,6 +304,19 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       const [items, mine, team] = await Promise.all([wf.referrals.inbox(box, who, ctx), wf.referrals.inbox('mine', who, ctx), wf.referrals.inbox('team', who, ctx)]);
       const own = worksOwnQueue(persona);
       return { items: items.map((i) => referralView(i, wf.relationship ?? null)), counts: { mine: mine.length, team: team.length, overdue: (own ? mine : team).filter((i) => i.overdue).length }, hasOwnQueue: own };
+    },
+
+    async overdueReferrals(persona) {
+      const wf = tenantFor(persona)?.runtime.workflow;
+      const p = PERSONAS[persona];
+      const own = worksOwnQueue(persona);
+      if (!wf || !p.session.apps.includes('referrals') || (!own && !p.leadsBranch)) return [];
+      const items = await wf.referrals.inbox(own ? 'mine' : 'team', { userId: p.session.user.id, employeeId: p.employeeId }, { purviewBranches: p.purview });
+      const overdue = items.filter((i) => i.overdue);
+      if (own) return overdue.map((i) => ({ id: `ntc_overdue_${i.comId}`, group: 'workflow', title: `Referral #${i.comId} is overdue`, detail: `${i.name} · ${i.typeLabel}`, at: i.dueAt, link: `/workflows/referrals/inbox?id=${i.comId}` }));
+      if (!overdue.length) return [];
+      const latest = overdue.map((i) => i.dueAt).sort().at(-1)!;
+      return [{ id: 'ntc_overdue_team', group: 'workflow', title: `${overdue.length} team ${overdue.length === 1 ? 'referral is' : 'referrals are'} overdue`, detail: overdue.map((i) => i.name).join(' · '), at: latest, link: '/workflows/referrals/inbox' }];
     },
 
     referral: referralDetail,

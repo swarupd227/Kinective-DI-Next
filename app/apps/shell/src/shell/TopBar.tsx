@@ -1,7 +1,7 @@
 // Top bar on tablets and phones (spec 10.10): the menu, the thread title or app name, search and
 // notifications. Wider screens keep all of this in the sidebar.
 import { useQuery } from '@tanstack/react-query';
-import { Link, useLocation } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { Check, ChevronDown, Menu as MenuIcon, Monitor, Moon, Rows3, Rows4, Search, Sun, UserRoundCog } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
 import { IconButton, SegmentedControl, usePreferences, type Density, type ThemePreference } from '@dinext/ui';
@@ -55,6 +55,13 @@ const segmentToApp = (s: string) => (s === 'c' ? 'conversations' : s === 'member
 export function UserMenu() {
   const { session, switchPersona } = useSession();
   const { theme, setTheme, density, setDensity } = usePreferences();
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const switchTo = (id: string) => {
+    switchPersona(id);
+    // Tasks are personal, so the one on screen is not the next person's.
+    if (pathname.startsWith('/c/')) navigate('/home');
+  };
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
@@ -112,7 +119,7 @@ export function UserMenu() {
                 const active = p.label.startsWith(session.user.name);
                 return (
                   <Popover.Close key={p.id} asChild>
-                    <button type="button" className={styles.item} aria-current={active || undefined} onClick={() => switchPersona(p.id)}>
+                    <button type="button" className={styles.item} aria-current={active || undefined} onClick={() => switchTo(p.id)}>
                       <span className={styles.check}>{active && <Check size={14} aria-hidden />}</span>
                       {p.label}
                     </button>

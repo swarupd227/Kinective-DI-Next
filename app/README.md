@@ -120,7 +120,8 @@ Referrals DI sends now reach the people who work them. **Referrals** has Mine, T
 
 - **By asking:** "What's on my plate today?", "Show my overdue referrals", "Mark referral 88216 as sold", "Reassign the Novak referral to M. Moreau". Every change DI proposes comes back as an approval card, and Sold is medium risk because it can drive incentives.
 - **By clicking:** Start working, Sold, Not interested, notes and Assign apply at once as the person's own action, and are recorded in the history.
-- **Who hears:** the assignee and the branch lead get a notification for new work, and the sender hears when a referral closes. Notifications are in-app only.
+- **Who hears:** the assignee and the branch lead get a notification for new work, and the sender hears when a referral closes. Notifications are in-app only, and the bell shows only real work: your own events, overdue referrals (a count for a branch lead) and approvals waiting on Home.
+- **Tasks are personal:** each person sees only the tasks they started. Someone else's task reads as not found.
 - **Purview:** the Team tab and every change stay within the user's branches. A sender can read a referral that went elsewhere, but not work it.
 - **Due dates** come from priority (Urgent 1 day, High 2, Normal 5, Low 10) until a tenant sets its own.
 
