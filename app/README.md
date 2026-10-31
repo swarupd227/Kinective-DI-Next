@@ -114,6 +114,18 @@ The live agent chooses its own steps through the same work as the offline planne
 
 Slice 8 adds a table and a referral type: run `npm run db:seed` once locally, or start the seeding job again on Azure.
 
+### Working referrals (Slice 9)
+
+Referrals DI sends now reach the people who work them. **Referrals** has Mine, Team and Sent, with overdue work first, a stage bar, history, and actions beside the list. Sofia Ruiz (Member Services, Westport) is a new persona with work already waiting; Marcus sees the whole branch.
+
+- **By asking:** "What's on my plate today?", "Show my overdue referrals", "Mark referral 88216 as sold", "Reassign the Novak referral to M. Moreau". Every change DI proposes comes back as an approval card, and Sold is medium risk because it can drive incentives.
+- **By clicking:** Start working, Sold, Not interested, notes and Assign apply at once as the person's own action, and are recorded in the history.
+- **Who hears:** the assignee and the branch lead get a notification for new work, and the sender hears when a referral closes. Notifications are in-app only.
+- **Purview:** the Team tab and every change stay within the user's branches. A sender can read a referral that went elsewhere, but not work it.
+- **Due dates** come from priority (Urgent 1 day, High 2, Normal 5, Low 10) until a tenant sets its own.
+
+Slice 9 adds seeded referrals and a referral type: run `npm run db:seed` once locally, or start the seeding job again on Azure.
+
 ### Things to try in the shell
 
 - **Hand over a task:** "Get me ready for Thursday's ALCO meeting" from Home. Add "Look at Westport too" while it works, say "make it shorter" at the note, then Approve.
@@ -191,10 +203,10 @@ Slice 8 adds a table and a referral type: run `npm run db:seed` once locally, or
 
 ## Not done yet
 
-- **Agents:** a live golden-question evaluation on Claude (needs your approval), conversation memory beyond the server process, referral inbox, update and "mark sold" (stage changes), and real Goals & Incentives and Retention agents.
+- **Agents:** a live golden-question evaluation on Claude (needs your approval), conversation memory beyond the server process, and real Goals & Incentives and Retention agents.
 - **Reports:** PDF and Word exports, report snapshots ("By Report Date", spec 18.8), Table Summary and Detail report builders with their form block (spec 8.6, 8.7), the template settings form with every builder tab (FE-BLD-001), test mode with a PDF preview, drag-and-drop on the canvas, changing a template other people use (high risk with the users and schedules affected, FE-BLD-005), pinning reports to Home, and real delivery to recipients.
 - **Relationship Manager:** issue management ("Log an issue", spec 8.24), undoing a decline within 30 days (BE-RM-003), the classic Relationship Dashboard as a full app page with its left navigation, a call-centre screen pop (AS-090), alert rules and the opportunity threshold as tenant settings, and speaking member data aloud (off by default for branch-floor classes).
-- **Workflow:** notifications to the recipient (today only the sender's bell), SLA timers, undo for medium writes (spec 6.11), and second approvers.
+- **Workflow:** email notifications, tenant-set SLA rules and escalation, undo for medium writes (spec 6.11), second approvers, the New Referral form, CC, and data-verified success matching.
 - **Home and threads:** pinning with undo, Home edit mode, sharing threads, a plan preview for multi-step writes, and file upload.
 - **Blocks:** the remaining catalogue blocks (pivot, form, timeline, map, funnel, lineage_graph, report_canvas, file_drop, sql_view). The form block is next in line, for "Edit first".
 - **Voice:** hands-free "Hey DI" with an on-device wake word, dictation into form fields, read-back on any block, voice settings (microphone choice, input test, silence threshold, speech rate control in the UI), voice latency telemetry, and Spanish.

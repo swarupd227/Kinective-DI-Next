@@ -118,6 +118,25 @@ export const REFERRAL_TYPES: ReferralType[] = [
   { typeId: 'business_account', category: 'Business', label: 'Business account', description: 'Business checking, savings or lending', route: { kind: 'queue', queueId: 'q_business' }, fields: contact },
 ];
 
+/**
+ * Work already in the first branch's queues, so an inbox has something in it on day one. Ages run
+ * back from now, so one item is always overdue. Employees 1 and 4 to 6 belong to that branch.
+ */
+export function referralSeed(parties: number[], now = new Date()) {
+  const ago = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString().slice(0, 23).replace('T', ' ');
+  const [a, b, c, d, e] = parties;
+  const lead = (typeId: string, party: number | undefined, fields: object, notes: string, stage: string, priority: string, queue: string, assignee: number, days: number) => [
+    'referral', typeId, party, JSON.stringify(fields), notes, stage, priority, 'user:5120', 'Marcus Reed', queue, assignee, JSON.stringify({ queueId: queue, assigneeId: assignee, rule: 'seed' }), ago(days),
+  ];
+  return [
+    lead('retention_follow_up', a, { preferred_contact: 'Phone' }, 'Attrition score 8 of 10: direct deposit stopped last month.', 'New Referral', 'High', 'q_service_westport', 4, 3),
+    lead('credit_card', b, { preferred_contact: 'Email' }, 'Asked about a rewards card at the counter.', 'New Referral', 'Normal', 'q_service_westport', 4, 1),
+    lead('certificate', c, { preferred_contact: 'Phone', best_time: 'Morning' }, 'Certificate matures next month.', 'Active', 'Normal', 'q_service_westport', 4, 2),
+    lead('retention_follow_up', d, { preferred_contact: 'Text' }, 'Attrition score 7 of 10: balances falling.', 'New Referral', 'High', 'q_service_westport', 5, 1),
+    lead('auto_loan', e, { preferred_contact: 'Phone' }, 'Wants to refinance from another lender.', 'Active', 'Normal', 'q_lending_westport', 1, 6),
+  ];
+}
+
 /** Queues per branch (lending: loan officers; service: MSRs) plus the institution-wide queues. */
 export function workflowSeed(profile: TenantProfile, employees: unknown[][]) {
   const byBranch = (branch: number, role: string) => employees.filter((e) => e[3] === branch && e[2] === role).map((e) => e[0] as number);

@@ -3,9 +3,9 @@
 // never runs from a model call: it returns approval_required, and only an approved, unchanged
 // payload is executed, once, with the approval ID as its idempotency key.
 import { z } from 'zod';
-import { ApprovalStore, CoreError, type ApprovalRecord, type AtRiskMember, type MemberProfile, type PartyHit, type ReferralService, type RelationshipService, type RiskTier, type RouteResult, type Topic } from '@dinext/di-core';
+import { ApprovalStore, CoreError, type ApprovalRecord, type AtRiskMember, type ChangeMeta, type InboxBox, type InboxDetail, type InboxItem, type MemberProfile, type ReferralStage, type PartyHit, type ReferralService, type RelationshipService, type RiskTier, type RouteResult, type Topic } from '@dinext/di-core';
 
-export type AgentId = 'referral' | 'relationship' | 'goal';
+export type AgentId = 'referral' | 'relationship' | 'goal' | 'inbox';
 
 export interface ToolDef<I extends z.ZodType = z.ZodType> {
   name: string;
@@ -87,6 +87,16 @@ export const DeclineInput = z.object({ member_ref: memberRef, product: z.string(
 /** Relationship agent tools (spec 24.15). Viewing a record is a read and is logged (spec 8.24). */
 export const AtRiskInput = z.object({ limit: z.number().int().min(1).max(25).default(25) }).strict();
 export const BatchInput = z.object({ member_refs: z.array(memberRef).min(1).max(FOLLOW_UP_CAP), notes: z.string().max(300).optional() }).strict();
+
+const referralId = z.number().int().positive().describe('The number of the referral, from referral_inbox_list');
+
+export const INBOX_TOOLS = [
+  { name: 'referral_inbox_list', operation: 'referral.inbox.list', description: 'List referrals. mine: open work assigned to the user. team: open work in their purview. sent: what they created. Overdue first.', input: z.object({ box: z.enum(['mine', 'team', 'sent']).default('mine'), older_than_days: z.number().int().min(0).max(365).optional(), overdue_only: z.boolean().default(false) }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'referrals', purviewScope: 'com', maxResultRowsToModel: 25, agents: ['inbox'] },
+  { name: 'referral_get', operation: 'referral.get', description: 'One referral with its history and the people who can take it.', input: z.object({ referral_id: referralId }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'referrals', purviewScope: 'com', maxResultRowsToModel: 1, agents: ['inbox'] },
+  { name: 'referral_stage_update', operation: 'referral.stage.update', description: 'Move a referral to Active, Sold or Not Interested. Sold can drive incentives. Returns approval_required.', input: z.object({ referral_id: referralId, stage: z.enum(['Active', 'Sold', 'Not Interested']), note: z.string().max(300).optional() }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'referrals', purviewScope: 'com', maxResultRowsToModel: 1, agents: ['inbox'] },
+  { name: 'referral_note_add', operation: 'referral.note.add', description: 'Add a note to a referral, such as "left voicemail". Returns approval_required.', input: z.object({ referral_id: referralId, note: z.string().min(2).max(300) }).strict(), sideEffect: 'write', riskTier: 'low', requiredApp: 'referrals', purviewScope: 'com', maxResultRowsToModel: 1, agents: ['inbox'] },
+  { name: 'referral_reassign', operation: 'referral.reassign', description: 'Give a referral to someone else in its queue. Returns approval_required.', input: z.object({ referral_id: referralId, to: z.string().min(2).max(80).describe('The person\u2019s name, from referral_get') }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'referrals', purviewScope: 'com', maxResultRowsToModel: 1, agents: ['inbox'] },
+] satisfies ToolDef[];
 
 export const RELATIONSHIP_TOOLS = [
   {
@@ -185,6 +195,8 @@ export interface GatewayContext {
   threadId: string;
   /** Reference tokens for this thread: MBR_n → party ID. The model never sees real identifiers. */
   members: Map<string, number>;
+  /** The staff record behind the user, when they work a queue themselves. */
+  employeeId?: number;
 }
 
 export interface ReferralPayload {
@@ -216,6 +228,21 @@ export interface BatchDraft {
   superseded: string[];
 }
 
+export interface ChangePayload {
+  comId: number;
+  stage?: ReferralStage;
+  note?: string;
+  employeeId?: number;
+  to?: string;
+}
+
+export interface ChangeDraft {
+  approval: ApprovalRecord;
+  payload: ChangePayload;
+  item: InboxDetail;
+  superseded: string[];
+}
+
 export interface DeclinePayload {
   partyId: number;
   suggestionId: number;
@@ -230,10 +257,10 @@ export interface DeclineDraft {
 }
 
 export type GatewayResult =
-  | { ok: true; content: unknown; draft?: DraftResult; decline?: DeclineDraft; batch?: BatchDraft; atRisk?: { total: number; items: (AtRiskMember & { ref: string; followedUp: boolean })[] }; hits?: (PartyHit & { matchedOn?: string })[]; profile?: MemberProfile; topics?: Topic[]; explained?: ReturnType<RelationshipService['explain']> }
+  | { ok: true; content: unknown; draft?: DraftResult; decline?: DeclineDraft; batch?: BatchDraft; inbox?: InboxItem[]; item?: InboxDetail; change?: ChangeDraft; atRisk?: { total: number; items: (AtRiskMember & { ref: string; followedUp: boolean })[] }; hits?: (PartyHit & { matchedOn?: string })[]; profile?: MemberProfile; topics?: Topic[]; explained?: ReturnType<RelationshipService['explain']> }
   | { ok: false; code: 'UNKNOWN_TOOL' | 'NOT_ALLOWED' | 'INVALID_INPUT' | 'RESERVED_KEY' | 'UNKNOWN_REF' | 'NO_ACCESS' | 'NOT_FOUND' | 'FORM_INCOMPLETE'; content: unknown };
 
-export type Executed = { operation: 'referral.create'; created: Awaited<ReturnType<ReferralService['create']>> } | { operation: 'referral.create.batch'; created: { comId: number; name: string; queueName: string; assignee: string | null }[]; failed: string[] } | { operation: 'relationship.suggestion.decline'; declined: { product: string; until: string }; partyId: number };
+export type Executed = { operation: 'referral.create'; created: Awaited<ReturnType<ReferralService['create']>> } | { operation: 'referral.change'; item: InboxDetail; kind: 'stage' | 'note' | 'assign'; changed: boolean } | { operation: 'referral.create.batch'; created: { comId: number; name: string; queueName: string; assignee: string | null; assigneeId?: number; branch: string }[]; failed: string[] } | { operation: 'relationship.suggestion.decline'; declined: { product: string; until: string }; partyId: number };
 
 const round = (n: number) => (Math.abs(n) >= 1000 ? Math.round(n / 100) * 100 : Math.round(n));
 
@@ -270,7 +297,7 @@ export class ToolGateway {
       /** Called for every member record opened through a tool; the access is audited (FE-RM-003). */
       onProfileView?: (partyId: number, ctx: GatewayContext) => void;
     },
-    private readonly tools: ToolDef[] = [...REFERRAL_TOOLS, ...RELATIONSHIP_TOOLS],
+    private readonly tools: ToolDef[] = [...REFERRAL_TOOLS, ...RELATIONSHIP_TOOLS, ...INBOX_TOOLS],
   ) {}
 
   get relationship() {
@@ -312,6 +339,41 @@ export class ToolGateway {
           const hits = rm ? await rm.search(String(args.name), ctx, def.maxResultRowsToModel) : await this.deps.referrals.searchParties(String(args.name), ctx, def.maxResultRowsToModel);
           const out = hits.map((h) => ({ member_ref: this.refFor(h.partyId, ctx), name: h.name, branch: h.branch, member_since: h.memberSince, number_ends: h.last4, products: h.products }));
           return { ok: true, content: { matches: out, count: out.length }, hits };
+        }
+        case 'referral.inbox.list': {
+          const who = { userId: ctx.user.id, employeeId: ctx.employeeId };
+          let items = await this.deps.referrals.inbox(args.box as InboxBox, who, ctx);
+          if (args.older_than_days !== undefined) items = items.filter((i) => i.ageDays > Number(args.older_than_days));
+          if (args.overdue_only) items = items.filter((i) => i.overdue);
+          return { ok: true, content: { count: items.length, overdue: items.filter((i) => i.overdue).length, referrals: items.slice(0, 25).map((i) => ({ referral_id: i.comId, member: i.name, type: i.typeLabel, branch: i.branch, stage: i.stage, priority: i.priority, age_days: i.ageDays, overdue: i.overdue, assignee: i.assignee?.name ?? null })) }, inbox: items };
+        }
+        case 'referral.get': {
+          const item = await this.deps.referrals.item(Number(args.referral_id), { userId: ctx.user.id }, ctx);
+          return { ok: true, content: { referral_id: item.comId, member: item.name, type: item.typeLabel, stage: item.stage, priority: item.priority, age_days: item.ageDays, overdue: item.overdue, assignee: item.assignee?.name ?? null, notes: item.notes, history: item.history.slice(-8).map((h) => h.text), team: item.team.map((m) => m.name) }, item };
+        }
+        case 'referral.stage.update':
+        case 'referral.note.add':
+        case 'referral.reassign': {
+          const item = await this.deps.referrals.item(Number(args.referral_id), { userId: ctx.user.id }, ctx);
+          if (ctx.purviewBranches && !ctx.purviewBranches.includes(item.branch)) return { ok: false, code: 'NO_ACCESS', content: { error: 'NO_ACCESS', message: `Referral #${item.comId} is outside your purview.` } };
+          const payload: ChangePayload = { comId: item.comId };
+          if (def.operation === 'referral.stage.update') {
+            payload.stage = args.stage as ReferralStage;
+            if (args.note) payload.note = String(args.note);
+            if (item.stage === payload.stage || (item.stage !== 'New Referral' && item.stage !== 'Active')) return { ok: false, code: 'NOT_ALLOWED', content: { error: 'NOT_ALLOWED', message: `Referral #${item.comId} is already ${item.stage}.` } };
+          } else if (def.operation === 'referral.note.add') {
+            payload.note = String(args.note);
+          } else {
+            const name = String(args.to).toLowerCase();
+            const to = item.team.find((m) => m.name.toLowerCase().includes(name) || name.includes(m.name.toLowerCase()));
+            if (!to) return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: `${item.queueName} is worked by ${item.team.map((m) => m.name).join(', ') || 'nobody yet'}.` } };
+            payload.employeeId = to.employeeId;
+            payload.to = to.name;
+          }
+          const tier = effectiveTier(def, this.deps.tenantRaise);
+          const approval = await this.deps.approvals.request({ operation: def.operation, payload, riskTier: tier === 'none' ? 'low' : tier, requestedBy: ctx.user.id, runId: ctx.runId, threadId: ctx.threadId });
+          const superseded = await this.deps.approvals.supersede(ctx.threadId, approval.approvalId);
+          return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId, note: 'Nothing has changed. The user approves on screen.' }, change: { approval, payload, item, superseded } };
         }
         case 'relationship.attrition.list': {
           const found = await this.deps.relationship!.atRisk(ctx, Number(args.limit));
@@ -429,13 +491,28 @@ export class ToolGateway {
    * Runs an approved write. The stored payload is executed as approved; there is no model between
    * the approval and the action (spec 25.3, "no AI sits between the approval and the action").
    */
-  async execute(approval: ApprovalRecord, ctx: Pick<GatewayContext, 'user' | 'purviewBranches'>): Promise<Executed> {
+  async execute(approval: ApprovalRecord, ctx: Pick<GatewayContext, 'user' | 'purviewBranches' | 'employeeId'>): Promise<Executed> {
     if (approval.status !== 'approved') throw new Error(`Approval ${approval.approvalId} is ${approval.status}`);
     try {
       if (approval.operation === 'referral.create') {
         const created = await this.deps.referrals.create(approval.payload as ReferralPayload, { approvalId: approval.approvalId, runId: approval.runId, userId: ctx.user.id, userName: ctx.user.name }, ctx);
         await this.deps.approvals.markExecuted(approval.approvalId, `com:${created.comId}`);
         return { operation: 'referral.create', created };
+      }
+      if (approval.operation.startsWith('referral.') && approval.operation !== 'referral.create.batch') {
+        const p = approval.payload as ChangePayload;
+        const meta: ChangeMeta = { userId: ctx.user.id, userName: ctx.user.name, employeeId: ctx.employeeId };
+        let out: Extract<Executed, { operation: 'referral.change' }>;
+        if (approval.operation === 'referral.stage.update') {
+          const r = await this.deps.referrals.transition(p.comId, p.stage!, p.note, meta, ctx);
+          out = { operation: 'referral.change', item: r.item, kind: 'stage', changed: r.changed };
+        } else if (approval.operation === 'referral.note.add') {
+          out = { operation: 'referral.change', item: await this.deps.referrals.addNote(p.comId, p.note!, meta, ctx), kind: 'note', changed: true };
+        } else {
+          out = { operation: 'referral.change', item: await this.deps.referrals.reassign(p.comId, p.employeeId!, meta, ctx), kind: 'assign', changed: true };
+        }
+        await this.deps.approvals.markExecuted(approval.approvalId, `com:${p.comId}`);
+        return out;
       }
       if (approval.operation === 'referral.create.batch') {
         // One approval, several records: each has its own key, so a retry resumes rather than repeats.
@@ -445,7 +522,7 @@ export class ToolGateway {
         for (const [i, item] of items.entries()) {
           try {
             const c = await this.deps.referrals.create(item, { approvalId: `${approval.approvalId}.${i}`, runId: approval.runId, userId: ctx.user.id, userName: ctx.user.name }, ctx);
-            created.push({ comId: c.comId, name: item.name, queueName: c.queueName, assignee: c.assignee?.name ?? null });
+            created.push({ comId: c.comId, name: item.name, queueName: c.queueName, assignee: c.assignee?.name ?? null, assigneeId: c.assignee?.employeeId, branch: item.branch });
           } catch (e) {
             if (!(e instanceof CoreError)) throw e;
             failed.push(item.name);

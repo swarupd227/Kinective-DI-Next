@@ -242,7 +242,7 @@ export function generate(profile: TenantProfile): GeneratedTenant {
   });
 
   // The first branch's staff are the people the demos name. Draws above are unchanged.
-  for (const [id, name] of [[1, 'Ana Ruiz'], [2, 'Tom Walsh'], [3, 'J. Ortiz'], [6, 'Marcus Reed']] as const) employees.find((e) => e[0] === id)![1] = name;
+  for (const [id, name] of [[1, 'Ana Ruiz'], [2, 'Tom Walsh'], [3, 'J. Ortiz'], [4, 'Sofia Ruiz'], [6, 'Marcus Reed']] as const) employees.find((e) => e[0] === id)![1] = name;
 
   // Members: join dates skew recent; the very first party is the member the demos refer to.
   type Party = { id: number; branch: number; join: Date; member: boolean };

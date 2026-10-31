@@ -5,6 +5,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { extname, join, resolve, sep } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
+import type { ListBlock, ReferralAction } from '@dinext/block-schemas';
 import type {
   AppNotification,
   ApprovalCardBlock,
@@ -15,8 +16,8 @@ import type {
   ThreadSummary,
 } from '@dinext/block-schemas';
 import { pickScenario, scriptForAgent, type Script, type ScriptContext } from './scenarios.ts';
-import { homeApprovals, homeFor, isPersona, searchFor, seedNotifications, sessionFor, tableFor, type PersonaId } from './data.ts';
-import type { LiveRuntime } from './live.ts';
+import { homeApprovals, homeFor, isPersona, searchFor, seedNotifications, sessionFor, tableFor, usersToTell, type PersonaId } from './data.ts';
+import type { LiveRuntime, Notice } from './live.ts';
 import { createSpeechTap } from './speech.ts';
 import type { VoiceGateway } from '@dinext/voice';
 import { CoreError } from '@dinext/di-core';
@@ -70,6 +71,12 @@ export interface MockServerOptions {
 
 const id = (prefix: string, n = 16) => `${prefix}${randomBytes(n).toString('base64').replace(/[^A-Za-z0-9]/g, '').slice(0, n).padEnd(n, '0')}`;
 
+/** "Your work" with the real referral counts in place of the placeholder line. */
+const yourReferrals = (block: ListBlock, r: { open: number; overdue: number }): ListBlock => ({
+  ...block,
+  data: { ...block.data, items: block.data.items.map(({ badge: _badge, ...item }) => (item.id === 'w1' ? { ...item, meta: `${r.open} open`, subtitle: r.overdue ? `${r.overdue} overdue` : 'Nothing overdue', ...(r.overdue ? { badge: { label: 'Overdue', tone: 'danger' as const } } : {}) } : { ...item, ...(_badge ? { badge: _badge } : {}) })) },
+});
+
 export function startMockServer({ port, speed = 1, live = null, voice = null, staticDir, accessCode }: MockServerOptions) {
   const gate = accessCode ? demoGate(accessCode) : null;
   const files = staticDir ? staticFiles(staticDir) : null;
@@ -84,6 +91,8 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
   // The mock serves one signed-in developer; the persona is switched through GET /v1/session.
   let persona: PersonaId = 'executive';
   let notifications = seedNotifications(persona);
+  /** For one person: these outlive the persona switch that shows them to that person. */
+  let addressed: AppNotification[] = [];
   let homeCards = homeApprovals(persona, id);
   const registerHomeCards = () => {
     for (const card of homeCards) approvals.set(card.data.approvalId, { threadId: null, runId: null, blockId: card.id, card });
@@ -130,6 +139,17 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     notifications.unshift(full);
     const json = JSON.stringify({ type: 'notification', notification: full });
     for (const ws of sockets.keys()) if (ws.readyState === ws.OPEN) ws.send(json);
+  };
+
+  /** Tells the people concerned, never the person who just did it. */
+  const tell = (notices: Notice[]) => {
+    const me = sessionFor(persona).user.id;
+    for (const n of notices) {
+      for (const userId of new Set([...(n.userId ? [n.userId] : []), ...usersToTell(n.employeeId, n.branch)])) {
+        if (userId === me) continue;
+        addressed.unshift({ id: id('ntf_', 10), group: 'workflow', title: n.title, detail: n.detail, link: `/workflows/referrals/inbox?id=${n.comId}`, at: new Date().toISOString(), read: false, userId });
+      }
+    }
   };
 
   const runScript = (threadId: string, runId: string, script: Script) => {
@@ -245,7 +265,9 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       (ev) => emit(a.threadId!, ev),
       (result) => {
         completeRun(a.runId!, a.threadId!);
-        const created = result as { comId: number; queueName: string; assignee: string | null } | null;
+        const done = result as { comId?: number; queueName?: string; assignee?: string | null; notify?: Notice[] } | null;
+        tell(done?.notify ?? []);
+        const created = done?.comId ? (done as { comId: number; queueName: string; assignee: string | null }) : null;
         if (created) notify({ group: 'workflow', title: `Referral #${created.comId} ${created.assignee ? `assigned to ${created.assignee}` : 'sent'}`, detail: created.queueName, link: '/workflows/referrals/inbox' });
       },
       speed,
@@ -328,6 +350,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
           home.narrative = real.narrative;
           for (const s of home.sections) {
             if (s.id === 'what_changed') s.blocks = [real.kpis];
+            if (s.id === 'your_work' && real.referrals) s.blocks = [yourReferrals(s.blocks[0] as ListBlock, real.referrals)];
             if (s.id === 'look_at' && real.lookAt.data.items.length) s.blocks = [real.lookAt];
             if (s.id === 'scheduled_reports' && real.scheduled) s.blocks = [real.scheduled];
           }
@@ -342,6 +365,31 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         if (!members) return json(res, 200, { results });
         const kind = url.searchParams.get('kind');
         return json(res, 200, { results: kind === 'member' ? members : [...members, ...results.filter((r) => r.kind !== 'member')].slice(0, 20) });
+      }
+      // ---- referrals (spec 17.3) ----
+      if (method === 'GET' && path === '/v1/referrals') {
+        const box = url.searchParams.get('box');
+        const r = await live?.referrals(persona, box === 'team' || box === 'sent' ? box : 'mine');
+        return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });
+      }
+      const referral = /^\/v1\/referrals\/(\d+)(\/actions)?$/.exec(path);
+      if (referral && live) {
+        const comId = Number(referral[1]);
+        try {
+          if (method === 'GET' && !referral[2]) {
+            const r = await live.referral(persona, comId);
+            return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });
+          }
+          if (method === 'POST' && referral[2]) {
+            const r = await live.referralAction(persona, comId, await readBody<ReferralAction>(req));
+            if (!r) return json(res, 404, { code: 'NOT_FOUND' });
+            tell(r.notify);
+            return json(res, 200, r.detail);
+          }
+        } catch (err) {
+          if (err instanceof CoreError) return json(res, err.code === 'INVALID' ? 422 : 404, { code: err.code, message: err.message });
+          throw err;
+        }
       }
       // ---- reports (spec 8.5–8.9, 18) ----
       if (method === 'GET' && path === '/v1/reports') {
@@ -397,10 +445,14 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
           throw err;
         }
       }
-      if (method === 'GET' && path === '/v1/notifications') return json(res, 200, { notifications });
+      if (method === 'GET' && path === '/v1/notifications') {
+        const me = sessionFor(persona).user.id;
+        return json(res, 200, { notifications: [...addressed.filter((n) => n.userId === me), ...notifications] });
+      }
       if (method === 'POST' && path === '/v1/notifications/read') {
         const { ids } = await readBody<{ ids: string[] }>(req);
         notifications = notifications.map((n) => (ids.includes(n.id) ? { ...n, read: true } : n));
+        addressed = addressed.map((n) => (ids.includes(n.id) ? { ...n, read: true } : n));
         return json(res, 204);
       }
       const table = /^\/v1\/tables\/([^/]+)$/.exec(path);

@@ -18,7 +18,7 @@ import { useBreakpoint } from './useBreakpoint.ts';
 import styles from './NavRail.module.css';
 
 /** Apps people reach for daily stay in view; the rest sit under More. */
-const PRIMARY = new Set(['home', 'reports', 'tables', 'rm']);
+const PRIMARY = new Set(['home', 'referrals', 'reports', 'tables', 'rm']);
 const RECENT_TASKS = 12;
 
 type TaskState = 'needs_you' | 'running' | 'done' | 'idle';

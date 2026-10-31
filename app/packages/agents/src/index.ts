@@ -4,6 +4,7 @@ export { runRelationship, runRelationshipOffline, parseMemberRequest, declineCar
 export { ReportGateway, REPORT_TOOLS, REPORT_AGENT, runReport, periodOptions, parsePeriod, timeFor, layout, applyEdits, resolveEdit, describeSchedule, resolveRecipients, newReportThread, type ReportThread, type ReportControls, type ReportExecuted } from './report.ts';
 export { runReportAgent, runReportOffline, parseReportRequest, ReportFinish, type ReportOutcome } from './reportAgent.ts';
 export { runGoal, runGoalOffline, newGoalThread, reviseNote, reviseFollowUps, followUpCard, GoalWork, GOAL_AGENT, GOAL_REQUEST, LIST_EDIT, NOTE_EDIT, type GoalThread, type GoalOutcome, type GoalInput, type GoalNote } from './goal.ts';
+export { runInbox, runInboxOffline, parseInboxRequest, inboxList, changeCard, InboxFinish, INBOX_AGENT, INBOX_REQUEST, type InboxOutcome, type InboxInput } from './inbox.ts';
 export { memberCard, member360, matchCard, talkingPoints, scoreFactors, householdList, RELATIONSHIP_AGENT } from './member.ts';
 export { runReferral, runReferralOffline, parseReferral, referralCard, newReferralThread, REFERRAL_AGENT, FinishTurn, type ReferralThread, type ReferralOutcome } from './referral.ts';
 export { runAnalytics, TOOLS, AGENT_NAME, type AnalyticsInput, type AnalyticsOutcome, type MemoryTurn } from './analytics.ts';

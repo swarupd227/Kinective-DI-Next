@@ -103,7 +103,50 @@ export interface AppNotification {
   at: string;
   link?: string;
   read: boolean;
+  /** Set when it is meant for one person; otherwise it belongs to whoever is signed in. */
+  userId?: string;
 }
+
+export type ReferralStageName = 'New Referral' | 'Active' | 'Sold' | 'Not Interested';
+
+/** One line of GET /v1/referrals. Members appear by name and masked number, with an opaque token. */
+export interface ReferralSummary {
+  comId: number;
+  typeLabel: string;
+  category: string;
+  memberRef: string;
+  name: string;
+  last4: string;
+  branch: string;
+  stage: ReferralStageName;
+  priority: string;
+  queueName: string;
+  assignee: { employeeId: number; name: string } | null;
+  senderName: string;
+  createdAt: string;
+  ageDays: number;
+  dueAt: string;
+  overdue: boolean;
+  notes: string | null;
+  fields: Record<string, string | number>;
+}
+
+export interface ReferralDetail extends ReferralSummary {
+  history: { kind: string; text: string; at: string }[];
+  team: { employeeId: number; name: string }[];
+  /** Whether this user may change it: being the sender lets you read it, not work it. */
+  canWork: boolean;
+}
+
+export interface ReferralsIndex {
+  items: ReferralSummary[];
+  counts: { mine: number; team: number; overdue: number };
+  /** False for leads and others who look after a team, whose view starts there. */
+  hasOwnQueue: boolean;
+}
+
+/** A person's own action in the inbox. Actions an agent proposes go through an approval card instead. */
+export type ReferralAction = { kind: 'start' } | { kind: 'note'; text: string } | { kind: 'close'; stage: 'Sold' | 'Not Interested'; note?: string } | { kind: 'assign'; employeeId: number };
 
 /** GET /v1/tables/{id}: a workspace grid's rows for small tables (client-side row model). */
 export interface TableData {

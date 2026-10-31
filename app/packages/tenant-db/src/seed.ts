@@ -6,7 +6,7 @@ import { AS_OF, BUILD, generate, TENANTS } from './generate.ts';
 import { generateRelationship, RELATIONSHIP_DDL } from './relationship.ts';
 import { reportSeed } from './reports.ts';
 import { TENANT_DDL } from './schema.ts';
-import { WORKFLOW_DDL, WORKFLOW_WRITE_TABLES, workflowSeed } from './workflow.ts';
+import { referralSeed, WORKFLOW_DDL, WORKFLOW_WRITE_TABLES, workflowSeed } from './workflow.ts';
 
 const BATCH = 2000;
 
@@ -51,6 +51,8 @@ async function main() {
     const wf = workflowSeed(profile, t.employees);
     await insert(admin, 'mod_ref_types', ['type_id', 'category', 'label', 'description', 'route_rule', 'fields', 'active'], wf.types);
     await insert(admin, 'esp_com_queues', ['queue_id', 'name', 'branch_id', 'member_employee_ids', 'rr_pointer'], wf.queues);
+  const firstBranch = (t.parties as unknown[][]).filter((p) => p[5] === 1 && p[0] !== 1).slice(0, 5).map((p) => p[0] as number);
+  await insert(admin, 'esp_com_items', ['definition', 'type_id', 'party_id', 'fields', 'notes', 'stage', 'priority', 'sender_user_id', 'sender_name', 'to_queue_id', 'assignee_employee_id', 'routing', 'created_at'], referralSeed(firstBranch));
     await insert(admin, 'esp_report_templates', ['template_id', 'name', 'folder', 'status', 'owner_user_id', 'owner_name', 'definition', 'origin', 'version', 'thread_id', 'approval_id', 'created_at', 'updated_at'], reportSeed(profile.institutionType));
     // The application account reads tenant data only (spec 26.2: read-only on customer tables), and
     // writes only the workflow store, through approved DI Core operations.

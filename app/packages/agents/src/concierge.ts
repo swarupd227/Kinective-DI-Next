@@ -12,6 +12,7 @@ import { BRIEFING_AGENT, buildBriefing } from './briefing.ts';
 import type { ReferralPayload, ToolGateway } from './gateway.ts';
 import { GOAL_AGENT, GOAL_REQUEST, LIST_EDIT, NOTE_EDIT, newGoalThread, runGoal, runGoalOffline, type GoalOutcome, type GoalThread } from './goal.ts';
 import { RELATIONSHIP_AGENT } from './member.ts';
+import { INBOX_AGENT, INBOX_REQUEST, runInbox, runInboxOffline, type InboxOutcome } from './inbox.ts';
 import type { ModelClient, Usage } from './model.ts';
 import { runOffline } from './offline.ts';
 import { prescreen } from './prescreen.ts';
@@ -24,6 +25,7 @@ import type { RunSink, StepUpdate } from './sink.ts';
 /** Agents the Concierge can route to. Scripted ones are placeholders until their slices land. */
 export const ROUTES = [
   { agent: 'goal', name: GOAL_AGENT, live: true, intents: ['goal_request'], app: null, examples: ['Get me ready for Thursday’s ALCO meeting', 'Prepare the board pack and draft a note to the executive team', 'Find out why delinquency rose and tell the branch managers', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups'] },
+  { agent: 'referral_inbox', name: INBOX_AGENT, live: true, intents: ['inbox'], app: 'referrals', examples: ['What’s on my plate today?', 'Show my overdue referrals', 'Mark referral 88213 as sold', 'Reassign the Jackson referral to Tom Walsh'] },
   { agent: 'analytics_qa', name: AGENT_NAME, live: true, intents: ['data_question'], app: null, examples: ['Show loan growth by branch for Q3 vs Q2', 'What did deposit balances do by product type over the last two quarters?', 'How is the delinquency ratio calculated?'] },
   { agent: 'dashboard_briefing', name: BRIEFING_AGENT, live: true, intents: ['briefing'], app: null, examples: ['Brief me', 'What changed overnight?'] },
   { agent: 'report_builder', name: REPORT_AGENT, live: true, intents: ['report_request'], app: 'reports', examples: ['Open the September branch scorecard for Westport', 'Build me a monthly ALCO pack with loan balance trend, deposit mix and delinquency ratio', 'Send this to me every Monday', 'Which reports are scheduled for me?'] },
@@ -36,8 +38,8 @@ export const ROUTES = [
 export type RouteAgent = (typeof ROUTES)[number]['agent'] | 'help' | 'none';
 
 export const Classification = z.object({
-  intent: z.enum(['goal_request', 'data_question', 'briefing', 'report_request', 'member_lookup', 'workflow_action', 'module_task', 'admin_task', 'navigation', 'help', 'small_talk', 'core_write', 'out_of_scope', 'unclear']),
-  agent: z.enum(['goal', 'analytics_qa', 'dashboard_briefing', 'report_builder', 'relationship', 'referral', 'goals_incentives', 'deposit_retention', 'help', 'none']),
+  intent: z.enum(['goal_request', 'inbox', 'data_question', 'briefing', 'report_request', 'member_lookup', 'workflow_action', 'module_task', 'admin_task', 'navigation', 'help', 'small_talk', 'core_write', 'out_of_scope', 'unclear']),
+  agent: z.enum(['goal', 'referral_inbox', 'analytics_qa', 'dashboard_briefing', 'report_builder', 'relationship', 'referral', 'goals_incentives', 'deposit_retention', 'help', 'none']),
   confidence: z.number().min(0).max(1),
   needs_clarification: z.boolean(),
   options: z.array(z.string()).max(3).describe('Up to three complete questions the user might mean, when unclear.'),
@@ -69,6 +71,8 @@ export interface ConciergeTurn {
   apps: string[];
   purviewBranches?: string[];
   canViewSql: boolean;
+  /** The staff record behind the user, when they work a queue themselves. */
+  employeeId?: number;
 }
 
 /**
@@ -89,6 +93,7 @@ export interface ApprovalDecisionInput {
   user: { id: string; name: string };
   tenant: TenantRuntime;
   purviewBranches?: string[];
+  employeeId?: number;
 }
 
 export type ApprovalDecisionResult = { status: number; body: unknown; resolved?: 'approved' | 'denied' | 'returned' };
@@ -116,6 +121,7 @@ function keywordClassify(text: string, memberInContext = false): Classification 
   const t = text.toLowerCase();
   const base = { confidence: 0.7, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' as const };
   if (GOAL_REQUEST.test(text)) return { ...base, intent: 'goal_request', agent: 'goal' };
+  if (INBOX_REQUEST.test(text)) return { ...base, intent: 'inbox', agent: 'referral_inbox' };
   if (/\brefer\b|referral/.test(t)) return { ...base, intent: 'workflow_action', agent: 'referral', risk_hint: 'write' };
   if (REPORT_WORDS.test(t)) return { ...base, intent: 'report_request', agent: 'report_builder' };
   if (MEMBER_LOOKUP.test(text) || (memberInContext && ABOUT_MEMBER.test(text)) || /\btell me about [A-Z][a-z'-]+ [A-Z][a-z'-]+/.test(text)) return { ...base, intent: 'member_lookup', agent: 'relationship' };
@@ -151,6 +157,8 @@ const auditOutcome = (r: ReferralOutcome): AuditRecord['outcome'] =>
   r.outcome === 'drafted' ? 'approval_requested' : r.outcome === 'needs_info' || r.outcome === 'ambiguous' ? 'clarify' : r.outcome;
 
 const reportAudit = (r: ReportOutcome): AuditRecord['outcome'] => (r.outcome === 'approval' ? 'approval_requested' : r.outcome === 'clarify' ? 'clarify' : r.outcome === 'report' || r.outcome === 'list' ? 'answer' : r.outcome);
+
+const inboxAudit = (r: InboxOutcome): AuditRecord['outcome'] => (r.outcome === 'approval' ? 'approval_requested' : r.outcome);
 
 const goalAudit = (r: GoalOutcome): AuditRecord['outcome'] => (r.outcome === 'approval' ? 'approval_requested' : r.outcome);
 
@@ -248,16 +256,16 @@ export class Concierge {
       }
 
       // Deterministic checks before any model call (spec 23.3.1 steps 2-3).
-      if (CORE_WRITE.test(screened.text)) {
+      if (CORE_WRITE.test(screened.text) && !INBOX_REQUEST.test(screened.text)) {
         sink.routing('DI Concierge', 'Core write request');
         await sink.block(noticeBlock('not_supported', 'DI reads core data and does not write to it.', 'DI Concierge', turn.runId, { detail: 'Change member records, rates or account details in your core system or through Kinective Digital Connectivity. I can show you the current figures or start a referral instead.' }));
         outcome = 'not_supported';
         return { kind: 'handled' };
       }
 
-      // A plain goal needs no model to recognise, and must not land on a one-step specialist.
+      // A plain goal or inbox request needs no model to recognise, and must not land on a one-step specialist.
       const memberChip = turn.context.some((c) => c.type === 'member');
-      classification = this.deps.model && !GOAL_REQUEST.test(screened.text) ? await this.classify(turn, screened.text, usage) : keywordClassify(screened.text, memberChip);
+      classification = this.deps.model && !GOAL_REQUEST.test(screened.text) && !INBOX_REQUEST.test(screened.text) ? await this.classify(turn, screened.text, usage) : keywordClassify(screened.text, memberChip);
       if (classification.needs_clarification || classification.confidence < CONFIDENCE_THRESHOLD) {
         sink.routing('DI Concierge', 'Clarifying');
         await sink.block(noticeBlock('uncertain', 'Which of these did you mean?', 'DI Concierge', turn.runId, { options: classification.options.slice(0, 3).map((o, i) => ({ id: `o${i + 1}`, label: o })) }));
@@ -266,6 +274,20 @@ export class Concierge {
       }
 
       switch (classification.agent) {
+        case 'referral_inbox': {
+          if (!turn.apps.includes('referrals')) {
+            sink.routing('DI Concierge', 'Referrals not available');
+            await sink.block(noticeBlock('no_access', 'Referrals aren’t part of your DI access.', 'DI Concierge', turn.runId, { permission: 'COM Center: Referrals', detail: 'Ask your DI administrator if you need to work referrals.' }));
+            outcome = 'no_access';
+            return { kind: 'handled' };
+          }
+          if (!turn.tenant.workflow) return { kind: 'scripted', agent: 'referral' };
+          return await this.inbox(turn, screened.text, sink, usage, (r) => {
+            toolCalls = r.toolCalls;
+            outcome = inboxAudit(r);
+            error = r.error;
+          });
+        }
         case 'goal':
           return await this.goal(turn, screened.text, sink, usage, (r) => {
             toolCalls = r.toolCalls;
@@ -413,6 +435,23 @@ export class Concierge {
     }
   }
 
+  /** Works the user's referrals, live or offline. A change waits on its approval card. */
+  private async inbox(turn: ConciergeTurn, text: string, sink: RunSink, usage: Usage[], report: (r: InboxOutcome) => void): Promise<ConciergeDecision> {
+    const gateway = turn.tenant.workflow!.gateway;
+    const input = { runId: turn.runId, threadId: turn.threadId, text, user: turn.user, tenant: { name: turn.tenant.name, institutionType: turn.tenant.institutionType }, apps: turn.apps, purviewBranches: turn.purviewBranches, employeeId: turn.employeeId };
+    const r = this.deps.model ? await runInbox(input, { model: this.deps.model, gateway }, sink) : await runInboxOffline(input, { gateway }, sink);
+    usage.push(...r.usage);
+    report(r);
+    if (r.outcome === 'failed') await sink.block(noticeBlock('error', 'I couldn’t finish that.', INBOX_AGENT, turn.runId, { detail: 'Nothing was changed. Try again, or open Referrals.', retryable: true }));
+    for (const id of r.superseded) void this.deps.audit.event({ eventType: 'ai.approval.superseded', tenant: turn.tenant.key, userId: turn.user.id, threadId: turn.threadId, runId: turn.runId, approvalId: id });
+    if (r.approval) {
+      const a = r.approval.record;
+      void this.deps.audit.event({ eventType: 'ai.approval.requested', tenant: turn.tenant.key, userId: turn.user.id, threadId: turn.threadId, runId: turn.runId, approvalId: a.approvalId, operation: a.operation, riskTier: a.riskTier, payloadHash: a.payloadHash });
+      return { kind: 'handled', approval: { approvalId: a.approvalId, card: r.approval.card }, superseded: r.superseded };
+    }
+    return { kind: 'handled', superseded: r.superseded };
+  }
+
   /** Works toward a goal, live or offline. The run stays open while a note waits for approval. */
   private async goal(turn: ConciergeTurn, text: string, sink: RunSink, usage: Usage[], report: (r: GoalOutcome) => void): Promise<ConciergeDecision> {
     const gateway = turn.tenant.reports?.gateway;
@@ -554,6 +593,7 @@ export class Concierge {
       state.offline = decision === 'returned' ? state.offline : undefined;
     }
     const isDecline = approval.operation === 'relationship.suggestion.decline';
+    const isInboxChange = ['referral.stage.update', 'referral.note.add', 'referral.reassign'].includes(approval.operation);
     const isReport = approval.operation.startsWith('report.');
     // A note from a goal: the plan's last step and the goal itself end with this decision.
     const goal = approval.operation === 'report.share' || approval.operation === 'referral.create.batch' ? this.goalThreads.get(d.threadId) : undefined;
@@ -568,7 +608,7 @@ export class Concierge {
       goal.note = undefined;
       goal.followUps = undefined;
     };
-    const agent = isReport ? REPORT_AGENT : isDecline ? RELATIONSHIP_AGENT : REFERRAL_AGENT;
+    const agent = isReport ? REPORT_AGENT : isDecline ? RELATIONSHIP_AGENT : isInboxChange ? INBOX_AGENT : REFERRAL_AGENT;
     if (decision === 'approved' && isReport && d.tenant.reports) {
       const gw = d.tenant.reports.gateway;
       later(async () => {
@@ -599,7 +639,7 @@ export class Concierge {
     }
     if (decision !== 'approved') {
       later(async () => {
-        const nothing = isReport ? 'Nothing was saved or sent.' : isDecline ? 'Nothing was saved.' : 'Nothing was sent.';
+        const nothing = isReport ? 'Nothing was saved or sent.' : isDecline || isInboxChange ? 'Nothing was changed.' : 'Nothing was sent.';
         if (decision === 'denied') closeGoal({ state: 'skipped', resultSummary: 'You decided not to send it' });
         else if (goal) goal.status = 'asking';
         await sink.text(decision === 'denied' ? nothing : `Returned with your note. ${nothing} Tell me what to change and I’ll prepare a new card.`, agent);
@@ -610,7 +650,16 @@ export class Concierge {
     // Approved: execute after answering the HTTP call, so the card updates at once.
     later(async () => {
       try {
-        const executed = await wf.gateway.execute(approval, { user: d.user, purviewBranches: d.purviewBranches });
+        const executed = await wf.gateway.execute(approval, { user: d.user, purviewBranches: d.purviewBranches, employeeId: d.employeeId });
+        if (executed.operation === 'referral.change') {
+          const { item, kind } = executed;
+          void this.deps.audit.event({ eventType: 'ai.action.executed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, operation: approval.operation, resultRef: `com:${item.comId}` });
+          const source = [{ kind: 'workflow' as const, label: `Referral #${item.comId}`, ref: `workflow:referrals:${item.comId}` }];
+          const closed = kind === 'stage' && (item.stage === 'Sold' || item.stage === 'Not Interested');
+          await sink.text(kind === 'stage' ? `Referral **#${item.comId}** for ${item.name} is now **${item.stage}**.${closed && item.senderUserId !== d.user.id ? ` ${item.senderName} will see that.` : ''}` : kind === 'assign' ? `Referral **#${item.comId}** is now with **${item.assignee?.name}**.` : `Added your note to referral **#${item.comId}**.`, INBOX_AGENT, source);
+          sink.done?.({ notify: closed ? [{ userId: item.senderUserId, title: `Referral #${item.comId} is ${item.stage}`, detail: `${item.name} · ${item.typeLabel}`, comId: item.comId }] : kind === 'assign' ? [{ employeeId: item.assignee?.employeeId, branch: item.branch, title: `Referral #${item.comId} assigned to ${item.assignee?.name}`, detail: `${item.name} · ${item.typeLabel}`, comId: item.comId }] : [] });
+          return;
+        }
         if (executed.operation === 'relationship.suggestion.decline') {
           void this.deps.audit.event({ eventType: 'ai.action.executed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, operation: approval.operation, resultRef: `decline:${executed.partyId}` });
           const until = new Date(`${executed.declined.until}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
@@ -624,7 +673,7 @@ export class Concierge {
           closeGoal({ state: 'done', resultSummary: `${n} ${n === 1 ? 'follow-up' : 'follow-ups'} sent` });
           const lines = executed.created.map((c) => `- **#${c.comId}** ${c.name}: ${c.queueName}${c.assignee ? `, ${c.assignee}` : ''}`);
           await sink.text(`Sent ${n} ${n === 1 ? 'follow-up' : 'follow-ups'}:\n\n${lines.join('\n')}${executed.failed.length ? `\n\nI couldn’t send these, because they’re outside your access: ${executed.failed.join(', ')}.` : ''}`, GOAL_AGENT, [{ kind: 'workflow', label: 'Referrals', ref: 'workflow:referrals' }]);
-          sink.done?.(null);
+          sink.done?.({ notify: executed.created.map((x) => ({ employeeId: x.assigneeId, branch: x.branch, title: `New follow-up: ${x.name}`, detail: x.queueName, comId: x.comId })) });
           return;
         }
         const created = executed.created;
@@ -636,7 +685,7 @@ export class Concierge {
         const who = created.assignee ? `**${created.assignee.name}** has it and will contact ${party?.firstName ?? 'them'}${how ? ` ${how}` : ''}.` : `A team member will claim it from the queue.`;
         const amount = typeof payload.fields.estimated_amount === 'number' ? ` for about ${formatMetric(payload.fields.estimated_amount, 'currency', false)}` : '';
         await sink.text(`Referral **#${created.comId}** (${type.label}${amount}) is in the **${created.queueName}**. ${who}`, REFERRAL_AGENT, [{ kind: 'workflow', label: `Referral #${created.comId}`, ref: `workflow:referrals:${created.comId}` }]);
-        sink.done?.({ comId: created.comId, queueName: created.queueName, assignee: created.assignee?.name ?? null });
+        sink.done?.({ comId: created.comId, queueName: created.queueName, assignee: created.assignee?.name ?? null, notify: [{ employeeId: created.assignee?.employeeId, branch: party?.branch, title: `New ${type.label} referral: ${party?.name ?? `#${created.comId}`}`, detail: created.queueName, comId: created.comId }] });
       } catch (err) {
         void this.deps.audit.event({ eventType: 'ai.action.failed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, error: err instanceof Error ? err.message : String(err) });
         closeGoal({ state: 'failed', resultSummary: 'Nothing was sent' });

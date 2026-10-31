@@ -18,6 +18,7 @@ const AppPlaceholder = lazy(() => import('./pages/AppPlaceholder.tsx').then((m) 
 const NotFound = lazy(() => import('./pages/NotFound.tsx').then((m) => ({ default: m.NotFound })));
 const MemberPage = lazy(() => import('./pages/MemberPage.tsx').then((m) => ({ default: m.MemberPage })));
 const ReportsPage = lazy(() => import('./pages/ReportsPage.tsx').then((m) => ({ default: m.ReportsPage })));
+const ReferralsPage = lazy(() => import('./pages/ReferralsPage.tsx').then((m) => ({ default: m.ReferralsPage })));
 const ReportPage = lazy(() => import('./pages/ReportsPage.tsx').then((m) => ({ default: m.ReportPage })));
 
 const page = (el: ReactNode) => <Suspense fallback={null}>{el}</Suspense>;
@@ -42,6 +43,7 @@ export const router = createBrowserRouter([
           { path: 'reports', element: guarded('reports', <ReportsPage />) },
           { path: 'reports/:templateId', element: guarded('reports', <ReportPage />) },
           { path: 'reports/*', element: guarded('reports', <ReportsPage />) },
+          { path: 'workflows/referrals/*', element: guarded('referrals', <ReferralsPage />) },
           { path: 'workflows/*', element: guarded('workflows', <AppPlaceholder app="workflows" />) },
           { path: 'calendar/*', element: guarded('calendar', <AppPlaceholder app="calendar" />) },
           { path: 'files/*', element: guarded('files', <AppPlaceholder app="files" />) },

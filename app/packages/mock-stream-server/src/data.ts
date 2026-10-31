@@ -14,7 +14,7 @@ import type {
 } from '@dinext/block-schemas';
 import { approvalHighFixture, chartFixture, kpiGroupFixture, lineChartFixture, nightly, tableFixture } from '@dinext/block-schemas/fixtures';
 
-export type PersonaId = 'executive' | 'analyst' | 'branch' | 'bank_cfo' | 'admin';
+export type PersonaId = 'executive' | 'analyst' | 'branch' | 'msr' | 'bank_cfo' | 'admin';
 
 interface Persona {
   session: Omit<Session, 'build' | 'timeouts' | 'flags' | 'slashCommands' | 'personas' | 'voice'>;
@@ -22,6 +22,10 @@ interface Persona {
   floor?: boolean;
   /** Branches whose rows this persona may see; undefined means every branch (spec 20.7 purview). */
   purview?: string[];
+  /** The staff record behind this user, when they work queues themselves. */
+  employeeId?: number;
+  /** Told about everything new in their purview's queues, not only their own. */
+  leadsBranch?: boolean;
   suggestions: string[];
 }
 
@@ -68,7 +72,21 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       permissions: { queryBrowser: false, dashboardAdmin: false },
     },
     purview: ['Westport'],
-    suggestions: ['Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups', 'Refer Suzanne Jackson for a HELOC, she prefers a call after 5 pm', 'Show my overdue onboarding touch points', 'Show Northgate loan detail'],
+    employeeId: 6,
+    leadsBranch: true,
+    suggestions: ['What’s on my team’s plate?', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups', 'Refer Suzanne Jackson for a HELOC, she prefers a call after 5 pm', 'Show my overdue onboarding touch points', 'Show Northgate loan detail'],
+  },
+  msr: {
+    session: {
+      user: user('user:6004', 'Sofia Ruiz', 'Member Services, Westport', 'Frontline'),
+      tenant: CU,
+      apps: ['home', 'conversations', 'workflows', 'rm', 'referrals'],
+      permissions: { queryBrowser: false, dashboardAdmin: false },
+    },
+    floor: true,
+    purview: ['Westport'],
+    employeeId: 4,
+    suggestions: ['What’s on my plate today?', 'Show my overdue referrals', 'Prepare me for my meeting with Suzanne Jackson'],
   },
   bank_cfo: {
     session: {
@@ -256,6 +274,13 @@ export function homeFor(id: PersonaId, approvals: ApprovalCardBlock[]): HomeBrie
 }
 
 /** Home approval cards for personas that have pending work (spec 6.3 FE-EXP-011). */
+/** Who hears about work landing in a queue: the person it went to, and whoever leads that branch. */
+export function usersToTell(employeeId: number | undefined, branch: string | undefined) {
+  return Object.values(PERSONAS)
+    .filter((p) => (employeeId !== undefined && p.employeeId === employeeId) || (p.leadsBranch && branch !== undefined && p.purview?.includes(branch)))
+    .map((p) => p.session.user.id);
+}
+
 export function homeApprovals(id: PersonaId, mkId: (p: string, n?: number) => string): ApprovalCardBlock[] {
   if (id !== 'executive' && id !== 'bank_cfo') return [];
   const expires = new Date(Date.now() + 8 * 3600_000).toISOString();

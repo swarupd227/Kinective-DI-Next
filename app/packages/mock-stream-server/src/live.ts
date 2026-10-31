@@ -4,8 +4,8 @@
 import { randomBytes } from 'node:crypto';
 import type { ApprovalCardBlock, ApprovalDecisionRequest, Block, KpiGroupBlock, ListBlock, Member360Block, SearchResult, StreamEvent, StreamingEnvelope, TableData } from '@dinext/block-schemas';
 import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, describeSchedule, hasClaudeCredentials, member360, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
-import { ApprovalStore, CoreError, ReferralService, RelationshipService, ReportStore, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
-import type { ReportCanvasBlock } from '@dinext/block-schemas';
+import { ApprovalStore, CoreError, ReferralService, RelationshipService, ReportStore, type InboxItem, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
+import type { ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
 import { renderExport } from './exports.ts';
 import { SemanticService } from '@dinext/semantic';
 import { tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
@@ -80,7 +80,7 @@ export interface LiveRuntime {
    * or refused it; `onDone` fires when any follow-on work (executing the write) has streamed.
    */
   decide(persona: PersonaId, req: { approvalId: string; threadId: string; runId: string; body: ApprovalDecisionRequest }, emit: (e: Emit) => void, onDone: (result: unknown) => void, speed: number): Promise<ApprovalDecisionResult>;
-  home(persona: PersonaId): Promise<{ kpis: KpiGroupBlock; narrative: string; lookAt: ListBlock; scheduled: ListBlock | null } | null>;
+  home(persona: PersonaId): Promise<{ kpis: KpiGroupBlock; narrative: string; lookAt: ListBlock; scheduled: ListBlock | null; referrals: { open: number; overdue: number } | null } | null>;
   /**
    * A member's 360 for the workspace or the member page (GET /v1/members/{token}). Null when the
    * relationship data is not loaded; NO_ACCESS for a token outside the purview. Logged as an access.
@@ -90,6 +90,11 @@ export interface LiveRuntime {
   searchMembers(persona: PersonaId, q: string): Promise<SearchResult[] | null>;
   /** The Reports app: templates the user can open and their schedules (spec 8.5–8.9). */
   reports(persona: PersonaId): Promise<{ templates: ReportSummary[]; schedules: ScheduleSummary[] } | null>;
+  /** The Referrals app: a box of referrals with counts for the tabs (FE-REF-001). */
+  referrals(persona: PersonaId, box: 'mine' | 'team' | 'sent'): Promise<ReferralsIndex | null>;
+  referral(persona: PersonaId, comId: number): Promise<ReferralDetail | null>;
+  /** The user's own action on a referral, and who should hear about it. */
+  referralAction(persona: PersonaId, comId: number, action: ReferralAction): Promise<{ detail: ReferralDetail; notify: Notice[] } | null>;
   /** Runs a report for control values: the canvas re-runs without a new turn (spec 8.5). */
   runReport(persona: PersonaId, templateId: string, controls: ReportControls, test?: boolean): Promise<ReportCanvasBlock | null>;
   /** Accept, revert, move, resize or remove on a draft canvas (FE-BLD-002, FE-BLD-003). */
@@ -104,9 +109,22 @@ export interface LiveRuntime {
   close(): Promise<void>;
 }
 
+/** Someone to tell: a named user, or whoever works and leads a branch's queue. */
+export interface Notice {
+  userId?: string;
+  employeeId?: number;
+  branch?: string;
+  title: string;
+  detail?: string;
+  comId: number;
+}
+
+/** Frontline staff work their own queue; a branch lead and everyone else look after the team's. */
+const worksOwnQueue = (p: PersonaId) => PERSONAS[p].employeeId !== undefined && !PERSONAS[p].leadsBranch;
+
 const personaContext = (p: PersonaId) => {
   const s = PERSONAS[p].session;
-  return { purviewBranches: PERSONAS[p].purview, canViewSql: s.permissions.queryBrowser };
+  return { purviewBranches: PERSONAS[p].purview, canViewSql: s.permissions.queryBrowser, employeeId: PERSONAS[p].employeeId };
 };
 
 /** Maps a run's sink calls to stream events (spec 12.4). Text is verified before it streams. */
@@ -157,6 +175,8 @@ function streamSink(emit: (e: Emit) => void, runId: string, signal: AbortSignal,
   };
 }
 
+const referralView = ({ partyId, senderUserId: _sender, ...i }: InboxItem, rm: RelationshipService | null): ReferralSummary => ({ ...i, memberRef: rm?.token(partyId) ?? '' });
+
 export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promise<LiveRuntime | null> {
   const tenants = new Map<string, Tenant>();
   const audit = new AuditLog();
@@ -196,6 +216,14 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
   const model = hasClaudeCredentials() && !opts.offline ? new AnthropicModelClient() : null;
   const concierge = new Concierge({ model, audit, beatMs: process.env.NODE_ENV === 'test' ? 0 : 1600 });
   const tenantFor = (p: PersonaId) => tenants.get(PERSONAS[p].session.tenant.id) ?? null;
+  const referralDetail = async (persona: PersonaId, comId: number): Promise<ReferralDetail | null> => {
+    const wf = tenantFor(persona)?.runtime.workflow;
+    const session = PERSONAS[persona].session;
+    if (!wf || !session.apps.includes('referrals')) return null;
+    const purview = PERSONAS[persona].purview;
+    const d = await wf.referrals.item(comId, { userId: session.user.id }, { purviewBranches: purview });
+    return { ...referralView(d, wf.relationship ?? null), history: d.history, team: d.team, canWork: !purview || purview.includes(d.branch) };
+  };
 
   return {
     concierge,
@@ -231,6 +259,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
           user: { id: s.user.id, name: s.user.name },
           tenant: tenant.runtime,
           purviewBranches: PERSONAS[persona].purview,
+          employeeId: PERSONAS[persona].employeeId,
         },
         sink,
       );
@@ -261,6 +290,41 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
         templates: templates.map((t) => ({ templateId: t.templateId, name: t.name, folder: t.folder, status: t.status, periodType: t.definition.settings.periodType, description: t.definition.description, sections: t.definition.widgets.length, owner: t.ownerName, updatedAt: t.updatedAt, origin: t.origin ? `Created by ${t.origin.agent}, approved by ${t.origin.approvedBy}` : undefined })),
         schedules: schedules.map(scheduleSummary),
       };
+    },
+
+    async referrals(persona, box) {
+      const tenant = tenantFor(persona);
+      const wf = tenant?.runtime.workflow;
+      const s = PERSONAS[persona].session;
+      if (!wf || !s.apps.includes('referrals')) return null;
+      const who = { userId: s.user.id, employeeId: PERSONAS[persona].employeeId };
+      const ctx = { purviewBranches: PERSONAS[persona].purview };
+      const [items, mine, team] = await Promise.all([wf.referrals.inbox(box, who, ctx), wf.referrals.inbox('mine', who, ctx), wf.referrals.inbox('team', who, ctx)]);
+      const own = worksOwnQueue(persona);
+      return { items: items.map((i) => referralView(i, wf.relationship ?? null)), counts: { mine: mine.length, team: team.length, overdue: (own ? mine : team).filter((i) => i.overdue).length }, hasOwnQueue: own };
+    },
+
+    referral: referralDetail,
+
+    async referralAction(persona, comId, action) {
+      const tenant = tenantFor(persona);
+      const wf = tenant?.runtime.workflow;
+      const s = PERSONAS[persona].session;
+      if (!wf || !s.apps.includes('referrals')) return null;
+      const ctx = { purviewBranches: PERSONAS[persona].purview };
+      const meta = { userId: s.user.id, userName: s.user.name, employeeId: PERSONAS[persona].employeeId };
+      const notify: Notice[] = [];
+      if (action.kind === 'note') await wf.referrals.addNote(comId, action.text, meta, ctx);
+      else if (action.kind === 'start') await wf.referrals.transition(comId, 'Active', undefined, meta, ctx);
+      else if (action.kind === 'assign') {
+        const d = await wf.referrals.reassign(comId, action.employeeId, meta, ctx);
+        notify.push({ employeeId: action.employeeId, branch: d.branch, title: `Referral #${comId} assigned to ${d.assignee?.name}`, detail: `${d.name} · ${d.typeLabel}`, comId });
+      } else {
+        const { item, changed } = await wf.referrals.transition(comId, action.stage, action.note, meta, ctx);
+        if (changed) notify.push({ userId: item.senderUserId, title: `Referral #${comId} is ${item.stage}`, detail: `${item.name} · ${item.typeLabel}`, comId });
+      }
+      void audit.event({ eventType: 'referral.action', tenant: tenant!.runtime.key, userId: s.user.id, threadId: '', runId: '', approvalId: '', comId, action: action.kind });
+      return { detail: (await referralDetail(persona, comId))!, notify };
     },
 
     async runReport(persona, templateId, controls, test) {
@@ -372,7 +436,11 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
             },
           }
         : null;
-      return { kpis, narrative: b.narrative, lookAt, scheduled };
+      // Real counts for "Your work": the user's own queue, or their team's if they have none.
+      const who = { userId: PERSONAS[persona].session.user.id, employeeId: PERSONAS[persona].employeeId };
+      const wf = tenant.runtime.workflow;
+      const open = wf && PERSONAS[persona].session.apps.includes('referrals') ? await wf.referrals.inbox(worksOwnQueue(persona) ? 'mine' : 'team', who, { purviewBranches: purview }) : null;
+      return { kpis, narrative: b.narrative, lookAt, scheduled, referrals: open && { open: open.length, overdue: open.filter((i) => i.overdue).length } };
     },
 
     async table(persona, tableId) {

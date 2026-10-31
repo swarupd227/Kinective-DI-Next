@@ -46,6 +46,50 @@ export interface DraftCheck {
   fields: Record<string, string | number>;
 }
 
+/** The stage bar (spec 17.3). Sold and Not Interested close a referral. */
+export const REFERRAL_STAGES = ['New Referral', 'Active', 'Sold', 'Not Interested'] as const;
+export type ReferralStage = (typeof REFERRAL_STAGES)[number];
+const OPEN_STAGES: ReferralStage[] = ['New Referral', 'Active'];
+
+/** Days to work a referral, by priority [Assumption]: until a tenant sets its own SLA. */
+export const DUE_DAYS: Record<string, number> = { Urgent: 1, High: 2, Normal: 5, Low: 10 };
+
+export type InboxBox = 'mine' | 'team' | 'sent';
+
+export interface InboxItem {
+  comId: number;
+  typeLabel: string;
+  category: string;
+  partyId: number;
+  name: string;
+  last4: string;
+  branch: string;
+  stage: ReferralStage;
+  priority: string;
+  queueName: string;
+  assignee: { employeeId: number; name: string } | null;
+  senderUserId: string;
+  senderName: string;
+  createdAt: string;
+  ageDays: number;
+  dueAt: string;
+  overdue: boolean;
+  notes: string | null;
+  fields: Record<string, string | number>;
+}
+
+export interface InboxDetail extends InboxItem {
+  history: { kind: string; text: string; at: string }[];
+  /** People who can take this referral over. */
+  team: { employeeId: number; name: string }[];
+}
+
+export interface ChangeMeta {
+  userId: string;
+  userName: string;
+  employeeId?: number;
+}
+
 export class CoreError extends Error {
   constructor(
     readonly code: 'NOT_FOUND' | 'INVALID' | 'NO_ACCESS',
@@ -261,6 +305,128 @@ export class ReferralService {
     if (!partyIds.length) return new Set<number>();
     const [rows] = await this.pool.query("SELECT DISTINCT party_id FROM esp_com_items WHERE definition = 'referral' AND type_id = ? AND stage = 'New Referral' AND party_id IN (?)", [typeId, partyIds]);
     return new Set((rows as { party_id: number }[]).map((r) => r.party_id));
+  }
+
+  private toItem(r: Record<string, unknown>, now = new Date()): InboxItem {
+    const created = new Date(`${String(r.created_at).replace(' ', 'T')}Z`);
+    const priority = r.priority as string;
+    const due = new Date(created.getTime() + (DUE_DAYS[priority] ?? DUE_DAYS.Normal!) * 86_400_000);
+    const stage = r.stage as ReferralStage;
+    return {
+      comId: r.com_id as number,
+      typeLabel: r.type_label as string,
+      category: r.category as string,
+      partyId: r.party_id as number,
+      name: `${r.first_name} ${r.last_name}`,
+      last4: memberNumber(r.party_id as number).slice(-4),
+      branch: r.branch as string,
+      stage,
+      priority,
+      queueName: r.queue_name as string,
+      assignee: r.assignee_employee_id ? { employeeId: r.assignee_employee_id as number, name: r.assignee_name as string } : null,
+      senderUserId: r.sender_user_id as string,
+      senderName: r.sender_name as string,
+      createdAt: created.toISOString(),
+      ageDays: Math.floor((now.getTime() - created.getTime()) / 86_400_000),
+      dueAt: due.toISOString(),
+      overdue: OPEN_STAGES.includes(stage) && due < now,
+      notes: (r.notes as string | null) ?? null,
+      fields: (typeof r.fields === 'string' ? JSON.parse(r.fields) : r.fields) as Record<string, string | number>,
+    };
+  }
+
+  private static readonly ITEM_SQL = `SELECT c.com_id, c.party_id, c.fields, c.notes, c.stage, c.priority, c.assignee_employee_id, c.sender_user_id, c.sender_name, c.created_at, c.to_queue_id,
+      t.label AS type_label, t.category, p.first_name, p.last_name, b.name AS branch, q.name AS queue_name, e.display_name AS assignee_name
+    FROM esp_com_items c JOIN mod_ref_types t ON t.type_id = c.type_id JOIN cdm_party p ON p.party_id = c.party_id JOIN cdm_location b ON b.int_id = p.primary_branch_id
+    JOIN esp_com_queues q ON q.queue_id = c.to_queue_id LEFT JOIN cdm_employee e ON e.employee_id = c.assignee_employee_id`;
+
+  /**
+   * referral.inbox.list (BE-WF-003, FE-REF-001). Mine: open work assigned to the user. Team: open
+   * work in the user's COM purview, including what nobody has claimed. Sent: what the user created,
+   * wherever it went, with its current stage. Overdue first, then oldest first.
+   */
+  async inbox(box: InboxBox, who: { userId: string; employeeId?: number }, ctx: CoreContext, limit = 100): Promise<InboxItem[]> {
+    const where = ["c.definition = 'referral'"];
+    const params: unknown[] = [];
+    if (box === 'mine') {
+      if (who.employeeId === undefined) return [];
+      where.push('c.assignee_employee_id = ?');
+      params.push(who.employeeId);
+    }
+    if (box === 'sent') {
+      where.push('c.sender_user_id = ?');
+      params.push(who.userId);
+    } else {
+      where.push('c.stage IN (?)');
+      params.push(OPEN_STAGES);
+      if (ctx.purviewBranches) {
+        where.push('b.name IN (?)');
+        params.push(ctx.purviewBranches.length ? ctx.purviewBranches : ['']);
+      }
+    }
+    const [rows] = await this.pool.query(`${ReferralService.ITEM_SQL} WHERE ${where.join(' AND ')} ORDER BY c.created_at ASC LIMIT ?`, [...params, limit]);
+    const now = new Date();
+    const items = (rows as Record<string, unknown>[]).map((r) => this.toItem(r, now));
+    return items.sort((a, b) => Number(b.overdue) - Number(a.overdue) || a.createdAt.localeCompare(b.createdAt));
+  }
+
+  /** One referral. The sender can always read it; otherwise it must be in the purview, or reads as not found. */
+  async item(comId: number, who: { userId: string }, ctx: CoreContext): Promise<InboxDetail> {
+    const [rows] = await this.pool.query(`${ReferralService.ITEM_SQL} WHERE c.com_id = ? AND c.definition = 'referral'`, [comId]);
+    const row = (rows as Record<string, unknown>[])[0];
+    if (!row) throw new CoreError('NOT_FOUND', `Referral #${comId} was not found.`);
+    const item = this.toItem(row);
+    if (item.senderUserId !== who.userId && ctx.purviewBranches && !ctx.purviewBranches.includes(item.branch)) throw new CoreError('NOT_FOUND', `Referral #${comId} was not found.`);
+    const [lines] = await this.pool.query('SELECT kind, text, created_at FROM esp_com_lines WHERE com_id = ? ORDER BY line_id', [comId]);
+    const [q] = await this.pool.query('SELECT * FROM esp_com_queues WHERE queue_id = ?', [row.to_queue_id]);
+    const names = await this.names();
+    return {
+      ...item,
+      history: (lines as { kind: string; text: string; created_at: string }[]).map((l) => ({ kind: l.kind, text: l.text, at: `${String(l.created_at).replace(' ', 'T')}Z` })),
+      team: members((q as QueueRow[])[0]!).map((employeeId) => ({ employeeId, name: names.get(employeeId)! })),
+    };
+  }
+
+  /** Changes need the item in the purview: being its sender lets you read it, not work it. */
+  private async workable(comId: number, meta: ChangeMeta, ctx: CoreContext) {
+    const item = await this.item(comId, meta, ctx);
+    if (ctx.purviewBranches && !ctx.purviewBranches.includes(item.branch)) throw new CoreError('NO_ACCESS', `Referral #${comId} is outside your purview.`);
+    return item;
+  }
+
+  private async line(comId: number, kind: string, text: string, userId: string) {
+    await this.pool.query('INSERT INTO esp_com_lines (com_id, kind, text, by_user_id, created_at) VALUES (?, ?, ?, ?, ?)', [comId, kind, text.slice(0, 1000), userId, sqlTime(new Date())]);
+  }
+
+  /** Stage is the lifecycle; a closed referral stays closed. Repeating the same change does nothing. */
+  async transition(comId: number, stage: ReferralStage, note: string | undefined, meta: ChangeMeta, ctx: CoreContext) {
+    if (!REFERRAL_STAGES.includes(stage)) throw new CoreError('INVALID', `Stage must be one of: ${REFERRAL_STAGES.join(', ')}.`);
+    const item = await this.workable(comId, meta, ctx);
+    if (item.stage === stage) return { item, changed: false };
+    if (!OPEN_STAGES.includes(item.stage)) throw new CoreError('INVALID', `Referral #${comId} is already closed as ${item.stage}.`);
+    if (stage === 'New Referral') throw new CoreError('INVALID', 'A referral that has started cannot go back to New Referral.');
+    // Starting work on something nobody holds makes it yours.
+    const claim = stage === 'Active' && !item.assignee && meta.employeeId !== undefined;
+    await this.pool.query(`UPDATE esp_com_items SET stage = ?${claim ? ', assignee_employee_id = ?' : ''} WHERE com_id = ?`, claim ? [stage, meta.employeeId, comId] : [stage, comId]);
+    await this.line(comId, 'stage', `${meta.userName} moved this from ${item.stage} to ${stage}.${note ? ` ${note}` : ''}`, meta.userId);
+    return { item: await this.item(comId, meta, ctx), changed: true };
+  }
+
+  async addNote(comId: number, text: string, meta: ChangeMeta, ctx: CoreContext) {
+    await this.workable(comId, meta, ctx);
+    await this.line(comId, 'note', `${meta.userName}: ${text}`, meta.userId);
+    return this.item(comId, meta, ctx);
+  }
+
+  /** Reassigns within the referral's queue: the person must be someone who works it. */
+  async reassign(comId: number, employeeId: number, meta: ChangeMeta, ctx: CoreContext) {
+    const item = await this.workable(comId, meta, ctx);
+    if (!OPEN_STAGES.includes(item.stage)) throw new CoreError('INVALID', `Referral #${comId} is closed.`);
+    const to = item.team.find((m) => m.employeeId === employeeId);
+    if (!to) throw new CoreError('INVALID', `${item.queueName} is worked by ${item.team.map((m) => m.name).join(', ') || 'nobody yet'}.`);
+    await this.pool.query('UPDATE esp_com_items SET assignee_employee_id = ? WHERE com_id = ?', [employeeId, comId]);
+    await this.line(comId, 'assign', `${meta.userName} assigned this to ${to.name}.`, meta.userId);
+    return this.item(comId, meta, ctx);
   }
 
   /** referral.get */
