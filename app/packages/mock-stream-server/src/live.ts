@@ -3,7 +3,7 @@
 // key the Concierge runs its deterministic offline planner (spec 23.6.4).
 import { randomBytes } from 'node:crypto';
 import type { ApprovalCardBlock, ApprovalDecisionRequest, Block, KpiGroupBlock, ListBlock, Member360Block, SearchResult, StreamEvent, StreamingEnvelope, TableData } from '@dinext/block-schemas';
-import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, describeSchedule, hasClaudeCredentials, member360, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
+import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, pipelineTake, referralTake, todayList, describeSchedule, hasClaudeCredentials, member360, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
 import { ApprovalStore, CoreError, PipelineService, ReferralService, RelationshipService, ReportStore, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
 import type { AppNotification, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
 import { renderExport } from './exports.ts';
@@ -95,6 +95,8 @@ export interface LiveRuntime {
   referrals(persona: PersonaId, box: 'mine' | 'team' | 'sent'): Promise<ReferralsIndex | null>;
   /** For the bell: each of your own overdue referrals, or a count for a branch lead. */
   overdueReferrals(persona: PersonaId): Promise<Omit<AppNotification, 'read'>[]>;
+  /** Home's "Needs you": the day's work, ranked, each item starting it. Null when nothing needs them. */
+  today(persona: PersonaId): Promise<ListBlock | null>;
   /** For the bell: your stalled applications, or a count for a branch lead. */
   stalledApplications(persona: PersonaId): Promise<Omit<AppNotification, 'read'>[]>;
   /** The Loan Pipeline's summary and the views this user may use; null when it is not loaded. */
@@ -328,7 +330,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       const ctx = { purviewBranches: PERSONAS[persona].purview };
       const [items, mine, team] = await Promise.all([wf.referrals.inbox(box, who, ctx), wf.referrals.inbox('mine', who, ctx), wf.referrals.inbox('team', who, ctx)]);
       const own = worksOwnQueue(persona);
-      return { items: items.map((i) => referralView(i, wf.relationship ?? null)), counts: { mine: mine.length, team: team.length, overdue: (own ? mine : team).filter((i) => i.overdue).length }, hasOwnQueue: own };
+      return { take: referralTake(own ? mine : team, own), items: items.map((i) => referralView(i, wf.relationship ?? null)), counts: { mine: mine.length, team: team.length, overdue: (own ? mine : team).filter((i) => i.overdue).length }, hasOwnQueue: own };
     },
 
     async overdueReferrals(persona) {
@@ -344,6 +346,14 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       return [{ id: 'ntc_overdue_team', group: 'workflow', title: `${overdue.length} team ${overdue.length === 1 ? 'referral is' : 'referrals are'} overdue`, detail: overdue.map((i) => i.name).join(' · '), at: latest, link: '/workflows/referrals/inbox' }];
     },
 
+    async today(persona) {
+      const gateway = tenantFor(persona)?.runtime.workflow?.gateway;
+      if (!gateway) return null;
+      const s = PERSONAS[persona].session;
+      const plan = await buildToday({ user: s.user, apps: s.apps, ...personaContext(persona) }, gateway);
+      return plan.items.length ? todayList(plan, 'R-today', { startsWork: true }) : null;
+    },
+
     async stalledApplications(persona) {
       const lap = lapFor(persona);
       const p = PERSONAS[persona];
@@ -353,7 +363,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       if (!own && !p.leadsBranch) return [];
       const { items, count, oldestDays, asOf } = await lap.service.find({ view: own ? 'mine' : 'team', stalledOnly: true }, lap.who, lap.ctx);
       if (!count) return [];
-      return [{ id: `ntc_stalled_${own ? 'mine' : 'team'}`, group: 'workflow', title: `${count} ${own ? 'of your applications' : 'team applications'} ${count === 1 ? 'has' : 'have'} stalled`, detail: `Oldest ${oldestDays} days${items[0] ? `: ${items[0].name}, ${items[0].status.toLowerCase()}` : ''}`, at: `${asOf}T06:00:00.000Z`, link: '/m/lap' }];
+      return [{ id: `ntc_stalled_${own ? 'mine' : 'team'}`, group: 'workflow', title: `${count} ${own ? 'of your applications' : 'team applications'} ${count === 1 ? 'has' : 'have'} stalled`, detail: `Oldest ${oldestDays} days${items[0] ? `: ${items[0].name}` : ''}`, at: `${asOf}T06:00:00.000Z`, link: '/m/lap' }];
     },
 
     async pipeline(persona, view) {
@@ -361,8 +371,10 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       if (!lap) return null;
       const views = await lap.service.views(lap.who, lap.ctx);
       if (!views.length) return null;
-      const summary = await lap.service.summary((view ?? views[0]!) as PipelineView, lap.who, lap.ctx);
-      return { ...summary, views, details: lap.who.details };
+      const chosen = (view ?? views[0]!) as PipelineView;
+      const summary = await lap.service.summary(chosen, lap.who, lap.ctx);
+      const stalled = await lap.service.find({ view: chosen, stalledOnly: true }, lap.who, lap.ctx);
+      return { ...summary, views, details: lap.who.details, take: pipelineTake(stalled, chosen === 'mine') };
     },
 
     async pipelineApplications(persona, q) {

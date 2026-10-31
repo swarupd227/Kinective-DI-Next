@@ -87,7 +87,7 @@ export function HomePage() {
             <section key={s.id} className={styles.section} aria-labelledby={`h-${s.id}`}>
               <h2 id={`h-${s.id}`} className={styles.sectionTitle}>
                 {title(s)}
-                {s.id === 'approvals' && <span className={styles.count}>{s.blocks.filter((b) => !(b.type === 'approval_card' && resolved[b.data.approvalId])).length}</span>}
+                {s.id === 'approvals' && <span className={styles.count}>{s.blocks.reduce((n, b) => n + (b.type === 'list' ? b.data.items.length : b.type === 'approval_card' && resolved[b.data.approvalId] ? 0 : 1), 0)}</span>}
               </h2>
               {s.id === 'what_changed' && (
                 <>

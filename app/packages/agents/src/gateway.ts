@@ -310,7 +310,7 @@ export interface DeclineDraft {
 }
 
 export type GatewayResult =
-  | { ok: true; content: unknown; draft?: DraftResult; decline?: DeclineDraft; batch?: BatchDraft; inbox?: InboxItem[]; item?: InboxDetail; change?: ChangeDraft; summary?: PipelineSummary; found?: PipelineFound; application?: PipelineApplication & { history: { status: string; at: string }[] }; statuses?: PipelineStatus[]; rate?: LapRate; tasks?: LapTaskDraft; threshold?: ThresholdDraft; atRisk?: { total: number; items: (AtRiskMember & { ref: string; followedUp: boolean })[] }; hits?: (PartyHit & { matchedOn?: string })[]; profile?: MemberProfile; topics?: Topic[]; explained?: ReturnType<RelationshipService['explain']> }
+  | { ok: true; content: unknown; draft?: DraftResult; decline?: DeclineDraft; batch?: BatchDraft; inbox?: InboxItem[]; item?: InboxDetail; change?: ChangeDraft; summary?: PipelineSummary; found?: PipelineFound; application?: PipelineApplication & { history: { status: string; at: string }[]; asOf: string; stale: boolean }; statuses?: PipelineStatus[]; rate?: LapRate; tasks?: LapTaskDraft; threshold?: ThresholdDraft; atRisk?: { total: number; items: (AtRiskMember & { ref: string; followedUp: boolean })[] }; hits?: (PartyHit & { matchedOn?: string })[]; profile?: MemberProfile; topics?: Topic[]; explained?: ReturnType<RelationshipService['explain']> }
   | { ok: false; code: 'UNKNOWN_TOOL' | 'NOT_ALLOWED' | 'INVALID_INPUT' | 'RESERVED_KEY' | 'UNKNOWN_REF' | 'NO_ACCESS' | 'NOT_FOUND' | 'FORM_INCOMPLETE'; content: unknown };
 
 interface BatchDone {
@@ -323,6 +323,11 @@ export type Executed = { operation: 'referral.create'; created: Awaited<ReturnTy
 const round = (n: number) => (Math.abs(n) >= 1000 ? Math.round(n / 100) * 100 : Math.round(n));
 
 /** What the model sees of a profile: enough to write talking points, with identifiers masked. */
+/** Lowercases a label for mid-sentence, leaving acronyms such as HELOC alone. */
+export const midSentence = (s: string) => (/^[A-Z][a-z]/.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s);
+/** A status as it reads after "12 days": "in underwriting", "at counter offer". */
+export const inStatus = (status: string) => (/^(In|Waiting)\b/.test(status) ? midSentence(status) : `at ${midSentence(status)}`);
+
 const lapWho = (ctx: Pick<GatewayContext, 'employeeId' | 'lap'>): PipelineWho => ({ employeeId: ctx.employeeId, leads: ctx.lap?.leads, details: Boolean(ctx.lap?.details) });
 
 function profileForModel(p: MemberProfile, ref: string) {
@@ -449,7 +454,7 @@ export class ToolGateway {
               continue;
             }
             const route = await this.deps.referrals.route(LAP_TASK_TYPE, x.partyId);
-            const reason = `${x.daysInStatus} days ${x.status.toLowerCase()}${x.threshold !== null ? `, threshold ${x.threshold}` : ''}`;
+            const reason = `${x.daysInStatus} days ${inStatus(x.status)}${x.threshold !== null ? `, threshold ${x.threshold}` : ''}`;
             items.push({ typeId: LAP_TASK_TYPE, partyId: x.partyId, assigneeEmployeeId: x.owner.employeeId, fields: { application_id: String(x.applicationId) }, notes: `Application #${x.applicationId}, ${x.product}: ${reason}, as of the last LOS load. Check what’s holding it.`, priority: x.stalled ? 'High' : 'Normal', toQueueId: route.queueId, applicationId: x.applicationId, label: `#${x.applicationId} ${x.lastName}, ${x.product}`, to: x.owner.name, reason, branch: x.branch });
           }
           if (!items.length) return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: 'Those applications already have an open follow-up task.', skipped } };

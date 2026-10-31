@@ -10,6 +10,7 @@ import { Button, SegmentedControl, Skeleton, TextInput, useAnnouncer, useToast }
 import type { ContextRef, ReferralAction, ReferralDetail, ReferralStageName, ReferralSummary } from '@dinext/block-schemas';
 import { ApiError } from '@dinext/stream-client';
 import { useSession } from '../session/SessionProvider.tsx';
+import { DiTake } from '../shell/DiTake.tsx';
 import { useUi } from '../shell/uiStore.ts';
 import page from './Page.module.css';
 import styles from './ReferralsPage.module.css';
@@ -42,7 +43,7 @@ export function ReferralsPage() {
     <div className={clsx(page.page, styles.page)}>
       <header className={page.header}>
         <h1 className={page.title}>Referrals</h1>
-        <p className={page.lede}>{data ? (data.counts.overdue ? `${data.counts.overdue} overdue. Oldest first, so nothing waits too long.` : 'Nothing overdue.') : `Work on your ${terms.person}s’ referrals, or ask DI what’s on your plate.`}</p>
+        <p className={page.lede}>{data ? (data.counts.overdue ? `${data.counts.overdue} overdue. Oldest first, so nothing waits too long.` : 'Oldest first, so nothing waits too long.') : `Work on your ${terms.person}s’ referrals, or ask DI what’s on your plate.`}</p>
         <SegmentedControl
           label="Referrals view"
           value={active}
@@ -64,6 +65,8 @@ export function ReferralsPage() {
           {q.error instanceof ApiError && q.error.status === 404 ? 'Referrals are not loaded in this environment. Run npm run db:seed, then restart the server.' : 'Referrals could not be loaded. Try again in a moment.'}
         </p>
       )}
+
+      {q.data && <DiTake take={q.data.take} />}
 
       {data && (
         <div className={clsx(styles.columns, selected && styles.withDetail)}>
@@ -119,6 +122,14 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
   const [note, setNote] = useState('');
   const [closing, setClosing] = useState<'Sold' | 'Not Interested' | 'Done' | null>(null);
   const q = useQuery({ queryKey: ['referral', id], queryFn: () => api.referral(id) });
+  const name = q.data?.name;
+  // While it's open, DI knows which referral "this" means (FE-EXP-051).
+  useEffect(() => {
+    if (!name) return;
+    const pinned: ContextRef = { type: 'workflow_item', ref: `referral:${id}`, label: `Referral #${id}, ${name}` };
+    useUi.getState().addContext('new', pinned);
+    return () => useUi.getState().removeContext('new', pinned);
+  }, [id, name]);
   const act = useMutation({
     mutationFn: (action: ReferralAction) => api.referralAction(id, action),
     onSuccess: (detail) => {

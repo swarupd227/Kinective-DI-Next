@@ -7,7 +7,7 @@ import type { ApprovalCardBlock, Block, ListBlock } from '@dinext/block-schemas'
 import type { ApprovalRecord as Approval, PipelineApplication, PipelineFound, PipelineSummary } from '@dinext/di-core';
 import { formatMetric, newBlockId } from './answer.ts';
 import type { ToolCallRecord } from './audit.ts';
-import type { GatewayContext, GatewayResult, LapRate, LapTaskDraft, ThresholdDraft, ToolGateway } from './gateway.ts';
+import { inStatus, midSentence, type GatewayContext, type GatewayResult, type LapRate, type LapTaskDraft, type ThresholdDraft, type ToolGateway } from './gateway.ts';
 import type { ModelClient, Usage } from './model.ts';
 import { grounded } from './reportAgent.ts';
 import type { RunSink } from './sink.ts';
@@ -18,7 +18,7 @@ const MAX_TOOL_CALLS = 8;
 const TURN_BUDGET_MS = 60_000;
 
 /** Asks about loan applications, as opposed to loans on the books or the data pipeline. */
-export const PIPELINE_REQUEST = /(?<![/])(?<!data )\bpipeline\b(?! agent)|\bloan app(lication)?s?\b|\b(my|pending|stalled|open) app(lication)?s\b|\bunderwriting\b|\bcounter offers?\b|\bstall(ed|s)?\b|\bapproval rate\b|\bapplication #?\d{2,}\b/i;
+export const PIPELINE_REQUEST = /(?<![/])(?<!data )\bpipeline\b(?! agent)|\bloan app(lication)?s?\b|\b(my|pending|stalled|open) app(lication)?s\b|\bunderwriting\b|\bcounter offers?\b|\bstall(ed|s)?\b|\bapproval rate\b|\bapplications? #?\d{2,}\b/i;
 
 /** The agent makes tasks for staff; it does not reach out to anyone (AI-AGT-181). */
 export const CONTACT_APPLICANT = /\b(email|e-mail|call|text|phone|message|contact|write to|notify)\b[^.?!]*\b(applicants?|borrowers?|members?|customers?)\b/i;
@@ -44,7 +44,7 @@ export interface PipelineOutcome {
   error?: string;
 }
 
-const money = (n: number) => (Math.abs(n) >= 1_000_000 ? `$${(n / 1_000_000).toFixed(2)}M` : Math.abs(n) >= 1000 ? `$${(n / 1000).toFixed(1)}K` : `$${Math.round(n)}`);
+export const money = (n: number) => (Math.abs(n) >= 1_000_000 ? `$${(n / 1_000_000).toFixed(2)}M` : Math.abs(n) >= 1000 ? `$${(n / 1000).toFixed(1)}K` : `$${Math.round(n)}`);
 const shortDate = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 const apps = (n: number) => `${n} ${n === 1 ? 'application' : 'applications'}`;
 const VIEW_LABEL = { mine: 'Your applications', location: 'Your location', team: 'Your team', institution: 'The institution' };
@@ -78,7 +78,7 @@ export function applicationList(items: PipelineApplication[], f: Pick<PipelineFo
         subtitle: `${money(a.amount)} · ${a.status} · ${a.owner?.name ?? 'No owner'} · ${a.branch}`.slice(0, 240),
         meta: `#${a.applicationId} · ${a.daysInStatus} ${a.daysInStatus === 1 ? 'day' : 'days'}`,
         link: `/m/lap?id=${a.applicationId}`,
-        ...(a.stalled ? { badge: { label: 'Stalled', tone: 'danger' as const }, why: `${a.daysInStatus} days in ${a.status.toLowerCase()}, over the ${a.threshold}-day threshold.` } : {}),
+        ...(a.stalled ? { badge: { label: 'Stalled', tone: 'danger' as const }, why: `${a.daysInStatus} days ${inStatus(a.status)}, over the ${a.threshold}-day threshold.` } : {}),
       })),
     },
   };
@@ -142,6 +142,13 @@ export function summaryBlocks(s: PipelineSummary, runId: string): Block[] {
 
 export function summaryText(s: PipelineSummary) {
   return `**${apps(s.open.count)}** worth **${money(s.open.dollars)}** ${s.open.count === 1 ? 'is' : 'are'} open${s.stalled.count ? `, and **${s.stalled.count}** ${s.stalled.count === 1 ? 'has' : 'have'} stalled` : ''}. ${load(s)}`;
+}
+
+/** One application in words: where it is, for how long, and who has it. */
+export function applicationText(a: PipelineApplication & { history: { status: string; at: string }[]; asOf: string; stale: boolean }) {
+  const since = a.history.at(-1)?.at;
+  if (!a.open) return `**${a.name}’s ${midSentence(a.product)}** (${money(a.amount)}) is ${midSentence(a.status)}. ${load(a)}`;
+  return `**${a.name}’s ${midSentence(a.product)}** (${money(a.amount)}) has been ${inStatus(a.status)} for **${a.daysInStatus} ${a.daysInStatus === 1 ? 'day' : 'days'}**${a.threshold !== null ? `${a.stalled ? ', over' : ', within'} the ${a.threshold}-day threshold` : ''}${since ? `, since ${shortDate(since)}` : ''}. ${a.owner ? `${a.owner.name} has it. ` : ''}${load(a)}`;
 }
 
 export function rateText(r: LapRate) {
@@ -217,8 +224,8 @@ export function thresholdCard(d: ThresholdDraft, input: Pick<PipelineInput, 'run
 
 export const PipelineFinish = z
   .object({
-    outcome: z.enum(['summary', 'list', 'rate', 'approval', 'answer', 'not_found']).describe('summary: show the last lap_summary_get. list: show the last lap_applications_list. rate: show the last lap_approval_rate_get. approval: after a tool returned approval_required.'),
-    what: z.string().max(80).optional().describe('For list: what the list is, after the count, such as "have been in underwriting more than 5 days".'),
+    outcome: z.enum(['summary', 'list', 'rate', 'detail', 'approval', 'answer', 'not_found']).describe('summary: show the last lap_summary_get. list: show the last lap_applications_list. rate: show the last lap_approval_rate_get. detail: show the last lap_application_get. approval: after a tool returned approval_required.'),
+    what: z.string().max(80).optional().describe('For list: finishes the sentence "6 applications worth $1.2M ...". Start with a verb, such as "have been in underwriting more than 5 days". Never start with "of your applications".'),
     message: z.string().max(400).describe('One or two short sentences. Use only figures from tool results.'),
   })
   .strict();
@@ -236,6 +243,7 @@ How you work:
 - "Show my applications", "what's stuck in underwriting", "over $50,000": lap_applications_list, then finish with outcome "list".
 - "More than five days" is min_days 5. Say which status with status, such as "underwriting" or "counter offer".
 - "Show the pipeline", "by product", "the funnel": lap_summary_get, then outcome "summary".
+- One application, such as "why is application 482 stuck?": lap_application_get, then outcome "detail". The screen already gives the status, days, threshold and owner, so don't repeat them. Your message is one short sentence on what the path suggests, or that the data doesn't show the cause. Never speculate about the people involved.
 - Approval rates: lap_approval_rate_get, then outcome "rate". It covers the last two complete months.
 - Follow-ups: find the applications, then lap_follow_ups_create with their numbers. Thresholds: lap_threshold_set. Each returns approval_required: finish with outcome "approval" and never say it is done.
 - Finish every turn with finish_turn, exactly once. Code writes the figures on screen; your message only adds context.
@@ -254,6 +262,7 @@ interface Shown {
   summary?: PipelineSummary;
   found?: { result: PipelineFound; what: string };
   rate?: LapRate;
+  application?: NonNullable<GatewayResult & { ok: true }>['application'];
   tasks?: LapTaskDraft;
   threshold?: ThresholdDraft;
 }
@@ -271,6 +280,13 @@ async function show(kind: z.infer<typeof PipelineFinish>['outcome'], message: st
     await sink.text(foundText(f, s.found.what), PIPELINE_AGENT);
     if (f.items.length) await sink.block(applicationList(f.items, f, input.runId, 'Applications'));
     else if (f.count) await sink.block(totalsTable(f, input.runId));
+    return answer;
+  }
+  if (kind === 'detail' && s.application) {
+    const a = s.application;
+    await sink.text(`${applicationText(a)}${message ? ` ${message}` : ''}`, PIPELINE_AGENT);
+    await sink.block(applicationList([a], a, input.runId, 'Application'));
+    if (a.open) sink.suggestion(`Create a follow-up task for application #${a.applicationId}`);
     return answer;
   }
   if (kind === 'rate' && s.rate) {
@@ -324,7 +340,7 @@ export async function runPipeline(input: PipelineInput, deps: { model: ModelClie
         if (use.name === 'finish_turn') {
           const parsed = PipelineFinish.safeParse(use.input);
           const o = parsed.data?.outcome;
-          const problem = !parsed.success ? JSON.stringify(parsed.error.issues) : o === 'summary' && !shown.summary ? 'outcome "summary" needs lap_summary_get first.' : o === 'list' && !shown.found ? 'outcome "list" needs lap_applications_list first.' : o === 'rate' && !shown.rate ? 'outcome "rate" needs lap_approval_rate_get first.' : o === 'approval' && !shown.tasks && !shown.threshold ? 'outcome "approval" needs a tool that returned approval_required.' : null;
+          const problem = !parsed.success ? JSON.stringify(parsed.error.issues) : o === 'summary' && !shown.summary ? 'outcome "summary" needs lap_summary_get first.' : o === 'list' && !shown.found ? 'outcome "list" needs lap_applications_list first.' : o === 'rate' && !shown.rate ? 'outcome "rate" needs lap_approval_rate_get first.' : o === 'detail' && !shown.application ? 'outcome "detail" needs lap_application_get first.' : o === 'approval' && !shown.tasks && !shown.threshold ? 'outcome "approval" needs a tool that returned approval_required.' : null;
           if (problem) {
             if (nudges++ >= 2) throw new Error(`The agent finished without what it needed: ${problem}`);
             results.push({ type: 'tool_result', tool_use_id: use.id, is_error: true, content: problem });
@@ -332,7 +348,7 @@ export async function runPipeline(input: PipelineInput, deps: { model: ModelClie
           }
           toolCalls.push({ name: use.name, input: use.input, ok: true, ms: 0 });
           const f = parsed.data!;
-          if (shown.found && f.what) shown.found.what = grounded(f.what, corpus.join(' ')) || shown.found.what;
+          if (shown.found && f.what) shown.found.what = grounded(f.what, corpus.join(' ')).replace(/^of (your|the|my) applications?\s+/i, '') || shown.found.what;
           return await show(f.outcome, grounded(f.message, corpus.join(' ')), shown, input, sink, { toolCalls, usage });
         }
         if (toolCalls.length >= MAX_TOOL_CALLS) {
@@ -347,6 +363,7 @@ export async function runPipeline(input: PipelineInput, deps: { model: ModelClie
           if (r.summary) shown.summary = r.summary;
           if (r.found) shown.found = { result: r.found, what: 'match that' };
           if (r.rate) shown.rate = r.rate;
+          if (r.application) shown.application = r.application;
           if (r.tasks) shown.tasks = r.tasks;
           if (r.threshold) shown.threshold = r.threshold;
         }
@@ -368,7 +385,8 @@ export type PipelineIntent =
   | { intent: 'summary'; view?: string }
   | { intent: 'list'; view?: string; status?: string; product?: string; stalled: boolean; minDays?: number; minAmount?: number }
   | { intent: 'rate'; product?: string }
-  | { intent: 'tasks'; id?: number; status?: string; minDays?: number; stalled: boolean }
+  | { intent: 'detail'; id: number }
+  | { intent: 'tasks'; ids: number[]; status?: string; minDays?: number; stalled: boolean }
   | { intent: 'threshold'; status: string; product?: string; days: number };
 
 const STATUS_WORD = /\b(underwriting|documents?|received|counter offers?)\b/i;
@@ -385,10 +403,11 @@ export function parsePipelineRequest(text: string): PipelineIntent {
   if (/\bapproval rate\b/i.test(t)) return { intent: 'rate', product: productFrom(t) };
   const threshold = /\b(?:set|change|make|lower|raise)\b.*\b(?:threshold|stall)\b.*?(\d+) days?/i.exec(t);
   if (threshold) return { intent: 'threshold', status: statusFrom(t) ?? '', product: productFrom(t), days: Number(threshold[1]) };
-  if (/\b(create|make|add|draft|raise)\b.*\b(follow-?ups?|tasks?)\b/i.test(t)) {
-    const id = /\bapplication #?(\d+)\b/i.exec(t)?.[1];
-    return { intent: 'tasks', id: id ? Number(id) : undefined, status: statusFrom(t), minDays, stalled: minDays === undefined };
+  const named = /\bapplications? #?\d/i.test(t) ? [...t.matchAll(/#?(\d{2,})\b/g)].map((m) => Number(m[1])).filter((n) => n > 31) : [];
+  if (/\b(create|make|add|draft|raise)\b.*\b(follow-?ups?|tasks?)\b|\bchase\b|\bfollow up\b/i.test(t)) {
+    return { intent: 'tasks', ids: named, status: statusFrom(t), minDays, stalled: minDays === undefined };
   }
+  if (named[0]) return { intent: 'detail', id: named[0] };
   if (/\b(by product|funnel|summary)\b/i.test(t) || /\b(the|my|our) pipeline\b/i.test(t)) return { intent: 'summary', view: viewFrom(t) };
   const amount = /\$\s?([\d,]+)(k?)/i.exec(t);
   return { intent: 'list', view: viewFrom(t), status: statusFrom(t), product: productFrom(t), stalled: /\b(stall(ed|s)?|stuck)\b/i.test(t), minDays, minAmount: amount ? Number(amount[1]!.replace(/,/g, '')) * (amount[2] ? 1000 : 1) : undefined };
@@ -417,6 +436,10 @@ export async function runPipelineOffline(input: PipelineInput, deps: { gateway: 
     const r = await call('lap_summary_get', p.view ? { view: p.view } : {});
     return r.ok ? show('summary', '', { summary: r.summary }, input, sink, base) : refused(r);
   }
+  if (p.intent === 'detail') {
+    const r = await call('lap_application_get', { application_id: p.id });
+    return r.ok ? show('detail', '', { application: r.application }, input, sink, base) : refused(r);
+  }
   if (p.intent === 'rate') {
     const r = await call('lap_approval_rate_get', p.product ? { product: p.product } : {});
     return r.ok ? show('rate', '', { rate: r.rate }, input, sink, base) : refused(r);
@@ -426,7 +449,7 @@ export async function runPipelineOffline(input: PipelineInput, deps: { gateway: 
     return r.ok ? show('approval', 'Check this and approve it. Nothing changes until you do.', { threshold: r.threshold }, input, sink, base) : refused(r);
   }
   if (p.intent === 'tasks') {
-    let ids = p.id ? [p.id] : [];
+    let ids = p.ids;
     if (!ids.length) {
       const list = await call('lap_applications_list', { ...(p.status ? { status: p.status } : {}), ...(p.minDays !== undefined ? { min_days: p.minDays } : {}), stalled_only: p.stalled });
       if (!list.ok) return refused(list);

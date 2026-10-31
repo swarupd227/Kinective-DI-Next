@@ -10,6 +10,7 @@ import { Button, SegmentedControl, Skeleton } from '@dinext/ui';
 import type { ContextRef, PipelineApplicationRow, PipelineCell, PipelineIndex, PipelineList, PipelineViewId } from '@dinext/block-schemas';
 import { ApiError } from '@dinext/stream-client';
 import { useSession } from '../session/SessionProvider.tsx';
+import { DiTake } from '../shell/DiTake.tsx';
 import { useUi } from '../shell/uiStore.ts';
 import page from './Page.module.css';
 import styles from './PipelinePage.module.css';
@@ -50,7 +51,7 @@ export function PipelinePage() {
         <p className={page.lede}>
           {data ? (
             <>
-              {data.stalled.count ? `${data.stalled.count} of ${data.open.count} open applications have stalled.` : `${data.open.count} open applications, none stalled.`} {data.stale ? `The LOS feed missed the last build, so this is from the ${shortDate(data.asOf)} load.` : `As of the ${shortDate(data.asOf)} LOS load.`}
+              {data.stalled.count} of {data.open.count} open applications have stalled. {data.stale ? `The LOS feed missed the last build, so this is from the ${shortDate(data.asOf)} load.` : `As of the ${shortDate(data.asOf)} LOS load.`}
             </>
           ) : (
             'Where applications sit, and which ones need a push.'
@@ -79,6 +80,7 @@ export function PipelinePage() {
 
       {data && (
         <>
+          <DiTake take={data.take} />
           <dl className={styles.tiles}>
             <Tile label="Open applications" value={String(data.open.count)} />
             <Tile label="Open dollars" value={money(data.open.dollars)} />
@@ -264,6 +266,14 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
   const { api, startThread, terms } = useSession();
   const navigate = useNavigate();
   const q = useQuery({ queryKey: ['lap', 'application', id], queryFn: () => api.pipelineApplication(id), retry: false });
+  const name = q.data?.name;
+  // While it's open, DI knows which application "this" means (FE-EXP-051).
+  useEffect(() => {
+    if (!name) return;
+    const chip: ContextRef = { type: 'workflow_item', ref: `application:${id}`, label: `Application #${id}, ${name}` };
+    useUi.getState().addContext('new', chip);
+    return () => useUi.getState().removeContext('new', chip);
+  }, [id, name]);
   if (q.isPending) return <Skeleton height="320px" radius="md" />;
   if (!q.data) {
     return (
@@ -292,7 +302,7 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
       {a.stalled && (
         <p className={styles.alert}>
           <CircleAlert size={14} aria-hidden />
-          {days(a.daysInStatus)} {a.status.toLowerCase()}, over the {a.threshold}-day threshold, as of the {shortDate(a.asOf)} LOS load.
+          {days(a.daysInStatus)} in this status, over the {a.threshold}-day threshold, as of the {shortDate(a.asOf)} LOS load.
         </p>
       )}
       <dl className={styles.facts}>

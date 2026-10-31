@@ -22,10 +22,11 @@ import { newRelationshipThread, runRelationship, runRelationshipOffline, type Re
 import { describeSchedule, newReportThread, REPORT_AGENT, type ReportGateway, type ReportThread } from './report.ts';
 import { runReportAgent, runReportOffline, type ReportOutcome } from './reportAgent.ts';
 import type { RunSink, StepUpdate } from './sink.ts';
+import { runToday, TODAY_REQUEST, type TodayOutcome } from './today.ts';
 
 /** Agents the Concierge can route to. Scripted ones are placeholders until their slices land. */
 export const ROUTES = [
-  { agent: 'goal', name: GOAL_AGENT, live: true, intents: ['goal_request'], app: null, examples: ['Get me ready for Thursday’s ALCO meeting', 'Prepare the board pack and draft a note to the executive team', 'Find out why delinquency rose and tell the branch managers', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups'] },
+  { agent: 'goal', name: GOAL_AGENT, live: true, intents: ['goal_request'], app: null, examples: ['Get me ready for Thursday’s ALCO meeting', 'Prepare the board pack and draft a note to the executive team', 'Find out why delinquency rose and tell the branch managers', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups', 'What should I do today?'] },
   { agent: 'referral_inbox', name: INBOX_AGENT, live: true, intents: ['inbox'], app: 'referrals', examples: ['What’s on my plate today?', 'Show my overdue referrals', 'Mark referral 88213 as sold', 'Reassign the Jackson referral to Tom Walsh'] },
   { agent: 'loan_pipeline', name: PIPELINE_AGENT, live: true, intents: ['pipeline'], app: 'lap', examples: ['Which of my apps have sat in underwriting more than five days?', 'Show the pipeline by product for my branch', 'What’s our approval rate on auto this month compared with last month?', 'Create follow-up tasks for pending apps older than ten days'] },
   { agent: 'analytics_qa', name: AGENT_NAME, live: true, intents: ['data_question'], app: null, examples: ['Show loan growth by branch for Q3 vs Q2', 'What did deposit balances do by product type over the last two quarters?', 'How is the delinquency ratio calculated?'] },
@@ -109,6 +110,13 @@ const DECISION_HTTP: Record<ApprovalError['code'], [number, string]> = {
   WRONG_USER: [403, 'FORBIDDEN'],
   PAYLOAD_CHANGED: [409, 'PREVIEW_CHANGED'],
 };
+
+/** Asking about the record on screen, as opposed to asking something new while it happens to be open. */
+const ABOUT_RECORD = /\b(this|it|that one|why|stuck|chase|follow.?ups?|tasks?|mark|close|sold|notes?|reassign|assign|status)\b/i;
+
+/** Names the record, so "why is it stuck?" means the one on screen, live or offline. */
+const THE_RECORD = /\bthis (application|referral|one|loan)\b|\b(this|it)\b/i;
+const naming = (text: string, label: string) => (THE_RECORD.test(text) ? text.replace(THE_RECORD, label) : `${text} (${label})`);
 
 /** A thread with an open referral keeps routing there for answers like "by email" (spec 23.3). */
 const REFERRAL_FOLLOW_UP = /\b(change|make it|instead|switch|use|add|set|update|remove|send it|cancel|never ?mind|email|phone|call|text|evening|morning|afternoon|note)\b/i;
@@ -258,6 +266,38 @@ export class Concierge {
           outcome = reportAudit(r);
           error = r.error;
         });
+      }
+
+      // The day's work across modules is ranked in code, so it needs no model to route or to write.
+      if (TODAY_REQUEST.test(screened.text) && turn.tenant.workflow) {
+        classification = { intent: 'goal_request', agent: 'goal', confidence: 1, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' };
+        return await this.today(turn, screened.text, sink, (r) => {
+          toolCalls = r.toolCalls;
+          outcome = r.outcome === 'approval' ? 'approval_requested' : 'answer';
+        });
+      }
+
+      // The record on screen answers "why is it stuck?" and "mark it sold" (FE-EXP-051).
+      const record = turn.context.findLast((c) => c.type === 'workflow_item' && /^(application|referral):\d+$/.test(c.ref));
+      if (record && turn.tenant.workflow && ABOUT_RECORD.test(screened.text) && !GOAL_REQUEST.test(screened.text)) {
+        const [kind, id] = record.ref.split(':');
+        const named = naming(screened.text, `${kind} #${id}`);
+        if (kind === 'application' && turn.apps.includes('lap')) {
+          classification = { intent: 'pipeline', agent: 'loan_pipeline', confidence: 1, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' };
+          return await this.pipeline(turn, named, sink, usage, (r) => {
+            toolCalls = r.toolCalls;
+            outcome = inboxAudit(r);
+            error = r.error;
+          });
+        }
+        if (kind === 'referral' && turn.apps.includes('referrals')) {
+          classification = { intent: 'inbox', agent: 'referral_inbox', confidence: 1, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' };
+          return await this.inbox(turn, named, sink, usage, (r) => {
+            toolCalls = r.toolCalls;
+            outcome = inboxAudit(r);
+            error = r.error;
+          });
+        }
       }
 
       // Deterministic checks before any model call (spec 23.3.1 steps 2-3).
@@ -454,6 +494,19 @@ export class Concierge {
     }
   }
 
+  /** Ranks the day's work. A lead's follow-ups wait on a card; the plan's last step ends with that decision. */
+  private async today(turn: ConciergeTurn, text: string, sink: RunSink, report: (r: TodayOutcome) => void): Promise<ConciergeDecision> {
+    const state = newGoalThread(text, newReportThread());
+    state.status = 'closed';
+    this.goalThreads.set(turn.threadId, state);
+    const r = await runToday({ runId: turn.runId, threadId: turn.threadId, user: turn.user, apps: turn.apps, purviewBranches: turn.purviewBranches, employeeId: turn.employeeId, lap: turn.lap }, { gateway: turn.tenant.workflow!.gateway, beatMs: this.deps.beatMs }, state, sink);
+    report(r);
+    if (!r.approval) return { kind: 'handled' };
+    const a = r.approval.record;
+    void this.deps.audit.event({ eventType: 'ai.approval.requested', tenant: turn.tenant.key, userId: turn.user.id, threadId: turn.threadId, runId: turn.runId, approvalId: a.approvalId, operation: a.operation, riskTier: a.riskTier, payloadHash: a.payloadHash });
+    return { kind: 'handled', approval: { approvalId: a.approvalId, card: r.approval.card }, superseded: r.superseded };
+  }
+
   /** Answers about the pipeline, live or offline. Tasks and thresholds wait on an approval card. */
   private async pipeline(turn: ConciergeTurn, text: string, sink: RunSink, usage: Usage[], report: (r: PipelineOutcome) => void): Promise<ConciergeDecision> {
     const gateway = turn.tenant.workflow!.gateway;
@@ -633,7 +686,7 @@ export class Concierge {
     const isReport = approval.operation.startsWith('report.');
     const isPipeline = approval.operation.startsWith('lap.');
     // A note from a goal: the plan's last step and the goal itself end with this decision.
-    const goal = approval.operation === 'report.share' || approval.operation === 'referral.create.batch' ? this.goalThreads.get(d.threadId) : undefined;
+    const goal = ['report.share', 'referral.create.batch', 'lap.task.create.batch'].includes(approval.operation) ? this.goalThreads.get(d.threadId) : undefined;
     const closeGoal = (update: Pick<StepUpdate, 'state' | 'resultSummary'>) => {
       if (!goal) return;
       if (goal.planId) {
@@ -678,7 +731,7 @@ export class Concierge {
       later(async () => {
         const nothing = isReport ? 'Nothing was saved or sent.' : isDecline || isInboxChange || isPipeline ? 'Nothing was changed.' : 'Nothing was sent.';
         if (decision === 'denied') closeGoal({ state: 'skipped', resultSummary: 'You decided not to send it' });
-        else if (goal) goal.status = 'asking';
+        else if (goal && !isPipeline) goal.status = 'asking';
         await sink.text(decision === 'denied' ? nothing : `Returned with your note. ${nothing} Tell me what to change and I’ll prepare a new card.`, agent);
         sink.done?.(null);
       });
@@ -697,6 +750,7 @@ export class Concierge {
         if (executed.operation === 'lap.task.create.batch') {
           const n = executed.created.length;
           void this.deps.audit.event({ eventType: 'ai.action.executed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, operation: approval.operation, resultRef: `com:${executed.created.map((c) => c.comId).join(',')}` });
+          closeGoal({ state: 'done', resultSummary: `${n} ${n === 1 ? 'task' : 'tasks'} created` });
           const lines = executed.created.map((c) => `- **Task #${c.comId}**, application ${c.name}: ${c.assignee ?? c.queueName}`);
           await sink.text(`Created ${n} follow-up ${n === 1 ? 'task' : 'tasks'}. ${n === 1 ? 'It’s' : 'They’re'} in the Referrals list of the people named:\n\n${lines.join('\n')}${executed.failed.length ? `\n\nI couldn’t create these, because they’re outside your access: ${executed.failed.join(', ')}.` : ''}`, PIPELINE_AGENT, [{ kind: 'workflow', label: 'Referrals', ref: 'workflow:referrals' }]);
           sink.done?.({ notify: executed.created.map((x) => ({ employeeId: x.assigneeId, branch: x.branch, title: `New task: ${x.name}`, detail: 'Application follow-up', comId: x.comId })) });

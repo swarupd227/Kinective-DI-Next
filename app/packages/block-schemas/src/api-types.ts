@@ -139,6 +139,7 @@ export interface ReferralDetail extends ReferralSummary {
 }
 
 export interface ReferralsIndex {
+  take: DiTake;
   items: ReferralSummary[];
   counts: { mine: number; team: number; overdue: number };
   /** False for leads and others who look after a team, whose view starts there. */
@@ -147,6 +148,12 @@ export interface ReferralsIndex {
 
 /** A person's own action in the inbox. Actions an agent proposes go through an approval card instead. */
 export type ReferralAction = { kind: 'start' } | { kind: 'note'; text: string } | { kind: 'close'; stage: 'Sold' | 'Not Interested' | 'Done'; note?: string } | { kind: 'assign'; employeeId: number };
+
+/** DI's view of a page: one sentence, and the next step it would take. Code writes both. */
+export interface DiTake {
+  headline: string;
+  action?: { label: string; ask: string };
+}
 
 export type PipelineViewId = 'mine' | 'location' | 'team' | 'institution';
 
@@ -160,6 +167,7 @@ export interface PipelineCell {
 
 /** GET /v1/lap/summary. Groups and their names are the tenant's (FE-LAP-002). */
 export interface PipelineIndex {
+  take: DiTake;
   view: PipelineViewId;
   views: PipelineViewId[];
   /** Application Details in the access matrix (FE-LAP-004). */

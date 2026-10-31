@@ -371,6 +371,13 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
             if (s.id === 'scheduled_reports' && real.scheduled) s.blocks = [real.scheduled];
           }
         }
+        // "Needs you" leads with the work DI ranked, ahead of the approvals waiting.
+        const today = await live?.today(persona).catch((err) => (console.error('[home]', err), null));
+        if (today) {
+          const needs = home.sections.find((s) => s.id === 'approvals');
+          if (needs) needs.blocks.unshift(today);
+          else home.sections.unshift({ id: 'approvals', title: 'Needs you', blocks: [today] });
+        }
         return json(res, 200, home);
       }
       if (method === 'GET' && path === '/v1/search') {

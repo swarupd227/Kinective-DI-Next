@@ -213,6 +213,15 @@ The Loan Application Pipeline (spec 8.27, 17.5, 24.18), with data from the night
 - **Writes:** only follow-up tasks and stall thresholds, each on a medium-risk approval card. A task lands in the owner's Referrals list and closes as Done. Thresholds need a lending administrator. DI declines to contact applicants and offers a staff task instead.
 - **Access:** without Application Details, as for Priya Shah and Elena Ortiz, everything is counts and dollars by product. Ana Ruiz is a new lender persona; Marcus Reed now has the module too.
 
+### Agent-led work (Slice 11)
+
+DI brings the work to the person. Screens stay for checking and overriding.
+
+- **"What should I do today?":** ranks overdue referrals and stalled applications together, in code, as a task with a plan. Someone who looks after others also gets follow-ups for the top three stalled applications on one card.
+- **Home:** "Needs you" leads with the same ranking. Each item starts the work with DI.
+- **Pages:** Loan Pipeline and Referrals open with DI's view and its next step, above the figures.
+- **The record on screen:** an open application or referral goes to DI as context, so "why is it stuck?" and "mark it sold" mean that record.
+
 ## Not done yet
 
 - **Agents:** a live golden-question evaluation on Claude (needs your approval), conversation memory beyond the server process, and real Goals & Incentives and Retention agents.

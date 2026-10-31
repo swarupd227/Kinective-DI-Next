@@ -58,7 +58,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     },
     lapDetails: true,
     lendingAdmin: true,
-    suggestions: ['Get me ready for Thursday’s ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'Prepare me for my meeting with Suzanne Jackson', 'Brief me'],
+    suggestions: ['What should I do today?', 'Get me ready for Thursday’s ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'Prepare me for my meeting with Suzanne Jackson', 'Brief me'],
   },
   analyst: {
     session: {
@@ -80,7 +80,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     employeeId: 6,
     leadsBranch: true,
     lapDetails: true,
-    suggestions: ['What’s on my team’s plate?', 'Show the pipeline by product for my branch', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups', 'Refer Suzanne Jackson for a HELOC, she prefers a call after 5 pm', 'Show my overdue onboarding touch points', 'Show Northgate loan detail'],
+    suggestions: ['What should I do today?', 'What’s on my team’s plate?', 'Show the pipeline by product for my branch', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups', 'Refer Suzanne Jackson for a HELOC, she prefers a call after 5 pm', 'Show my overdue onboarding touch points', 'Show Northgate loan detail'],
   },
   lender: {
     session: {
@@ -92,7 +92,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     purview: ['Westport'],
     employeeId: 1,
     lapDetails: true,
-    suggestions: ['Which of my apps have sat in underwriting more than five days?', 'Show my stalled applications', 'Create follow-up tasks for my stalled applications', 'What’s on my plate today?'],
+    suggestions: ['What should I do today?', 'Which of my apps have sat in underwriting more than five days?', 'Show my stalled applications', 'Create follow-up tasks for my stalled applications', 'What’s on my plate today?'],
   },
   msr: {
     session: {
@@ -104,7 +104,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     floor: true,
     purview: ['Westport'],
     employeeId: 4,
-    suggestions: ['What’s on my plate today?', 'Show my overdue referrals', 'Prepare me for my meeting with Suzanne Jackson'],
+    suggestions: ['What should I do today?', 'What’s on my plate today?', 'Show my overdue referrals', 'Prepare me for my meeting with Suzanne Jackson'],
   },
   bank_cfo: {
     session: {
