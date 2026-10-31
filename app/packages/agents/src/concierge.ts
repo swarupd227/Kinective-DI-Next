@@ -15,6 +15,7 @@ import { RELATIONSHIP_AGENT } from './member.ts';
 import { INBOX_AGENT, INBOX_REQUEST, runInbox, runInboxOffline, type InboxOutcome } from './inbox.ts';
 import type { ModelClient, Usage } from './model.ts';
 import { runOffline } from './offline.ts';
+import { PIPELINE_AGENT, PIPELINE_REQUEST, runPipeline, runPipelineOffline, type PipelineInput, type PipelineOutcome } from './pipelineAgent.ts';
 import { prescreen } from './prescreen.ts';
 import { newReferralThread, REFERRAL_AGENT, runReferral, runReferralOffline, type ReferralOutcome, type ReferralThread } from './referral.ts';
 import { newRelationshipThread, runRelationship, runRelationshipOffline, type RelationshipOutcome, type RelationshipThread } from './relationship.ts';
@@ -26,6 +27,7 @@ import type { RunSink, StepUpdate } from './sink.ts';
 export const ROUTES = [
   { agent: 'goal', name: GOAL_AGENT, live: true, intents: ['goal_request'], app: null, examples: ['Get me ready for Thursday’s ALCO meeting', 'Prepare the board pack and draft a note to the executive team', 'Find out why delinquency rose and tell the branch managers', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups'] },
   { agent: 'referral_inbox', name: INBOX_AGENT, live: true, intents: ['inbox'], app: 'referrals', examples: ['What’s on my plate today?', 'Show my overdue referrals', 'Mark referral 88213 as sold', 'Reassign the Jackson referral to Tom Walsh'] },
+  { agent: 'loan_pipeline', name: PIPELINE_AGENT, live: true, intents: ['pipeline'], app: 'lap', examples: ['Which of my apps have sat in underwriting more than five days?', 'Show the pipeline by product for my branch', 'What’s our approval rate on auto this month compared with last month?', 'Create follow-up tasks for pending apps older than ten days'] },
   { agent: 'analytics_qa', name: AGENT_NAME, live: true, intents: ['data_question'], app: null, examples: ['Show loan growth by branch for Q3 vs Q2', 'What did deposit balances do by product type over the last two quarters?', 'How is the delinquency ratio calculated?'] },
   { agent: 'dashboard_briefing', name: BRIEFING_AGENT, live: true, intents: ['briefing'], app: null, examples: ['Brief me', 'What changed overnight?'] },
   { agent: 'report_builder', name: REPORT_AGENT, live: true, intents: ['report_request'], app: 'reports', examples: ['Open the September branch scorecard for Westport', 'Build me a monthly ALCO pack with loan balance trend, deposit mix and delinquency ratio', 'Send this to me every Monday', 'Which reports are scheduled for me?'] },
@@ -38,8 +40,8 @@ export const ROUTES = [
 export type RouteAgent = (typeof ROUTES)[number]['agent'] | 'help' | 'none';
 
 export const Classification = z.object({
-  intent: z.enum(['goal_request', 'inbox', 'data_question', 'briefing', 'report_request', 'member_lookup', 'workflow_action', 'module_task', 'admin_task', 'navigation', 'help', 'small_talk', 'core_write', 'out_of_scope', 'unclear']),
-  agent: z.enum(['goal', 'referral_inbox', 'analytics_qa', 'dashboard_briefing', 'report_builder', 'relationship', 'referral', 'goals_incentives', 'deposit_retention', 'help', 'none']),
+  intent: z.enum(['goal_request', 'inbox', 'pipeline', 'data_question', 'briefing', 'report_request', 'member_lookup', 'workflow_action', 'module_task', 'admin_task', 'navigation', 'help', 'small_talk', 'core_write', 'out_of_scope', 'unclear']),
+  agent: z.enum(['goal', 'referral_inbox', 'loan_pipeline', 'analytics_qa', 'dashboard_briefing', 'report_builder', 'relationship', 'referral', 'goals_incentives', 'deposit_retention', 'help', 'none']),
   confidence: z.number().min(0).max(1),
   needs_clarification: z.boolean(),
   options: z.array(z.string()).max(3).describe('Up to three complete questions the user might mean, when unclear.'),
@@ -73,6 +75,7 @@ export interface ConciergeTurn {
   canViewSql: boolean;
   /** The staff record behind the user, when they work a queue themselves. */
   employeeId?: number;
+  lap?: PipelineInput['lap'];
 }
 
 /**
@@ -94,6 +97,7 @@ export interface ApprovalDecisionInput {
   tenant: TenantRuntime;
   purviewBranches?: string[];
   employeeId?: number;
+  lap?: PipelineInput['lap'];
 }
 
 export type ApprovalDecisionResult = { status: number; body: unknown; resolved?: 'approved' | 'denied' | 'returned' };
@@ -122,6 +126,7 @@ function keywordClassify(text: string, memberInContext = false): Classification 
   const base = { confidence: 0.7, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' as const };
   if (GOAL_REQUEST.test(text)) return { ...base, intent: 'goal_request', agent: 'goal' };
   if (INBOX_REQUEST.test(text)) return { ...base, intent: 'inbox', agent: 'referral_inbox' };
+  if (PIPELINE_REQUEST.test(text)) return { ...base, intent: 'pipeline', agent: 'loan_pipeline' };
   if (/\brefer\b|referral/.test(t)) return { ...base, intent: 'workflow_action', agent: 'referral', risk_hint: 'write' };
   if (REPORT_WORDS.test(t)) return { ...base, intent: 'report_request', agent: 'report_builder' };
   if (MEMBER_LOOKUP.test(text) || (memberInContext && ABOUT_MEMBER.test(text)) || /\btell me about [A-Z][a-z'-]+ [A-Z][a-z'-]+/.test(text)) return { ...base, intent: 'member_lookup', agent: 'relationship' };
@@ -158,7 +163,7 @@ const auditOutcome = (r: ReferralOutcome): AuditRecord['outcome'] =>
 
 const reportAudit = (r: ReportOutcome): AuditRecord['outcome'] => (r.outcome === 'approval' ? 'approval_requested' : r.outcome === 'clarify' ? 'clarify' : r.outcome === 'report' || r.outcome === 'list' ? 'answer' : r.outcome);
 
-const inboxAudit = (r: InboxOutcome): AuditRecord['outcome'] => (r.outcome === 'approval' ? 'approval_requested' : r.outcome);
+const inboxAudit = (r: InboxOutcome | PipelineOutcome): AuditRecord['outcome'] => (r.outcome === 'approval' ? 'approval_requested' : r.outcome);
 
 const goalAudit = (r: GoalOutcome): AuditRecord['outcome'] => (r.outcome === 'approval' ? 'approval_requested' : r.outcome);
 
@@ -256,16 +261,16 @@ export class Concierge {
       }
 
       // Deterministic checks before any model call (spec 23.3.1 steps 2-3).
-      if (CORE_WRITE.test(screened.text) && !INBOX_REQUEST.test(screened.text)) {
+      if (CORE_WRITE.test(screened.text) && !INBOX_REQUEST.test(screened.text) && !PIPELINE_REQUEST.test(screened.text)) {
         sink.routing('DI Concierge', 'Core write request');
         await sink.block(noticeBlock('not_supported', 'DI reads core data and does not write to it.', 'DI Concierge', turn.runId, { detail: 'Change member records, rates or account details in your core system or through Kinective Digital Connectivity. I can show you the current figures or start a referral instead.' }));
         outcome = 'not_supported';
         return { kind: 'handled' };
       }
 
-      // A plain goal or inbox request needs no model to recognise, and must not land on a one-step specialist.
+      // A plain goal, inbox or pipeline request needs no model to recognise, and must not land on a one-step specialist.
       const memberChip = turn.context.some((c) => c.type === 'member');
-      classification = this.deps.model && !GOAL_REQUEST.test(screened.text) && !INBOX_REQUEST.test(screened.text) ? await this.classify(turn, screened.text, usage) : keywordClassify(screened.text, memberChip);
+      classification = this.deps.model && !GOAL_REQUEST.test(screened.text) && !INBOX_REQUEST.test(screened.text) && !PIPELINE_REQUEST.test(screened.text) ? await this.classify(turn, screened.text, usage) : keywordClassify(screened.text, memberChip);
       if (classification.needs_clarification || classification.confidence < CONFIDENCE_THRESHOLD) {
         sink.routing('DI Concierge', 'Clarifying');
         await sink.block(noticeBlock('uncertain', 'Which of these did you mean?', 'DI Concierge', turn.runId, { options: classification.options.slice(0, 3).map((o, i) => ({ id: `o${i + 1}`, label: o })) }));
@@ -283,6 +288,20 @@ export class Concierge {
           }
           if (!turn.tenant.workflow) return { kind: 'scripted', agent: 'referral' };
           return await this.inbox(turn, screened.text, sink, usage, (r) => {
+            toolCalls = r.toolCalls;
+            outcome = inboxAudit(r);
+            error = r.error;
+          });
+        }
+        case 'loan_pipeline': {
+          if (!turn.apps.includes('lap')) {
+            sink.routing('DI Concierge', 'Loan Pipeline not available');
+            await sink.block(noticeBlock('no_access', 'The Loan Pipeline isn’t part of your DI access.', 'DI Concierge', turn.runId, { permission: 'Loan Pipeline access', detail: 'Ask your DI administrator if you need it.' }));
+            outcome = 'no_access';
+            return { kind: 'handled' };
+          }
+          if (!turn.tenant.workflow) return { kind: 'scripted', agent: 'none' };
+          return await this.pipeline(turn, screened.text, sink, usage, (r) => {
             toolCalls = r.toolCalls;
             outcome = inboxAudit(r);
             error = r.error;
@@ -433,6 +452,23 @@ export class Concierge {
         })
         .catch(() => {});
     }
+  }
+
+  /** Answers about the pipeline, live or offline. Tasks and thresholds wait on an approval card. */
+  private async pipeline(turn: ConciergeTurn, text: string, sink: RunSink, usage: Usage[], report: (r: PipelineOutcome) => void): Promise<ConciergeDecision> {
+    const gateway = turn.tenant.workflow!.gateway;
+    const input: PipelineInput = { runId: turn.runId, threadId: turn.threadId, text, user: turn.user, tenant: { name: turn.tenant.name, institutionType: turn.tenant.institutionType }, apps: turn.apps, purviewBranches: turn.purviewBranches, employeeId: turn.employeeId, lap: turn.lap };
+    const r = this.deps.model ? await runPipeline(input, { model: this.deps.model, gateway }, sink) : await runPipelineOffline(input, { gateway }, sink);
+    usage.push(...r.usage);
+    report(r);
+    if (r.outcome === 'failed') await sink.block(noticeBlock('error', 'I couldn’t finish that.', PIPELINE_AGENT, turn.runId, { detail: 'Nothing was changed. Try again, or open the Loan Pipeline.', retryable: true }));
+    for (const id of r.superseded) void this.deps.audit.event({ eventType: 'ai.approval.superseded', tenant: turn.tenant.key, userId: turn.user.id, threadId: turn.threadId, runId: turn.runId, approvalId: id });
+    if (r.approval) {
+      const a = r.approval.record;
+      void this.deps.audit.event({ eventType: 'ai.approval.requested', tenant: turn.tenant.key, userId: turn.user.id, threadId: turn.threadId, runId: turn.runId, approvalId: a.approvalId, operation: a.operation, riskTier: a.riskTier, payloadHash: a.payloadHash });
+      return { kind: 'handled', approval: { approvalId: a.approvalId, card: r.approval.card }, superseded: r.superseded };
+    }
+    return { kind: 'handled' };
   }
 
   /** Works the user's referrals, live or offline. A change waits on its approval card. */
@@ -595,6 +631,7 @@ export class Concierge {
     const isDecline = approval.operation === 'relationship.suggestion.decline';
     const isInboxChange = ['referral.stage.update', 'referral.note.add', 'referral.reassign'].includes(approval.operation);
     const isReport = approval.operation.startsWith('report.');
+    const isPipeline = approval.operation.startsWith('lap.');
     // A note from a goal: the plan's last step and the goal itself end with this decision.
     const goal = approval.operation === 'report.share' || approval.operation === 'referral.create.batch' ? this.goalThreads.get(d.threadId) : undefined;
     const closeGoal = (update: Pick<StepUpdate, 'state' | 'resultSummary'>) => {
@@ -608,7 +645,7 @@ export class Concierge {
       goal.note = undefined;
       goal.followUps = undefined;
     };
-    const agent = isReport ? REPORT_AGENT : isDecline ? RELATIONSHIP_AGENT : isInboxChange ? INBOX_AGENT : REFERRAL_AGENT;
+    const agent = isReport ? REPORT_AGENT : isDecline ? RELATIONSHIP_AGENT : isInboxChange ? INBOX_AGENT : isPipeline ? PIPELINE_AGENT : REFERRAL_AGENT;
     if (decision === 'approved' && isReport && d.tenant.reports) {
       const gw = d.tenant.reports.gateway;
       later(async () => {
@@ -639,7 +676,7 @@ export class Concierge {
     }
     if (decision !== 'approved') {
       later(async () => {
-        const nothing = isReport ? 'Nothing was saved or sent.' : isDecline || isInboxChange ? 'Nothing was changed.' : 'Nothing was sent.';
+        const nothing = isReport ? 'Nothing was saved or sent.' : isDecline || isInboxChange || isPipeline ? 'Nothing was changed.' : 'Nothing was sent.';
         if (decision === 'denied') closeGoal({ state: 'skipped', resultSummary: 'You decided not to send it' });
         else if (goal) goal.status = 'asking';
         await sink.text(decision === 'denied' ? nothing : `Returned with your note. ${nothing} Tell me what to change and I’ll prepare a new card.`, agent);
@@ -650,7 +687,21 @@ export class Concierge {
     // Approved: execute after answering the HTTP call, so the card updates at once.
     later(async () => {
       try {
-        const executed = await wf.gateway.execute(approval, { user: d.user, purviewBranches: d.purviewBranches, employeeId: d.employeeId });
+        const executed = await wf.gateway.execute(approval, { user: d.user, purviewBranches: d.purviewBranches, employeeId: d.employeeId, lap: d.lap });
+        if (executed.operation === 'lap.threshold.set') {
+          void this.deps.audit.event({ eventType: 'ai.action.executed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, operation: approval.operation, resultRef: `threshold:${executed.label}` });
+          await sink.text(`${executed.product ? `${executed.product} applications` : 'Applications'} now count as stalled after **${executed.days} ${executed.days === 1 ? 'day' : 'days'}** ${executed.label.toLowerCase()}.`, PIPELINE_AGENT, [{ kind: 'table', label: 'Pipeline status map', ref: 'table:mod_lap_status_map' }]);
+          sink.done?.(null);
+          return;
+        }
+        if (executed.operation === 'lap.task.create.batch') {
+          const n = executed.created.length;
+          void this.deps.audit.event({ eventType: 'ai.action.executed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, operation: approval.operation, resultRef: `com:${executed.created.map((c) => c.comId).join(',')}` });
+          const lines = executed.created.map((c) => `- **Task #${c.comId}**, application ${c.name}: ${c.assignee ?? c.queueName}`);
+          await sink.text(`Created ${n} follow-up ${n === 1 ? 'task' : 'tasks'}. ${n === 1 ? 'It’s' : 'They’re'} in the Referrals list of the people named:\n\n${lines.join('\n')}${executed.failed.length ? `\n\nI couldn’t create these, because they’re outside your access: ${executed.failed.join(', ')}.` : ''}`, PIPELINE_AGENT, [{ kind: 'workflow', label: 'Referrals', ref: 'workflow:referrals' }]);
+          sink.done?.({ notify: executed.created.map((x) => ({ employeeId: x.assigneeId, branch: x.branch, title: `New task: ${x.name}`, detail: 'Application follow-up', comId: x.comId })) });
+          return;
+        }
         if (executed.operation === 'referral.change') {
           const { item, kind } = executed;
           void this.deps.audit.event({ eventType: 'ai.action.executed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, operation: approval.operation, resultRef: `com:${item.comId}` });
@@ -689,7 +740,7 @@ export class Concierge {
       } catch (err) {
         void this.deps.audit.event({ eventType: 'ai.action.failed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, error: err instanceof Error ? err.message : String(err) });
         closeGoal({ state: 'failed', resultSummary: 'Nothing was sent' });
-        await sink.block(noticeBlock('error', isDecline ? 'The decline could not be saved.' : 'The referral could not be created.', agent, d.runId, { detail: `${isDecline ? 'Nothing was saved.' : 'Nothing was sent.'} The approval was not used, so you can ask again.`, referenceId: d.runId.slice(-12) }));
+        await sink.block(noticeBlock('error', isDecline ? 'The decline could not be saved.' : isPipeline ? 'That could not be completed.' : 'The referral could not be created.', agent, d.runId, { detail: `${isDecline ? 'Nothing was saved.' : isPipeline ? 'Nothing was changed.' : 'Nothing was sent.'} The approval was not used, so you can ask again.`, referenceId: d.runId.slice(-12) }));
         sink.done?.(null);
       }
     });

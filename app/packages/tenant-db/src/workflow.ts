@@ -115,6 +115,8 @@ export const REFERRAL_TYPES: ReferralType[] = [
   { typeId: 'credit_card', category: 'Cards', label: 'Credit card', description: 'New credit card or limit increase', route: { kind: 'by_location', queue: 'service', fallbackQueue: 'q_card_services' }, fields: contact },
   { typeId: 'certificate', category: 'Deposits', label: 'Certificate', description: 'New certificate or renewal conversation', route: { kind: 'by_location', queue: 'service', fallbackQueue: 'q_member_services' }, fields: [amount('Estimated deposit'), ...contact] },
   { typeId: 'retention_follow_up', category: 'Retention', label: 'Retention follow-up', description: 'A personal check-in with someone who may be about to leave', route: { kind: 'by_location', queue: 'service', fallbackQueue: 'q_member_services' }, fields: contact },
+  // A staff task, not a sale: it closes as Done, and the agent never contacts the applicant (AI-AGT-181).
+  { typeId: 'loan_follow_up', category: 'Task', label: 'Application follow-up', description: 'A task for the owner of a stalled loan application', route: { kind: 'by_location', queue: 'lending', fallbackQueue: 'q_lending_central' }, fields: [{ id: 'application_id', label: 'Application', type: 'text', required: true }] },
   { typeId: 'business_account', category: 'Business', label: 'Business account', description: 'Business checking, savings or lending', route: { kind: 'queue', queueId: 'q_business' }, fields: contact },
 ];
 

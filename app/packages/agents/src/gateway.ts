@@ -3,9 +3,10 @@
 // never runs from a model call: it returns approval_required, and only an approved, unchanged
 // payload is executed, once, with the approval ID as its idempotency key.
 import { z } from 'zod';
-import { ApprovalStore, CoreError, type ApprovalRecord, type AtRiskMember, type ChangeMeta, type InboxBox, type InboxDetail, type InboxItem, type MemberProfile, type ReferralStage, type PartyHit, type ReferralService, type RelationshipService, type RiskTier, type RouteResult, type Topic } from '@dinext/di-core';
+import type { SemanticService } from '@dinext/semantic';
+import { ApprovalStore, CoreError, PIPELINE_VIEWS, type ApprovalRecord, type AtRiskMember, type ChangeMeta, type InboxBox, type InboxDetail, type InboxItem, type MemberProfile, type ReferralStage, type PartyHit, type PipelineApplication, type PipelineFound, type PipelineService, type PipelineStatus, type PipelineSummary, type PipelineView, type PipelineWho, type ReferralService, type RelationshipService, type RiskTier, type RouteResult, type Topic } from '@dinext/di-core';
 
-export type AgentId = 'referral' | 'relationship' | 'goal' | 'inbox';
+export type AgentId = 'referral' | 'relationship' | 'goal' | 'inbox' | 'pipeline';
 
 export interface ToolDef<I extends z.ZodType = z.ZodType> {
   name: string;
@@ -26,6 +27,9 @@ export interface ToolDef<I extends z.ZodType = z.ZodType> {
 /** One approval covers at most this many people, so the list can be read before it is approved. */
 export const FOLLOW_UP_CAP = 5;
 export const FOLLOW_UP_TYPE = 'retention_follow_up';
+/** One card lists every task, so it stays short enough to read before approving. */
+export const LAP_TASK_CAP = 10;
+export const LAP_TASK_TYPE = 'loan_follow_up';
 
 const memberRef = z.string().regex(/^MBR_\d{1,4}$/).describe('A member_ref from relationship_party_search, such as MBR_1');
 const fieldValues = z.record(z.string(), z.union([z.string().max(200), z.number()])).describe('Values for the type’s form fields, keyed by field id');
@@ -96,6 +100,20 @@ export const INBOX_TOOLS = [
   { name: 'referral_stage_update', operation: 'referral.stage.update', description: 'Move a referral to Active, Sold or Not Interested. Sold can drive incentives. Returns approval_required.', input: z.object({ referral_id: referralId, stage: z.enum(['Active', 'Sold', 'Not Interested']), note: z.string().max(300).optional() }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'referrals', purviewScope: 'com', maxResultRowsToModel: 1, agents: ['inbox'] },
   { name: 'referral_note_add', operation: 'referral.note.add', description: 'Add a note to a referral, such as "left voicemail". Returns approval_required.', input: z.object({ referral_id: referralId, note: z.string().min(2).max(300) }).strict(), sideEffect: 'write', riskTier: 'low', requiredApp: 'referrals', purviewScope: 'com', maxResultRowsToModel: 1, agents: ['inbox'] },
   { name: 'referral_reassign', operation: 'referral.reassign', description: 'Give a referral to someone else in its queue. Returns approval_required.', input: z.object({ referral_id: referralId, to: z.string().min(2).max(80).describe('The person\u2019s name, from referral_get') }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'referrals', purviewScope: 'com', maxResultRowsToModel: 1, agents: ['inbox'] },
+] satisfies ToolDef[];
+
+const lapView = z.enum(PIPELINE_VIEWS).optional().describe('mine: their own. location: their branches. team: their lenders. institution: everyone. Omit for their default.');
+const applicationId = z.number().int().positive().describe('The application number, from lap_applications_list');
+
+/** Loan Pipeline agent tools (spec 24.18). Reading needs no approval; tasks and thresholds do. */
+export const PIPELINE_TOOLS = [
+  { name: 'lap_summary_get', operation: 'lap.summary.get', description: 'The funnel and pipeline by product: count, percent, dollars and average days per reporting group, with open and stalled totals.', input: z.object({ view: lapView }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'lap', purviewScope: 'report_viewer', maxResultRowsToModel: 20, agents: ['pipeline'] },
+  { name: 'lap_applications_list', operation: 'lap.application.list', description: 'Find applications, stalled first, then longest in status. Open applications unless a finished group is named. Without Application Details access it returns counts and dollars only.', input: z.object({ view: lapView, status: z.string().max(40).optional().describe('Part of a status name, such as underwriting or counter offer'), group: z.string().max(40).optional().describe('A reporting group, such as Pending or Approved'), product: z.string().max(40).optional(), stalled_only: z.boolean().default(false), min_days: z.number().int().min(0).max(365).optional().describe('More than this many days in the current status'), min_amount: z.number().min(0).optional().describe('Over this amount') }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'lap', purviewScope: 'report_viewer', maxResultRowsToModel: 25, agents: ['pipeline'] },
+  { name: 'lap_application_get', operation: 'lap.application.get', description: 'One application with its path through the statuses. Needs Application Details access.', input: z.object({ application_id: applicationId }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'lap', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: ['pipeline'] },
+  { name: 'lap_status_config_get', operation: 'lap.status_config.get', description: 'The institution’s statuses, reporting groups and stall thresholds.', input: z.object({}).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'lap', purviewScope: 'none', maxResultRowsToModel: 20, agents: ['pipeline'] },
+  { name: 'lap_approval_rate_get', operation: 'lap.approval_rate.get', description: 'The approval rate from the semantic layer for the last two complete months, for one product or all.', input: z.object({ product: z.string().max(40).optional().describe('A loan category, such as Auto') }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'lap', purviewScope: 'report_viewer', maxResultRowsToModel: 2, agents: ['pipeline'] },
+  { name: 'lap_follow_ups_create', operation: 'lap.task.create.batch', description: 'Prepare a follow-up task for each application’s owner. Staff tasks only: nobody outside the institution is contacted. Returns approval_required.', input: z.object({ application_ids: z.array(applicationId).min(1).max(LAP_TASK_CAP) }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'lap', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: ['pipeline'] },
+  { name: 'lap_threshold_set', operation: 'lap.threshold.set', description: 'Change a stall threshold for a status, or for one product in that status. Lending administrators only. Returns approval_required.', input: z.object({ status: z.string().min(2).max(40).describe('Part of a status name, such as underwriting'), product: z.string().max(40).optional(), days: z.number().int().min(1).max(90) }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'lap', purviewScope: 'none', maxResultRowsToModel: 1, agents: ['pipeline'] },
 ] satisfies ToolDef[];
 
 export const RELATIONSHIP_TOOLS = [
@@ -197,10 +215,13 @@ export interface GatewayContext {
   members: Map<string, number>;
   /** The staff record behind the user, when they work a queue themselves. */
   employeeId?: number;
+  /** Loan Pipeline access from the module matrix; absent means totals only. */
+  lap?: { details: boolean; leads?: boolean; admin?: boolean };
 }
 
 export interface ReferralPayload {
   typeId: string;
+  assigneeEmployeeId?: number;
   partyId: number;
   fields: Record<string, string | number>;
   notes?: string;
@@ -243,6 +264,38 @@ export interface ChangeDraft {
   superseded: string[];
 }
 
+export interface LapRate {
+  product?: string;
+  definition: string;
+  periods: { period: string; rate: number | null }[];
+}
+
+export interface LapTaskPayload {
+  items: (ReferralPayload & { applicationId: number; label: string; to: string; reason: string; branch: string })[];
+}
+
+export interface LapTaskDraft {
+  approval: ApprovalRecord;
+  payload: LapTaskPayload;
+  /** Asked for, but already holding an open task. */
+  skipped: string[];
+  superseded: string[];
+}
+
+export interface ThresholdPayload {
+  code: string;
+  label: string;
+  product?: string;
+  days: number;
+  before: number | null;
+}
+
+export interface ThresholdDraft {
+  approval: ApprovalRecord;
+  payload: ThresholdPayload;
+  superseded: string[];
+}
+
 export interface DeclinePayload {
   partyId: number;
   suggestionId: number;
@@ -257,14 +310,21 @@ export interface DeclineDraft {
 }
 
 export type GatewayResult =
-  | { ok: true; content: unknown; draft?: DraftResult; decline?: DeclineDraft; batch?: BatchDraft; inbox?: InboxItem[]; item?: InboxDetail; change?: ChangeDraft; atRisk?: { total: number; items: (AtRiskMember & { ref: string; followedUp: boolean })[] }; hits?: (PartyHit & { matchedOn?: string })[]; profile?: MemberProfile; topics?: Topic[]; explained?: ReturnType<RelationshipService['explain']> }
+  | { ok: true; content: unknown; draft?: DraftResult; decline?: DeclineDraft; batch?: BatchDraft; inbox?: InboxItem[]; item?: InboxDetail; change?: ChangeDraft; summary?: PipelineSummary; found?: PipelineFound; application?: PipelineApplication & { history: { status: string; at: string }[] }; statuses?: PipelineStatus[]; rate?: LapRate; tasks?: LapTaskDraft; threshold?: ThresholdDraft; atRisk?: { total: number; items: (AtRiskMember & { ref: string; followedUp: boolean })[] }; hits?: (PartyHit & { matchedOn?: string })[]; profile?: MemberProfile; topics?: Topic[]; explained?: ReturnType<RelationshipService['explain']> }
   | { ok: false; code: 'UNKNOWN_TOOL' | 'NOT_ALLOWED' | 'INVALID_INPUT' | 'RESERVED_KEY' | 'UNKNOWN_REF' | 'NO_ACCESS' | 'NOT_FOUND' | 'FORM_INCOMPLETE'; content: unknown };
 
-export type Executed = { operation: 'referral.create'; created: Awaited<ReturnType<ReferralService['create']>> } | { operation: 'referral.change'; item: InboxDetail; kind: 'stage' | 'note' | 'assign'; changed: boolean } | { operation: 'referral.create.batch'; created: { comId: number; name: string; queueName: string; assignee: string | null; assigneeId?: number; branch: string }[]; failed: string[] } | { operation: 'relationship.suggestion.decline'; declined: { product: string; until: string }; partyId: number };
+interface BatchDone {
+  created: { comId: number; name: string; queueName: string; assignee: string | null; assigneeId?: number; branch: string }[];
+  failed: string[];
+}
+
+export type Executed = { operation: 'referral.create'; created: Awaited<ReturnType<ReferralService['create']>> } | { operation: 'referral.change'; item: InboxDetail; kind: 'stage' | 'note' | 'assign'; changed: boolean } | ({ operation: 'referral.create.batch' } & BatchDone) | ({ operation: 'lap.task.create.batch' } & BatchDone) | { operation: 'lap.threshold.set'; label: string; product?: string; days: number } | { operation: 'relationship.suggestion.decline'; declined: { product: string; until: string }; partyId: number };
 
 const round = (n: number) => (Math.abs(n) >= 1000 ? Math.round(n / 100) * 100 : Math.round(n));
 
 /** What the model sees of a profile: enough to write talking points, with identifiers masked. */
+const lapWho = (ctx: Pick<GatewayContext, 'employeeId' | 'lap'>): PipelineWho => ({ employeeId: ctx.employeeId, leads: ctx.lap?.leads, details: Boolean(ctx.lap?.details) });
+
 function profileForModel(p: MemberProfile, ref: string) {
   return {
     member_ref: ref,
@@ -293,11 +353,13 @@ export class ToolGateway {
       referrals: ReferralService;
       approvals: ApprovalStore;
       relationship?: RelationshipService;
+      pipeline?: PipelineService;
+      semantic?: SemanticService | null;
       tenantRaise?: Partial<Record<string, RiskTier>>;
       /** Called for every member record opened through a tool; the access is audited (FE-RM-003). */
       onProfileView?: (partyId: number, ctx: GatewayContext) => void;
     },
-    private readonly tools: ToolDef[] = [...REFERRAL_TOOLS, ...RELATIONSHIP_TOOLS, ...INBOX_TOOLS],
+    private readonly tools: ToolDef[] = [...REFERRAL_TOOLS, ...RELATIONSHIP_TOOLS, ...INBOX_TOOLS, ...PIPELINE_TOOLS],
   ) {}
 
   get relationship() {
@@ -307,7 +369,7 @@ export class ToolGateway {
   /** Tools the model may see for this user and agent (AI-ARC-021). */
   visible(ctx: GatewayContext, agent: AgentId = 'referral') {
     const apps = (t: ToolDef) => (Array.isArray(t.requiredApp) ? t.requiredApp : [t.requiredApp]);
-    return this.tools.filter((t) => (t.agents ?? ['referral']).includes(agent) && apps(t).some((a) => ctx.apps.includes(a)) && (t.operation.startsWith('referral.') || t.operation === 'relationship.party.search' || this.deps.relationship));
+    return this.tools.filter((t) => (t.agents ?? ['referral']).includes(agent) && apps(t).some((a) => ctx.apps.includes(a)) && (t.operation.startsWith('lap.') ? this.deps.pipeline : t.operation.startsWith('referral.') || t.operation === 'relationship.party.search' || this.deps.relationship));
   }
 
   private async party(ref: string, ctx: GatewayContext) {
@@ -321,6 +383,13 @@ export class ToolGateway {
     let ref = [...ctx.members].find(([, id]) => id === partyId)?.[0];
     if (!ref) ctx.members.set((ref = `MBR_${ctx.members.size + 1}`), partyId);
     return ref;
+  }
+
+  /** The view asked for. "My" from someone with no applications of their own means their default. */
+  private async lapView(view: unknown, ctx: GatewayContext): Promise<PipelineView> {
+    const offered = await this.deps.pipeline!.views(lapWho(ctx), ctx);
+    if (!offered.length) throw new CoreError('NO_ACCESS', 'No pipeline view is available to you.');
+    return view && (view !== 'mine' || offered.includes('mine')) ? (view as PipelineView) : offered[0]!;
   }
 
   async call(name: string, input: unknown, ctx: GatewayContext, agent: AgentId = 'referral'): Promise<GatewayResult> {
@@ -339,6 +408,72 @@ export class ToolGateway {
           const hits = rm ? await rm.search(String(args.name), ctx, def.maxResultRowsToModel) : await this.deps.referrals.searchParties(String(args.name), ctx, def.maxResultRowsToModel);
           const out = hits.map((h) => ({ member_ref: this.refFor(h.partyId, ctx), name: h.name, branch: h.branch, member_since: h.memberSince, number_ends: h.last4, products: h.products }));
           return { ok: true, content: { matches: out, count: out.length }, hits };
+        }
+        case 'lap.summary.get': {
+          const summary = await this.deps.pipeline!.summary(await this.lapView(args.view, ctx), lapWho(ctx), ctx);
+          return { ok: true, content: { view: summary.view, as_of_los_load: summary.asOf, los_feed_missing_from_last_build: summary.stale, open: summary.open, stalled: summary.stalled, funnel: summary.funnel, products: summary.products.map((p) => ({ product: p.product, ...p.total })) }, summary };
+        }
+        case 'lap.application.list': {
+          const found = await this.deps.pipeline!.find({ view: await this.lapView(args.view, ctx), status: args.status as string | undefined, group: args.group as string | undefined, product: args.product as string | undefined, stalledOnly: Boolean(args.stalled_only), minDays: args.min_days as number | undefined, minAmount: args.min_amount as number | undefined }, lapWho(ctx), ctx);
+          return { ok: true, content: { as_of_los_load: found.asOf, los_feed_missing_from_last_build: found.stale, count: found.count, dollars: found.dollars, oldest_days: found.oldestDays, by_product: found.byProduct, details_hidden: found.detailsHidden, applications: found.items.slice(0, 25).map((a) => ({ application_id: a.applicationId, applicant: a.lastName, product: a.product, amount: a.amount, status: a.status, days_in_status: a.daysInStatus, threshold_days: a.threshold, stalled: a.stalled, owner: a.owner?.name ?? null, branch: a.branch })) }, found };
+        }
+        case 'lap.application.get': {
+          const a = await this.deps.pipeline!.application(Number(args.application_id), lapWho(ctx), ctx);
+          return { ok: true, content: { application_id: a.applicationId, applicant: a.lastName, product: a.product, amount: a.amount, status: a.status, days_in_status: a.daysInStatus, threshold_days: a.threshold, stalled: a.stalled, owner: a.owner?.name ?? null, branch: a.branch, applied: a.applied, history: a.history, as_of_los_load: a.asOf }, application: a };
+        }
+        case 'lap.status_config.get': {
+          const statuses = await this.deps.pipeline!.statuses();
+          return { ok: true, content: { statuses: statuses.filter((s) => s.visible).map((s) => ({ status: s.label, group: s.group, in_progress: s.inProgress, stall_days: s.stallDays, by_product: s.products })) }, statuses };
+        }
+        case 'lap.approval_rate.get': {
+          const semantic = this.deps.semantic;
+          if (!semantic) return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: 'The approval rate isn’t available here.' } };
+          const asked = args.product ? String(args.product).toLowerCase() : undefined;
+          const category = asked ? (semantic.dimensionValues.loan_category ?? []).find((c) => c.toLowerCase().includes(asked) || asked.includes(c.toLowerCase())) : undefined;
+          if (asked && !category) return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: `There is no loan category called “${String(args.product)}”.` } };
+          const result = await semantic.query({ metrics: ['approval_rate'], filters: category ? [{ dimension: 'loan_category', op: 'in', values: [category] }] : [], time: { grain: 'month', last: 2 } }, { purviewBranches: ctx.purviewBranches, canViewSql: false });
+          const rate: LapRate = { product: category, definition: semantic.definition('approval_rate').description, periods: result.rows.map((r) => ({ period: String(r.period), rate: (r.approval_rate as number | null) ?? null })) };
+          return { ok: true, content: { product: category ?? 'All', periods: rate.periods, definition: rate.definition }, rate };
+        }
+        case 'lap.task.create.batch': {
+          const pipeline = this.deps.pipeline!;
+          const a = args as { application_ids: number[] };
+          if (!ctx.lap?.details) return { ok: false, code: 'NOT_ALLOWED', content: { error: 'NOT_ALLOWED', message: 'Your access shows pipeline totals, so you can’t create tasks for individual applications.' } };
+          const apps = await Promise.all(a.application_ids.map((id) => pipeline.application(id, lapWho(ctx), ctx)));
+          const open = await this.deps.referrals.openFor(LAP_TASK_TYPE, apps.map((x) => x.partyId));
+          const items: LapTaskPayload['items'] = [];
+          const skipped: string[] = [];
+          for (const x of apps) {
+            if (open.has(x.partyId) || !x.owner) {
+              skipped.push(`#${x.applicationId}`);
+              continue;
+            }
+            const route = await this.deps.referrals.route(LAP_TASK_TYPE, x.partyId);
+            const reason = `${x.daysInStatus} days ${x.status.toLowerCase()}${x.threshold !== null ? `, threshold ${x.threshold}` : ''}`;
+            items.push({ typeId: LAP_TASK_TYPE, partyId: x.partyId, assigneeEmployeeId: x.owner.employeeId, fields: { application_id: String(x.applicationId) }, notes: `Application #${x.applicationId}, ${x.product}: ${reason}, as of the last LOS load. Check what’s holding it.`, priority: x.stalled ? 'High' : 'Normal', toQueueId: route.queueId, applicationId: x.applicationId, label: `#${x.applicationId} ${x.lastName}, ${x.product}`, to: x.owner.name, reason, branch: x.branch });
+          }
+          if (!items.length) return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: 'Those applications already have an open follow-up task.', skipped } };
+          const payload: LapTaskPayload = { items };
+          const tier = effectiveTier(def, this.deps.tenantRaise);
+          const approval = await this.deps.approvals.request({ operation: def.operation, payload, riskTier: tier === 'none' ? 'low' : tier, requestedBy: ctx.user.id, runId: ctx.runId, threadId: ctx.threadId });
+          const superseded = await this.deps.approvals.supersede(ctx.threadId, approval.approvalId);
+          return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId, tasks: items.length, already_open: skipped, note: 'Nothing has been created. The user approves on screen.' }, tasks: { approval, payload, skipped, superseded } };
+        }
+        case 'lap.threshold.set': {
+          const pipeline = this.deps.pipeline!;
+          if (!ctx.lap?.admin) return { ok: false, code: 'NOT_ALLOWED', content: { error: 'NOT_ALLOWED', message: 'Only a lending administrator can change a stall threshold.' } };
+          const asked = String(args.status).toLowerCase();
+          const statuses = (await pipeline.statuses()).filter((s) => s.inProgress);
+          const status = statuses.find((s) => s.label.toLowerCase().includes(asked));
+          if (!status) return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: `Stall thresholds apply to: ${statuses.map((s) => s.label).join(', ')}.` } };
+          const named = args.product ? String(args.product).toLowerCase() : undefined;
+          const product = named ? (await pipeline.products()).find((p) => p.toLowerCase().includes(named)) : undefined;
+          if (named && !product) return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: `There is no product called “${String(args.product)}”.` } };
+          const payload: ThresholdPayload = { code: status.code, label: status.label, product, days: Number(args.days), before: status.products.find((p) => p.product === product)?.days ?? status.stallDays };
+          const tier = effectiveTier(def, this.deps.tenantRaise);
+          const approval = await this.deps.approvals.request({ operation: def.operation, payload, riskTier: tier === 'none' ? 'low' : tier, requestedBy: ctx.user.id, runId: ctx.runId, threadId: ctx.threadId });
+          const superseded = await this.deps.approvals.supersede(ctx.threadId, approval.approvalId);
+          return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId, note: 'Nothing has changed. The user approves on screen.' }, threshold: { approval, payload, superseded } };
         }
         case 'referral.inbox.list': {
           const who = { userId: ctx.user.id, employeeId: ctx.employeeId };
@@ -491,7 +626,7 @@ export class ToolGateway {
    * Runs an approved write. The stored payload is executed as approved; there is no model between
    * the approval and the action (spec 25.3, "no AI sits between the approval and the action").
    */
-  async execute(approval: ApprovalRecord, ctx: Pick<GatewayContext, 'user' | 'purviewBranches' | 'employeeId'>): Promise<Executed> {
+  async execute(approval: ApprovalRecord, ctx: Pick<GatewayContext, 'user' | 'purviewBranches' | 'employeeId' | 'lap'>): Promise<Executed> {
     if (approval.status !== 'approved') throw new Error(`Approval ${approval.approvalId} is ${approval.status}`);
     try {
       if (approval.operation === 'referral.create') {
@@ -514,11 +649,18 @@ export class ToolGateway {
         await this.deps.approvals.markExecuted(approval.approvalId, `com:${p.comId}`);
         return out;
       }
-      if (approval.operation === 'referral.create.batch') {
+      if (approval.operation === 'lap.threshold.set' && this.deps.pipeline) {
+        const p = approval.payload as ThresholdPayload;
+        if (!ctx.lap?.admin) throw new CoreError('NO_ACCESS', 'Only a lending administrator can change a stall threshold.');
+        await this.deps.pipeline.setThreshold(p, { userId: ctx.user.id });
+        await this.deps.approvals.markExecuted(approval.approvalId, `threshold:${p.code}`.slice(0, 40));
+        return { operation: 'lap.threshold.set', label: p.label, product: p.product, days: p.days };
+      }
+      if (approval.operation === 'referral.create.batch' || approval.operation === 'lap.task.create.batch') {
         // One approval, several records: each has its own key, so a retry resumes rather than repeats.
-        const created: Extract<Executed, { operation: 'referral.create.batch' }>['created'] = [];
+        const created: BatchDone['created'] = [];
         const failed: string[] = [];
-        const { items } = approval.payload as BatchPayload;
+        const items = (approval.payload as BatchPayload | LapTaskPayload).items.map((i) => ({ ...i, name: 'label' in i ? i.label : i.name }));
         for (const [i, item] of items.entries()) {
           try {
             const c = await this.deps.referrals.create(item, { approvalId: `${approval.approvalId}.${i}`, runId: approval.runId, userId: ctx.user.id, userName: ctx.user.name }, ctx);
@@ -529,8 +671,8 @@ export class ToolGateway {
           }
         }
         if (!created.length) throw new Error('No follow-up could be created.');
-        await this.deps.approvals.markExecuted(approval.approvalId, `com:${created.map((c) => c.comId).join(',')}`.slice(0, 60));
-        return { operation: 'referral.create.batch', created, failed };
+        await this.deps.approvals.markExecuted(approval.approvalId, `com:${created.map((c) => c.comId).join(',')}`.slice(0, 40));
+        return { operation: approval.operation === 'referral.create.batch' ? 'referral.create.batch' : 'lap.task.create.batch', created, failed };
       }
       if (approval.operation === 'relationship.suggestion.decline' && this.deps.relationship) {
         const p = approval.payload as DeclinePayload;

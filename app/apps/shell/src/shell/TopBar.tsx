@@ -20,7 +20,8 @@ export function TopBar({ threadId }: { threadId?: string }) {
   const thread = useQuery({ queryKey: ['thread', threadId], queryFn: () => api.thread(threadId!), enabled: !!threadId });
 
   // The breadcrumb is the thread title in a conversation and the app name elsewhere (spec 6.2).
-  const segment = location.pathname.split('/')[1] ?? 'home';
+  const [, first, second] = location.pathname.split('/');
+  const segment = (first === 'm' ? second : first) ?? 'home';
   const crumb = threadId ? (thread.data?.title ?? 'Conversation') : (APP_META[segmentToApp(segment)]?.label ?? 'Home');
 
   return (

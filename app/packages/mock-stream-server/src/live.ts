@@ -4,8 +4,8 @@
 import { randomBytes } from 'node:crypto';
 import type { ApprovalCardBlock, ApprovalDecisionRequest, Block, KpiGroupBlock, ListBlock, Member360Block, SearchResult, StreamEvent, StreamingEnvelope, TableData } from '@dinext/block-schemas';
 import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, describeSchedule, hasClaudeCredentials, member360, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
-import { ApprovalStore, CoreError, ReferralService, RelationshipService, ReportStore, type InboxItem, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
-import type { AppNotification, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
+import { ApprovalStore, CoreError, PipelineService, ReferralService, RelationshipService, ReportStore, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
+import type { AppNotification, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
 import { renderExport } from './exports.ts';
 import { SemanticService } from '@dinext/semantic';
 import { tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
@@ -57,6 +57,7 @@ const scheduleSummary = (s: ScheduleRow): ScheduleSummary => ({ scheduleId: s.sc
 interface Tenant {
   runtime: TenantRuntime;
   pool: Pool;
+  pipeline: PipelineService | null;
   /** Words for the recogniser: branches, products and staff, never members (FE-VOICE-061). */
   vocabulary: string[];
 }
@@ -94,6 +95,12 @@ export interface LiveRuntime {
   referrals(persona: PersonaId, box: 'mine' | 'team' | 'sent'): Promise<ReferralsIndex | null>;
   /** For the bell: each of your own overdue referrals, or a count for a branch lead. */
   overdueReferrals(persona: PersonaId): Promise<Omit<AppNotification, 'read'>[]>;
+  /** For the bell: your stalled applications, or a count for a branch lead. */
+  stalledApplications(persona: PersonaId): Promise<Omit<AppNotification, 'read'>[]>;
+  /** The Loan Pipeline's summary and the views this user may use; null when it is not loaded. */
+  pipeline(persona: PersonaId, view: PipelineViewId | undefined): Promise<PipelineIndex | null>;
+  pipelineApplications(persona: PersonaId, q: { view: PipelineViewId; group?: string; stalled: boolean }): Promise<PipelineList | null>;
+  pipelineApplication(persona: PersonaId, id: number): Promise<PipelineApplicationDetail | null>;
   referral(persona: PersonaId, comId: number): Promise<ReferralDetail | null>;
   /** The user's own action on a referral, and who should hear about it. */
   referralAction(persona: PersonaId, comId: number, action: ReferralAction): Promise<{ detail: ReferralDetail; notify: Notice[] } | null>;
@@ -124,9 +131,12 @@ export interface Notice {
 /** Frontline staff work their own queue; a branch lead and everyone else look after the team's. */
 const worksOwnQueue = (p: PersonaId) => PERSONAS[p].employeeId !== undefined && !PERSONAS[p].leadsBranch;
 
+/** Loan Pipeline access from the persona's place in the module matrix (spec 20.7). */
+const lapAccess = (p: PersonaId) => ({ details: Boolean(PERSONAS[p].lapDetails), leads: PERSONAS[p].leadsBranch, admin: PERSONAS[p].lendingAdmin });
+
 const personaContext = (p: PersonaId) => {
   const s = PERSONAS[p].session;
-  return { purviewBranches: PERSONAS[p].purview, canViewSql: s.permissions.queryBrowser, employeeId: PERSONAS[p].employeeId };
+  return { purviewBranches: PERSONAS[p].purview, canViewSql: s.permissions.queryBrowser, employeeId: PERSONAS[p].employeeId, lap: lapAccess(p) };
 };
 
 /** Maps a run's sink calls to stream events (spec 12.4). Text is verified before it streams. */
@@ -177,6 +187,8 @@ function streamSink(emit: (e: Emit) => void, runId: string, signal: AbortSignal,
   };
 }
 
+const applicationView = ({ partyId, ...a }: PipelineApplication, rm: RelationshipService | null): PipelineApplicationRow => ({ ...a, memberRef: rm?.token(partyId) ?? '' });
+
 const referralView = ({ partyId, senderUserId: _sender, ...i }: InboxItem, rm: RelationshipService | null): ReferralSummary => ({ ...i, memberRef: rm?.token(partyId) ?? '' });
 
 export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promise<LiveRuntime | null> {
@@ -201,7 +213,13 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     );
     const relationship = referrals && hasRelationship ? new RelationshipService(pool, t.key, institutionType) : null;
     const onProfileView = (partyId: number, ctx: { user: { id: string }; threadId: string; runId: string }) => void audit.access({ tenant: t.key, userId: ctx.user.id, partyId, via: 'agent', threadId: ctx.threadId, runId: ctx.runId }).catch(() => {});
-    const workflow = referrals ? { referrals, relationship, gateway: new ToolGateway({ referrals, relationship: relationship ?? undefined, approvals: new ApprovalStore(pool), onProfileView }) } : null;
+    // The Loan Pipeline exists once the tenant was seeded with Slice 10 or later.
+    const hasPipeline = await pool.query('SELECT 1 FROM mod_lap_status_map LIMIT 1').then(
+      () => true,
+      () => false,
+    );
+    const pipeline = hasPipeline ? new PipelineService(pool) : null;
+    const workflow = referrals ? { referrals, relationship, gateway: new ToolGateway({ referrals, relationship: relationship ?? undefined, pipeline: pipeline ?? undefined, semantic, approvals: new ApprovalStore(pool), onProfileView }) } : null;
     // Report templates exist once the tenant was seeded with Slice 6 or later.
     const hasReports = await pool.query('SELECT 1 FROM esp_report_templates LIMIT 1').then(
       () => true,
@@ -211,13 +229,19 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     const [staff] = await pool.query('SELECT DISTINCT display_name FROM cdm_employee');
     const dims = semantic.dimensionValues;
     const vocabulary = [...new Set([...(dims.branch ?? []), ...(dims.region ?? []), ...(dims.loan_category ?? []), ...(dims.deposit_category ?? []), ...(staff as { display_name: string }[]).map((s) => s.display_name).filter((s) => !/^\w\. /.test(s))])];
-    tenants.set(tenantId, { pool, vocabulary, runtime: { key: t.key, name, institutionType, semantic, workflow, reports } });
+    tenants.set(tenantId, { pool, pipeline, vocabulary, runtime: { key: t.key, name, institutionType, semantic, workflow, reports } });
   }
   if (!tenants.size) return null;
 
   const model = hasClaudeCredentials() && !opts.offline ? new AnthropicModelClient() : null;
   const concierge = new Concierge({ model, audit, beatMs: process.env.NODE_ENV === 'test' ? 0 : 1600 });
   const tenantFor = (p: PersonaId) => tenants.get(PERSONAS[p].session.tenant.id) ?? null;
+  const lapFor = (p: PersonaId) => {
+    const t = tenantFor(p);
+    const s = PERSONAS[p];
+    if (!t?.pipeline || !s.session.apps.includes('lap')) return null;
+    return { service: t.pipeline, rm: t.runtime.workflow?.relationship ?? null, who: { employeeId: s.employeeId, leads: s.leadsBranch, details: Boolean(s.lapDetails) }, ctx: { purviewBranches: s.purview } };
+  };
   const referralDetail = async (persona: PersonaId, comId: number): Promise<ReferralDetail | null> => {
     const wf = tenantFor(persona)?.runtime.workflow;
     const session = PERSONAS[persona].session;
@@ -262,6 +286,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
           tenant: tenant.runtime,
           purviewBranches: PERSONAS[persona].purview,
           employeeId: PERSONAS[persona].employeeId,
+          lap: lapAccess(persona),
         },
         sink,
       );
@@ -317,6 +342,41 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       if (!overdue.length) return [];
       const latest = overdue.map((i) => i.dueAt).sort().at(-1)!;
       return [{ id: 'ntc_overdue_team', group: 'workflow', title: `${overdue.length} team ${overdue.length === 1 ? 'referral is' : 'referrals are'} overdue`, detail: overdue.map((i) => i.name).join(' · '), at: latest, link: '/workflows/referrals/inbox' }];
+    },
+
+    async stalledApplications(persona) {
+      const lap = lapFor(persona);
+      const p = PERSONAS[persona];
+      if (!lap) return [];
+      const views = await lap.service.views(lap.who, lap.ctx);
+      const own = views.includes('mine');
+      if (!own && !p.leadsBranch) return [];
+      const { items, count, oldestDays, asOf } = await lap.service.find({ view: own ? 'mine' : 'team', stalledOnly: true }, lap.who, lap.ctx);
+      if (!count) return [];
+      return [{ id: `ntc_stalled_${own ? 'mine' : 'team'}`, group: 'workflow', title: `${count} ${own ? 'of your applications' : 'team applications'} ${count === 1 ? 'has' : 'have'} stalled`, detail: `Oldest ${oldestDays} days${items[0] ? `: ${items[0].name}, ${items[0].status.toLowerCase()}` : ''}`, at: `${asOf}T06:00:00.000Z`, link: '/m/lap' }];
+    },
+
+    async pipeline(persona, view) {
+      const lap = lapFor(persona);
+      if (!lap) return null;
+      const views = await lap.service.views(lap.who, lap.ctx);
+      if (!views.length) return null;
+      const summary = await lap.service.summary((view ?? views[0]!) as PipelineView, lap.who, lap.ctx);
+      return { ...summary, views, details: lap.who.details };
+    },
+
+    async pipelineApplications(persona, q) {
+      const lap = lapFor(persona);
+      if (!lap) return null;
+      const f = await lap.service.find({ view: q.view, group: q.group, stalledOnly: q.stalled }, lap.who, lap.ctx);
+      return { count: f.count, dollars: f.dollars, oldestDays: f.oldestDays, byProduct: f.byProduct, detailsHidden: f.detailsHidden, items: f.items.slice(0, 100).map((a) => applicationView(a, lap.rm)) };
+    },
+
+    async pipelineApplication(persona, id) {
+      const lap = lapFor(persona);
+      if (!lap) return null;
+      const a = await lap.service.application(id, lap.who, lap.ctx);
+      return { ...applicationView(a, lap.rm), asOf: a.asOf, stale: a.stale, history: a.history };
     },
 
     referral: referralDetail,

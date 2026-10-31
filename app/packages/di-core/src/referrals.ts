@@ -21,6 +21,8 @@ export interface PartyHit {
 
 export interface ReferralDraft {
   typeId: string;
+  /** Straight to this person instead of the queue's rotation. */
+  assigneeEmployeeId?: number;
   partyId: number;
   fields: Record<string, string | number>;
   notes?: string;
@@ -46,8 +48,8 @@ export interface DraftCheck {
   fields: Record<string, string | number>;
 }
 
-/** The stage bar (spec 17.3). Sold and Not Interested close a referral. */
-export const REFERRAL_STAGES = ['New Referral', 'Active', 'Sold', 'Not Interested'] as const;
+/** The stage bar (spec 17.3). Sold and Not Interested close a referral; Done closes a staff task. */
+export const REFERRAL_STAGES = ['New Referral', 'Active', 'Sold', 'Not Interested', 'Done'] as const;
 export type ReferralStage = (typeof REFERRAL_STAGES)[number];
 const OPEN_STAGES: ReferralStage[] = ['New Referral', 'Active'];
 
@@ -99,7 +101,7 @@ export class CoreError extends Error {
   }
 }
 
-const memberNumber = (partyId: number) => String(10_004_520 + partyId);
+export const memberNumber = (partyId: number) => String(10_004_520 + partyId);
 const CATEGORY_LABEL: Record<string, string> = { Auto: 'Auto loan', Personal: 'Personal loan', Business: 'Business loan' };
 
 type QueueRow = { queue_id: string; name: string; branch_id: number | null; member_employee_ids: number[] | string; rr_pointer: number };
@@ -278,10 +280,11 @@ export class ReferralService {
       const queue = (qs as QueueRow[])[0];
       if (!queue) throw new CoreError('NOT_FOUND', 'The queue no longer exists.');
       const m = members(queue);
-      const assignee = m.length ? m[queue.rr_pointer % m.length]! : null;
-      if (m.length) await conn.query('UPDATE esp_com_queues SET rr_pointer = rr_pointer + 1 WHERE queue_id = ?', [queue.queue_id]);
+      const direct = draft.assigneeEmployeeId;
+      const assignee = direct ?? (m.length ? m[queue.rr_pointer % m.length]! : null);
+      if (m.length && direct === undefined) await conn.query('UPDATE esp_com_queues SET rr_pointer = rr_pointer + 1 WHERE queue_id = ?', [queue.queue_id]);
       const now = sqlTime(new Date());
-      const routing = { queueId: queue.queue_id, assigneeId: assignee, rule: m.length ? 'round_robin' : 'queue', pointer: queue.rr_pointer };
+      const routing = { queueId: queue.queue_id, assigneeId: assignee, rule: direct !== undefined ? 'direct' : m.length ? 'round_robin' : 'queue', pointer: queue.rr_pointer };
       const [ins] = await conn.query(
         `INSERT INTO esp_com_items (definition, type_id, party_id, fields, notes, stage, priority, sender_user_id, sender_name, to_queue_id, assignee_employee_id, routing, created_at, run_id, approval_id)
          VALUES ('referral', ?, ?, ?, ?, 'New Referral', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -405,6 +408,8 @@ export class ReferralService {
     if (item.stage === stage) return { item, changed: false };
     if (!OPEN_STAGES.includes(item.stage)) throw new CoreError('INVALID', `Referral #${comId} is already closed as ${item.stage}.`);
     if (stage === 'New Referral') throw new CoreError('INVALID', 'A referral that has started cannot go back to New Referral.');
+    const task = item.category === 'Task';
+    if (task ? stage === 'Sold' || stage === 'Not Interested' : stage === 'Done') throw new CoreError('INVALID', task ? 'A task closes as Done.' : 'A referral closes as Sold or Not Interested.');
     // Starting work on something nobody holds makes it yours.
     const claim = stage === 'Active' && !item.assignee && meta.employeeId !== undefined;
     await this.pool.query(`UPDATE esp_com_items SET stage = ?${claim ? ', assignee_employee_id = ?' : ''} WHERE com_id = ?`, claim ? [stage, meta.employeeId, comId] : [stage, comId]);

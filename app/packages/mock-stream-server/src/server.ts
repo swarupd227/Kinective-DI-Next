@@ -339,7 +339,8 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
   /** The bell's view of work open right now, worked out on each read so it agrees with the screen. */
   const currentNotices = async (): Promise<AppNotification[]> => {
     const cards = pendingHomeCards();
-    const overdue = (await live?.overdueReferrals(persona).catch((err) => (console.error('[notifications]', err), null))) ?? [];
+    const failed = (err: unknown) => (console.error('[notifications]', err), null);
+    const overdue = [...((await live?.overdueReferrals(persona).catch(failed)) ?? []), ...((await live?.stalledApplications(persona).catch(failed)) ?? [])];
     const open: Omit<AppNotification, 'read'>[] = cards.length ? [{ id: 'ntc_home_approvals', group: 'approvals', title: `${cards.length} ${cards.length === 1 ? 'approval' : 'approvals'} waiting`, detail: cards.map((c) => c.title).join(' · '), at: startedAt, link: '/home' }, ...overdue] : overdue;
     return open.map((n) => ({ ...n, read: readNotices.has(`${me()}:${n.id}`) }));
   };
@@ -380,6 +381,29 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         if (!members) return json(res, 200, { results });
         const kind = url.searchParams.get('kind');
         return json(res, 200, { results: kind === 'member' ? members : [...members, ...results.filter((r) => r.kind !== 'member')].slice(0, 20) });
+      }
+      // ---- loan pipeline (spec 17.5) ----
+      if (path.startsWith('/v1/lap/') && live) {
+        const views = ['mine', 'location', 'team', 'institution'] as const;
+        const view = views.find((v) => v === url.searchParams.get('view'));
+        const one = /^\/v1\/lap\/applications\/(\d+)$/.exec(path);
+        try {
+          if (method === 'GET' && path === '/v1/lap/summary') {
+            const r = await live.pipeline(persona, view);
+            return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });
+          }
+          if (method === 'GET' && path === '/v1/lap/applications' && view) {
+            const r = await live.pipelineApplications(persona, { view, group: url.searchParams.get('group') ?? undefined, stalled: url.searchParams.get('stalled') === '1' });
+            return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });
+          }
+          if (method === 'GET' && one) {
+            const r = await live.pipelineApplication(persona, Number(one[1]));
+            return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });
+          }
+        } catch (err) {
+          if (err instanceof CoreError) return json(res, err.code === 'NO_ACCESS' ? 403 : err.code === 'INVALID' ? 422 : 404, { code: err.code, message: err.message });
+          throw err;
+        }
       }
       // ---- referrals (spec 17.3) ----
       if (method === 'GET' && path === '/v1/referrals') {

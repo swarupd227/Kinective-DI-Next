@@ -60,6 +60,14 @@ sources:
     time_column: hp.month_end
     purview_column: hp.branch_id
     lineage: [hist_party_month, cdm_location]
+  application_history:
+    kind: history
+    table: hist_lap_month
+    alias: ha
+    joins: ['JOIN cdm_location AS loc ON loc.int_id = ha.branch_id']
+    time_column: ha.month_end
+    purview_column: ha.branch_id
+    lineage: [hist_lap_month, cdm_loan_application, cdm_location]
 
 dimensions:
   branch:
@@ -74,6 +82,7 @@ dimensions:
       deposit_history: loc.name
       party_current: loc.name
       party_history: loc.name
+      application_history: loc.name
     values_sql: SELECT name FROM cdm_location ORDER BY int_id
   region:
     label: Region
@@ -86,6 +95,7 @@ dimensions:
       deposit_history: loc.region
       party_current: loc.region
       party_history: loc.region
+      application_history: loc.region
     values_sql: SELECT DISTINCT region FROM cdm_location ORDER BY region
   loan_category:
     label: Loan category
@@ -94,6 +104,7 @@ dimensions:
     exprs:
       loan_current: l.loan_category
       loan_history: h.loan_category
+      application_history: ha.loan_category
     values_sql: SELECT DISTINCT loan_category FROM cdm_loan ORDER BY loan_category
   origination_channel:
     label: Origination channel
@@ -172,6 +183,21 @@ measures:
     flow: true
     exprs:
       party_history: SUM(hp.new_member_count)
+  application_count_sum:
+    unit: count
+    flow: true
+    exprs:
+      application_history: SUM(ha.application_count)
+  approved_application_count_sum:
+    unit: count
+    flow: true
+    exprs:
+      application_history: SUM(ha.approved_count)
+  decided_application_count_sum:
+    unit: count
+    flow: true
+    exprs:
+      application_history: SUM(ha.decided_count)
 
 metrics:
   loan_balance:
@@ -283,6 +309,25 @@ metrics:
     synonyms: [members, customers, membership, how many members, member base, customer base]
     owner: Member experience team
     dimensions_allowed: [branch, region, segment]
+  approval_rate:
+    label: Loan application approval rate
+    type: ratio
+    numerator: approved_application_count_sum
+    denominator: decided_application_count_sum
+    format: percent_1
+    description: Applications approved in the period, divided by applications approved or denied in the period. Withdrawn applications and duplicates are excluded. Complete months only.
+    synonyms: [approval rate, approvals, pull through, loan approval rate, decline rate]
+    owner: Lending data team
+    dimensions_allowed: [branch, region, loan_category]
+  new_loan_applications:
+    label: New loan applications
+    type: simple
+    measure: application_count_sum
+    format: count
+    description: Applications opened in the period, counted once after duplicates are removed. Complete months only.
+    synonyms: [loan applications, new applications, applications received, application volume]
+    owner: Lending data team
+    dimensions_allowed: [branch, region, loan_category]
   new_members:
     label: New members
     labels_by_type: { bank: New customers }

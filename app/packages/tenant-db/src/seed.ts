@@ -3,6 +3,7 @@
 import mysql from 'mysql2/promise';
 import { ADMIN_DB_URL, DEFAULT_DB_URL, dbSsl } from './db.ts';
 import { AS_OF, BUILD, generate, TENANTS } from './generate.ts';
+import { generatePipeline, LAP_APPLICATION_COLUMNS, LAP_STATUSES, PIPELINE_DDL, PIPELINE_WRITE_TABLES } from './pipeline.ts';
 import { generateRelationship, RELATIONSHIP_DDL } from './relationship.ts';
 import { reportSeed } from './reports.ts';
 import { TENANT_DDL } from './schema.ts';
@@ -44,9 +45,15 @@ async function main() {
     await insert(admin, 'cdm_digital_usage', ['party_id', 'online_banking_since', 'mobile_since', 'mobile_deposit_since', 'estatements_since', 'bill_pay_since', 'direct_deposit_status', 'direct_deposit_changed', 'last_login'], rm.digital);
     await insert(admin, 'cdm_attrition_score', ['party_id', 'score', 'factors', 'model_version', 'run_date'], rm.attrition);
     await insert(admin, 'cdm_suggestion', ['suggestion_id', 'party_id', 'product', 'referral_type_id', 'likelihood', 'reason', 'model_version', 'run_date'], rm.suggestions);
-    await insert(admin, 'cdm_loan_application', ['application_id', 'party_id', 'product', 'amount', 'status_group', 'status_detail', 'applied_date', 'decided_date'], rm.applications);
+    const lap = generatePipeline(t, rm.applications);
+    await insert(admin, 'cdm_loan_application', LAP_APPLICATION_COLUMNS, lap.applications);
     await insert(admin, 'cdm_interaction', ['interaction_id', 'party_id', 'occurred_at', 'channel', 'kind', 'summary', 'employee_id'], rm.interactions);
     await insert(admin, 'cdm_account_activity', ['account_kind', 'account_id', 'balance_30d', 'fees_30d'], rm.activity);
+    for (const ddl of PIPELINE_DDL) await admin.query(ddl);
+    await insert(admin, 'mod_lap_status_map', ['status_code', 'label', 'definition', 'in_progress', 'visible', 'reporting_group', 'sort_order', 'stall_days'], LAP_STATUSES.map((s) => [...s]));
+    await insert(admin, 'cdm_loan_app_status_history', ['application_id', 'status_code', 'entered_date'], lap.history);
+    await insert(admin, 'hist_lap_month', ['month_end', 'branch_id', 'loan_category', 'application_count', 'approved_count', 'decided_count'], lap.months);
+    await insert(admin, 'meta_lap_load', ['load_date', 'state'], [[AS_OF, 'completed']]);
     for (const ddl of WORKFLOW_DDL) await admin.query(ddl);
     const wf = workflowSeed(profile, t.employees);
     await insert(admin, 'mod_ref_types', ['type_id', 'category', 'label', 'description', 'route_rule', 'fields', 'active'], wf.types);
@@ -57,7 +64,7 @@ async function main() {
     // The application account reads tenant data only (spec 26.2: read-only on customer tables), and
     // writes only the workflow store, through approved DI Core operations.
     await admin.query(`GRANT SELECT ON \`${profile.schema}\`.* TO 'dinext'@'%'`);
-    for (const table of WORKFLOW_WRITE_TABLES) await admin.query(`GRANT INSERT, UPDATE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
+    for (const table of [...WORKFLOW_WRITE_TABLES, ...PIPELINE_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     console.log(`${profile.key}: ${t.parties.length} parties, ${t.loans.length} loans, ${t.deposits.length} deposit accounts, ${t.histLoan.length} loan history rows, ${rm.interactions.length} interactions in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   }
   await admin.end();

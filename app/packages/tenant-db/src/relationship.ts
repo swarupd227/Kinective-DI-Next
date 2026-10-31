@@ -51,7 +51,15 @@ export const RELATIONSHIP_DDL = [
      status_detail VARCHAR(80) NOT NULL,
      applied_date DATE NOT NULL,
      decided_date DATE NULL,
-     KEY ix_app_party (party_id)
+     status_code VARCHAR(24) NOT NULL,
+     status_since DATE NOT NULL,
+     owner_employee_id INT NOT NULL,
+     branch_id INT NOT NULL,
+     loan_category VARCHAR(40) NOT NULL,
+     is_duplicate TINYINT NOT NULL,
+     KEY ix_app_party (party_id),
+     KEY ix_app_owner (owner_employee_id),
+     KEY ix_app_branch (branch_id, status_code)
    )`,
   `CREATE TABLE cdm_interaction (
      interaction_id INT PRIMARY KEY,
@@ -98,7 +106,7 @@ const money = (n: number) => (n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${Mat
 const longDate = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-const LOAN_LABEL: Record<string, string> = { Auto: 'Auto loan', Personal: 'Personal loan', Business: 'Business loan', Consumer: 'Consumer loan', Mortgage: 'First mortgage' };
+export const LOAN_LABEL: Record<string, string> = { Auto: 'Auto loan', Personal: 'Personal loan', Business: 'Business loan', Consumer: 'Consumer loan', Mortgage: 'First mortgage' };
 
 const INTERACTIONS: [channel: string, kind: string, summary: string][] = [
   ['Branch', 'Branch visit', 'Deposited a check at the counter'],

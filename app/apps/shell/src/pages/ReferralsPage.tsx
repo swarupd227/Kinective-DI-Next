@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { Check, CircleAlert, Inbox, MessageSquarePlus, Play, Send, Sparkles, UserRound, Users, X } from 'lucide-react';
+import { Check, CircleAlert, Inbox, Landmark, MessageSquarePlus, Play, Send, Sparkles, UserRound, Users, X } from 'lucide-react';
 import { Button, SegmentedControl, Skeleton, TextInput, useAnnouncer, useToast } from '@dinext/ui';
 import type { ContextRef, ReferralAction, ReferralDetail, ReferralStageName, ReferralSummary } from '@dinext/block-schemas';
 import { ApiError } from '@dinext/stream-client';
@@ -16,7 +16,7 @@ import styles from './ReferralsPage.module.css';
 
 type Box = 'mine' | 'team' | 'sent';
 
-const STAGES: ReferralStageName[] = ['New Referral', 'Active', 'Sold', 'Not Interested'];
+const STAGES: ReferralStageName[] = ['New Referral', 'Active', 'Sold', 'Not Interested', 'Done'];
 const age = (days: number) => (days === 0 ? 'Today' : days === 1 ? '1 day old' : `${days} days old`);
 const when = (iso: string) => new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
 const due = (iso: string) => new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' }).format(new Date(iso));
@@ -117,7 +117,7 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
   const { announce } = useAnnouncer();
   const queryClient = useQueryClient();
   const [note, setNote] = useState('');
-  const [closing, setClosing] = useState<'Sold' | 'Not Interested' | null>(null);
+  const [closing, setClosing] = useState<'Sold' | 'Not Interested' | 'Done' | null>(null);
   const q = useQuery({ queryKey: ['referral', id], queryFn: () => api.referral(id) });
   const act = useMutation({
     mutationFn: (action: ReferralAction) => api.referralAction(id, action),
@@ -143,6 +143,9 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
   const chip: ContextRef = { type: 'member', ref: r.memberRef, label: r.name };
   const canAct = r.canWork && isOpen(r.stage);
   const contact = r.fields.preferred_contact;
+  // A follow-up task for staff closes as Done; it is not a sale.
+  const task = r.category === 'Task';
+  const closes = task ? ['Done'] : r.stage === 'Not Interested' ? ['Not Interested'] : ['Sold'];
 
   return (
     <section className={styles.detail} aria-labelledby="referral-title">
@@ -161,7 +164,7 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
       </header>
 
       <ol className={styles.stages} aria-label="Stage">
-        {STAGES.filter((s) => (r.stage === 'Not Interested' ? s !== 'Sold' : s !== 'Not Interested')).map((s) => (
+        {STAGES.filter((s) => s === 'New Referral' || s === 'Active' || closes.includes(s)).map((s) => (
           <li key={s} className={clsx(styles.stageStep, s === r.stage && styles.stageNow)} aria-current={s === r.stage ? 'step' : undefined}>
             {s}
           </li>
@@ -197,13 +200,18 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
         <Button icon={<Sparkles size={14} aria-hidden />} onClick={() => void startThread(`Prepare me for my meeting with ${r.name}`, [chip]).then((t) => navigate(`/c/${t}`))}>
           Prepare me
         </Button>
+        {r.fields.application_id !== undefined && (
+          <Button icon={<Landmark size={14} aria-hidden />} onClick={() => navigate(`/m/lap?id=${r.fields.application_id}`)}>
+            Open application
+          </Button>
+        )}
       </div>
 
       {canAct && (
         <div className={styles.work}>
           {closing ? (
             <div className={styles.confirm} role="group" aria-label={`Confirm ${closing}`}>
-              <p>{closing === 'Sold' ? 'Mark this Sold? It can drive incentive credit.' : 'Mark this Not Interested?'} This closes the referral.</p>
+              <p>{closing === 'Sold' ? 'Mark this Sold? It can drive incentive credit.' : closing === 'Done' ? 'Mark this task done?' : 'Mark this Not Interested?'} This closes it.</p>
               <div className={styles.actions}>
                 <Button variant="primary" icon={<Check size={14} aria-hidden />} disabled={act.isPending} onClick={() => act.mutate({ kind: 'close', stage: closing, note: note.trim() || undefined })}>
                   Confirm
@@ -220,12 +228,20 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
                   Start working
                 </Button>
               )}
-              <Button disabled={act.isPending} onClick={() => setClosing('Sold')}>
-                Sold
-              </Button>
-              <Button variant="ghost" disabled={act.isPending} onClick={() => setClosing('Not Interested')}>
-                Not interested
-              </Button>
+              {task ? (
+                <Button disabled={act.isPending} onClick={() => setClosing('Done')}>
+                  Mark done
+                </Button>
+              ) : (
+                <>
+                  <Button disabled={act.isPending} onClick={() => setClosing('Sold')}>
+                    Sold
+                  </Button>
+                  <Button variant="ghost" disabled={act.isPending} onClick={() => setClosing('Not Interested')}>
+                    Not interested
+                  </Button>
+                </>
+              )}
             </div>
           )}
           <form

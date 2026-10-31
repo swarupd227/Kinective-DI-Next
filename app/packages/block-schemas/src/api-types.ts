@@ -107,7 +107,7 @@ export interface AppNotification {
   userId?: string;
 }
 
-export type ReferralStageName = 'New Referral' | 'Active' | 'Sold' | 'Not Interested';
+export type ReferralStageName = 'New Referral' | 'Active' | 'Sold' | 'Not Interested' | 'Done';
 
 /** One line of GET /v1/referrals. Members appear by name and masked number, with an opaque token. */
 export interface ReferralSummary {
@@ -146,7 +146,70 @@ export interface ReferralsIndex {
 }
 
 /** A person's own action in the inbox. Actions an agent proposes go through an approval card instead. */
-export type ReferralAction = { kind: 'start' } | { kind: 'note'; text: string } | { kind: 'close'; stage: 'Sold' | 'Not Interested'; note?: string } | { kind: 'assign'; employeeId: number };
+export type ReferralAction = { kind: 'start' } | { kind: 'note'; text: string } | { kind: 'close'; stage: 'Sold' | 'Not Interested' | 'Done'; note?: string } | { kind: 'assign'; employeeId: number };
+
+export type PipelineViewId = 'mine' | 'location' | 'team' | 'institution';
+
+/** Volume and dollars together, with percent and average days (spec 17.5). */
+export interface PipelineCell {
+  count: number;
+  pct: number;
+  dollars: number;
+  avgDays: number;
+}
+
+/** GET /v1/lap/summary. Groups and their names are the tenant's (FE-LAP-002). */
+export interface PipelineIndex {
+  view: PipelineViewId;
+  views: PipelineViewId[];
+  /** Application Details in the access matrix (FE-LAP-004). */
+  details: boolean;
+  asOf: string;
+  stale: boolean;
+  windowDays: number;
+  groups: string[];
+  funnel: (PipelineCell & { group: string })[];
+  products: { product: string; total: PipelineCell; cells: Record<string, PipelineCell> }[];
+  open: { count: number; dollars: number };
+  stalled: { count: number; dollars: number; oldestDays: number };
+}
+
+export interface PipelineApplicationRow {
+  applicationId: number;
+  memberRef: string;
+  name: string;
+  lastName: string;
+  last4: string;
+  product: string;
+  amount: number;
+  statusCode: string;
+  status: string;
+  group: string;
+  open: boolean;
+  applied: string;
+  decided: string | null;
+  daysInStatus: number;
+  threshold: number | null;
+  stalled: boolean;
+  owner: { employeeId: number; name: string } | null;
+  branch: string;
+}
+
+/** GET /v1/lap/applications. Items are empty without Application Details. */
+export interface PipelineList {
+  count: number;
+  dollars: number;
+  oldestDays: number;
+  byProduct: { product: string; count: number; dollars: number }[];
+  items: PipelineApplicationRow[];
+  detailsHidden: boolean;
+}
+
+export interface PipelineApplicationDetail extends PipelineApplicationRow {
+  asOf: string;
+  stale: boolean;
+  history: { status: string; at: string }[];
+}
 
 /** GET /v1/tables/{id}: a workspace grid's rows for small tables (client-side row model). */
 export interface TableData {

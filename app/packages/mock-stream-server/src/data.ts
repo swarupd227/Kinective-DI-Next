@@ -13,7 +13,7 @@ import type {
 } from '@dinext/block-schemas';
 import { approvalHighFixture, chartFixture, kpiGroupFixture, lineChartFixture, nightly, tableFixture } from '@dinext/block-schemas/fixtures';
 
-export type PersonaId = 'executive' | 'analyst' | 'branch' | 'msr' | 'bank_cfo' | 'admin';
+export type PersonaId = 'executive' | 'analyst' | 'branch' | 'lender' | 'msr' | 'bank_cfo' | 'admin';
 
 interface Persona {
   session: Omit<Session, 'build' | 'timeouts' | 'flags' | 'slashCommands' | 'personas' | 'voice'>;
@@ -25,6 +25,10 @@ interface Persona {
   employeeId?: number;
   /** Told about everything new in their purview's queues, not only their own. */
   leadsBranch?: boolean;
+  /** Application Details in the Loan Pipeline access matrix; without it, totals only (FE-LAP-004). */
+  lapDetails?: boolean;
+  /** May change stall thresholds (AI-AGT-180). */
+  lendingAdmin?: boolean;
   suggestions: string[];
 }
 
@@ -52,6 +56,8 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       apps: ['home', 'conversations', 'reports', 'tables', 'workflows', 'calendar', 'files', 'rm', 'referrals', 'lap', 'gi', 'seg', 'callreport'],
       permissions: { queryBrowser: false, dashboardAdmin: true },
     },
+    lapDetails: true,
+    lendingAdmin: true,
     suggestions: ['Get me ready for Thursday’s ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'Prepare me for my meeting with Suzanne Jackson', 'Brief me'],
   },
   analyst: {
@@ -67,13 +73,26 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     session: {
       user: user('user:5120', 'Marcus Reed', 'Branch Manager, Westport', 'Retail leader'),
       tenant: CU,
-      apps: ['home', 'conversations', 'reports', 'workflows', 'calendar', 'rm', 'referrals', 'gi'],
+      apps: ['home', 'conversations', 'reports', 'workflows', 'calendar', 'rm', 'referrals', 'lap', 'gi'],
       permissions: { queryBrowser: false, dashboardAdmin: false },
     },
     purview: ['Westport'],
     employeeId: 6,
     leadsBranch: true,
-    suggestions: ['What’s on my team’s plate?', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups', 'Refer Suzanne Jackson for a HELOC, she prefers a call after 5 pm', 'Show my overdue onboarding touch points', 'Show Northgate loan detail'],
+    lapDetails: true,
+    suggestions: ['What’s on my team’s plate?', 'Show the pipeline by product for my branch', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups', 'Refer Suzanne Jackson for a HELOC, she prefers a call after 5 pm', 'Show my overdue onboarding touch points', 'Show Northgate loan detail'],
+  },
+  lender: {
+    session: {
+      user: user('user:6101', 'Ana Ruiz', 'Loan Officer, Westport', 'Lender'),
+      tenant: CU,
+      apps: ['home', 'conversations', 'workflows', 'rm', 'referrals', 'lap'],
+      permissions: { queryBrowser: false, dashboardAdmin: false },
+    },
+    purview: ['Westport'],
+    employeeId: 1,
+    lapDetails: true,
+    suggestions: ['Which of my apps have sat in underwriting more than five days?', 'Show my stalled applications', 'Create follow-up tasks for my stalled applications', 'What’s on my plate today?'],
   },
   msr: {
     session: {

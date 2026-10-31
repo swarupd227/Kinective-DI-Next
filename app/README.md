@@ -202,11 +202,23 @@ Slice 9 adds seeded referrals and a referral type: run `npm run db:seed` once lo
 - **Rewards and Lifetime Value are not shown.** Their sources are not stated today [BK p11]; the Rewards tab says so. Lifetime Value depends on Profitability (spec 17.14).
 - **Member 360 opens beside the conversation on desktop and laptop only.** On tablets and phones the workspace is a full-screen sheet, so the card's **Open 360** button opens it instead of taking over the conversation.
 
+### Loan Pipeline (Slice 10)
+
+The Loan Application Pipeline (spec 8.27, 17.5, 24.18), with data from the nightly LOS load. Reseed with `npm run db:seed` after pulling this.
+
+- **The page:** Loan Pipeline in the sidebar. Views are My applications, My location, Team and Institution, offered by role and purview, and filtered in the DI Core. It shows the funnel, stalled applications, Pipeline by product with count, percent, dollars and average days, and an application's path through its statuses.
+- **The tenant's words:** status names, reporting groups and what is hidden come from `mod_lap_status_map`. Duplicates are left out by the stock rule (same applicant and category, within 7 days).
+- **Stalls:** days in the current status past the threshold for that status, or for that product where one is set. Days run to the last LOS load, and every answer says which. If the feed missed the last build, DI says so and shows the date of the latest load.
+- **Asking DI:** "Which of my apps have sat in underwriting more than five days?", "Show the pipeline by product for my branch", "What's our approval rate on auto this month compared with last month?", "Create follow-up tasks for pending apps older than ten days", "Show counter offers over $50,000". The approval rate comes from the semantic layer and covers complete months.
+- **Writes:** only follow-up tasks and stall thresholds, each on a medium-risk approval card. A task lands in the owner's Referrals list and closes as Done. Thresholds need a lending administrator. DI declines to contact applicants and offers a staff task instead.
+- **Access:** without Application Details, as for Priya Shah and Elena Ortiz, everything is counts and dollars by product. Ana Ruiz is a new lender persona; Marcus Reed now has the module too.
+
 ## Not done yet
 
 - **Agents:** a live golden-question evaluation on Claude (needs your approval), conversation memory beyond the server process, and real Goals & Incentives and Retention agents.
 - **Reports:** PDF and Word exports, report snapshots ("By Report Date", spec 18.8), Table Summary and Detail report builders with their form block (spec 8.6, 8.7), the template settings form with every builder tab (FE-BLD-001), test mode with a PDF preview, drag-and-drop on the canvas, changing a template other people use (high risk with the users and schedules affected, FE-BLD-005), pinning reports to Home, and real delivery to recipients.
 - **Relationship Manager:** issue management ("Log an issue", spec 8.24), undoing a decline within 30 days (BE-RM-003), the classic Relationship Dashboard as a full app page with its left navigation, a call-centre screen pop (AS-090), alert rules and the opportunity threshold as tenant settings, and speaking member data aloud (off by default for branch-floor classes).
+- **Loan Pipeline:** the status map and duplicate rule editor, movement counting, crediting the original owner, build-time `lap.application.aged` events, and Indirect Lending. Thresholds apply on the next read rather than the next build.
 - **Workflow:** email notifications, tenant-set SLA rules and escalation, undo for medium writes (spec 6.11), second approvers, the New Referral form, CC, and data-verified success matching.
 - **Home and threads:** pinning with undo, Home edit mode, sharing threads, a plan preview for multi-step writes, and file upload.
 - **Blocks:** the remaining catalogue blocks (pivot, form, timeline, map, funnel, lineage_graph, report_canvas, file_drop, sql_view). The form block is next in line, for "Edit first".

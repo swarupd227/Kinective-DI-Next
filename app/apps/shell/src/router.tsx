@@ -19,6 +19,7 @@ const NotFound = lazy(() => import('./pages/NotFound.tsx').then((m) => ({ defaul
 const MemberPage = lazy(() => import('./pages/MemberPage.tsx').then((m) => ({ default: m.MemberPage })));
 const ReportsPage = lazy(() => import('./pages/ReportsPage.tsx').then((m) => ({ default: m.ReportsPage })));
 const ReferralsPage = lazy(() => import('./pages/ReferralsPage.tsx').then((m) => ({ default: m.ReferralsPage })));
+const PipelinePage = lazy(() => import('./pages/PipelinePage.tsx').then((m) => ({ default: m.PipelinePage })));
 const ReportPage = lazy(() => import('./pages/ReportsPage.tsx').then((m) => ({ default: m.ReportPage })));
 
 const page = (el: ReactNode) => <Suspense fallback={null}>{el}</Suspense>;
@@ -55,6 +56,7 @@ export const router = createBrowserRouter([
           { path: 'customers', element: guarded('rm', <AppPlaceholder app="rm" />) },
           { path: 'members/:ref', element: guarded('rm', <MemberPage />) },
           { path: 'customers/:ref', element: guarded('rm', <MemberPage />) },
+          { path: 'm/lap/*', element: guarded('lap', <PipelinePage />) },
           { path: 'm/:module/*', element: page(<AppPlaceholder app="module" />) },
           { path: '*', element: page(<NotFound />) },
         ],
