@@ -6,7 +6,7 @@ import { validateBlock, type Block } from '@dinext/block-schemas';
 import { ApprovalStore, CoreError, PipelineService, ReferralService, RelationshipService } from '@dinext/di-core';
 import { SemanticService } from '@dinext/semantic';
 import { createPool, markDuplicates, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
-import { AuditLog, CONTACT_APPLICANT, Concierge, INBOX_REQUEST, PIPELINE_REQUEST, foundText, parsePipelineRequest, rateText, runPipelineOffline, summaryBlocks, ToolGateway, type PipelineInput, type RunSink, type TenantRuntime } from '../src/index.ts';
+import { AuditLog, CONTACT_APPLICANT, Concierge, INBOX_REQUEST, PIPELINE_REQUEST, foundText, parsePipelineRequest, withoutFigures, rateText, runPipelineOffline, summaryBlocks, ToolGateway, type PipelineInput, type RunSink, type TenantRuntime } from '../src/index.ts';
 
 const SCHEMA = 'dinext_t_test_cu';
 const up = await warehouseAvailable(SCHEMA);
@@ -33,6 +33,11 @@ describe('recognising pipeline work', () => {
     expect(parsePipelineRequest('Show counter offers over $50,000')).toMatchObject({ intent: 'list', status: 'counter offer', minAmount: 50_000 });
     expect(parsePipelineRequest('Create follow-up tasks for pending apps older than 10 days')).toMatchObject({ intent: 'tasks', minDays: 10, stalled: false });
     expect(parsePipelineRequest('Set the underwriting stall threshold for auto to 3 days')).toEqual({ intent: 'threshold', status: 'underwriting', product: 'auto', days: 3 });
+  });
+
+  it('keeps only what a note adds to the record beside it', () => {
+    expect(withoutFigures('It has been in underwriting since 2026-10-08, after moving from application received on 2026-10-02. The data doesn’t show why it’s waiting.')).toBe('The data doesn’t show why it’s waiting.');
+    expect(withoutFigures('It has been there for 17 days.')).toBe('');
   });
 
   it('never takes a request to contact an applicant', () => {

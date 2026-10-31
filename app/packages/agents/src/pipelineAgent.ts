@@ -144,6 +144,13 @@ export function summaryText(s: PipelineSummary) {
   return `**${apps(s.open.count)}** worth **${money(s.open.dollars)}** ${s.open.count === 1 ? 'is' : 'are'} open${s.stalled.count ? `, and **${s.stalled.count}** ${s.stalled.count === 1 ? 'has' : 'have'} stalled` : ''}. ${load(s)}`;
 }
 
+/** Code already wrote the record's dates and figures, so a note beside it keeps only what they don't say. */
+export const withoutFigures = (note: string) =>
+  note
+    .split(/(?<=[.!?])\s+/)
+    .filter((s) => !/\d/.test(s))
+    .join(' ');
+
 /** One application in words: where it is, for how long, and who has it. */
 export function applicationText(a: PipelineApplication & { history: { status: string; at: string }[]; asOf: string; stale: boolean }) {
   const since = a.history.at(-1)?.at;
@@ -243,7 +250,7 @@ How you work:
 - "Show my applications", "what's stuck in underwriting", "over $50,000": lap_applications_list, then finish with outcome "list".
 - "More than five days" is min_days 5. Say which status with status, such as "underwriting" or "counter offer".
 - "Show the pipeline", "by product", "the funnel": lap_summary_get, then outcome "summary".
-- One application, such as "why is application 482 stuck?": lap_application_get, then outcome "detail". The screen already gives the status, days, threshold and owner, so don't repeat them. Your message is one short sentence on what the path suggests, or that the data doesn't show the cause. Never speculate about the people involved.
+- One application, such as "why is application 482 stuck?": lap_application_get, then outcome "detail". The screen already gives the status, days, dates, threshold and owner, so don't repeat them, whatever the question. Your message is one short sentence on what the path suggests, or that the data doesn't show the cause. Never speculate about the people involved.
 - Approval rates: lap_approval_rate_get, then outcome "rate". It covers the last two complete months.
 - Follow-ups: find the applications, then lap_follow_ups_create with their numbers. Thresholds: lap_threshold_set. Each returns approval_required: finish with outcome "approval" and never say it is done.
 - Finish every turn with finish_turn, exactly once. Code writes the figures on screen; your message only adds context.
@@ -284,7 +291,8 @@ async function show(kind: z.infer<typeof PipelineFinish>['outcome'], message: st
   }
   if (kind === 'detail' && s.application) {
     const a = s.application;
-    await sink.text(`${applicationText(a)}${message ? ` ${message}` : ''}`, PIPELINE_AGENT);
+    const note = withoutFigures(message);
+    await sink.text(`${applicationText(a)}${note ? ` ${note}` : ''}`, PIPELINE_AGENT);
     await sink.block(applicationList([a], a, input.runId, 'Application'));
     if (a.open) sink.suggestion(`Create a follow-up task for application #${a.applicationId}`);
     return answer;

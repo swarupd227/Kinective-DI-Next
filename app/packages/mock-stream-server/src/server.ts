@@ -52,6 +52,8 @@ interface PendingApproval {
   card: ApprovalCardBlock;
   decided?: { status: number; body: unknown };
   onResolved?: (decision: 'approved' | 'denied' | 'returned') => void;
+  /** The bell's "Approval needed" for this card, updated once it is decided. */
+  noticeId?: string;
   /** Cards from live agents are decided by the approval service, not here. */
   live?: boolean;
   expiryTimer?: NodeJS.Timeout;
@@ -144,9 +146,23 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
   const notify = (userId: string, n: Omit<AppNotification, 'id' | 'at' | 'read' | 'userId'>) => {
     const full: AppNotification = { ...n, id: id('ntf_', 10), at: new Date().toISOString(), read: false, userId };
     notifications.unshift(full);
-    if (userId !== me()) return;
-    const json = JSON.stringify({ type: 'notification', notification: full });
+    pushNotice(full);
+    return full;
+  };
+
+  const pushNotice = (n: AppNotification) => {
+    if (n.userId !== me()) return;
+    const json = JSON.stringify({ type: 'notification', notification: n });
     for (const ws of sockets.keys()) if (ws.readyState === ws.OPEN) ws.send(json);
+  };
+
+  /** A decided card asks nothing more of anyone, so its notice says how it ended and stops counting. */
+  const settleNotice = (a: PendingApproval, outcome: 'approved' | 'denied' | 'returned' | 'expired') => {
+    const n = notifications.find((x) => x.id === a.noticeId);
+    if (!n) return;
+    const settled: AppNotification = { ...n, title: `Approval ${outcome}`, at: new Date().toISOString(), read: true };
+    notifications = notifications.map((x) => (x === n ? settled : x));
+    pushNotice(settled);
   };
 
   /** Tells the people concerned, never the person who just did it. */
@@ -176,8 +192,8 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         notify(thread(threadId).owner, { group: 'agent_runs', title: 'Answer ready', detail: thread(threadId).summary.title, link: `/c/${threadId}` });
       },
       awaitApproval: (card, blockId, onResolved) => {
-        approvals.set(card.data.approvalId, { threadId, runId, blockId, card, onResolved: (d) => onResolved(d, ctx) });
-        notify(thread(threadId).owner, { group: 'approvals', title: 'Approval needed', detail: card.data.summary, link: `/c/${threadId}` });
+        const notice = notify(thread(threadId).owner, { group: 'approvals', title: 'Approval needed', detail: card.data.summary, link: `/c/${threadId}` });
+        approvals.set(card.data.approvalId, { threadId, runId, blockId, card, noticeId: notice.id, onResolved: (d) => onResolved(d, ctx) });
       },
     };
     for (const step of script(ctx)) {
@@ -199,6 +215,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     if (!a?.live || a.decided) return;
     clearTimeout(a.expiryTimer);
     a.decided = { status: 410, body: { code: 'EXPIRED' } };
+    settleNotice(a, 'expired');
     emit(a.threadId!, { type: 'approval.resolved', runId: a.runId, approvalId, blockId: a.blockId, decision: 'expired', by: 'DI' } as Emit);
     completeRun(a.runId!, a.threadId!);
   };
@@ -224,7 +241,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         entry.expiryTimer = setTimeout(() => expireLive(approvalId), Math.max(0, new Date(card.data.expiresAt).getTime() - Date.now()));
         approvals.set(approvalId, entry);
         emit(threadId, { type: 'approval.requested', runId, approvalId, blockId: card.id, riskTier: card.data.riskTier, expiresAt: card.data.expiresAt } as Emit);
-        notify(thread(threadId).owner, { group: 'approvals', title: 'Approval needed', detail: card.data.summary, link: `/c/${threadId}` });
+        entry.noticeId = notify(thread(threadId).owner, { group: 'approvals', title: 'Approval needed', detail: card.data.summary, link: `/c/${threadId}` }).id;
         return;
       }
       completeRun(runId, threadId);
@@ -284,6 +301,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     const result = { status: r.status, body: r.body };
     a.decided = result;
     idempotency.set(key, result);
+    if (r.resolved) settleNotice(a, r.resolved);
     const by = sessionFor(persona).user.name;
     emit(a.threadId!, { type: 'approval.resolved', runId: a.runId, approvalId, blockId: a.blockId, decision: r.resolved, by, channel: body.channel } as Emit);
     return result;
@@ -321,6 +339,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     const result = { status: 200, body: { decision, by, at: new Date().toISOString() } };
     a.decided = result;
     idempotency.set(key, result);
+    settleNotice(a, decision);
     if (a.threadId) {
       emit(a.threadId, { type: 'approval.resolved', runId: a.runId, approvalId, blockId: a.blockId, decision, by, channel: body.channel } as Emit);
       setTimeout(() => a.onResolved?.(decision), 300 * speed);

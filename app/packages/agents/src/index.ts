@@ -5,7 +5,7 @@ export { ReportGateway, REPORT_TOOLS, REPORT_AGENT, runReport, periodOptions, pa
 export { runReportAgent, runReportOffline, parseReportRequest, ReportFinish, type ReportOutcome } from './reportAgent.ts';
 export { runGoal, runGoalOffline, newGoalThread, reviseNote, reviseFollowUps, followUpCard, GoalWork, GOAL_AGENT, GOAL_REQUEST, LIST_EDIT, NOTE_EDIT, type GoalThread, type GoalOutcome, type GoalInput, type GoalNote } from './goal.ts';
 export { buildToday, pipelineTake, referralTake, runToday, todayList, todayText, worksOwnList, TODAY_REQUEST, type TodayItem, type TodayOutcome, type TodayPlan, type TodayWho } from './today.ts';
-export { runPipeline, runPipelineOffline, parsePipelineRequest, foundText, applicationText, summaryText, rateText, applicationList, summaryBlocks, taskCard, thresholdCard, PipelineFinish, PIPELINE_AGENT, PIPELINE_REQUEST, CONTACT_APPLICANT, type PipelineOutcome, type PipelineInput } from './pipelineAgent.ts';
+export { runPipeline, runPipelineOffline, parsePipelineRequest, foundText, applicationText, withoutFigures, summaryText, rateText, applicationList, summaryBlocks, taskCard, thresholdCard, PipelineFinish, PIPELINE_AGENT, PIPELINE_REQUEST, CONTACT_APPLICANT, type PipelineOutcome, type PipelineInput } from './pipelineAgent.ts';
 export { runInbox, runInboxOffline, parseInboxRequest, inboxList, changeCard, InboxFinish, INBOX_AGENT, INBOX_REQUEST, type InboxOutcome, type InboxInput } from './inbox.ts';
 export { memberCard, member360, matchCard, talkingPoints, scoreFactors, householdList, RELATIONSHIP_AGENT } from './member.ts';
 export { runReferral, runReferralOffline, parseReferral, referralCard, newReferralThread, REFERRAL_AGENT, FinishTurn, type ReferralThread, type ReferralOutcome } from './referral.ts';
