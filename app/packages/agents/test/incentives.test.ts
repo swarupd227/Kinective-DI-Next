@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateBlock, type Block } from '@dinext/block-schemas';
 import { ApprovalStore, CoreError, GoalsService, payFor, PipelineService, ReferralService, ruleText, type IncentiveRule } from '@dinext/di-core';
 import { createPool, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
-import { GI_REQUEST, ToolGateway, parseIncentivesRequest, runIncentivesOffline, type IncentivesInput, type RunSink } from '../src/index.ts';
+import { AuditLog, Concierge, GI_REQUEST, ToolGateway, parseIncentivesRequest, runIncentivesOffline, type IncentivesInput, type RunSink, type TenantRuntime } from '../src/index.ts';
 
 const SCHEMA = 'dinext_t_test_cu';
 const up = await warehouseAvailable(SCHEMA);
@@ -36,7 +36,7 @@ describe('payout rules', () => {
 
 describe('recognising incentive work', () => {
   it('tells incentives from goals handed to DI and from the Branch scorecard report', () => {
-    for (const t of ['How am I doing on my goals this month?', 'Why is my referral incentive only $40?', 'Who on my team is behind on goals?', 'Approve October incentive payouts for Westport', 'What do I need to reach tier 2?']) expect(GI_REQUEST.test(t), t).toBe(true);
+    for (const t of ['Adjust J. Ortiz’s referral incentive by $150', 'Tell the people who are behind', 'How am I doing on my goals this month?', 'Why is my referral incentive only $40?', 'Who on my team is behind on goals?', 'Approve October incentive payouts for Westport', 'What do I need to reach tier 2?']) expect(GI_REQUEST.test(t), t).toBe(true);
     for (const t of ['Open the September branch scorecard for Westport', 'Get me ready for Thursday’s ALCO meeting']) expect(GI_REQUEST.test(t), t).toBe(false);
   });
 
@@ -46,6 +46,10 @@ describe('recognising incentive work', () => {
     expect(parseIncentivesRequest('Show the October payouts')).toEqual({ intent: 'payouts', branch: undefined });
     expect(parseIncentivesRequest('Why is my referral incentive only $40?')).toEqual({ intent: 'explain', goal: 'referral' });
     expect(parseIncentivesRequest('Who on my team is behind on goals?')).toMatchObject({ intent: 'team' });
+    expect(parseIncentivesRequest('Adjust J. Ortiz’s referral incentive by $150 with reason code MISSED-CREDIT')).toEqual({ intent: 'adjust', employee: 'J. Ortiz', amount: 150, reason: 'MISSED-CREDIT' });
+    expect(parseIncentivesRequest('Approve M. Moreau’s adjustment')).toEqual({ intent: 'review', employee: 'M. Moreau', decision: 'approve' });
+    expect(parseIncentivesRequest('Deny Tom Walsh’s payout: duplicate credit')).toEqual({ intent: 'decide', employee: 'Tom Walsh', decision: 'deny', note: 'duplicate credit' });
+    expect(parseIncentivesRequest('Tell the people who are behind')).toMatchObject({ intent: 'notes' });
     expect(parseIncentivesRequest('How am I doing?')).toMatchObject({ intent: 'scorecard' });
   });
 });
@@ -139,6 +143,92 @@ describe.skipIf(!up)('incentives against the warehouse', () => {
     const missing = await runIncentivesOffline(input('Approve the October payouts for Westport except Zebedee', 'thr_gi3'), { gateway }, none.sink);
     expect(missing.approval).toBeUndefined();
     expect(none.texts[0]).toContain('Zebedee');
+  });
+
+  const approveIt = async (out: { approval?: { record: { approvalId: string; payloadHash: string } } }, ctx: Record<string, unknown>, userId = 'user:5120') => gateway.execute(await approvals.decide(out.approval!.record.approvalId, { decision: 'approved', userId, payloadHash: out.approval!.record.payloadHash }), ctx as never);
+  const marcusCtx = { user: { id: 'user:5120', name: 'Marcus Reed' }, purviewBranches: ['Westport'], employeeId: 6, gi: { leads: true, approves: true } };
+  const danaIn = (text: string, threadId: string) => input(text, threadId, { user: { id: 'user:9229', name: 'Dana Lee', title: 'CEO' }, purviewBranches: undefined, employeeId: undefined, gi: { approves: true } });
+  const danaCtx = { user: { id: 'user:9229', name: 'Dana Lee' }, gi: { approves: true } };
+
+  it('won’t make an adjustment without a reason code, and never picks one', async () => {
+    const r = recorder();
+    const out = await runIncentivesOffline(input('Adjust Sofia Ruiz’s referral incentive by $150', 'thr_gi5'), { gateway }, r.sink);
+    expect(out.approval).toBeUndefined();
+    expect(r.texts[0]).toContain('MISSED-CREDIT');
+  });
+
+  it('takes a bare reason code as the answer to its own question', async () => {
+    const concierge = new Concierge({ model: null, audit: new AuditLog() });
+    const tenant = { key: 'test_cu', name: 'Harborview', institutionType: 'credit_union', semantic: null, workflow: { referrals: null, relationship: null, gateway } } as unknown as TenantRuntime;
+    const turn = (text: string, runId: string) => ({ threadId: 'thr_gi_ask', runId, text, context: [], user: { id: 'user:5120', name: 'Marcus Reed', title: 'Branch Manager' }, tenant, apps: ['gi'], purviewBranches: ['Westport'], canViewSql: false, employeeId: 6, gi: { leads: true, approves: true } });
+    const first = recorder();
+    expect(await concierge.handle(turn('Adjust Sofia Ruiz’s referral incentive by $25', 'R-a1'), first.sink)).toMatchObject({ kind: 'handled' });
+    expect(first.texts[0]).toContain('reason code');
+    const second = recorder();
+    const out = await concierge.handle(turn('MISSED-CREDIT', 'R-a2'), second.sink);
+    expect(out).toMatchObject({ kind: 'handled', approval: { card: { data: { summary: expect.stringContaining('MISSED-CREDIT') } } } });
+  });
+
+  it('adds an adjustment only after someone else reviews it', async () => {
+    const before = (await goals.batch('Westport', marcus, westport)).lines.find((l) => l.employeeId === 4)!.amount;
+    const made = await runIncentivesOffline(input('Adjust Sofia Ruiz’s referral incentive by $25 with reason code CORRECTION', 'thr_gi6'), { gateway }, recorder().sink);
+    expect(made.approval!.card.data.riskTier).toBe('high');
+    expect(made.approval!.card.data.confirmation.methods).not.toContain('voice');
+    await approveIt(made, marcusCtx);
+    const waiting = (await goals.batch('Westport', marcus, westport)).lines.find((l) => l.employeeId === 4)!;
+    expect(waiting.amount).toBe(before);
+    expect(waiting.flags.join(' ')).toContain('waiting for review');
+
+    const own = recorder();
+    expect((await runIncentivesOffline(input('Approve Sofia Ruiz’s adjustment', 'thr_gi7'), { gateway }, own.sink)).approval).toBeUndefined();
+    expect(own.texts[0]).toContain('someone else');
+
+    const review = await runIncentivesOffline(danaIn('Approve Sofia Ruiz’s adjustment', 'thr_gi8'), { gateway }, recorder().sink);
+    await approveIt(review, danaCtx, 'user:9229');
+    expect((await goals.batch('Westport', marcus, westport)).lines.find((l) => l.employeeId === 4)!.amount).toBe(before + 25);
+    await admin.query("DELETE FROM mod_gi_adjustment WHERE reason_code = 'CORRECTION'");
+  });
+
+  it('needs a note to deny, records it, and blocks that person from a batch', async () => {
+    const none = recorder();
+    expect((await runIncentivesOffline(input('Deny Tom Walsh’s payout', 'thr_gi9'), { gateway }, none.sink)).approval).toBeUndefined();
+    expect(none.texts[0]).toContain('note');
+    const out = await runIncentivesOffline(input('Deny Tom Walsh’s payout: duplicate credit', 'thr_gi10'), { gateway }, recorder().sink);
+    await approveIt(out, marcusCtx);
+    const line = (await goals.batch('Westport', marcus, westport)).lines.find((l) => l.employeeId === 2)!;
+    expect(line).toMatchObject({ status: 'Denied', note: 'duplicate credit' });
+    await admin.query('DELETE FROM mod_gi_payout');
+  });
+
+  it('keeps a returned payout waiting, with its note, until it’s approved', async () => {
+    const out = await runIncentivesOffline(input('Return Ana Ruiz’s payout: check the funded total', 'thr_gi11'), { gateway }, recorder().sink);
+    await approveIt(out, marcusCtx);
+    const b = await goals.batch('Westport', marcus, westport);
+    const line = b.lines.find((l) => l.employeeId === 1)!;
+    expect(line.status).toBeNull();
+    expect(line.flags[0]).toBe('Sent back: check the funded total');
+    await goals.approve({ branch: 'Westport', periodEnd: b.periodEnd, lines: [{ employeeId: 1, name: line.name, amount: line.amount }] }, { approvalId: 'apr_after_return', userId: 'user:5120' }, marcus, westport);
+    expect((await goals.batch('Westport', marcus, westport)).lines.find((l) => l.employeeId === 1)!.status).toBe('Approved');
+    await admin.query('DELETE FROM mod_gi_payout');
+  });
+
+  it('stops anyone deciding or adjusting their own payout', async () => {
+    for (const text of ['Deny Marcus Reed’s payout: test', 'Adjust Marcus Reed’s incentive by $10 with reason code CORRECTION']) {
+      const r = recorder();
+      expect((await runIncentivesOffline(input(text, 'thr_gi12'), { gateway }, r.sink)).approval, text).toBeUndefined();
+      expect(r.texts[0], text).toMatch(/own incentive/);
+    }
+  });
+
+  it('drafts one card of notes to people who are behind, leaving out the sender', async () => {
+    const out = await runIncentivesOffline(input('Tell the people who are behind on goals', 'thr_gi13'), { gateway }, recorder().sink);
+    const card = out.approval!.card;
+    expect(card.data.riskTier).toBe('medium');
+    const names = card.data.preview.kind === 'diff' ? card.data.preview.changes.map((c) => c.label) : [];
+    expect(names).toContain('Tom Walsh');
+    expect(names).not.toContain('Marcus Reed');
+    const done = await approveIt(out, marcusCtx);
+    expect(done).toMatchObject({ operation: 'gi.change' });
   });
 
   it('records an approved batch once, and stops if an amount changed since the card', async () => {

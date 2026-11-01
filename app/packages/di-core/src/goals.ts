@@ -67,8 +67,9 @@ export interface PayoutLine {
   /** Things to look at before approving, in plain words. */
   flags: string[];
   own: boolean;
-  /** Set once decided, with the amount as approved. */
+  /** Set once decided for good. A return leaves this empty, so the line can be approved after the fix. */
   status: string | null;
+  note: string | null;
 }
 
 export interface PayoutBatch {
@@ -89,6 +90,9 @@ export interface ScoreExplanation {
   rule: string;
   asOf: string;
 }
+
+/** The institution's adjustment reasons [Assumption]: a demo list until a tenant sets its own. */
+export const REASON_CODES = ['MISSED-CREDIT', 'LATE-FUNDING', 'CORRECTION', 'MANAGER-DISCRETION'];
 
 export const usd = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
 
@@ -245,7 +249,7 @@ export class GoalsService {
     const cards = (await this.cards(current.end, staff)).filter((c) => inBranch.some((s) => s.employeeId === c.employeeId));
     const before = prior ? await this.cards(prior.end, staff) : [];
     const [adjustments] = await this.pool.query('SELECT * FROM mod_gi_adjustment WHERE period_end = ?', [current.end]);
-    const [decided] = await this.pool.query('SELECT employee_id, amount, status FROM mod_gi_payout WHERE period_end = ?', [current.end]);
+    const [decided] = await this.pool.query('SELECT employee_id, amount, status, note FROM mod_gi_payout WHERE period_end = ?', [current.end]);
     const adj = adjustments as Record<string, unknown>[];
     const lines = cards.map((c): PayoutLine => {
       const mine = adj.filter((a) => a.employee_id === c.employeeId);
@@ -255,7 +259,10 @@ export class GoalsService {
       const was = before.find((b) => b.employeeId === c.employeeId)?.total ?? 0;
       const failed = c.goals.find((g) => g.qualifier && g.actual < g.target);
       const own = c.employeeId === who.employeeId;
+      const row = (decided as Record<string, unknown>[]).find((d) => d.employee_id === c.employeeId);
+      const returned = row?.status === 'Returned';
       const flags = [
+        ...(returned ? [`Sent back: ${String(row.note)}`] : []),
         ...(failed ? [`${failed.name} ${failed.actual}, under ${failed.target}: no incentive this period`] : []),
         ...(unusual(amount, was) ? [`Up from ${usd(was)} last month`] : []),
         ...pending.map((a) => `${usd(num(a.amount))} adjustment (${String(a.reason_code)}) waiting for review, not included`),
@@ -263,8 +270,8 @@ export class GoalsService {
         ...(own ? ['Your own payout: someone else has to approve it'] : []),
       ];
       const earning = c.goals.filter((g) => g.earned > 0);
-      const row = (decided as Record<string, unknown>[]).find((d) => d.employee_id === c.employeeId);
-      return { employeeId: c.employeeId, name: c.name, role: c.role, calculated: c.total, adjustments: approved, amount: row ? num(row.amount) : amount, incentives: earning.map((g) => `${g.rule!.name} ${usd(g.earned)}`).join(', ') || 'None earned', flags, own, status: row ? (row.status as string) : null };
+      const final = row && !returned;
+      return { employeeId: c.employeeId, name: c.name, role: c.role, calculated: c.total, adjustments: approved, amount: final ? num(row.amount) : amount, incentives: earning.map((g) => `${g.rule!.name} ${usd(g.earned)}`).join(', ') || 'None earned', flags, own, status: final ? (row.status as string) : null, note: (row?.note as string | null | undefined) ?? null };
     });
     // What this user can approve: their own never counts, and nothing is owed on a line at $0.
     const open = lines.filter((l) => !l.status && !l.own);
@@ -293,7 +300,68 @@ export class GoalsService {
       if (now.status) throw new CoreError('INVALID', `${l.name}’s payout has already been decided.`);
       if (now.amount !== l.amount) throw new CoreError('INVALID', `${l.name}’s amount has changed since this was prepared. Nothing was approved.`);
     }
-    await this.pool.query('INSERT INTO mod_gi_payout (employee_id, period_end, amount, status, approver_user_id, approval_id, approved_at) VALUES ?', [p.lines.map((l) => [l.employeeId, p.periodEnd, l.amount, 'Approved', meta.userId, meta.approvalId, new Date()])]);
+    await this.record(p.lines, p.periodEnd, 'Approved', null, meta);
     return { replayed: false };
+  }
+
+  /** One decision per person and period. Only a return can be replaced. */
+  private async record(lines: { employeeId: number; amount: number }[], periodEnd: string, status: string, note: string | null, meta: { approvalId: string; userId: string }) {
+    await this.pool.query('INSERT INTO mod_gi_payout (employee_id, period_end, amount, status, approver_user_id, approval_id, approved_at, note) VALUES ? ON DUPLICATE KEY UPDATE amount = IF(status = \'Returned\', VALUES(amount), amount), approver_user_id = IF(status = \'Returned\', VALUES(approver_user_id), approver_user_id), approval_id = IF(status = \'Returned\', VALUES(approval_id), approval_id), approved_at = IF(status = \'Returned\', VALUES(approved_at), approved_at), note = IF(status = \'Returned\', VALUES(note), note), status = IF(status = \'Returned\', VALUES(status), status)', [lines.map((l) => [l.employeeId, periodEnd, l.amount, status, meta.userId, meta.approvalId, new Date(), note])]);
+  }
+
+  /** Finds someone's line for a decision about them, in any branch the user can act on. */
+  private async line(name: string, who: GoalsWho, ctx: CoreContext) {
+    if (!who.approves) throw new CoreError('NO_ACCESS', 'Approving incentives isn’t part of your access.');
+    const staff = await this.staff();
+    const s = this.find(staff, name, who, ctx);
+    const batch = await this.batch(s.branch, who, ctx);
+    return { batch, line: batch.lines.find((l) => l.employeeId === s.employeeId)! };
+  }
+
+  /** gi.incentive.approve with a decision on one person: a note is required, and never for your own (FE-GI-005). */
+  async prepareDecision(name: string, decision: 'Denied' | 'Returned', note: string | undefined, who: GoalsWho, ctx: CoreContext) {
+    if (!note?.trim()) throw new CoreError('INVALID', decision === 'Denied' ? 'A denial needs a note saying why.' : 'Sending a payout back needs a note saying what to fix.');
+    const { batch, line } = await this.line(name, who, ctx);
+    if (line.own) throw new CoreError('NO_ACCESS', 'A manager can’t decide their own incentive.');
+    if (line.status) throw new CoreError('INVALID', `${line.name}’s payout has already been decided.`);
+    return { employeeId: line.employeeId, name: line.name, branch: batch.branch, period: batch.period, periodEnd: batch.periodEnd, amount: line.amount, decision, note: note.trim() };
+  }
+
+  async recordDecision(p: { employeeId: number; name: string; branch: string; periodEnd: string; amount: number; decision: 'Denied' | 'Returned'; note: string }, meta: { approvalId: string; userId: string }, who: GoalsWho, ctx: CoreContext) {
+    const fresh = (await this.batch(p.branch, who, ctx)).lines.find((l) => l.employeeId === p.employeeId);
+    if (!fresh || fresh.own) throw new CoreError('NO_ACCESS', 'A manager can’t decide their own incentive.');
+    if (fresh.status) throw new CoreError('INVALID', `${p.name}’s payout has already been decided.`);
+    await this.record([p], p.periodEnd, p.decision, p.note, meta);
+  }
+
+  /** gi.adjustment.create: a separate row that needs a reason code and a different reviewer (spec 17.4). */
+  async prepareAdjustment(name: string, amount: number, reasonCode: string | undefined, note: string | undefined, who: GoalsWho, ctx: CoreContext) {
+    const code = reasonCode?.trim().toUpperCase();
+    if (!code || !REASON_CODES.includes(code)) throw new CoreError('INVALID', `An adjustment needs a reason code: ${REASON_CODES.join(', ')}.`);
+    if (!amount || Math.abs(amount) > 5000) throw new CoreError('INVALID', 'An adjustment is an amount up to $5,000, up or down.');
+    const { batch, line } = await this.line(name, who, ctx);
+    if (line.own) throw new CoreError('NO_ACCESS', 'You can’t adjust your own incentive.');
+    if (line.status) throw new CoreError('INVALID', `${line.name}’s payout has already been decided, so a change needs next period’s adjustment.`);
+    return { employeeId: line.employeeId, name: line.name, branch: batch.branch, period: batch.period, periodEnd: batch.periodEnd, before: line.amount, amount: money2(amount), reasonCode: code, note: note?.trim() || `${code} adjustment` };
+  }
+
+  async createAdjustment(p: { employeeId: number; periodEnd: string; amount: number; reasonCode: string; note: string }, meta: { approvalId: string; userId: string }) {
+    await this.pool.query('INSERT IGNORE INTO mod_gi_adjustment (employee_id, period_end, amount, reason_code, note, status, created_by, approval_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [p.employeeId, p.periodEnd, p.amount, p.reasonCode, p.note.slice(0, 160), 'Pending', meta.userId, meta.approvalId]);
+  }
+
+  /** gi.adjustment.review: the creator can't review their own (BE-GI-003). */
+  async prepareReview(name: string, decision: 'Approved' | 'Rejected', userId: string, who: GoalsWho, ctx: CoreContext) {
+    const { batch, line } = await this.line(name, who, ctx);
+    if (line.own) throw new CoreError('NO_ACCESS', 'You can’t review an adjustment to your own incentive.');
+    const [rows] = await this.pool.query("SELECT * FROM mod_gi_adjustment WHERE employee_id = ? AND period_end = ? AND status = 'Pending' ORDER BY adjustment_id LIMIT 1", [line.employeeId, batch.periodEnd]);
+    const a = (rows as Record<string, unknown>[])[0];
+    if (!a) throw new CoreError('NOT_FOUND', `${line.name} has no adjustment waiting for review.`);
+    if (a.created_by === userId) throw new CoreError('NO_ACCESS', 'You created this adjustment, so someone else has to review it.');
+    return { adjustmentId: a.adjustment_id as number, employeeId: line.employeeId, name: line.name, branch: batch.branch, period: batch.period, before: line.amount, amount: num(a.amount), reasonCode: a.reason_code as string, note: a.note as string, decision };
+  }
+
+  async reviewAdjustment(p: { adjustmentId: number; decision: 'Approved' | 'Rejected' }, meta: { userId: string }) {
+    const [r] = await this.pool.query("UPDATE mod_gi_adjustment SET status = ?, reviewed_by = ? WHERE adjustment_id = ? AND status = 'Pending' AND created_by <> ?", [p.decision, meta.userId, p.adjustmentId, meta.userId]);
+    if (!(r as { affectedRows: number }).affectedRows) throw new CoreError('INVALID', 'That adjustment has already been reviewed.');
   }
 }

@@ -23,6 +23,6 @@ const voice = new VoiceGateway({
 });
 
 // In a deployed container the server also serves the built shell, behind an optional demo code.
-startMockServer({ port, live, voice, staticDir: process.env.DI_STATIC_DIR, accessCode: process.env.DI_DEMO_ACCESS_CODE || undefined });
+startMockServer({ port, live, voice, staticDir: process.env.DI_STATIC_DIR, accessCode: process.env.DI_DEMO_ACCESS_CODE || undefined, perBrowser: true });
 const mode = !live ? 'scripted scenarios (run `npm run db:up && npm run db:seed` for live agents)' : live.mode === 'live' ? 'live agents on Claude' : offline ? 'offline planner (--offline, no API calls)' : 'offline planner (set DI_ANTHROPIC_API_KEY in app/.env for Claude)';
 console.log(`DI Next Experience server on http://localhost:${port} (WS /v1/stream): ${mode}; voice: ${voice.providerName ?? 'off (no Azure Speech key)'}${process.env.DI_STATIC_DIR ? '; serving the shell' : ''}${process.env.DI_DEMO_ACCESS_CODE ? '; demo access code on' : ''}`);

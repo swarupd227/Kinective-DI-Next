@@ -125,6 +125,10 @@ export const GI_TOOLS = [
   { name: 'gi_team_get', operation: 'gi.team.get', description: 'Scorecards for a branch team, those behind first. Managers only.', input: z.object({ branch: giBranch.optional() }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'gi', purviewScope: 'report_viewer', maxResultRowsToModel: 25, agents: ['incentives'] },
   { name: 'gi_score_explain', operation: 'gi.score.explain', description: 'How an incentive was worked out: its rule, the records that counted, those still active, and where the target came from.', input: z.object({ goal: z.string().max(40).optional().describe('Part of a goal or incentive name, such as referrals'), employee: giEmployee }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'gi', purviewScope: 'report_viewer', maxResultRowsToModel: 25, agents: ['incentives'] },
   { name: 'gi_payouts_list', operation: 'gi.incentive.list_pending', description: 'Payouts waiting for approval: each person in a branch, or each branch. Needs Approve Incentives.', input: z.object({ branch: giBranch.optional() }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'gi', purviewScope: 'report_viewer', maxResultRowsToModel: 25, agents: ['incentives'] },
+  { name: 'gi_adjustment_prepare', operation: 'gi.adjustment.create', description: 'Prepare an adjustment to someone’s payout, up or down. It needs a reason code, and a different person reviews it before it counts. Returns approval_required.', input: z.object({ employee: z.string().min(2).max(80), amount: z.number().min(-5000).max(5000).describe('Dollars, negative to reduce'), reason_code: z.string().max(24).optional().describe('MISSED-CREDIT, LATE-FUNDING, CORRECTION or MANAGER-DISCRETION. Leave it out if the user gave none; never pick one for them.'), note: z.string().max(160).optional() }).strict(), sideEffect: 'write', riskTier: 'high', requiredApp: 'gi', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: ['incentives'] },
+  { name: 'gi_adjustment_review_prepare', operation: 'gi.adjustment.review', description: 'Prepare a decision on someone’s adjustment that is waiting for review. Its creator can’t review it. Returns approval_required.', input: z.object({ employee: z.string().min(2).max(80), decision: z.enum(['approve', 'reject']) }).strict(), sideEffect: 'write', riskTier: 'high', requiredApp: 'gi', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: ['incentives'] },
+  { name: 'gi_payout_decision_prepare', operation: 'gi.incentive.decide', description: 'Prepare a denial of one person’s payout, or send it back to be fixed. A note is required. A denial is final for the period; a returned payout can be approved later. Returns approval_required.', input: z.object({ employee: z.string().min(2).max(80), decision: z.enum(['deny', 'return']), note: z.string().max(200).optional().describe('Why, in the user’s words. Leave it out if they gave none.') }).strict(), sideEffect: 'write', riskTier: 'high', requiredApp: 'gi', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: ['incentives'] },
+  { name: 'gi_team_note_prepare', operation: 'gi.team.note', description: 'Prepare a short note to each person behind on goals, written from their scorecard. Delivery is simulated in this demo. Returns approval_required.', input: z.object({ branch: giBranch.optional() }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'gi', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: ['incentives'] },
   { name: 'gi_payouts_prepare', operation: 'gi.incentive.approve', description: 'Prepare a branch’s waiting payouts for approval as one batch, leaving out anyone named. The user’s own payout is always left out. Returns approval_required.', input: z.object({ branch: giBranch, exclude: z.array(z.string().min(2).max(80)).max(10).optional().describe('Names to leave out of this batch') }).strict(), sideEffect: 'write', riskTier: 'high', requiredApp: 'gi', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: ['incentives'] },
 ] satisfies ToolDef[];
 
@@ -327,6 +331,25 @@ export interface GiPayoutDraft {
   superseded: string[];
 }
 
+/** A single change on a card: what it does, and code's own sentence for when it's done. */
+export interface GiChange {
+  operation: string;
+  summary: string;
+  changes: { label: string; before: string; after: string }[];
+  /** The card's first line, and what's said once it's done. */
+  text: string;
+  done: string;
+  apply: Record<string, unknown>;
+  /** Notes to people, with who each goes to. */
+  notes?: { employeeId: number; name: string; text: string }[];
+}
+
+export interface GiChangeDraft {
+  approval: ApprovalRecord;
+  payload: GiChange;
+  superseded: string[];
+}
+
 export interface DeclinePayload {
   partyId: number;
   suggestionId: number;
@@ -341,7 +364,7 @@ export interface DeclineDraft {
 }
 
 export type GatewayResult =
-  | { ok: true; content: unknown; draft?: DraftResult; decline?: DeclineDraft; batch?: BatchDraft; inbox?: InboxItem[]; item?: InboxDetail; change?: ChangeDraft; summary?: PipelineSummary; found?: PipelineFound; application?: PipelineApplication & { history: { status: string; at: string }[]; asOf: string; stale: boolean }; statuses?: PipelineStatus[]; rate?: LapRate; tasks?: LapTaskDraft; threshold?: ThresholdDraft; atRisk?: { total: number; items: (AtRiskMember & { ref: string; followedUp: boolean })[] }; hits?: (PartyHit & { matchedOn?: string })[]; profile?: MemberProfile; topics?: Topic[]; explained?: ReturnType<RelationshipService['explain']>; scorecard?: Scorecard; team?: Scorecard[]; explanation?: ScoreExplanation; batch2?: PayoutBatch; batches?: PayoutBatch[]; payouts?: GiPayoutDraft }
+  | { ok: true; content: unknown; draft?: DraftResult; decline?: DeclineDraft; batch?: BatchDraft; inbox?: InboxItem[]; item?: InboxDetail; change?: ChangeDraft; summary?: PipelineSummary; found?: PipelineFound; application?: PipelineApplication & { history: { status: string; at: string }[]; asOf: string; stale: boolean }; statuses?: PipelineStatus[]; rate?: LapRate; tasks?: LapTaskDraft; threshold?: ThresholdDraft; atRisk?: { total: number; items: (AtRiskMember & { ref: string; followedUp: boolean })[] }; hits?: (PartyHit & { matchedOn?: string })[]; profile?: MemberProfile; topics?: Topic[]; explained?: ReturnType<RelationshipService['explain']>; scorecard?: Scorecard; team?: Scorecard[]; explanation?: ScoreExplanation; batch2?: PayoutBatch; batches?: PayoutBatch[]; payouts?: GiPayoutDraft; giChange?: GiChangeDraft }
   | { ok: false; code: 'UNKNOWN_TOOL' | 'NOT_ALLOWED' | 'INVALID_INPUT' | 'RESERVED_KEY' | 'UNKNOWN_REF' | 'NO_ACCESS' | 'NOT_FOUND' | 'FORM_INCOMPLETE'; content: unknown };
 
 interface BatchDone {
@@ -349,7 +372,7 @@ interface BatchDone {
   failed: string[];
 }
 
-export type Executed = { operation: 'referral.create'; created: Awaited<ReturnType<ReferralService['create']>> } | { operation: 'referral.change'; item: InboxDetail; kind: 'stage' | 'note' | 'assign'; changed: boolean } | ({ operation: 'referral.create.batch' } & BatchDone) | ({ operation: 'lap.task.create.batch' } & BatchDone) | { operation: 'lap.threshold.set'; label: string; product?: string; days: number } | { operation: 'relationship.suggestion.decline'; declined: { product: string; until: string }; partyId: number } | { operation: 'gi.incentive.approve'; payload: GiPayoutPayload; replayed: boolean };
+export type Executed = { operation: 'referral.create'; created: Awaited<ReturnType<ReferralService['create']>> } | { operation: 'referral.change'; item: InboxDetail; kind: 'stage' | 'note' | 'assign'; changed: boolean } | ({ operation: 'referral.create.batch' } & BatchDone) | ({ operation: 'lap.task.create.batch' } & BatchDone) | { operation: 'lap.threshold.set'; label: string; product?: string; days: number } | { operation: 'relationship.suggestion.decline'; declined: { product: string; until: string }; partyId: number } | { operation: 'gi.incentive.approve'; payload: GiPayoutPayload; replayed: boolean } | { operation: 'gi.change'; payload: GiChange };
 
 const round = (n: number) => (Math.abs(n) >= 1000 ? Math.round(n / 100) * 100 : Math.round(n));
 
@@ -424,6 +447,14 @@ export class ToolGateway {
     return ref;
   }
 
+  /** Stores a change for approval. Nothing happens until it's approved on screen. */
+  private async giDraft(def: ToolDef, ctx: GatewayContext, payload: GiChange): Promise<GatewayResult> {
+    const tier = effectiveTier(def, this.deps.tenantRaise);
+    const approval = await this.deps.approvals.request({ operation: def.operation, payload, riskTier: tier === 'none' ? 'low' : tier, requestedBy: ctx.user.id, runId: ctx.runId, threadId: ctx.threadId });
+    const superseded = await this.deps.approvals.supersede(ctx.threadId, approval.approvalId);
+    return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId, note: 'Nothing has changed. The user approves on screen.' }, giChange: { approval, payload, superseded } };
+  }
+
   /** The view asked for. "My" from someone with no applications of their own means their default. */
   private async lapView(view: unknown, ctx: GatewayContext): Promise<PipelineView> {
     const offered = await this.deps.pipeline!.views(lapWho(ctx), ctx);
@@ -467,6 +498,32 @@ export class ToolGateway {
           }
           const batches = await this.deps.goals!.batches(giWho(ctx), ctx);
           return { ok: true, content: { period: batches[0]?.period, branches: batches.map((b) => ({ branch: b.branch, waiting: b.waiting, total: b.total, flagged: b.flagged })) }, batches };
+        }
+        case 'gi.adjustment.create': {
+          const a = await this.deps.goals!.prepareAdjustment(String(args.employee), Number(args.amount), args.reason_code as string | undefined, args.note as string | undefined, giWho(ctx), ctx);
+          const sign = a.amount < 0 ? `−${usd(-a.amount)}` : `+${usd(a.amount)}`;
+          return this.giDraft(def, ctx, { operation: def.operation, summary: `Adjust ${a.name}’s ${a.period} payout by ${sign} (${a.reasonCode})`, changes: [{ label: `${a.name}, ${a.branch}`, before: usd(a.before), after: `${usd(a.before + a.amount)} once reviewed` }, { label: 'Reason', before: '—', after: `${a.reasonCode}: ${a.note}` }], text: `I’ve prepared a ${sign} adjustment for **${a.name}** with reason code ${a.reasonCode}. Someone else has to review it before it counts.`, done: `Created the ${sign} adjustment for **${a.name}**. It’s waiting for review by someone other than you, and doesn’t count until then.`, apply: a });
+        }
+        case 'gi.adjustment.review': {
+          const decision = args.decision === 'approve' ? 'Approved' : 'Rejected';
+          const r = await this.deps.goals!.prepareReview(String(args.employee), decision, ctx.user.id, giWho(ctx), ctx);
+          const verb = decision === 'Approved' ? 'Approve' : 'Reject';
+          return this.giDraft(def, ctx, { operation: def.operation, summary: `${verb} the ${usd(r.amount)} adjustment for ${r.name} (${r.reasonCode})`, changes: [{ label: `${r.name}’s ${r.period} payout`, before: usd(r.before), after: usd(decision === 'Approved' ? r.before + r.amount : r.before) }, { label: 'Reason', before: '—', after: `${r.reasonCode}: ${r.note}` }], text: `I’ve prepared your review of **${r.name}**’s ${usd(r.amount)} adjustment.`, done: decision === 'Approved' ? `Approved the adjustment. **${r.name}**’s payout is now ${usd(r.before + r.amount)}.` : `Rejected the adjustment. **${r.name}**’s payout stays at ${usd(r.before)}.`, apply: r });
+        }
+        case 'gi.incentive.decide': {
+          const decision = args.decision === 'deny' ? 'Denied' : 'Returned';
+          const d = await this.deps.goals!.prepareDecision(String(args.employee), decision, args.note as string | undefined, giWho(ctx), ctx);
+          const label = decision === 'Denied' ? 'Deny' : 'Send back';
+          return this.giDraft(def, ctx, { operation: def.operation, summary: `${label} ${d.name}’s ${d.period} payout of ${usd(d.amount)}`, changes: [{ label: `${d.name}, ${d.branch}`, before: `${usd(d.amount)} waiting`, after: decision === 'Denied' ? 'Denied for the period' : 'Sent back to be fixed' }, { label: 'Note', before: '—', after: d.note }], text: `I’ve prepared ${decision === 'Denied' ? 'a denial of' : 'a return of'} **${d.name}**’s payout.`, done: decision === 'Denied' ? `Denied **${d.name}**’s ${d.period} payout. It’s recorded with your note.` : `Sent **${d.name}**’s payout back with your note. It stays waiting and can be approved once it’s fixed.`, apply: d });
+        }
+        case 'gi.team.note': {
+          const team = await this.deps.goals!.team(args.branch as string | undefined, giWho(ctx), ctx);
+          const notes = team.filter((c) => c.behind && c.employeeId !== ctx.employeeId).map((c) => {
+            const g = c.goals.filter((x) => !x.qualifier).sort((a, b) => a.pct - b.pct)[0];
+            return { employeeId: c.employeeId, name: c.name, text: g && g.pct < 100 ? `${c.period}: ${g.name} is at ${g.pct}% of goal. Let’s talk about what would help.` : `${c.period}: your member survey score is under the level that incentives need. Let’s talk about it.` };
+          });
+          if (!notes.length) return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: 'Nobody on the team is behind, so there’s nothing to send.' } };
+          return this.giDraft(def, ctx, { operation: def.operation, summary: `Send a note to ${notes.length} ${notes.length === 1 ? 'person' : 'people'} behind on goals`, changes: notes.slice(0, 8).map((n) => ({ label: n.name, before: '—', after: n.text })), text: `I’ve drafted a note to ${notes.length === 1 ? 'one person' : `${notes.length} people`} behind on goals.`, done: `Sent ${notes.length === 1 ? 'the note' : `${notes.length} notes`}. They appear in each person’s bell. Delivery is simulated in this demo.`, apply: {}, notes });
         }
         case 'gi.incentive.approve': {
           const b = await this.deps.goals!.batch(String(args.branch), giWho(ctx), ctx);
@@ -712,6 +769,16 @@ export class ToolGateway {
         const { replayed } = await this.deps.goals!.approve(payload, { approvalId: approval.approvalId, userId: ctx.user.id }, giWho(ctx), ctx);
         await this.deps.approvals.markExecuted(approval.approvalId, `gi:${payload.periodEnd}:${payload.branch}`.slice(0, 40));
         return { operation: 'gi.incentive.approve', payload, replayed };
+      }
+      if (approval.operation.startsWith('gi.')) {
+        const payload = approval.payload as GiChange;
+        const meta = { approvalId: approval.approvalId, userId: ctx.user.id };
+        const goals = this.deps.goals!;
+        if (approval.operation === 'gi.adjustment.create') await goals.createAdjustment(payload.apply as never, meta);
+        if (approval.operation === 'gi.adjustment.review') await goals.reviewAdjustment(payload.apply as never, meta);
+        if (approval.operation === 'gi.incentive.decide') await goals.recordDecision(payload.apply as never, meta, giWho(ctx), ctx);
+        await this.deps.approvals.markExecuted(approval.approvalId, approval.operation.slice(0, 40));
+        return { operation: 'gi.change', payload };
       }
       if (approval.operation === 'referral.create') {
         const created = await this.deps.referrals.create(approval.payload as ReferralPayload, { approvalId: approval.approvalId, runId: approval.runId, userId: ctx.user.id, userName: ctx.user.name }, ctx);

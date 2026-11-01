@@ -247,9 +247,17 @@ Agent-led from the start. The page at `/m/gi` is for checking; the work happens 
 - **Approving:** one high-risk card per branch, listing each person, the basis, adjustments and anything worth a look. The approver types the total. Voice can't approve it, and nobody approves their own payout. Name someone to leave them out: "except Sam's". If an amount changes after the card, nothing is approved.
 - **Bringing it to you:** waiting payouts lead the day plan and Home's "Needs you" for whoever approves them, and the card can be decided from Home.
 
-Assumptions: all goals, credits and targets are demo data, and October counts as closed for review although the data runs to Oct 25. Denying a card leaves payouts waiting rather than recording a denial. Creating and reviewing adjustments, goal setup and payroll export aren't built, so no money moves.
+- **Adjustments (Slice 15):** "Adjust J. Ortiz's referral incentive by $150 with reason code MISSED-CREDIT" prepares a high-risk card. A reason code is required, and DI never picks one. The adjustment is a separate row, and someone other than its creator reviews it before it counts.
+- **Denying or returning one person (Slice 15):** "Deny Sam's payout: duplicate credit" needs a note. A denial is final for the period; a returned payout stays waiting, shows its note and can be approved later. Denying a whole batch's card still only leaves those payouts waiting.
+- **Notes (Slice 15):** "Tell the people who are behind" drafts a note to each from their scorecard, on one card. They arrive in the bell; delivery is simulated.
+
+Assumptions: all goals, credits, targets and reason codes are demo data, and October counts as closed for review although the data runs to Oct 25. Goal setup and payroll export aren't built, so no money moves.
 
 This release changes the data, so run `npm run db:seed`, which resets every tenant.
+
+### One person per browser (Slice 15)
+
+The demo has no sign-in, so the person picked in the avatar menu used to apply to everyone on the site. Each browser now keeps its own in a cookie, and a task and its approvals stay with the person who started them. This is still a demo switch, not security: Entra sign-in remains the real answer.
 
 ## Not done yet
 

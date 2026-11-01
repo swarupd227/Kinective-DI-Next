@@ -61,9 +61,11 @@ export const GOALS_DDL = [
      reason_code VARCHAR(24) NOT NULL,
      note VARCHAR(160) NOT NULL,
      status VARCHAR(12) NOT NULL,
-     created_by VARCHAR(40) NOT NULL
+     created_by VARCHAR(40) NOT NULL,
+     reviewed_by VARCHAR(40) NULL,
+     approval_id VARCHAR(40) NULL UNIQUE
    )`,
-  // Written on approval, with the amount as approved. One decision per person and period.
+  // Written on a decision, with the amount decided. A return can be replaced; the rest are final.
   `CREATE TABLE mod_gi_payout (
      employee_id INT NOT NULL,
      period_end DATE NOT NULL,
@@ -72,11 +74,12 @@ export const GOALS_DDL = [
      approver_user_id VARCHAR(40) NOT NULL,
      approval_id VARCHAR(40) NOT NULL,
      approved_at DATETIME NOT NULL,
+     note VARCHAR(200) NULL,
      PRIMARY KEY (employee_id, period_end)
    )`,
 ];
 
-export const GOALS_WRITE_TABLES = ['mod_gi_payout'];
+export const GOALS_WRITE_TABLES = ['mod_gi_payout', 'mod_gi_adjustment'];
 
 export const GI_PERIOD = '2026-10-31';
 export const GI_PRIOR = '2026-09-30';

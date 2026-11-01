@@ -135,8 +135,8 @@ const ABOUT_MEMBER = /\b(her|him|his|their|she|he|they|this (member|customer)|at
 function keywordClassify(text: string, memberInContext = false): Classification {
   const t = text.toLowerCase();
   const base = { confidence: 0.7, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' as const };
-  if (GOAL_REQUEST.test(text)) return { ...base, intent: 'goal_request', agent: 'goal' };
   if (GI_REQUEST.test(text)) return { ...base, intent: 'module_task', agent: 'goals_incentives' };
+  if (GOAL_REQUEST.test(text)) return { ...base, intent: 'goal_request', agent: 'goal' };
   if (INBOX_REQUEST.test(text)) return { ...base, intent: 'inbox', agent: 'referral_inbox' };
   if (PIPELINE_REQUEST.test(text)) return { ...base, intent: 'pipeline', agent: 'loan_pipeline' };
   if (/\brefer\b|referral/.test(t)) return { ...base, intent: 'workflow_action', agent: 'referral', risk_hint: 'write' };
@@ -187,6 +187,8 @@ export class Concierge {
   private readonly relationshipThreads = new Map<string, RelationshipThread>();
   private readonly reportThreads = new Map<string, ReportThread>();
   private readonly goalThreads = new Map<string, GoalThread>();
+  /** An incentive request waiting on the answer to DI's question: a reason code or a note. */
+  private readonly giAsking = new Map<string, string>();
   /** Reference tokens per thread (MBR_n → party), shared by the agents so a member keeps one name. */
   private readonly members = new Map<string, Map<string, number>>();
   private readonly counter = { n: 0 };
@@ -244,6 +246,17 @@ export class Concierge {
         return await this.goal(turn, screened.text, sink, usage, (r) => {
           toolCalls = r.toolCalls;
           outcome = goalAudit(r);
+          error = r.error;
+        });
+      }
+
+      // "MISSED-CREDIT" alone answers DI's question; it isn't a new request.
+      const asked = this.giAsking.get(turn.threadId);
+      if (asked && turn.tenant.workflow && turn.apps.includes('gi') && !GI_REQUEST.test(screened.text) && screened.text.length <= 200) {
+        classification = { intent: 'module_task', agent: 'goals_incentives', confidence: 1, needs_clarification: false, options: [], requires_data: true, risk_hint: 'write' };
+        return await this.incentives(turn, `${asked}: ${screened.text}`, sink, usage, (r) => {
+          toolCalls = r.toolCalls;
+          outcome = inboxAudit(r);
           error = r.error;
         });
       }
@@ -313,7 +326,7 @@ export class Concierge {
 
       // A plain goal, inbox or pipeline request needs no model to recognise, and must not land on a one-step specialist.
       const memberChip = turn.context.some((c) => c.type === 'member');
-      classification = this.deps.model && !GOAL_REQUEST.test(screened.text) && !GI_REQUEST.test(screened.text) && !INBOX_REQUEST.test(screened.text) && !PIPELINE_REQUEST.test(screened.text) ? await this.classify(turn, screened.text, usage) : keywordClassify(screened.text, memberChip);
+      classification = this.deps.model && !GI_REQUEST.test(screened.text) && !GOAL_REQUEST.test(screened.text) && !INBOX_REQUEST.test(screened.text) && !PIPELINE_REQUEST.test(screened.text) ? await this.classify(turn, screened.text, usage) : keywordClassify(screened.text, memberChip);
       if (classification.needs_clarification || classification.confidence < CONFIDENCE_THRESHOLD) {
         sink.routing('DI Concierge', 'Clarifying');
         await sink.block(noticeBlock('uncertain', 'Which of these did you mean?', 'DI Concierge', turn.runId, { options: classification.options.slice(0, 3).map((o, i) => ({ id: `o${i + 1}`, label: o })) }));
@@ -548,6 +561,8 @@ export class Concierge {
     const r = this.deps.model ? await runIncentives(input, { model: this.deps.model, gateway }, sink) : await runIncentivesOffline(input, { gateway }, sink);
     usage.push(...r.usage);
     report(r);
+    if (r.asked) this.giAsking.set(turn.threadId, text);
+    else this.giAsking.delete(turn.threadId);
     if (r.outcome === 'failed') await sink.block(noticeBlock('error', 'I couldn’t finish that.', GI_AGENT, turn.runId, { detail: 'Nothing was changed. Try again, or open Goals & Incentives.', retryable: true }));
     for (const id of r.superseded) void this.deps.audit.event({ eventType: 'ai.approval.superseded', tenant: turn.tenant.key, userId: turn.user.id, threadId: turn.threadId, runId: turn.runId, approvalId: id });
     if (r.approval) {
@@ -782,6 +797,13 @@ export class Concierge {
           const n = p.lines.length;
           await sink.text(`Approved **${n} ${n === 1 ? 'payout' : 'payouts'}** for ${p.branch}, ${p.period}: **${usd(p.total)}**.${p.excluded.length ? ` Still waiting or not paid: ${p.excluded.map((x) => x.name).join(', ')}.` : ''} Payroll export isn’t part of this demo, so no money moved.`, GI_AGENT, incentivesSources);
           sink.done?.(null);
+          return;
+        }
+        if (executed.operation === 'gi.change') {
+          const { payload: p } = executed;
+          void this.deps.audit.event({ eventType: 'ai.action.executed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, operation: approval.operation, resultRef: approval.operation });
+          await sink.text(p.done, GI_AGENT, incentivesSources);
+          sink.done?.({ notify: (p.notes ?? []).map((n) => ({ employeeId: n.employeeId, title: `A note from ${d.user.name}`, detail: n.text, link: '/m/gi' })) });
           return;
         }
         if (executed.operation === 'lap.threshold.set') {

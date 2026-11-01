@@ -8,7 +8,7 @@ import type { ApprovalCardBlock, Block, ListBlock, TableBlock } from '@dinext/bl
 import { usd, type ApprovalRecord as Approval, type GoalScore, type PayoutBatch, type ScoreExplanation, type Scorecard } from '@dinext/di-core';
 import { newBlockId } from './answer.ts';
 import type { ToolCallRecord } from './audit.ts';
-import type { GatewayContext, GatewayResult, GiPayoutDraft, ToolGateway } from './gateway.ts';
+import type { GatewayContext, GatewayResult, GiChangeDraft, GiPayoutDraft, ToolGateway } from './gateway.ts';
 import type { ModelClient, Usage } from './model.ts';
 import { grounded } from './reportAgent.ts';
 import type { RunSink } from './sink.ts';
@@ -18,7 +18,7 @@ const TURN_BUDGET_MS = 90_000;
 const MAX_TOOL_CALLS = 8;
 
 /** Asks about goals or incentives, as opposed to a goal handed to DI or the Branch scorecard report. */
-export const GI_REQUEST = /\bpayouts?\b|\bincentives?\b|\bhow am i (doing|tracking)\b|\bmy (goals?|score ?card)\b|\bteam'?s? (goals?|score ?card)\b|\bbehind on\b|\bnext tier\b|\btier \d\b/i;
+export const GI_REQUEST = /\bpayouts?\b|\bincentives?\b|\bhow am i (doing|tracking)\b|\bmy (goals?|score ?card)\b|\bteam'?s? (goals?|score ?card)\b|\bbehind on\b|\bnext tier\b|\btier \d\b|\badjustments?\b|\b[Aa]djust [A-Z]|\b(tell|message|nudge|remind)\b.*\bbehind\b/i;
 
 export interface IncentivesInput {
   runId: string;
@@ -39,6 +39,8 @@ export interface IncentivesOutcome {
   approval?: { record: Approval; card: ApprovalCardBlock };
   superseded: string[];
   error?: string;
+  /** The turn ended on a question, so the next message answers it. */
+  asked?: boolean;
 }
 
 const dollars = (n: number) => (Number.isInteger(n) ? `$${n.toLocaleString('en-US')}` : usd(n));
@@ -159,6 +161,33 @@ export function payoutCard(d: GiPayoutDraft, input: Pick<IncentivesInput, 'runId
   };
 }
 
+/** One change on a card. A payout decision or an adjustment is high risk; voice can't approve it. */
+export function changeCard(d: GiChangeDraft, input: Pick<IncentivesInput, 'runId' | 'user'>): ApprovalCardBlock {
+  const high = d.approval.riskTier === 'high';
+  return {
+    id: newBlockId('apr'),
+    type: 'approval_card',
+    version: '1.2.0',
+    title: d.payload.summary.slice(0, 80),
+    provenance: { agent: GI_AGENT, runId: input.runId, operations: [d.payload.operation], sources: incentivesSources },
+    freshness: { kind: 'workflow_event' },
+    data: {
+      approvalId: d.approval.approvalId,
+      summary: d.payload.summary,
+      riskTier: d.approval.riskTier,
+      operation: d.payload.operation,
+      requestedBy: { kind: 'agent_run', runId: input.runId, agent: GI_AGENT, onBehalfOf: input.user.id, onBehalfOfName: input.user.name },
+      preview: { kind: 'diff', changes: d.payload.changes },
+      affected: { records: Math.max(1, d.payload.notes?.length ?? 1), users: d.payload.notes?.length ?? 0, external: 0 },
+      confirmation: { methods: high ? ['click', 'keyboard'] : ['click', 'keyboard', 'voice'], typedValue: null, stepUp: false, secondApprover: null, noteRequired: false },
+      editablePlan: false,
+      expiresAt: d.approval.expiresAt,
+      idempotencyKey: `idem_${d.approval.approvalId}`,
+      previewHash: d.approval.payloadHash,
+    },
+  };
+}
+
 export const IncentivesFinish = z
   .object({
     outcome: z.enum(['scorecard', 'team', 'explain', 'payouts', 'approval', 'answer', 'not_found']).describe('scorecard: show the last gi_scorecard_get. team: show the last gi_team_get. explain: show the last gi_score_explain. payouts: show the last gi_payouts_list. approval: after gi_payouts_prepare returned approval_required.'),
@@ -181,6 +210,10 @@ How you work:
 - "Why is my referral incentive only $40?": gi_score_explain with the goal, then outcome "explain".
 - "Show the October payouts": gi_payouts_list, then outcome "payouts". A branch shows its people; no branch shows each branch.
 - "Approve the October payouts for Westport except Sam's", or "show them for approval": gi_payouts_prepare with the branch and any names to leave out, then outcome "approval". Never say it is approved.
+- "Adjust J. Ortiz's referral incentive by $150 with reason code MISSED-CREDIT": gi_adjustment_prepare, then outcome "approval". Never choose a reason code for them.
+- "Approve M. Moreau's adjustment": gi_adjustment_review_prepare, then outcome "approval".
+- "Deny Sam's payout: duplicate credit", or "send it back": gi_payout_decision_prepare with their note, then outcome "approval". If a tool says a note or code is needed, ask for it with outcome "answer".
+- "Tell the people who are behind": gi_team_note_prepare, then outcome "approval".
 - Finish every turn with finish_turn, exactly once. Code writes every figure and name, so keep message empty unless it adds something they don't say.
 
 Rules:
@@ -198,6 +231,7 @@ interface Shown {
   batch?: PayoutBatch;
   batches?: PayoutBatch[];
   payouts?: GiPayoutDraft;
+  giChange?: GiChangeDraft;
 }
 
 /** Shows an outcome. Shared by the live agent and the offline planner. */
@@ -237,8 +271,14 @@ async function show(kind: z.infer<typeof IncentivesFinish>['outcome'], message: 
     await sink.block(card);
     return { ...base, outcome: 'approval', approval: { record: s.payouts.approval, card }, superseded: s.payouts.superseded };
   }
+  if (kind === 'approval' && s.giChange) {
+    const card = changeCard(s.giChange, input);
+    await sink.text(`${s.giChange.payload.text} Nothing happens until you approve it.`, GI_AGENT);
+    await sink.block(card);
+    return { ...base, outcome: 'approval', approval: { record: s.giChange.approval, card }, superseded: s.giChange.superseded };
+  }
   await sink.text(message || 'I couldn’t find that.', GI_AGENT);
-  return { ...base, outcome: kind === 'not_found' ? 'not_found' : 'answer', superseded: [] };
+  return { ...base, outcome: kind === 'not_found' ? 'not_found' : 'answer', superseded: [], asked: /\?\s*$/.test(message) };
 }
 
 export async function runIncentives(input: IncentivesInput, deps: { model: ModelClient; gateway: ToolGateway }, sink: RunSink): Promise<IncentivesOutcome> {
@@ -273,7 +313,7 @@ export async function runIncentives(input: IncentivesInput, deps: { model: Model
         if (use.name === 'finish_turn') {
           const parsed = IncentivesFinish.safeParse(use.input);
           const o = parsed.data?.outcome;
-          const problem = !parsed.success ? JSON.stringify(parsed.error.issues) : o === 'scorecard' && !shown.card ? 'outcome "scorecard" needs gi_scorecard_get first.' : o === 'team' && !shown.team ? 'outcome "team" needs gi_team_get first.' : o === 'explain' && !shown.explained ? 'outcome "explain" needs gi_score_explain first.' : o === 'payouts' && !shown.batch && !shown.batches ? 'outcome "payouts" needs gi_payouts_list first.' : o === 'approval' && !shown.payouts ? 'outcome "approval" needs gi_payouts_prepare first.' : null;
+          const problem = !parsed.success ? JSON.stringify(parsed.error.issues) : o === 'scorecard' && !shown.card ? 'outcome "scorecard" needs gi_scorecard_get first.' : o === 'team' && !shown.team ? 'outcome "team" needs gi_team_get first.' : o === 'explain' && !shown.explained ? 'outcome "explain" needs gi_score_explain first.' : o === 'payouts' && !shown.batch && !shown.batches ? 'outcome "payouts" needs gi_payouts_list first.' : o === 'approval' && !shown.payouts && !shown.giChange ? 'outcome "approval" needs a tool that returned approval_required.' : null;
           if (problem) {
             if (nudges++ >= 2) throw new Error(`The agent finished without what it needed: ${problem}`);
             results.push({ type: 'tool_result', tool_use_id: use.id, is_error: true, content: problem });
@@ -303,18 +343,29 @@ export async function runIncentives(input: IncentivesInput, deps: { model: Model
   }
 }
 
-const pick = (r: GatewayResult & { ok: true }): Shown => ({ ...(r.scorecard ? { card: r.scorecard } : {}), ...(r.team ? { team: r.team } : {}), ...(r.explanation ? { explained: r.explanation } : {}), ...(r.batch2 ? { batch: r.batch2 } : {}), ...(r.batches ? { batches: r.batches } : {}), ...(r.payouts ? { payouts: r.payouts } : {}) });
+const pick = (r: GatewayResult & { ok: true }): Shown => ({ ...(r.scorecard ? { card: r.scorecard } : {}), ...(r.team ? { team: r.team } : {}), ...(r.explanation ? { explained: r.explanation } : {}), ...(r.batch2 ? { batch: r.batch2 } : {}), ...(r.batches ? { batches: r.batches } : {}), ...(r.payouts ? { payouts: r.payouts } : {}), ...(r.giChange ? { giChange: r.giChange } : {}) });
 
 // ---- offline planner (spec 23.6.4) ------------------------------------------------------------
 
-export type IncentivesIntent = { intent: 'prepare'; branch?: string; exclude: string[] } | { intent: 'payouts'; branch?: string } | { intent: 'explain'; goal?: string; employee?: string } | { intent: 'team'; branch?: string } | { intent: 'scorecard'; employee?: string };
+export type IncentivesIntent = { intent: 'adjust'; employee?: string; amount?: number; reason?: string; note?: string } | { intent: 'review'; employee?: string; decision: 'approve' | 'reject' } | { intent: 'decide'; employee?: string; decision: 'deny' | 'return'; note?: string } | { intent: 'notes'; branch?: string } | { intent: 'prepare'; branch?: string; exclude: string[] } | { intent: 'payouts'; branch?: string } | { intent: 'explain'; goal?: string; employee?: string } | { intent: 'team'; branch?: string } | { intent: 'scorecard'; employee?: string };
 
 const branchFrom = (t: string) => /\b(?:for|at|in) (?:the )?([A-Z][a-z]+)\b(?! \d)(?<!\b(?:for|at|in) (?:October|September|November|December|Q\d))/.exec(t)?.[1];
+const PERSON = String.raw`((?:[A-Z][\w.-]*)(?:\s[A-Z][\w-]*){0,2})(?:[’']s)?`;
 const GOAL_WORD = /\b(referrals?|checking|funded|loans?|branch)\b/i;
 
 /** Reads plain requests the way people say them. Exported for tests. */
 export function parseIncentivesRequest(text: string): IncentivesIntent {
   const t = text.trim().replace(/[.!?]+$/, '');
+  const adjust = new RegExp(String.raw`\b[Aa]djust ${PERSON}\s`).exec(t);
+  if (adjust) {
+    const sum = /\bby (minus |-|−)?\$?([\d,]+(?:\.\d+)?)/i.exec(t);
+    return { intent: 'adjust', employee: adjust[1], amount: sum ? Number(sum[2]!.replace(/,/g, '')) * (sum[1] ? -1 : 1) : undefined, reason: /\b(?:reason(?: code)?|code)\s+([A-Z][A-Z-]+)/i.exec(t)?.[1] ?? /\b([A-Z]+-[A-Z]+)\b/.exec(t)?.[1] };
+  }
+  const review = new RegExp(String.raw`\b([Aa]pprove|[Rr]eject)\s+(?:the\s+)?${PERSON}\s+(?:\S+\s+)?adjustment\b`).exec(t);
+  if (review) return { intent: 'review', employee: review[2], decision: review[1]!.toLowerCase() === 'reject' ? 'reject' : 'approve' };
+  const decide = new RegExp(String.raw`\b([Dd]eny|[Dd]ecline|[Rr]eturn|[Ss]end back)\s+${PERSON}\s+(?:\S+\s+)?(?:payout|incentive)s?\b(?:\s*(?:[:—-]|because|with (?:the )?note|note)\s*(.+))?`).exec(t);
+  if (decide) return { intent: 'decide', employee: decide[2], decision: /deny|decline/i.test(decide[1]!) ? 'deny' : 'return', note: decide[3]?.trim() };
+  if (/\b(tell|message|nudge|remind)\b.*\bbehind\b/i.test(t)) return { intent: 'notes', branch: branchFrom(t) };
   if (/\b(approve|sign off)\b.*\b(payouts?|incentives?)\b|\b(payouts?|incentives?)\b.*\b(for approval|approve)\b/i.test(t)) {
     const exclude = [...t.matchAll(/\b(?:except(?: for)?|but not|without|leave out|hold(?: back)?)\s+((?:[A-Z][\w.-]*)(?:\s[A-Z][\w-]*)?)/g)].map((m) => m[1]!.replace(/[’']s$/, ''));
     return { intent: 'prepare', branch: branchFrom(t.replace(/\b(?:except|but not|without|leave out|hold).*$/i, '')), exclude };
@@ -336,10 +387,14 @@ export async function runIncentivesOffline(input: IncentivesInput, deps: { gatew
     toolCalls.push({ name, input: args, ok: r.ok, ms: Date.now() - started, error: r.ok ? undefined : r.code });
     return r;
   };
-  const refused = (r: GatewayResult) => show('not_found', String((r.content as { message?: string }).message ?? 'I couldn’t do that.'), {}, input, sink, base);
+  const refused = async (r: GatewayResult) => ({ ...(await show('not_found', String((r.content as { message?: string }).message ?? 'I couldn’t do that.'), {}, input, sink, base)), asked: !r.ok && r.code === 'FORM_INCOMPLETE' });
   const done = (kind: z.infer<typeof IncentivesFinish>['outcome'], r: GatewayResult) => (r.ok ? show(kind, '', pick(r), input, sink, base) : refused(r));
   const p = parseIncentivesRequest(input.text);
   const only = input.purviewBranches?.length === 1 ? input.purviewBranches[0] : undefined;
+  if (p.intent === 'adjust') return done('approval', await call('gi_adjustment_prepare', { employee: p.employee, amount: p.amount ?? 0, ...(p.reason ? { reason_code: p.reason } : {}) }));
+  if (p.intent === 'review') return done('approval', await call('gi_adjustment_review_prepare', { employee: p.employee, decision: p.decision }));
+  if (p.intent === 'decide') return done('approval', await call('gi_payout_decision_prepare', { employee: p.employee, decision: p.decision, ...(p.note ? { note: p.note } : {}) }));
+  if (p.intent === 'notes') return done('approval', await call('gi_team_note_prepare', p.branch ? { branch: p.branch } : {}));
   if (p.intent === 'prepare') {
     const branch = p.branch ?? only;
     if (!branch) return done('payouts', await call('gi_payouts_list', {}));
@@ -353,3 +408,4 @@ export async function runIncentivesOffline(input: IncentivesInput, deps: { gatew
 
 export const incentivesSources = [{ kind: 'table' as const, label: 'Goals & Incentives', ref: 'table:mod_gi_goal' }];
 export type IncentivesList = ListBlock;
+

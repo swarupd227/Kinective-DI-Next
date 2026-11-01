@@ -1,5 +1,6 @@
 // Mock Experience Layer for front-end work (spec 11.2 "testing/mock stream server").
 // Implements the client contract in spec 12 with scripted scenarios; no real agents or data.
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { createReadStream, existsSync, statSync } from 'node:fs';
@@ -73,6 +74,8 @@ export interface MockServerOptions {
   staticDir?: string;
   /** When set, every request needs this demo access code first (a demo gate, not sign-in). */
   accessCode?: string;
+  /** Each browser keeps its own demo person in a cookie. Off, the server has one shared person. */
+  perBrowser?: boolean;
 }
 
 const id = (prefix: string, n = 16) => `${prefix}${randomBytes(n).toString('base64').replace(/[^A-Za-z0-9]/g, '').slice(0, n).padEnd(n, '0')}`;
@@ -83,7 +86,7 @@ const yourReferrals = (block: ListBlock, r: { open: number; overdue: number }): 
   data: { ...block.data, items: block.data.items.map(({ badge: _badge, ...item }) => (item.id === 'w1' ? { ...item, meta: `${r.open} open`, subtitle: r.overdue ? `${r.overdue} overdue` : 'Nothing overdue', ...(r.overdue ? { badge: { label: 'Overdue', tone: 'danger' as const } } : {}) } : { ...item, ...(_badge ? { badge: _badge } : {}) })) },
 });
 
-export function startMockServer({ port, speed = 1, live = null, voice = null, staticDir, accessCode }: MockServerOptions) {
+export function startMockServer({ port, speed = 1, live = null, voice = null, staticDir, accessCode, perBrowser = false }: MockServerOptions) {
   const startedAt = new Date().toISOString();
   const gate = accessCode ? demoGate(accessCode) : null;
   const files = staticDir ? staticFiles(staticDir) : null;
@@ -91,28 +94,41 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
   const runs = new Map<string, Run>();
   const approvals = new Map<string, PendingApproval>();
   const idempotency = new Map<string, { status: number; body: unknown }>();
-  const tickets = new Set<string>();
+  /** One-time socket tickets, each for the person who asked for it. */
+  const tickets = new Map<string, PersonaId>();
   /** Each socket receives only the threads it subscribed to (spec 12.4 subscribe/unsubscribe). */
   const sockets = new Map<WebSocket, Set<string>>();
+  /** Whose socket it is, so a notice reaches only them. */
+  const socketOwners = new Map<WebSocket, PersonaId>();
 
-  // The mock serves one signed-in developer; the persona is switched through GET /v1/session.
-  let persona: PersonaId = 'executive';
-  const me = () => sessionFor(persona).user.id;
+  // Each browser keeps its own person in a cookie, carried through a request and everything it starts.
+  // Without perBrowser the server has one shared person, switched through GET /v1/session.
+  let shared: PersonaId = 'executive';
+  const visitor = new AsyncLocalStorage<{ persona: PersonaId }>();
+  const persona = () => visitor.getStore()?.persona ?? shared;
+  const fromCookie = (req: IncomingMessage): PersonaId => {
+    const saved = /(?:^|;\s*)dinext_persona=([a-z_]+)/.exec(req.headers.cookie ?? '')?.[1] ?? null;
+    return isPersona(saved) ? saved : 'executive';
+  };
+  const me = () => sessionFor(persona()).user.id;
   /** Each for one person: these outlive the persona switch that shows them to that person. */
   let notifications: AppNotification[] = [];
   /** Read marks for the notices worked out from current work, as user and notice id. */
   const readNotices = new Set<string>();
-  let homeCards = homeApprovals(persona, id);
-  const registerHomeCards = () => {
-    for (const card of homeCards) approvals.set(card.data.approvalId, { threadId: null, runId: null, blockId: card.id, card });
+  /** Each person's waiting Home cards, created the first time they're needed. */
+  const homeCards = new Map<PersonaId, ApprovalCardBlock[]>();
+  const homeCardsFor = (p: PersonaId) => {
+    if (!homeCards.has(p)) {
+      homeCards.set(p, homeApprovals(p, id));
+      for (const card of homeCards.get(p)!) approvals.set(card.data.approvalId, { threadId: null, runId: null, blockId: card.id, card });
+    }
+    return homeCards.get(p)!;
   };
-  registerHomeCards();
 
   const setPersona = (p: PersonaId) => {
-    if (p === persona) return;
-    persona = p;
-    homeCards = homeApprovals(p, id);
-    registerHomeCards();
+    const own = visitor.getStore();
+    if (own) own.persona = p;
+    else shared = p;
   };
 
   const thread = (threadId: string, title = 'New conversation') => {
@@ -133,7 +149,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
   };
 
   // The session's own flags decide whether a spoken "confirm" may approve a medium card.
-  const speech = voice ? createSpeechTap(voice, { mediumConfirm: () => sessionFor(persona).flags.voiceMediumConfirm, speed }) : null;
+  const speech = voice ? createSpeechTap(voice, { mediumConfirm: () => sessionFor(persona()).flags.voiceMediumConfirm, speed }) : null;
 
   const emit = (threadId: string, e: Emit) => {
     const t = thread(threadId);
@@ -153,9 +169,9 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
   };
 
   const pushNotice = (n: AppNotification) => {
-    if (n.userId !== me()) return;
+    if (!perBrowser && n.userId !== me()) return;
     const json = JSON.stringify({ type: 'notification', notification: n });
-    for (const ws of sockets.keys()) if (ws.readyState === ws.OPEN) ws.send(json);
+    for (const ws of sockets.keys()) if (ws.readyState === ws.OPEN && (!perBrowser || sessionFor(socketOwners.get(ws) ?? shared).user.id === n.userId)) ws.send(json);
   };
 
   /** A decided card asks nothing more of anyone, so its notice says how it ended and stops counting. */
@@ -171,7 +187,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
   const tell = (notices: Notice[]) => {
     for (const n of notices) {
       for (const userId of new Set([...(n.userId ? [n.userId] : []), ...usersToTell(n.employeeId, n.branch)])) {
-        if (userId !== me()) notify(userId, { group: 'workflow', title: n.title, detail: n.detail, link: `/workflows/referrals/inbox?id=${n.comId}` });
+        if (userId !== me()) notify(userId, { group: 'workflow', title: n.title, detail: n.detail, link: n.link ?? `/workflows/referrals/inbox?id=${n.comId}` });
       }
     }
   };
@@ -228,7 +244,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     runs.set(runId, run);
     const signal = run.abort!.signal;
     try {
-      const result = await rt.run(persona, { threadId, runId, text: body.input.text, context: body.context ?? [] }, (ev) => !signal.aborted && emit(threadId, ev), signal, speed);
+      const result = await rt.run(persona(), { threadId, runId, text: body.input.text, context: body.context ?? [] }, (ev) => !signal.aborted && emit(threadId, ev), signal, speed);
       if (signal.aborted) return;
       if (result.scripted) {
         runs.delete(runId);
@@ -285,7 +301,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
   /** Live cards: the same confirmation rules, then the approval service decides and the write runs. */
   const decideLive = async (approvalId: string, a: PendingApproval, key: string, body: ApprovalDecisionRequest) => {
     const r = await live!.decide(
-      persona,
+      persona(),
       { approvalId, threadId: a.threadId!, runId: a.runId!, body },
       (ev) => emit(a.threadId!, ev),
       (result) => {
@@ -304,7 +320,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     a.decided = result;
     idempotency.set(key, result);
     if (r.resolved) settleNotice(a, r.resolved);
-    const by = sessionFor(persona).user.name;
+    const by = sessionFor(persona()).user.name;
     emit(a.threadId!, { type: 'approval.resolved', runId: a.runId, approvalId, blockId: a.blockId, decision: r.resolved, by, channel: body.channel } as Emit);
     return result;
   };
@@ -324,7 +340,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       // A spoken medium approval counts only after its read-back played and if the tenant allows it
       // (FE-VOICE-041). Scripted cards have no read-back, so they keep the earlier rule.
       if (body.channel === 'voice' && a.card.data.riskTier === 'medium' && a.live && voice) {
-        if (!sessionFor(persona).flags.voiceMediumConfirm) return { status: 422, body: { code: 'CONFIRMATION_MISMATCH', message: 'Press Approve to confirm this one.' } };
+        if (!sessionFor(persona()).flags.voiceMediumConfirm) return { status: 422, body: { code: 'CONFIRMATION_MISMATCH', message: 'Press Approve to confirm this one.' } };
         if (!voice.readBackDone(approvalId)) return { status: 422, body: { code: 'CONFIRMATION_MISMATCH', message: 'Wait for the summary to finish, then say confirm.' } };
       }
       if (c.typedValue && (body.typedConfirmation ?? '').trim().toLowerCase() !== c.typedValue.expected.toLowerCase()) {
@@ -337,7 +353,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     if (body.decision === 'edit') return { status: 200, body: { decision: 'returned', by: 'Dana Lee', at: new Date().toISOString() } };
 
     const decision = body.decision === 'approve' ? 'approved' : body.decision === 'deny' ? 'denied' : 'returned';
-    const by = sessionFor(persona).user.name;
+    const by = sessionFor(persona()).user.name;
     const result = { status: 200, body: { decision, by, at: new Date().toISOString() } };
     a.decided = result;
     idempotency.set(key, result);
@@ -346,7 +362,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       emit(a.threadId, { type: 'approval.resolved', runId: a.runId, approvalId, blockId: a.blockId, decision, by, channel: body.channel } as Emit);
       setTimeout(() => a.onResolved?.(decision), 300 * speed);
     } else {
-      homeCards = homeCards.filter((card) => card.data.approvalId !== approvalId);
+      homeCards.set(persona(), homeCardsFor(persona()).filter((card) => card.data.approvalId !== approvalId));
     }
     if (decision === 'approved' && a.card.data.operation === 'workflow.item.create') {
       notify(me(), { group: 'workflow', title: 'Referral #88214 assigned to Ana Ruiz', detail: 'Westport lending queue', link: '/workflows/referrals/inbox' });
@@ -355,7 +371,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
   };
 
   const visibleThreads = () => [...threads.values()].filter((t) => !t.deleted && !foreign(t));
-  const pendingHomeCards = () => homeCards.filter((c) => !approvals.get(c.data.approvalId)?.decided);
+  const pendingHomeCards = () => homeCardsFor(persona()).filter((c) => !approvals.get(c.data.approvalId)?.decided);
   /** Cards waiting in this person's tasks, so they can be decided from Home too. */
   const waitingInTasks = () =>
     [...approvals.values()].filter((a) => {
@@ -367,12 +383,14 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
   const currentNotices = async (): Promise<AppNotification[]> => {
     const cards = pendingHomeCards();
     const failed = (err: unknown) => (console.error('[notifications]', err), null);
-    const overdue = [...((await live?.overdueReferrals(persona).catch(failed)) ?? []), ...((await live?.stalledApplications(persona).catch(failed)) ?? []), ...((await live?.waitingPayouts(persona).catch(failed)) ?? [])];
+    const overdue = [...((await live?.overdueReferrals(persona()).catch(failed)) ?? []), ...((await live?.stalledApplications(persona()).catch(failed)) ?? []), ...((await live?.waitingPayouts(persona()).catch(failed)) ?? [])];
     const open: Omit<AppNotification, 'read'>[] = cards.length ? [{ id: 'ntc_home_approvals', group: 'approvals', title: `${cards.length} ${cards.length === 1 ? 'approval' : 'approvals'} waiting`, detail: cards.map((c) => c.title).join(' · '), at: startedAt, link: '/home' }, ...overdue] : overdue;
     return open.map((n) => ({ ...n, read: readNotices.has(`${me()}:${n.id}`) }));
   };
 
-  const server = createServer(async (req, res) => {
+  const server = createServer((req, res) => (perBrowser ? visitor.run({ persona: fromCookie(req) }, () => handle(req, res)) : handle(req, res)));
+
+  async function handle(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? '/', `http://localhost:${port}`);
     const path = url.pathname;
     const method = req.method ?? 'GET';
@@ -383,15 +401,16 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       if (method === 'GET' && path === '/v1/session') {
         const p = url.searchParams.get('persona');
         if (isPersona(p)) setPersona(p);
-        return json(res, 200, sessionFor(persona, voice?.status()));
+        if (perBrowser) res.setHeader('set-cookie', `dinext_persona=${persona()}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : ''}`);
+        return json(res, 200, sessionFor(persona(), voice?.status()));
       }
       if (method === 'GET' && path === '/v1/home') {
         const waiting = waitingInTasks();
-        const home = homeFor(persona, [...waiting.map((a) => a.card), ...pendingHomeCards()]);
+        const home = homeFor(persona(), [...waiting.map((a) => a.card), ...pendingHomeCards()]);
         const asked = home.sections.find((s) => s.id === 'approvals');
         if (asked && waiting.length) asked.tasks = Object.fromEntries(waiting.map((a) => [a.card.data.approvalId, a.threadId!]));
         // With the warehouse up, "What changed" and "Things to look at" come from real figures.
-        const real = await live?.home(persona).catch((err) => (console.error('[home]', err), null));
+        const real = await live?.home(persona()).catch((err) => (console.error('[home]', err), null));
         if (real) {
           home.narrative = real.narrative;
           for (const s of home.sections) {
@@ -402,7 +421,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
           }
         }
         // "Needs you" leads with the work DI ranked, ahead of the approvals waiting.
-        const today = await live?.today(persona).catch((err) => (console.error('[home]', err), null));
+        const today = await live?.today(persona()).catch((err) => (console.error('[home]', err), null));
         if (today) {
           const needs = home.sections.find((s) => s.id === 'approvals');
           if (needs) needs.blocks.unshift(today);
@@ -412,9 +431,9 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       }
       if (method === 'GET' && path === '/v1/search') {
         const q = url.searchParams.get('q') ?? '';
-        const results = searchFor(persona, q, visibleThreads().map((t) => t.summary));
+        const results = searchFor(persona(), q, visibleThreads().map((t) => t.summary));
         // With the warehouse up, members come from the Relationship service: name, number, phone or email.
-        const members = await live?.searchMembers(persona, q).catch((err) => (console.error('[search]', err), null));
+        const members = await live?.searchMembers(persona(), q).catch((err) => (console.error('[search]', err), null));
         if (!members) return json(res, 200, { results });
         const kind = url.searchParams.get('kind');
         return json(res, 200, { results: kind === 'member' ? members : [...members, ...results.filter((r) => r.kind !== 'member')].slice(0, 20) });
@@ -426,15 +445,15 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         const one = /^\/v1\/lap\/applications\/(\d+)$/.exec(path);
         try {
           if (method === 'GET' && path === '/v1/lap/summary') {
-            const r = await live.pipeline(persona, view);
+            const r = await live.pipeline(persona(), view);
             return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });
           }
           if (method === 'GET' && path === '/v1/lap/applications' && view) {
-            const r = await live.pipelineApplications(persona, { view, group: url.searchParams.get('group') ?? undefined, stalled: url.searchParams.get('stalled') === '1' });
+            const r = await live.pipelineApplications(persona(), { view, group: url.searchParams.get('group') ?? undefined, stalled: url.searchParams.get('stalled') === '1' });
             return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });
           }
           if (method === 'GET' && one) {
-            const r = await live.pipelineApplication(persona, Number(one[1]));
+            const r = await live.pipelineApplication(persona(), Number(one[1]));
             return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });
           }
         } catch (err) {
@@ -444,12 +463,12 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       }
       // ---- referrals (spec 17.3) ----
       if (method === 'GET' && path === '/v1/gi/summary') {
-        const r = await live?.goals(persona);
+        const r = await live?.goals(persona());
         return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });
       }
       if (method === 'GET' && path === '/v1/referrals') {
         const box = url.searchParams.get('box');
-        const r = await live?.referrals(persona, box === 'team' || box === 'sent' ? box : 'mine');
+        const r = await live?.referrals(persona(), box === 'team' || box === 'sent' ? box : 'mine');
         return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });
       }
       const referral = /^\/v1\/referrals\/(\d+)(\/actions)?$/.exec(path);
@@ -457,11 +476,11 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         const comId = Number(referral[1]);
         try {
           if (method === 'GET' && !referral[2]) {
-            const r = await live.referral(persona, comId);
+            const r = await live.referral(persona(), comId);
             return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });
           }
           if (method === 'POST' && referral[2]) {
-            const r = await live.referralAction(persona, comId, await readBody<ReferralAction>(req));
+            const r = await live.referralAction(persona(), comId, await readBody<ReferralAction>(req));
             if (!r) return json(res, 404, { code: 'NOT_FOUND' });
             tell(r.notify);
             return json(res, 200, r.detail);
@@ -473,13 +492,13 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       }
       // ---- reports (spec 8.5–8.9, 18) ----
       if (method === 'GET' && path === '/v1/reports') {
-        const r = await live?.reports(persona);
+        const r = await live?.reports(persona());
         return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });
       }
       if (method === 'POST' && path === '/v1/reports/run') {
         const body = await readBody<{ templateId: string; controls?: Record<string, string>; test?: boolean }>(req);
         try {
-          const block = await live?.runReport(persona, body.templateId, body.controls ?? {}, body.test);
+          const block = await live?.runReport(persona(), body.templateId, body.controls ?? {}, body.test);
           return block ? json(res, 200, { block }) : json(res, 404, { code: 'NOT_FOUND' });
         } catch (err) {
           if (err instanceof CoreError) return json(res, 404, { code: 'NOT_FOUND', message: err.message });
@@ -490,7 +509,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       if (method === 'POST' && reportEdit) {
         const body = await readBody<{ op: Parameters<LiveRuntime['editReport']>[2]; controls?: Record<string, string> }>(req);
         try {
-          const block = await live?.editReport(persona, decodeURIComponent(reportEdit[1]!), body.op, body.controls ?? {});
+          const block = await live?.editReport(persona(), decodeURIComponent(reportEdit[1]!), body.op, body.controls ?? {});
           return block ? json(res, 200, { block }) : json(res, 404, { code: 'NOT_FOUND' });
         } catch (err) {
           if (err instanceof CoreError) return json(res, err.code === 'NO_ACCESS' ? 403 : 404, { code: err.code, message: err.message });
@@ -498,13 +517,13 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         }
       }
       if (method === 'POST' && path === '/v1/reports/schedules/run') {
-        const r = await live?.runSchedules(persona);
+        const r = await live?.runSchedules(persona());
         return r ? json(res, 200, { schedules: r }) : json(res, 404, { code: 'NOT_FOUND' });
       }
       const exportFile = /^\/v1\/exports\/([^/]+)$/.exec(path);
       if (method === 'GET' && exportFile) {
         try {
-          const f = await live?.exportFile(persona, decodeURIComponent(exportFile[1]!));
+          const f = await live?.exportFile(persona(), decodeURIComponent(exportFile[1]!));
           if (!f) return json(res, 404, { code: 'NOT_FOUND' });
           res.writeHead(200, { 'content-type': f.contentType, 'content-disposition': `attachment; filename="${f.fileName}"`, 'cache-control': 'no-store' });
           res.end(f.body);
@@ -517,7 +536,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       const member = /^\/v1\/members\/([^/]+)$/.exec(path);
       if (method === 'GET' && member) {
         try {
-          const block = await live?.member(persona, decodeURIComponent(member[1]!));
+          const block = await live?.member(persona(), decodeURIComponent(member[1]!));
           return block ? json(res, 200, { block }) : json(res, 404, { code: 'NOT_FOUND' });
         } catch (err) {
           // Outside the purview and not found give the same answer (spec 20.7).
@@ -538,12 +557,12 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       const table = /^\/v1\/tables\/([^/]+)$/.exec(path);
       if (method === 'GET' && table) {
         const tableId = decodeURIComponent(table[1]!);
-        const data = (await live?.table(persona, tableId)) ?? tableFor(persona, tableId);
+        const data = (await live?.table(persona(), tableId)) ?? tableFor(persona(), tableId);
         return data ? json(res, 200, data) : json(res, 404, { code: 'NOT_FOUND' });
       }
       if (method === 'POST' && path === '/v1/stream/ticket') {
         const ticket = id('tkt_', 24);
-        tickets.add(ticket);
+        tickets.set(ticket, persona());
         setTimeout(() => tickets.delete(ticket), 30_000);
         return json(res, 200, { ticket });
       }
@@ -617,12 +636,13 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     } catch (err) {
       json(res, 500, { code: 'INTERNAL', message: (err as Error).message });
     }
-  });
+  }
 
   const wss = new WebSocketServer({ noServer: true });
   server.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url ?? '/', `http://localhost:${port}`);
     const ticket = url.searchParams.get('ticket') ?? '';
+    const owner = tickets.get(ticket) ?? shared;
     if (gate && !gate.allowed(req)) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
@@ -630,7 +650,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     }
     // The voice socket uses the same one-time tickets as the stream (spec 12.7).
     if (url.pathname === '/v1/voice' && voice && tickets.delete(ticket)) {
-      voice.handleUpgrade(req, socket, head, { vocabulary: [...BASE_VOCABULARY, ...(live?.vocabulary(persona) ?? [])] });
+      voice.handleUpgrade(req, socket, head, { vocabulary: [...BASE_VOCABULARY, ...(live?.vocabulary(owner) ?? [])] });
       return;
     }
     if (url.pathname !== '/v1/stream' || !tickets.delete(ticket)) {
@@ -638,7 +658,10 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       socket.destroy();
       return;
     }
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws));
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      socketOwners.set(ws, owner);
+      wss.emit('connection', ws);
+    });
   });
 
   const replay = (ws: WebSocket, threadId: string, lastSeq: number) => {
@@ -648,7 +671,17 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
   };
 
   wss.on('connection', (ws) => {
+    const asOwner = (fn: () => void) => (perBrowser ? visitor.run({ persona: socketOwners.get(ws) ?? shared }, fn) : fn());
     ws.on('message', (raw) => {
+      asOwner(() => onMessage(ws, raw));
+    });
+    ws.on('close', () => {
+      sockets.delete(ws);
+      socketOwners.delete(ws);
+    });
+  });
+
+  function onMessage(ws: WebSocket, raw: unknown) {
       let msg: ClientMessage;
       try {
         msg = JSON.parse(String(raw)) as ClientMessage;
@@ -674,9 +707,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       } else if (msg.type === 'run.cancel') {
         cancelRun(msg.runId);
       }
-    });
-    ws.on('close', () => sockets.delete(ws));
-  });
+  }
 
   server.listen(port);
   return {

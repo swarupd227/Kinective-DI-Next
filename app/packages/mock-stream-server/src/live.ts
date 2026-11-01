@@ -132,7 +132,9 @@ export interface Notice {
   branch?: string;
   title: string;
   detail?: string;
-  comId: number;
+  comId?: number;
+  /** Where it opens, when it isn't a referral. */
+  link?: string;
 }
 
 /** Frontline staff work their own queue; a branch lead and everyone else look after the team's. */
