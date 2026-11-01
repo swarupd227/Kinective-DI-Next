@@ -22,7 +22,7 @@ export function speakable(markdown: string): string {
     .replace(/(?<![\d,.$#])\d{8,}(?![\d,.])/g, (m) => `ending in ${m.slice(-4)}`)
     // Compact money: $1.21B, -$1.1M, $9.7K.
     .replace(/([−-])?\$(\d+(?:\.\d+)?)([KMBT])\b/g, (_m, neg: string | undefined, n: string, s: string) => `${neg ? 'minus ' : ''}${n} ${SCALE_WORD[s]} dollars`)
-    .replace(/([−-])?\$(\d[\d,]*(?:\.\d+)?)/g, (_m, neg: string | undefined, n: string) => `${neg ? 'minus ' : ''}${n} dollars`)
+    .replace(/([−-])?\$(\d[\d,]*(?:\.\d+)?)/g, (_m, neg: string | undefined, n: string) => `${neg ? 'minus ' : ''}${n.replace(/\.00$/, '')} dollars`)
     .replace(/(\d+(?:\.\d+)?)\s*bp\b/g, '$1 basis points')
     .replace(/(\d+(?:\.\d+)?)%/g, '$1 percent')
     .replace(/(\d+)\+/g, '$1 plus')
@@ -38,7 +38,8 @@ export function speakable(markdown: string): string {
 /** Splits text into sentences, so each can be captioned while it plays (FE-A11Y-011). */
 export function sentences(text: string): string[] {
   return text
-    .split(/(?<=[.!?])\s+(?=[A-Z0-9"])/)
+    // An initial, as in "J. Ortiz", isn't the end of a sentence.
+    .split(/(?<=[.!?])(?<!\b[A-Z]\.)\s+(?=[A-Z0-9"])/)
     .map((s) => s.trim())
     .filter(Boolean);
 }

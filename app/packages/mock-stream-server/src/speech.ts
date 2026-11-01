@@ -14,7 +14,7 @@ interface VoiceRun {
   ack: NodeJS.Timeout;
 }
 
-const DATA_AGENTS = /Analytics|Briefing/;
+const DATA_AGENTS = /Analytics|Briefing|Goals & Incentives/;
 
 export function createSpeechTap(voice: VoiceGateway, opts: { mediumConfirm: () => boolean; speed: number }) {
   const runs = new Map<string, VoiceRun>();

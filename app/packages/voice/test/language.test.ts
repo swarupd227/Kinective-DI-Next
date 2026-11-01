@@ -61,10 +61,12 @@ describe('text for listening (spec 7.11)', () => {
     expect(speakable('Total loan balance is **$1.21B**, up **0.4%**. Delinquency rose **5 bp**.')).toBe('Total loan balance is 1.21 billion dollars, up 0.4 percent. Delinquency rose 5 basis points.');
     expect(speakable('Northgate fell -$1.1M. Suzanne Jackson (…4521) at 60+ days.')).toBe('Northgate fell minus 1.1 million dollars. Suzanne Jackson ending in 4521 at 60 plus days.');
     expect(speakable('Referral **#88227** for about $60,000.')).toBe('Referral number 88227 for about 60,000 dollars.');
+    expect(speakable('4 people, **$790.00** in all, and $12.50 more.')).toBe('4 people, 790 dollars in all, and 12.50 dollars more.');
     expect(speakable('Account 004521998877')).toBe('Account ending in 8877');
   });
 
   it('splits sentences for captions', () => {
     expect(sentences('One thing. Two things! 3 more?')).toEqual(['One thing.', 'Two things!', '3 more?']);
+    expect(sentences('Left out: J. Ortiz, for now. Next.')).toEqual(['Left out: J. Ortiz, for now.', 'Next.']);
   });
 });

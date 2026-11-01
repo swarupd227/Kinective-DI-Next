@@ -199,4 +199,34 @@ describe.skipIf(!available)('a referral end to end through an approval card', ()
     ws.close();
     c.conn.stop();
   }, 30_000);
+
+  it('reads goals aloud, and never lets voice approve a payout (AI-AGT-172)', async () => {
+    await persona('branch');
+    const c = await client();
+    const t = 'thr_live_voice2';
+    const { ticket } = (await (await fetch(`${base}/v1/stream/ticket`, { method: 'POST' })).json()) as { ticket: string };
+    const ws = new WebSocket(`ws://localhost:${PORT}/v1/voice?ticket=${ticket}`);
+    const heard: VoiceServerMessage[] = [];
+    ws.on('message', (d, binary) => !binary && heard.push(JSON.parse(String(d)) as VoiceServerMessage));
+    await new Promise((r) => ws.once('open', r));
+    ws.send(JSON.stringify({ type: 'tts.subscribe', threadId: t, enabled: true, rate: 1 }));
+    c.conn.subscribe(t);
+    const spoken = () => heard.flatMap((m) => (m.type === 'tts.start' ? [m.text] : [])).join(' ');
+
+    await c.api.sendMessage(t, { clientMessageId: 'cm_lv2', input: { kind: 'text', text: 'How am I doing on my goals this month?' }, inputChannel: 'voice', context: [] });
+    await until(() => /Based on last night/.test(spoken()), 20_000);
+    expect(spoken()).toContain('You have earned 300 dollars so far.');
+    expect(spoken()).not.toContain('**');
+
+    await c.api.sendMessage(t, { clientMessageId: 'cm_lv3', input: { kind: 'text', text: 'Show the October payouts for Westport for approval' }, inputChannel: 'voice', context: [] });
+    await until(() => c.pendingCard(t) !== null, 20_000);
+    const card = c.pendingCard(t)!;
+    approvalIds.push(card.approvalId);
+    await until(() => heard.some((m) => m.type === 'tts.start' && m.approvalId === card.approvalId), 20_000);
+    expect(spoken()).toContain('4 people, 790 dollars');
+    expect(heard.find((m) => m.type === 'tts.start' && m.approvalId === card.approvalId)).toMatchObject({ text: expect.stringContaining('on screen') });
+    expect(await c.api.decide(card.approvalId, { ...approve(card.previewHash), channel: 'voice' }, card.idempotencyKey)).toMatchObject({ ok: false, code: 'CONFIRMATION_MISMATCH' });
+    ws.close();
+    c.conn.stop();
+  }, 45_000);
 });

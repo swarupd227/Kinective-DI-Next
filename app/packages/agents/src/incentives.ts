@@ -49,8 +49,8 @@ const people = (n: number) => `${n} ${n === 1 ? 'person' : 'people'}`;
 
 const provenance = (runId: string, operation: string) => ({ agent: GI_AGENT, runId, operations: [operation], sources: [{ kind: 'table' as const, label: 'Goals & Incentives', ref: 'table:mod_gi_goal' }] });
 
-function table(title: string, runId: string, operation: string, columns: TableBlock['data']['columns'], rows: Record<string, string | number>[]): Block {
-  return { id: newBlockId('gin'), type: 'table', version: '1.0.0', title, provenance: provenance(runId, operation), freshness: { kind: 'workflow_event' }, data: { columns, rows, rowCount: rows.length } };
+function table(title: string, runId: string, operation: string, columns: TableBlock['data']['columns'], rows: Record<string, string | number>[], asOf?: string): Block {
+  return { id: newBlockId('gin'), type: 'table', version: '1.0.0', title, provenance: provenance(runId, operation), freshness: asOf ? { kind: 'nightly_build', asOf: `${asOf}T00:00:00Z` } : { kind: 'workflow_event' }, data: { columns, rows, rowCount: rows.length } };
 }
 
 /** Top goals with percent of goal, the money so far and what the next tier takes (spec 8.26). */
@@ -67,7 +67,7 @@ export function scorecardText(c: Scorecard, own: boolean) {
 }
 
 export function scorecardBlock(c: Scorecard, runId: string): Block {
-  return table(`${c.name}: ${c.period}`, runId, 'gi.scorecard.get', [{ field: 'goal', headerName: 'Goal', type: 'text' }, { field: 'actual', headerName: 'Actual', type: 'text' }, { field: 'target', headerName: 'Target', type: 'text' }, { field: 'pct', headerName: 'Of goal', type: 'text' }, { field: 'earned', headerName: 'Earned', type: 'currency' }], c.goals.map((g) => ({ goal: g.name, actual: amount(g, g.actual), target: amount(g, g.target), pct: `${g.pct}%`, earned: g.earned })));
+  return table(`${c.name}: ${c.period}`, runId, 'gi.scorecard.get', [{ field: 'goal', headerName: 'Goal', type: 'text' }, { field: 'actual', headerName: 'Actual', type: 'text' }, { field: 'target', headerName: 'Target', type: 'text' }, { field: 'pct', headerName: 'Of goal', type: 'text' }, { field: 'earned', headerName: 'Earned', type: 'currency' }], c.goals.map((g) => ({ goal: g.name, actual: amount(g, g.actual), target: amount(g, g.target), pct: `${g.pct}%`, earned: g.earned })), c.asOf);
 }
 
 export function teamText(cards: Scorecard[]) {
@@ -82,7 +82,7 @@ export function teamText(cards: Scorecard[]) {
   return `${behind.length} of ${cards.length} ${behind.length === 1 ? 'is' : 'are'} behind for ${first.period}: ${worst.slice(0, 4).join(', ')}.`;
 }
 
-export const teamBlock = (cards: Scorecard[], runId: string) => table('Team scorecards', runId, 'gi.scorecard.get', [{ field: 'name', headerName: 'Name', type: 'text' }, { field: 'role', headerName: 'Role', type: 'text' }, { field: 'goals', headerName: 'Goals', type: 'text' }, { field: 'earned', headerName: 'Earned', type: 'currency' }], cards.map((c) => ({ name: c.name, role: c.role, goals: measured(c).map((g) => `${g.name} ${g.pct}%`).join(', ') || 'None', earned: c.total })));
+export const teamBlock = (cards: Scorecard[], runId: string) => table('Team scorecards', runId, 'gi.scorecard.get', [{ field: 'name', headerName: 'Name', type: 'text' }, { field: 'role', headerName: 'Role', type: 'text' }, { field: 'goals', headerName: 'Goals', type: 'text' }, { field: 'earned', headerName: 'Earned', type: 'currency' }], cards.map((c) => ({ name: c.name, role: c.role, goals: measured(c).map((g) => `${g.name} ${g.pct}%`).join(', ') || 'None', earned: c.total })), cards[0]?.asOf);
 
 /** "$10 per sold referral, cap $150. You have 4 sold..." (spec 24.17 example dialog). */
 export function explainText(e: ScoreExplanation, own: boolean) {
@@ -99,7 +99,7 @@ export function explainText(e: ScoreExplanation, own: boolean) {
 }
 
 export const explainBlock = (e: ScoreExplanation, runId: string) =>
-  table('Records behind it', runId, 'gi.score.explain', [{ field: 'date', headerName: 'Date', type: 'date' }, { field: 'record', headerName: 'Record', type: 'text' }, { field: 'value', headerName: 'Value', type: 'text' }, { field: 'status', headerName: 'Status', type: 'text' }], e.records.slice(0, 25).map((r) => ({ date: r.date, record: r.label, value: e.score.unit === 'currency' ? dollars(r.value) : r.value, status: r.counted ? 'Counted' : 'Active' })));
+  table('Records behind it', runId, 'gi.score.explain', [{ field: 'date', headerName: 'Date', type: 'date' }, { field: 'record', headerName: 'Record', type: 'text' }, { field: 'value', headerName: 'Value', type: 'text' }, { field: 'status', headerName: 'Status', type: 'text' }], e.records.slice(0, 25).map((r) => ({ date: r.date, record: r.label, value: e.score.unit === 'currency' ? dollars(r.value) : r.value, status: r.counted ? 'Counted' : 'Active' })), e.asOf);
 
 export function batchText(b: PayoutBatch) {
   if (!b.waiting) return `The ${b.period} payouts for ${b.branch} have all been decided.`;

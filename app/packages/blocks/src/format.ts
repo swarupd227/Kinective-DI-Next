@@ -51,7 +51,8 @@ export function formatValue(value: number | null | undefined, unit: ValueUnit | 
 
 /** Axis labels: always compact so ticks stay short. */
 export const formatAxis = (value: number, unit: ValueUnit | undefined) => {
-  if (unit === 'currency') return formatValue(value, 'currency', { compact: true, decimals: 0 });
+  // Balances sit in narrow ranges too ($1.21B-$1.24B), so ticks keep up to two decimals.
+  if (unit === 'currency') return new Intl.NumberFormat(locale(), { style: 'currency', currency: 'USD', notation: 'compact', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(value);
   // Rates sit in narrow ranges (0.39%-0.41%), so ticks keep up to three decimals to stay distinct.
   if (unit === 'percent') return `${new Intl.NumberFormat(locale(), { maximumFractionDigits: 3 }).format(value)}%`;
   return unit ? formatValue(value, unit) : String(value);

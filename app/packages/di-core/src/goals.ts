@@ -47,6 +47,8 @@ export interface Scorecard {
   branch: string;
   periodEnd: string;
   period: string;
+  /** The nightly build the figures come from (spec 8.26). */
+  asOf: string;
   goals: GoalScore[];
   qualified: boolean;
   total: number;
@@ -155,6 +157,8 @@ export class GoalsService {
     );
     const total = (emp: number, goal: string, state: string) => num((credits as Record<string, unknown>[]).find((c) => c.employee_id === emp && c.goal_id === goal && c.state === state)?.total ?? 0);
     const label = monthName(period);
+    const [build] = await this.pool.query("SELECT as_of_date FROM meta_build WHERE state = 'completed' ORDER BY as_of_date DESC LIMIT 1");
+    const asOf = day((build as { as_of_date: unknown }[])[0]?.as_of_date);
     return staff.map((s) => {
       const scored = (goals as Record<string, unknown>[])
         .filter((g) => g.role === s.role || g.role === '*')
@@ -172,7 +176,7 @@ export class GoalsService {
       const measured = scored.filter((g) => !g.qualifier);
       // A missed qualifier takes every other incentive for the period to zero (spec 17.4).
       const goalsOut = qualified ? scored : scored.map((g) => ({ ...g, earned: 0 }));
-      return { employeeId: s.employeeId, name: s.name, role: s.role, branch: s.branch, periodEnd: period, period: label, goals: goalsOut, qualified, total: money2(goalsOut.reduce((n, g) => n + g.earned, 0)), behind: measured.some((g) => g.pct < 100) || !qualified };
+      return { employeeId: s.employeeId, name: s.name, role: s.role, branch: s.branch, periodEnd: period, period: label, asOf, goals: goalsOut, qualified, total: money2(goalsOut.reduce((n, g) => n + g.earned, 0)), behind: measured.some((g) => g.pct < 100) || !qualified };
     });
   }
 
