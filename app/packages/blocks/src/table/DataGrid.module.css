@@ -33,6 +33,13 @@
   font-weight: var(--weight-semibold);
 }
 
+/* The grid's line height is the row height, which would space wrapped lines a row apart. */
+.grid :global(.ag-cell-wrap-text) {
+  padding-block: var(--space-3);
+  line-height: var(--type-body-compact-line, 1.4);
+  word-break: normal;
+}
+
 .fill {
   height: 100%;
   min-height: 240px;

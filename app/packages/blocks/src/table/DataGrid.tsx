@@ -72,11 +72,14 @@ export default function DataGrid({ columns, rows, sort, layout = 'auto', filters
           type: isNum ? 'rightAligned' : undefined,
           // A column's own cellClass replaces the one from its type, so the alignment is repeated here.
           cellClass: isNum ? ['dn-num', 'ag-right-aligned-cell'] : undefined,
+          // In a result, a long name wraps rather than cutting off. A full-page grid keeps its rows even.
+          wrapText: !isNum && layout === 'auto',
+          autoHeight: !isNum && layout === 'auto',
           filter: filters ? (isNum ? 'agNumberColumnFilter' : 'agTextColumnFilter') : false,
           valueFormatter: isNum ? (p) => formatValue(p.value as number | null, type, { decimals: type === 'percent' ? 2 : undefined }) : undefined,
         };
       }),
-    [columns, sort, filters],
+    [columns, sort, filters, layout],
   );
 
   return (
