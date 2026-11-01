@@ -47,6 +47,13 @@ describe('recognising pipeline work', () => {
     expect(applicationText({ ...app, hold: null } as never)).toContain('The LOS doesn’t record what it’s waiting on.');
   });
 
+  it('reads properly for one application, or none', () => {
+    const found = (count: number) => ({ count, dollars: 169_800, oldestDays: 12, items: count ? [{ lastName: 'Patel', daysInStatus: 12 }] : [], holds: [], detailsHidden: false, asOf: '2026-10-25', stale: false }) as never;
+    expect(foundText(found(1), 'are waiting on an appraisal')).toBe('**1 application** worth **$169.8K** is waiting on an appraisal. As of the Oct 25 LOS load. Patel has waited **12 days**.');
+    expect(foundText(found(1), 'have been in underwriting more than 5 days')).toContain('** has been in underwriting');
+    expect(foundText(found(0), 'have stalled')).toMatch(/^Nothing has stalled\./);
+  });
+
   it('states a pattern only when more than one shares it', () => {
     expect(mostWaitOn({ holds: [{ waitingOn: 'the appraiser', count: 6 }] })).toBe(' 6 are waiting on the appraiser.');
     expect(mostWaitOn({ holds: [{ waitingOn: 'the appraiser', count: 1 }] })).toBe('');

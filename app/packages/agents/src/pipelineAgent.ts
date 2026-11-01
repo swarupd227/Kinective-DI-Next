@@ -63,9 +63,14 @@ export const mostWaitOn = (f: Pick<PipelineFound, 'holds'>) => {
 
 /** The sentence the spec's dialog gives: count, dollars and the oldest, and last names for read-back. */
 export function foundText(f: PipelineFound, what: string) {
-  if (!f.count) return `Nothing ${what}. ${load(f)}`;
+  // "what" is written for several applications, so one, or none, takes the singular.
+  const verb = f.count > 1 ? what : what.replace(/^are\b/, 'is').replace(/^have\b/, 'has');
+  if (!f.count) return `Nothing ${verb}. ${load(f)}`;
+  const access = f.detailsHidden ? ' Your access shows totals, not individual applications.' : '';
+  const waited = `${f.oldestDays} ${f.oldestDays === 1 ? 'day' : 'days'}`;
+  if (f.count === 1) return `**${apps(1)}** worth **${money(f.dollars)}** ${verb}. ${load(f)} ${f.items[0]?.lastName ?? 'It'} has waited **${waited}**.${access}`;
   const oldest = f.items.slice(0, 3).map((a) => `${a.lastName} ${a.daysInStatus}`);
-  return `**${apps(f.count)}** worth **${money(f.dollars)}** ${what}. ${load(f)} The oldest has waited **${f.oldestDays} days**${oldest.length ? ` (${oldest.join(', ')})` : ''}.${f.count > 1 ? mostWaitOn(f) : ''}${f.detailsHidden ? ' Your access shows totals, not individual applications.' : ''}`;
+  return `**${apps(f.count)}** worth **${money(f.dollars)}** ${verb}. ${load(f)} The oldest has waited **${waited}**${oldest.length ? ` (${oldest.join(', ')})` : ''}.${mostWaitOn(f)}${access}`;
 }
 
 export function applicationList(items: PipelineApplication[], f: Pick<PipelineFound, 'asOf' | 'stale'>, runId: string, title: string): ListBlock {
