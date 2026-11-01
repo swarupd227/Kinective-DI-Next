@@ -70,7 +70,8 @@ export default function DataGrid({ columns, rows, sort, layout = 'auto', filters
           minWidth: 110,
           sort: sort?.find((s) => s.field === c.field)?.dir,
           type: isNum ? 'rightAligned' : undefined,
-          cellClass: isNum ? 'dn-num' : undefined,
+          // A column's own cellClass replaces the one from its type, so the alignment is repeated here.
+          cellClass: isNum ? ['dn-num', 'ag-right-aligned-cell'] : undefined,
           filter: filters ? (isNum ? 'agNumberColumnFilter' : 'agTextColumnFilter') : false,
           valueFormatter: isNum ? (p) => formatValue(p.value as number | null, type, { decimals: type === 'percent' ? 2 : undefined }) : undefined,
         };
