@@ -94,7 +94,7 @@ describe.skipIf(!available)('Referrals app', () => {
     await persona('branch');
     expect((await bell()).some((n) => /team referrals? (is|are) overdue/.test(n.title))).toBe(true);
     await persona('executive');
-    expect((await bell()).map((n) => n.title)).toEqual(['2 approvals waiting']);
+    expect((await bell()).map((n) => n.title).sort()).toEqual(['1 approval waiting', 'October payouts are waiting']);
   });
 
   it('keeps each person’s tasks to themselves', async () => {

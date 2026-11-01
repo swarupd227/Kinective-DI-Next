@@ -11,7 +11,7 @@ import type {
   Session,
   TableData,
 } from '@dinext/block-schemas';
-import { approvalHighFixture, chartFixture, kpiGroupFixture, lineChartFixture, nightly, tableFixture } from '@dinext/block-schemas/fixtures';
+import { chartFixture, kpiGroupFixture, lineChartFixture, nightly, tableFixture } from '@dinext/block-schemas/fixtures';
 
 export type PersonaId = 'executive' | 'analyst' | 'branch' | 'lender' | 'msr' | 'bank_cfo' | 'admin';
 
@@ -29,6 +29,8 @@ interface Persona {
   lapDetails?: boolean;
   /** May change stall thresholds (AI-AGT-180). */
   lendingAdmin?: boolean;
+  /** Approve Incentives in the Goals & Incentives access matrix. */
+  approvesIncentives?: boolean;
   suggestions: string[];
 }
 
@@ -58,7 +60,8 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     },
     lapDetails: true,
     lendingAdmin: true,
-    suggestions: ['What should I do today?', 'Get me ready for Thursday’s ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'Prepare me for my meeting with Suzanne Jackson', 'Brief me'],
+    approvesIncentives: true,
+    suggestions: ['What should I do today?', 'Show the October payouts', 'Get me ready for Thursday’s ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'Prepare me for my meeting with Suzanne Jackson', 'Brief me'],
   },
   analyst: {
     session: {
@@ -80,31 +83,32 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     employeeId: 6,
     leadsBranch: true,
     lapDetails: true,
-    suggestions: ['What should I do today?', 'What’s on my team’s plate?', 'Show the pipeline by product for my branch', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups', 'Refer Suzanne Jackson for a HELOC, she prefers a call after 5 pm', 'Show my overdue onboarding touch points', 'Show Northgate loan detail'],
+    approvesIncentives: true,
+    suggestions: ['What should I do today?', 'Who on my team is behind on goals?', 'Approve the October payouts for Westport', 'What’s on my team’s plate?', 'Show the pipeline by product for my branch', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups', 'Refer Suzanne Jackson for a HELOC, she prefers a call after 5 pm', 'Show my overdue onboarding touch points', 'Show Northgate loan detail'],
   },
   lender: {
     session: {
       user: user('user:6101', 'Ana Ruiz', 'Loan Officer, Westport', 'Lender'),
       tenant: CU,
-      apps: ['home', 'conversations', 'workflows', 'rm', 'referrals', 'lap'],
+      apps: ['home', 'conversations', 'workflows', 'rm', 'referrals', 'lap', 'gi'],
       permissions: { queryBrowser: false, dashboardAdmin: false },
     },
     purview: ['Westport'],
     employeeId: 1,
     lapDetails: true,
-    suggestions: ['What should I do today?', 'Which of my apps have sat in underwriting more than five days?', 'Show my stalled applications', 'Create follow-up tasks for my stalled applications', 'What’s on my plate today?'],
+    suggestions: ['What should I do today?', 'How am I doing on my goals this month?', 'Which of my apps have sat in underwriting more than five days?', 'Show my stalled applications', 'Create follow-up tasks for my stalled applications', 'What’s on my plate today?'],
   },
   msr: {
     session: {
       user: user('user:6004', 'Sofia Ruiz', 'Member Services, Westport', 'Frontline'),
       tenant: CU,
-      apps: ['home', 'conversations', 'workflows', 'rm', 'referrals'],
+      apps: ['home', 'conversations', 'workflows', 'rm', 'referrals', 'gi'],
       permissions: { queryBrowser: false, dashboardAdmin: false },
     },
     floor: true,
     purview: ['Westport'],
     employeeId: 4,
-    suggestions: ['What should I do today?', 'What’s on my plate today?', 'Show my overdue referrals', 'Prepare me for my meeting with Suzanne Jackson'],
+    suggestions: ['What should I do today?', 'How am I doing on my goals this month?', 'Why is my referral incentive only $40?', 'What’s on my plate today?', 'Show my overdue referrals', 'Prepare me for my meeting with Suzanne Jackson'],
   },
   bank_cfo: {
     session: {
@@ -114,7 +118,8 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       apps: ['home', 'conversations', 'reports', 'tables', 'workflows', 'files', 'rm', 'lap', 'gi'],
       permissions: { queryBrowser: false, dashboardAdmin: false },
     },
-    suggestions: ['Get me ready for Thursday’s ALCO meeting', 'Brief me', 'Show loan growth by branch for Q3 vs Q2', 'Approve October incentive payouts for Westport'],
+    approvesIncentives: true,
+    suggestions: ['Get me ready for Thursday’s ALCO meeting', 'Brief me', 'Show loan growth by branch for Q3 vs Q2', 'Show the October payouts'],
   },
   admin: {
     session: {
@@ -330,8 +335,7 @@ export function homeApprovals(id: PersonaId, mkId: (p: string, n?: number) => st
       previewHash: 'sha256:7b1e4a90cc21',
     },
   };
-  const payout = approvalHighFixture();
-  return [dataLog, { ...payout, id: mkId('blk_', 16), data: { ...payout.data, approvalId: mkId('apr_', 14), requestedBy: { ...payout.data.requestedBy, kind: 'agent_run' }, expiresAt: expires } }];
+  return [dataLog];
 }
 
 // ---- Search ---------------------------------------------------------------------------------------

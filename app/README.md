@@ -238,9 +238,22 @@ DI brings the work to the person. Screens stay for checking and overriding.
 
 This release changes the data, so run `npm run db:seed`, which resets every tenant.
 
+### Goals & Incentives (Slice 14)
+
+Agent-led from the start. The page at `/m/gi` is for checking; the work happens in a task.
+
+- **Asking:** "How am I doing?", "Why is my referral incentive only $40?", "Who on my team is behind on goals?" and "Show the October payouts". Scorecards show only goals the person is eligible for.
+- **Every amount comes from the DI Core:** tiers, per-unit pay, caps, a missed qualifier taking a person to $0, and approved adjustments. The same inputs give the same amounts. The model never works one out.
+- **Approving:** one high-risk card per branch, listing each person, the basis, adjustments and anything worth a look. The approver types the total. Voice can't approve it, and nobody approves their own payout. Name someone to leave them out: "except Sam's". If an amount changes after the card, nothing is approved.
+- **Bringing it to you:** waiting payouts lead the day plan and Home's "Needs you" for whoever approves them, and the card can be decided from Home.
+
+Assumptions: all goals, credits and targets are demo data, and October counts as closed for review although the data runs to Oct 25. Denying a card leaves payouts waiting rather than recording a denial. Creating and reviewing adjustments, goal setup and payroll export aren't built, so no money moves.
+
+This release changes the data, so run `npm run db:seed`, which resets every tenant.
+
 ## Not done yet
 
-- **Agents:** a live golden-question evaluation on Claude (needs your approval), conversation memory beyond the server process, and real Goals & Incentives and Retention agents.
+- **Agents:** a live golden-question evaluation on Claude (needs your approval), conversation memory beyond the server process, and a real Retention agent.
 - **Reports:** PDF and Word exports, report snapshots ("By Report Date", spec 18.8), Table Summary and Detail report builders with their form block (spec 8.6, 8.7), the template settings form with every builder tab (FE-BLD-001), test mode with a PDF preview, drag-and-drop on the canvas, changing a template other people use (high risk with the users and schedules affected, FE-BLD-005), pinning reports to Home, and real delivery to recipients.
 - **Relationship Manager:** issue management ("Log an issue", spec 8.24), undoing a decline within 30 days (BE-RM-003), the classic Relationship Dashboard as a full app page with its left navigation, a call-centre screen pop (AS-090), alert rules and the opportunity threshold as tenant settings, and speaking member data aloud (off by default for branch-floor classes).
 - **Loan Pipeline:** the status map and duplicate rule editor, movement counting, crediting the original owner, build-time `lap.application.aged` events, and Indirect Lending. Thresholds apply on the next read rather than the next build.

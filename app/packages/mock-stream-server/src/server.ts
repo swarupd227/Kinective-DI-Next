@@ -367,7 +367,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
   const currentNotices = async (): Promise<AppNotification[]> => {
     const cards = pendingHomeCards();
     const failed = (err: unknown) => (console.error('[notifications]', err), null);
-    const overdue = [...((await live?.overdueReferrals(persona).catch(failed)) ?? []), ...((await live?.stalledApplications(persona).catch(failed)) ?? [])];
+    const overdue = [...((await live?.overdueReferrals(persona).catch(failed)) ?? []), ...((await live?.stalledApplications(persona).catch(failed)) ?? []), ...((await live?.waitingPayouts(persona).catch(failed)) ?? [])];
     const open: Omit<AppNotification, 'read'>[] = cards.length ? [{ id: 'ntc_home_approvals', group: 'approvals', title: `${cards.length} ${cards.length === 1 ? 'approval' : 'approvals'} waiting`, detail: cards.map((c) => c.title).join(' · '), at: startedAt, link: '/home' }, ...overdue] : overdue;
     return open.map((n) => ({ ...n, read: readNotices.has(`${me()}:${n.id}`) }));
   };
@@ -443,6 +443,10 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         }
       }
       // ---- referrals (spec 17.3) ----
+      if (method === 'GET' && path === '/v1/gi/summary') {
+        const r = await live?.goals(persona);
+        return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });
+      }
       if (method === 'GET' && path === '/v1/referrals') {
         const box = url.searchParams.get('box');
         const r = await live?.referrals(persona, box === 'team' || box === 'sent' ? box : 'mine');

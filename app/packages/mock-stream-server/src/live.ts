@@ -3,9 +3,9 @@
 // key the Concierge runs its deterministic offline planner (spec 23.6.4).
 import { randomBytes } from 'node:crypto';
 import type { ApprovalCardBlock, ApprovalDecisionRequest, Block, KpiGroupBlock, ListBlock, Member360Block, SearchResult, StreamEvent, StreamingEnvelope, TableData } from '@dinext/block-schemas';
-import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, pipelineTake, referralTake, reportsTake, todayList, describeSchedule, hasClaudeCredentials, member360, memberTake, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
-import { ApprovalStore, CoreError, PipelineService, ReferralService, RelationshipService, ReportStore, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
-import type { AppNotification, DiTake, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
+import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, goalsTake, pipelineTake, referralTake, reportsTake, todayList, describeSchedule, hasClaudeCredentials, member360, memberTake, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
+import { ApprovalStore, CoreError, GoalsService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
+import type { AppNotification, DiTake, GoalsIndex, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
 import { renderExport } from './exports.ts';
 import { SemanticService } from '@dinext/semantic';
 import { tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
@@ -58,6 +58,7 @@ interface Tenant {
   runtime: TenantRuntime;
   pool: Pool;
   pipeline: PipelineService | null;
+  goals: GoalsService | null;
   /** Words for the recogniser: branches, products and staff, never members (FE-VOICE-061). */
   vocabulary: string[];
 }
@@ -95,6 +96,10 @@ export interface LiveRuntime {
   referrals(persona: PersonaId, box: 'mine' | 'team' | 'sent'): Promise<ReferralsIndex | null>;
   /** For the bell: each of your own overdue referrals, or a count for a branch lead. */
   overdueReferrals(persona: PersonaId): Promise<Omit<AppNotification, 'read'>[]>;
+  /** For the bell: payouts waiting for this approver, as one notice. */
+  waitingPayouts(persona: PersonaId): Promise<Omit<AppNotification, 'read'>[]>;
+  /** The Goals & Incentives page: the person's own month, their team and any payouts to approve. */
+  goals(persona: PersonaId): Promise<GoalsIndex | null>;
   /** Home's "Needs you": the day's work, ranked, each item starting it. Null when nothing needs them. */
   today(persona: PersonaId): Promise<ListBlock | null>;
   /** For the bell: your stalled applications, or a count for a branch lead. */
@@ -136,9 +141,12 @@ const worksOwnQueue = (p: PersonaId) => PERSONAS[p].employeeId !== undefined && 
 /** Loan Pipeline access from the persona's place in the module matrix (spec 20.7). */
 const lapAccess = (p: PersonaId) => ({ details: Boolean(PERSONAS[p].lapDetails), leads: PERSONAS[p].leadsBranch, admin: PERSONAS[p].lendingAdmin });
 
+/** Goals & Incentives access from the same matrix. */
+const giAccess = (p: PersonaId) => ({ leads: PERSONAS[p].leadsBranch, approves: PERSONAS[p].approvesIncentives });
+
 const personaContext = (p: PersonaId) => {
   const s = PERSONAS[p].session;
-  return { purviewBranches: PERSONAS[p].purview, canViewSql: s.permissions.queryBrowser, employeeId: PERSONAS[p].employeeId, lap: lapAccess(p) };
+  return { purviewBranches: PERSONAS[p].purview, canViewSql: s.permissions.queryBrowser, employeeId: PERSONAS[p].employeeId, lap: lapAccess(p), gi: giAccess(p) };
 };
 
 /** Maps a run's sink calls to stream events (spec 12.4). Text is verified before it streams. */
@@ -221,7 +229,13 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       () => false,
     );
     const pipeline = hasPipeline ? new PipelineService(pool) : null;
-    const workflow = referrals ? { referrals, relationship, gateway: new ToolGateway({ referrals, relationship: relationship ?? undefined, pipeline: pipeline ?? undefined, semantic, approvals: new ApprovalStore(pool), onProfileView }) } : null;
+    // Goals & Incentives exists once the tenant was seeded with Slice 14 or later.
+    const hasGoals = await pool.query('SELECT 1 FROM mod_gi_goal LIMIT 1').then(
+      () => true,
+      () => false,
+    );
+    const goals = hasGoals ? new GoalsService(pool) : null;
+    const workflow = referrals ? { referrals, relationship, gateway: new ToolGateway({ referrals, relationship: relationship ?? undefined, pipeline: pipeline ?? undefined, goals: goals ?? undefined, semantic, approvals: new ApprovalStore(pool), onProfileView }) } : null;
     // Report templates exist once the tenant was seeded with Slice 6 or later.
     const hasReports = await pool.query('SELECT 1 FROM esp_report_templates LIMIT 1').then(
       () => true,
@@ -231,7 +245,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     const [staff] = await pool.query('SELECT DISTINCT display_name FROM cdm_employee');
     const dims = semantic.dimensionValues;
     const vocabulary = [...new Set([...(dims.branch ?? []), ...(dims.region ?? []), ...(dims.loan_category ?? []), ...(dims.deposit_category ?? []), ...(staff as { display_name: string }[]).map((s) => s.display_name).filter((s) => !/^\w\. /.test(s))])];
-    tenants.set(tenantId, { pool, pipeline, vocabulary, runtime: { key: t.key, name, institutionType, semantic, workflow, reports } });
+    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, runtime: { key: t.key, name, institutionType, semantic, workflow, reports } });
   }
   if (!tenants.size) return null;
 
@@ -289,6 +303,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
           purviewBranches: PERSONAS[persona].purview,
           employeeId: PERSONAS[persona].employeeId,
           lap: lapAccess(persona),
+          gi: giAccess(persona),
         },
         sink,
       );
@@ -345,6 +360,29 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       if (!overdue.length) return [];
       const latest = overdue.map((i) => i.dueAt).sort().at(-1)!;
       return [{ id: 'ntc_overdue_team', group: 'workflow', title: `${overdue.length} team ${overdue.length === 1 ? 'referral is' : 'referrals are'} overdue`, detail: overdue.map((i) => i.name).join(' · '), at: latest, link: '/workflows/referrals/inbox' }];
+    },
+
+    async waitingPayouts(persona) {
+      const svc = tenantFor(persona)?.goals;
+      const p = PERSONAS[persona];
+      if (!svc || !p.approvesIncentives) return [];
+      const open = (await svc.batches({ employeeId: p.employeeId, leads: p.leadsBranch, approves: true }, { purviewBranches: p.purview })).filter((b) => b.waiting);
+      const [first] = open;
+      if (!first) return [];
+      const n = open.reduce((sum, b) => sum + b.waiting, 0);
+      return [{ id: 'ntc_payouts', group: 'approvals', title: `${first.period.split(' ')[0]} payouts are waiting`, detail: `${n} ${n === 1 ? 'person' : 'people'}, ${usd(open.reduce((sum, b) => sum + b.total, 0))}`, at: `${first.periodEnd}T06:00:00.000Z`, link: '/m/gi' }];
+    },
+
+    async goals(persona) {
+      const svc = tenantFor(persona)?.goals;
+      const p = PERSONAS[persona];
+      if (!svc || !p.session.apps.includes('gi')) return null;
+      const who = { employeeId: p.employeeId, leads: p.leadsBranch, approves: p.approvesIncentives };
+      const ctx = { purviewBranches: p.purview };
+      const mine = p.employeeId !== undefined ? await svc.scorecard(undefined, who, ctx) : null;
+      const team = p.leadsBranch || p.approvesIncentives ? await svc.team(undefined, who, ctx) : null;
+      const batches = p.approvesIncentives ? await svc.batches(who, ctx) : null;
+      return { take: goalsTake(mine, batches), mine, team, batches };
     },
 
     async today(persona) {

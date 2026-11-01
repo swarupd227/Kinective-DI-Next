@@ -2,7 +2,7 @@
 // conversation, Home and the pages, so they cannot disagree. The agent notices the work and prepares
 // what it can: follow-ups for someone who looks after others, and the next question for everyone.
 import type { ApprovalCardBlock, DiTake, ListBlock } from '@dinext/block-schemas';
-import type { ApprovalRecord as Approval, InboxItem, PipelineApplication, PipelineFound } from '@dinext/di-core';
+import { usd, type ApprovalRecord as Approval, type InboxItem, type PayoutBatch, type PipelineApplication, type PipelineFound, type Scorecard } from '@dinext/di-core';
 import { newBlockId } from './answer.ts';
 import type { ToolCallRecord } from './audit.ts';
 import { inStatus, midSentence as lower, type GatewayContext, type ToolGateway } from './gateway.ts';
@@ -22,11 +22,12 @@ export interface TodayWho {
   purviewBranches?: string[];
   employeeId?: number;
   lap?: GatewayContext['lap'];
+  gi?: GatewayContext['gi'];
 }
 
 export interface TodayItem {
   id: string;
-  kind: 'referral' | 'application' | 'totals';
+  kind: 'referral' | 'application' | 'totals' | 'payouts';
   title: string;
   why: string;
   badge: string;
@@ -88,6 +89,26 @@ function referralItem(i: InboxItem, own: boolean, now: number): TodayItem {
   };
 }
 
+const people = (n: number) => `${n} ${n === 1 ? 'person' : 'people'}`;
+
+/** Payouts waiting for this approver: one line, because money waits on nobody else. */
+function payoutSummary(all: PayoutBatch[]) {
+  const open = all.filter((b) => b.waiting);
+  const [first] = open;
+  if (!first) return null;
+  const month = first.period.split(' ')[0]!;
+  const one = open.length === 1;
+  const flagged = open.reduce((n, b) => n + b.flagged, 0);
+  const facts = `${people(open.reduce((n, b) => n + b.waiting, 0))}, ${usd(open.reduce((n, b) => n + b.total, 0))}${flagged ? `, ${flagged} flagged` : ''}`;
+  const where = one ? first.branch : `${open.length} branches`;
+  return { month, where, title: `${month} payouts: ${where}`, facts, ask:one ? `Show the ${month} payouts for ${first.branch} for approval` : `Show the ${month} payouts` };
+}
+
+function payoutItem(all: PayoutBatch[]): TodayItem | null {
+  const p = payoutSummary(all);
+  return p && { id: 'payouts', kind: 'payouts', title: p.title, why: `${p.facts}. Waiting for your approval.`, badge: 'To approve', link: '/m/gi', ask: p.ask, weight: 200 };
+}
+
 /** What needs this person now. Each read goes through the gateway, so access is the tools' access. */
 export async function buildToday(who: TodayWho, gateway: ToolGateway, now = Date.now()): Promise<TodayPlan> {
   const ctx: GatewayContext = { ...who, runId: 'today', threadId: 'today', members: new Map() };
@@ -100,6 +121,9 @@ export async function buildToday(who: TodayWho, gateway: ToolGateway, now = Date
   const items = [...overdue.map((i) => referralItem(i, own, now)), ...apps.map((a) => applicationItem(a, found?.view === 'mine'))];
   // Totals-only access: the work is real, but there is nobody to name.
   if (found?.detailsHidden && found.count) items.push({ id: 'totals', kind: 'totals', title: `${found.count} applications have stalled`, why: `Worth ${money(found.dollars)}, mostly ${lower(found.byProduct[0]!.product)}s.`, badge: 'Stalled', link: '/m/lap', ask: 'Show the pipeline by product', weight: 60 });
+  const payouts = who.gi?.approves ? await gateway.call('gi_payouts_list', {}, ctx, 'incentives') : null;
+  const owed = payouts?.ok && payouts.batches ? payoutItem(payouts.batches) : null;
+  if (owed) items.push(owed);
   items.sort((a, b) => b.weight - a.weight);
   // Each kind of work keeps a place, so big loans can't hide an overdue referral.
   const top = items.slice(0, MAX_ITEMS);
@@ -141,9 +165,17 @@ export function todayList(p: TodayPlan, runId: string, opts: { startsWork?: bool
     ...(opts.label ? { output: { label: opts.label } } : {}),
     data: {
       layout: 'list',
-      items: p.items.map((i) => ({ id: i.id, title: i.title, subtitle: i.why, link: opts.startsWork ? `/c/new?q=${encodeURIComponent(i.ask)}` : i.link, badge: { label: i.badge, tone: 'danger' as const } })),
+      items: p.items.map((i) => ({ id: i.id, title: i.title, subtitle: i.why, link: opts.startsWork ? `/c/new?q=${encodeURIComponent(i.ask)}` : i.link, badge: { label: i.badge, tone: i.kind === 'payouts' ? ('warning' as const) : ('danger' as const) } })),
     },
   };
+}
+
+/** The Goals & Incentives page: payouts first for whoever approves them, then the person's own month. */
+export function goalsTake(mine: Scorecard | null, batches: PayoutBatch[] | null): DiTake {
+  const p = batches && payoutSummary(batches);
+  if (p) return { headline: `${p.month} payouts are waiting for you at ${p.where}: ${p.facts}.`, action: { label: 'Review payouts', ask: p.ask } };
+  if (mine) return { headline: `${mine.period}: you’ve earned ${usd(mine.total)} so far.`, action: { label: 'How am I doing?', ask: 'How am I doing on my goals this month?' } };
+  return { headline: 'Nothing is waiting for you here.' };
 }
 
 export function pipelineTake(f: PipelineFound, own: boolean): DiTake {

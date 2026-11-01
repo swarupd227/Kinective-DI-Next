@@ -157,6 +157,35 @@ export interface DiTake {
   action?: { label: string; ask: string };
 }
 
+export interface GoalCard {
+  employeeId: number;
+  name: string;
+  role: string;
+  branch: string;
+  period: string;
+  total: number;
+  behind: boolean;
+  qualified: boolean;
+  goals: { goalId: string; name: string; unit: 'count' | 'currency' | 'score'; actual: number; target: number; pct: number; earned: number; pending: number; qualifier: boolean }[];
+}
+
+export interface PayoutSummary {
+  branch: string;
+  period: string;
+  total: number;
+  waiting: number;
+  flagged: number;
+  lines: { employeeId: number; name: string; amount: number; incentives: string; flags: string[]; own: boolean; status: string | null }[];
+}
+
+/** GET /v1/gi/summary. Null where the person's role doesn't reach (BE-GI-004). */
+export interface GoalsIndex {
+  take: DiTake;
+  mine: GoalCard | null;
+  team: GoalCard[] | null;
+  batches: PayoutSummary[] | null;
+}
+
 export type PipelineViewId = 'mine' | 'location' | 'team' | 'institution';
 
 /** Volume and dollars together, with percent and average days (spec 17.5). */

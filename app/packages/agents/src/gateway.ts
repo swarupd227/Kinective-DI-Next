@@ -4,9 +4,9 @@
 // payload is executed, once, with the approval ID as its idempotency key.
 import { z } from 'zod';
 import type { SemanticService } from '@dinext/semantic';
-import { ApprovalStore, CoreError, PIPELINE_VIEWS, type ApprovalRecord, type AtRiskMember, type ChangeMeta, type InboxBox, type InboxDetail, type InboxItem, type MemberProfile, type ReferralStage, type PartyHit, type PipelineApplication, type PipelineFound, type PipelineService, type PipelineStatus, type PipelineSummary, type PipelineView, type PipelineWho, type ReferralService, type RelationshipService, type RiskTier, type RouteResult, type Topic } from '@dinext/di-core';
+import { ApprovalStore, CoreError, PIPELINE_VIEWS, usd, type GoalsService, type GoalsWho, type PayoutBatch, type ScoreExplanation, type Scorecard, type ApprovalRecord, type AtRiskMember, type ChangeMeta, type InboxBox, type InboxDetail, type InboxItem, type MemberProfile, type ReferralStage, type PartyHit, type PipelineApplication, type PipelineFound, type PipelineService, type PipelineStatus, type PipelineSummary, type PipelineView, type PipelineWho, type ReferralService, type RelationshipService, type RiskTier, type RouteResult, type Topic } from '@dinext/di-core';
 
-export type AgentId = 'referral' | 'relationship' | 'goal' | 'inbox' | 'pipeline';
+export type AgentId = 'referral' | 'relationship' | 'goal' | 'inbox' | 'pipeline' | 'incentives';
 
 export interface ToolDef<I extends z.ZodType = z.ZodType> {
   name: string;
@@ -116,6 +116,18 @@ export const PIPELINE_TOOLS = [
   { name: 'lap_threshold_set', operation: 'lap.threshold.set', description: 'Change a stall threshold for a status, or for one product in that status. Lending administrators only. Returns approval_required.', input: z.object({ status: z.string().min(2).max(40).describe('Part of a status name, such as underwriting'), product: z.string().max(40).optional(), days: z.number().int().min(1).max(90) }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'lap', purviewScope: 'none', maxResultRowsToModel: 1, agents: ['pipeline'] },
 ] satisfies ToolDef[];
 
+const giEmployee = z.string().min(2).max(80).optional().describe('A person’s name. Omit for the user’s own.');
+const giBranch = z.string().min(2).max(40);
+
+/** Goals & Incentives agent tools (spec 24.17). Reading needs no approval; payouts are high risk. */
+export const GI_TOOLS = [
+  { name: 'gi_scorecard_get', operation: 'gi.scorecard.get', description: 'A person’s goals for the period: actual, target, percent of goal, what they have earned and what the next tier takes. Shows only goals they are eligible for.', input: z.object({ employee: giEmployee }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'gi', purviewScope: 'report_viewer', maxResultRowsToModel: 8, agents: ['incentives'] },
+  { name: 'gi_team_get', operation: 'gi.team.get', description: 'Scorecards for a branch team, those behind first. Managers only.', input: z.object({ branch: giBranch.optional() }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'gi', purviewScope: 'report_viewer', maxResultRowsToModel: 25, agents: ['incentives'] },
+  { name: 'gi_score_explain', operation: 'gi.score.explain', description: 'How an incentive was worked out: its rule, the records that counted, those still active, and where the target came from.', input: z.object({ goal: z.string().max(40).optional().describe('Part of a goal or incentive name, such as referrals'), employee: giEmployee }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'gi', purviewScope: 'report_viewer', maxResultRowsToModel: 25, agents: ['incentives'] },
+  { name: 'gi_payouts_list', operation: 'gi.incentive.list_pending', description: 'Payouts waiting for approval: each person in a branch, or each branch. Needs Approve Incentives.', input: z.object({ branch: giBranch.optional() }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'gi', purviewScope: 'report_viewer', maxResultRowsToModel: 25, agents: ['incentives'] },
+  { name: 'gi_payouts_prepare', operation: 'gi.incentive.approve', description: 'Prepare a branch’s waiting payouts for approval as one batch, leaving out anyone named. The user’s own payout is always left out. Returns approval_required.', input: z.object({ branch: giBranch, exclude: z.array(z.string().min(2).max(80)).max(10).optional().describe('Names to leave out of this batch') }).strict(), sideEffect: 'write', riskTier: 'high', requiredApp: 'gi', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: ['incentives'] },
+] satisfies ToolDef[];
+
 export const RELATIONSHIP_TOOLS = [
   {
     name: 'relationship_at_risk',
@@ -217,6 +229,8 @@ export interface GatewayContext {
   employeeId?: number;
   /** Loan Pipeline access from the module matrix; absent means totals only. */
   lap?: { details: boolean; leads?: boolean; admin?: boolean };
+  /** Goals & Incentives access from the module matrix. */
+  gi?: { leads?: boolean; approves?: boolean };
 }
 
 export interface ReferralPayload {
@@ -296,6 +310,23 @@ export interface ThresholdDraft {
   superseded: string[];
 }
 
+export interface GiPayoutPayload {
+  periodEnd: string;
+  period: string;
+  branch: string;
+  total: number;
+  lines: { employeeId: number; name: string; amount: number; incentives: string; adjustments: string; flags: string }[];
+  excluded: { name: string; why: string }[];
+}
+
+export interface GiPayoutDraft {
+  approval: ApprovalRecord;
+  payload: GiPayoutPayload;
+  /** What the card covers and leaves out, written by code. */
+  text: string;
+  superseded: string[];
+}
+
 export interface DeclinePayload {
   partyId: number;
   suggestionId: number;
@@ -310,7 +341,7 @@ export interface DeclineDraft {
 }
 
 export type GatewayResult =
-  | { ok: true; content: unknown; draft?: DraftResult; decline?: DeclineDraft; batch?: BatchDraft; inbox?: InboxItem[]; item?: InboxDetail; change?: ChangeDraft; summary?: PipelineSummary; found?: PipelineFound; application?: PipelineApplication & { history: { status: string; at: string }[]; asOf: string; stale: boolean }; statuses?: PipelineStatus[]; rate?: LapRate; tasks?: LapTaskDraft; threshold?: ThresholdDraft; atRisk?: { total: number; items: (AtRiskMember & { ref: string; followedUp: boolean })[] }; hits?: (PartyHit & { matchedOn?: string })[]; profile?: MemberProfile; topics?: Topic[]; explained?: ReturnType<RelationshipService['explain']> }
+  | { ok: true; content: unknown; draft?: DraftResult; decline?: DeclineDraft; batch?: BatchDraft; inbox?: InboxItem[]; item?: InboxDetail; change?: ChangeDraft; summary?: PipelineSummary; found?: PipelineFound; application?: PipelineApplication & { history: { status: string; at: string }[]; asOf: string; stale: boolean }; statuses?: PipelineStatus[]; rate?: LapRate; tasks?: LapTaskDraft; threshold?: ThresholdDraft; atRisk?: { total: number; items: (AtRiskMember & { ref: string; followedUp: boolean })[] }; hits?: (PartyHit & { matchedOn?: string })[]; profile?: MemberProfile; topics?: Topic[]; explained?: ReturnType<RelationshipService['explain']>; scorecard?: Scorecard; team?: Scorecard[]; explanation?: ScoreExplanation; batch2?: PayoutBatch; batches?: PayoutBatch[]; payouts?: GiPayoutDraft }
   | { ok: false; code: 'UNKNOWN_TOOL' | 'NOT_ALLOWED' | 'INVALID_INPUT' | 'RESERVED_KEY' | 'UNKNOWN_REF' | 'NO_ACCESS' | 'NOT_FOUND' | 'FORM_INCOMPLETE'; content: unknown };
 
 interface BatchDone {
@@ -318,7 +349,7 @@ interface BatchDone {
   failed: string[];
 }
 
-export type Executed = { operation: 'referral.create'; created: Awaited<ReturnType<ReferralService['create']>> } | { operation: 'referral.change'; item: InboxDetail; kind: 'stage' | 'note' | 'assign'; changed: boolean } | ({ operation: 'referral.create.batch' } & BatchDone) | ({ operation: 'lap.task.create.batch' } & BatchDone) | { operation: 'lap.threshold.set'; label: string; product?: string; days: number } | { operation: 'relationship.suggestion.decline'; declined: { product: string; until: string }; partyId: number };
+export type Executed = { operation: 'referral.create'; created: Awaited<ReturnType<ReferralService['create']>> } | { operation: 'referral.change'; item: InboxDetail; kind: 'stage' | 'note' | 'assign'; changed: boolean } | ({ operation: 'referral.create.batch' } & BatchDone) | ({ operation: 'lap.task.create.batch' } & BatchDone) | { operation: 'lap.threshold.set'; label: string; product?: string; days: number } | { operation: 'relationship.suggestion.decline'; declined: { product: string; until: string }; partyId: number } | { operation: 'gi.incentive.approve'; payload: GiPayoutPayload; replayed: boolean };
 
 const round = (n: number) => (Math.abs(n) >= 1000 ? Math.round(n / 100) * 100 : Math.round(n));
 
@@ -327,6 +358,8 @@ const round = (n: number) => (Math.abs(n) >= 1000 ? Math.round(n / 100) * 100 : 
 export const midSentence = (s: string) => (/^[A-Z][a-z]/.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s);
 /** A status as it reads after "12 days": "in underwriting", "at counter offer". */
 export const inStatus = (status: string) => (/^(In|Waiting)\b/.test(status) ? midSentence(status) : `at ${midSentence(status)}`);
+
+const giWho = (ctx: Pick<GatewayContext, 'employeeId' | 'gi'>): GoalsWho => ({ employeeId: ctx.employeeId, leads: ctx.gi?.leads, approves: ctx.gi?.approves });
 
 const lapWho = (ctx: Pick<GatewayContext, 'employeeId' | 'lap'>): PipelineWho => ({ employeeId: ctx.employeeId, leads: ctx.lap?.leads, details: Boolean(ctx.lap?.details) });
 
@@ -359,12 +392,13 @@ export class ToolGateway {
       approvals: ApprovalStore;
       relationship?: RelationshipService;
       pipeline?: PipelineService;
+      goals?: GoalsService;
       semantic?: SemanticService | null;
       tenantRaise?: Partial<Record<string, RiskTier>>;
       /** Called for every member record opened through a tool; the access is audited (FE-RM-003). */
       onProfileView?: (partyId: number, ctx: GatewayContext) => void;
     },
-    private readonly tools: ToolDef[] = [...REFERRAL_TOOLS, ...RELATIONSHIP_TOOLS, ...INBOX_TOOLS, ...PIPELINE_TOOLS],
+    private readonly tools: ToolDef[] = [...REFERRAL_TOOLS, ...RELATIONSHIP_TOOLS, ...INBOX_TOOLS, ...PIPELINE_TOOLS, ...GI_TOOLS],
   ) {}
 
   get relationship() {
@@ -374,7 +408,7 @@ export class ToolGateway {
   /** Tools the model may see for this user and agent (AI-ARC-021). */
   visible(ctx: GatewayContext, agent: AgentId = 'referral') {
     const apps = (t: ToolDef) => (Array.isArray(t.requiredApp) ? t.requiredApp : [t.requiredApp]);
-    return this.tools.filter((t) => (t.agents ?? ['referral']).includes(agent) && apps(t).some((a) => ctx.apps.includes(a)) && (t.operation.startsWith('lap.') ? this.deps.pipeline : t.operation.startsWith('referral.') || t.operation === 'relationship.party.search' || this.deps.relationship));
+    return this.tools.filter((t) => (t.agents ?? ['referral']).includes(agent) && apps(t).some((a) => ctx.apps.includes(a)) && (t.operation.startsWith('gi.') ? this.deps.goals : t.operation.startsWith('lap.') ? this.deps.pipeline : t.operation.startsWith('referral.') || t.operation === 'relationship.party.search' || this.deps.relationship));
   }
 
   private async party(ref: string, ctx: GatewayContext) {
@@ -413,6 +447,45 @@ export class ToolGateway {
           const hits = rm ? await rm.search(String(args.name), ctx, def.maxResultRowsToModel) : await this.deps.referrals.searchParties(String(args.name), ctx, def.maxResultRowsToModel);
           const out = hits.map((h) => ({ member_ref: this.refFor(h.partyId, ctx), name: h.name, branch: h.branch, member_since: h.memberSince, number_ends: h.last4, products: h.products }));
           return { ok: true, content: { matches: out, count: out.length }, hits };
+        }
+        case 'gi.scorecard.get': {
+          const scorecard = await this.deps.goals!.scorecard(args.employee as string | undefined, giWho(ctx), ctx);
+          return { ok: true, content: { employee: scorecard.name, period: scorecard.period, total_earned: scorecard.total, qualified: scorecard.qualified, goals: scorecard.goals.map((g) => ({ goal: g.name, actual: g.actual, target: g.target, percent: g.pct, earned: g.earned, active: g.pending, next_tier: g.next })) }, scorecard };
+        }
+        case 'gi.team.get': {
+          const team = await this.deps.goals!.team(args.branch as string | undefined, giWho(ctx), ctx);
+          return { ok: true, content: { period: team[0]?.period, people: team.map((c) => ({ name: c.name, role: c.role, behind: c.behind, earned: c.total, goals: c.goals.map((g) => ({ goal: g.name, percent: g.pct })) })) }, team };
+        }
+        case 'gi.score.explain': {
+          const explanation = await this.deps.goals!.explain(args.goal as string | undefined, args.employee as string | undefined, giWho(ctx), ctx);
+          return { ok: true, content: { incentive: explanation.score.rule?.name, rule: explanation.rule, actual: explanation.score.actual, target: explanation.score.target, earned: explanation.score.earned, target_from: explanation.score.targetFrom, records: explanation.records.length }, explanation };
+        }
+        case 'gi.incentive.list_pending': {
+          if (args.branch) {
+            const b = await this.deps.goals!.batch(String(args.branch), giWho(ctx), ctx);
+            return { ok: true, content: { period: b.period, branch: b.branch, waiting: b.waiting, total: b.total, people: b.lines.map((l) => ({ name: l.name, amount: l.amount, status: l.status, flags: l.flags })) }, batch2: b };
+          }
+          const batches = await this.deps.goals!.batches(giWho(ctx), ctx);
+          return { ok: true, content: { period: batches[0]?.period, branches: batches.map((b) => ({ branch: b.branch, waiting: b.waiting, total: b.total, flagged: b.flagged })) }, batches };
+        }
+        case 'gi.incentive.approve': {
+          const b = await this.deps.goals!.batch(String(args.branch), giWho(ctx), ctx);
+          const names = ((args.exclude as string[] | undefined) ?? []).map((n) => n.toLowerCase());
+          const named = (name: string) => names.some((n) => n.split(/\s+/).every((w) => name.toLowerCase().replace(/\./g, '').includes(w.replace(/\./g, ''))));
+          const missed = ((args.exclude as string[] | undefined) ?? []).filter((n) => !b.lines.some((l) => named(l.name) && n.toLowerCase().split(/\s+/).every((w) => l.name.toLowerCase().replace(/\./g, '').includes(w.replace(/\./g, '')))));
+          if (missed.length) return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: `There’s nobody called ${missed.join(' or ')} in ${b.branch}’s payouts, so I haven’t prepared anything.` } };
+          const open = b.lines.filter((l) => !l.status);
+          const excluded = [...open.filter((l) => l.own).map((l) => ({ name: l.name, why: 'your own payout' })), ...open.filter((l) => !l.own && named(l.name)).map((l) => ({ name: l.name, why: 'you asked to leave them out' }))];
+          const going = open.filter((l) => !l.own && !named(l.name) && l.amount > 0);
+          const nil = open.filter((l) => !l.own && !named(l.name) && l.amount <= 0);
+          if (!going.length) return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: `Nothing is waiting for you to approve in ${b.branch}.` } };
+          const total = Math.round(going.reduce((n, l) => n + l.amount, 0) * 100) / 100;
+          const payload: GiPayoutPayload = { periodEnd: b.periodEnd, period: b.period, branch: b.branch, total, lines: going.map((l) => ({ employeeId: l.employeeId, name: l.name, amount: l.amount, incentives: l.incentives.slice(0, 120), adjustments: l.adjustments.map((a) => `${usd(a.amount)} ${a.reasonCode}`).join(', '), flags: l.flags.join('; ').slice(0, 160) })), excluded: [...excluded, ...nil.map((l) => ({ name: l.name, why: l.flags[0] ?? 'nothing earned' }))] };
+          const tier = effectiveTier(def, this.deps.tenantRaise);
+          const approval = await this.deps.approvals.request({ operation: def.operation, payload, riskTier: tier === 'none' ? 'low' : tier, requestedBy: ctx.user.id, runId: ctx.runId, threadId: ctx.threadId });
+          const superseded = await this.deps.approvals.supersede(ctx.threadId, approval.approvalId);
+          const text = `I’ve prepared the ${b.period} payouts for **${b.branch}**: ${going.length} ${going.length === 1 ? 'person' : 'people'}, **${usd(total)}**.${payload.excluded.length ? ` Left out: ${payload.excluded.map((x) => `${x.name} (${x.why})`).join('; ')}.` : ''}`;
+          return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId, people: going.length, total, left_out: payload.excluded, note: 'Nothing is approved. The user types the total on screen.' }, payouts: { approval, payload, text, superseded } };
         }
         case 'lap.summary.get': {
           const summary = await this.deps.pipeline!.summary(await this.lapView(args.view, ctx), lapWho(ctx), ctx);
@@ -631,9 +704,15 @@ export class ToolGateway {
    * Runs an approved write. The stored payload is executed as approved; there is no model between
    * the approval and the action (spec 25.3, "no AI sits between the approval and the action").
    */
-  async execute(approval: ApprovalRecord, ctx: Pick<GatewayContext, 'user' | 'purviewBranches' | 'employeeId' | 'lap'>): Promise<Executed> {
+  async execute(approval: ApprovalRecord, ctx: Pick<GatewayContext, 'user' | 'purviewBranches' | 'employeeId' | 'lap' | 'gi'>): Promise<Executed> {
     if (approval.status !== 'approved') throw new Error(`Approval ${approval.approvalId} is ${approval.status}`);
     try {
+      if (approval.operation === 'gi.incentive.approve') {
+        const payload = approval.payload as GiPayoutPayload;
+        const { replayed } = await this.deps.goals!.approve(payload, { approvalId: approval.approvalId, userId: ctx.user.id }, giWho(ctx), ctx);
+        await this.deps.approvals.markExecuted(approval.approvalId, `gi:${payload.periodEnd}:${payload.branch}`.slice(0, 40));
+        return { operation: 'gi.incentive.approve', payload, replayed };
+      }
       if (approval.operation === 'referral.create') {
         const created = await this.deps.referrals.create(approval.payload as ReferralPayload, { approvalId: approval.approvalId, runId: approval.runId, userId: ctx.user.id, userName: ctx.user.name }, ctx);
         await this.deps.approvals.markExecuted(approval.approvalId, `com:${created.comId}`);
