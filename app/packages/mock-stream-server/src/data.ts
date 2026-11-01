@@ -31,6 +31,8 @@ interface Persona {
   lendingAdmin?: boolean;
   /** Approve Incentives in the Goals & Incentives access matrix. */
   approvesIncentives?: boolean;
+  /** Retail leadership or deposit pricing (spec 24.23). */
+  retention?: boolean;
   suggestions: string[];
 }
 
@@ -61,6 +63,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     lapDetails: true,
     lendingAdmin: true,
     approvesIncentives: true,
+    retention: true,
     suggestions: ['What should I do today?', 'Show the October payouts', 'Get me ready for Thursday’s ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'Prepare me for my meeting with Suzanne Jackson', 'Brief me'],
   },
   analyst: {
@@ -70,6 +73,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       apps: ['home', 'conversations', 'reports', 'tables', 'queries', 'datalogs', 'workflows', 'files', 'rm', 'referrals', 'lap'],
       permissions: { queryBrowser: true, dashboardAdmin: false },
     },
+    retention: true,
     suggestions: ['/query loans opened last week by branch', 'Build a table summary of fees by product', 'Show loan growth by branch for Q3 vs Q2', 'Find certificates at risk of leaving'],
   },
   branch: {
@@ -84,6 +88,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     leadsBranch: true,
     lapDetails: true,
     approvesIncentives: true,
+    retention: true,
     suggestions: ['What should I do today?', 'Who on my team is behind on goals?', 'Approve the October payouts for Westport', 'What’s on my team’s plate?', 'Show the pipeline by product for my branch', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups', 'Refer Suzanne Jackson for a HELOC, she prefers a call after 5 pm', 'Show my overdue onboarding touch points', 'Show Northgate loan detail'],
   },
   lender: {
@@ -119,6 +124,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       permissions: { queryBrowser: false, dashboardAdmin: false },
     },
     approvesIncentives: true,
+    retention: true,
     suggestions: ['Get me ready for Thursday’s ALCO meeting', 'Brief me', 'Show loan growth by branch for Q3 vs Q2', 'Show the October payouts'],
   },
   admin: {

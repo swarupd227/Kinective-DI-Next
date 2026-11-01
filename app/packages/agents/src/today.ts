@@ -23,11 +23,12 @@ export interface TodayWho {
   employeeId?: number;
   lap?: GatewayContext['lap'];
   gi?: GatewayContext['gi'];
+  retention?: boolean;
 }
 
 export interface TodayItem {
   id: string;
-  kind: 'referral' | 'application' | 'totals' | 'payouts';
+  kind: 'referral' | 'application' | 'totals' | 'payouts' | 'certificates';
   title: string;
   why: string;
   badge: string;
@@ -124,6 +125,12 @@ export async function buildToday(who: TodayWho, gateway: ToolGateway, now = Date
   const payouts = who.gi?.approves ? await gateway.call('gi_payouts_list', {}, ctx, 'incentives') : null;
   const owed = payouts?.ok && payouts.batches ? payoutItem(payouts.batches) : null;
   if (owed) items.push(owed);
+  const maturing = who.retention ? await gateway.call('deposit_certificates_maturing', { days: 30, at_risk_only: true }, ctx, 'retention') : null;
+  const found30 = maturing?.ok ? maturing.maturing?.found : undefined;
+  if (found30?.count) {
+    const ask = 'Which certificates mature in the next 30 days and are at risk?';
+    items.push({ id: 'certificates', kind: 'certificates', title: `${found30.count} ${found30.count === 1 ? 'certificate' : 'certificates'} at risk`, why: `${money(found30.dollars)} maturing in the next 30 days, and ${found30.count === 1 ? 'it looks' : 'they look'} likely to leave.`, badge: 'At risk', link: `/c/new?q=${encodeURIComponent(ask)}`, ask, weight: 90 });
+  }
   items.sort((a, b) => b.weight - a.weight);
   // Each kind of work keeps a place, so big loans can't hide an overdue referral.
   const top = items.slice(0, MAX_ITEMS);
@@ -165,7 +172,7 @@ export function todayList(p: TodayPlan, runId: string, opts: { startsWork?: bool
     ...(opts.label ? { output: { label: opts.label } } : {}),
     data: {
       layout: 'list',
-      items: p.items.map((i) => ({ id: i.id, title: i.title, subtitle: i.why, link: opts.startsWork ? `/c/new?q=${encodeURIComponent(i.ask)}` : i.link, badge: { label: i.badge, tone: i.kind === 'payouts' ? ('warning' as const) : ('danger' as const) } })),
+      items: p.items.map((i) => ({ id: i.id, title: i.title, subtitle: i.why, link: opts.startsWork ? `/c/new?q=${encodeURIComponent(i.ask)}` : i.link, badge: { label: i.badge, tone: i.kind === 'payouts' || i.kind === 'certificates' ? ('warning' as const) : ('danger' as const) } })),
     },
   };
 }

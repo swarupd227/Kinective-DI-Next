@@ -234,6 +234,9 @@ interface Shown {
   giChange?: GiChangeDraft;
 }
 
+/** A question anywhere in the reply: it may be followed by a sentence, as in "Which code? Also confirm it's an increase." */
+export const asksSomething = (message: string) => message.includes('?');
+
 /** Shows an outcome. Shared by the live agent and the offline planner. */
 async function show(kind: z.infer<typeof IncentivesFinish>['outcome'], message: string, s: Shown, input: IncentivesInput, sink: RunSink, base: Pick<IncentivesOutcome, 'toolCalls' | 'usage'>): Promise<IncentivesOutcome> {
   const answer = { ...base, outcome: 'answer' as const, superseded: [] };
@@ -278,7 +281,7 @@ async function show(kind: z.infer<typeof IncentivesFinish>['outcome'], message: 
     return { ...base, outcome: 'approval', approval: { record: s.giChange.approval, card }, superseded: s.giChange.superseded };
   }
   await sink.text(message || 'I couldn’t find that.', GI_AGENT);
-  return { ...base, outcome: kind === 'not_found' ? 'not_found' : 'answer', superseded: [], asked: /\?\s*$/.test(message) };
+  return { ...base, outcome: kind === 'not_found' ? 'not_found' : 'answer', superseded: [], asked: asksSomething(message) };
 }
 
 export async function runIncentives(input: IncentivesInput, deps: { model: ModelClient; gateway: ToolGateway }, sink: RunSink): Promise<IncentivesOutcome> {

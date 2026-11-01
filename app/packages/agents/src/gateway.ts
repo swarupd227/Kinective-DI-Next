@@ -4,9 +4,9 @@
 // payload is executed, once, with the approval ID as its idempotency key.
 import { z } from 'zod';
 import type { SemanticService } from '@dinext/semantic';
-import { ApprovalStore, CoreError, PIPELINE_VIEWS, usd, type GoalsService, type GoalsWho, type PayoutBatch, type ScoreExplanation, type Scorecard, type ApprovalRecord, type AtRiskMember, type ChangeMeta, type InboxBox, type InboxDetail, type InboxItem, type MemberProfile, type ReferralStage, type PartyHit, type PipelineApplication, type PipelineFound, type PipelineService, type PipelineStatus, type PipelineSummary, type PipelineView, type PipelineWho, type ReferralService, type RelationshipService, type RiskTier, type RouteResult, type Topic } from '@dinext/di-core';
+import { ApprovalStore, CoreError, PIPELINE_VIEWS, usd, OFFER_RULES, type MaturingCertificates, type OfferCost, type RetentionService, type GoalsService, type GoalsWho, type PayoutBatch, type ScoreExplanation, type Scorecard, type ApprovalRecord, type AtRiskMember, type ChangeMeta, type InboxBox, type InboxDetail, type InboxItem, type MemberProfile, type ReferralStage, type PartyHit, type PipelineApplication, type PipelineFound, type PipelineService, type PipelineStatus, type PipelineSummary, type PipelineView, type PipelineWho, type ReferralService, type RelationshipService, type RiskTier, type RouteResult, type Topic } from '@dinext/di-core';
 
-export type AgentId = 'referral' | 'relationship' | 'goal' | 'inbox' | 'pipeline' | 'incentives';
+export type AgentId = 'referral' | 'relationship' | 'goal' | 'inbox' | 'pipeline' | 'incentives' | 'retention';
 
 export interface ToolDef<I extends z.ZodType = z.ZodType> {
   name: string;
@@ -116,6 +116,19 @@ export const PIPELINE_TOOLS = [
   { name: 'lap_threshold_set', operation: 'lap.threshold.set', description: 'Change a stall threshold for a status, or for one product in that status. Lending administrators only. Returns approval_required.', input: z.object({ status: z.string().min(2).max(40).describe('Part of a status name, such as underwriting'), product: z.string().max(40).optional(), days: z.number().int().min(1).max(90) }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'lap', purviewScope: 'none', maxResultRowsToModel: 1, agents: ['pipeline'] },
 ] satisfies ToolDef[];
 
+const retentionWindow = {
+  days: z.number().int().min(1).max(365).default(90).describe('Maturing within this many days'),
+  min_amount: z.number().min(0).optional().describe('Certificates of at least this amount'),
+  at_risk_only: z.boolean().default(false).describe('Only those likely to leave: a medium or high attrition score'),
+};
+
+/** Deposit/Certificate Retention agent tools (spec 24.23). Reading needs no approval. */
+export const RETENTION_TOOLS = [
+  { name: 'deposit_certificates_maturing', operation: 'deposit.certificates.maturing', description: 'Certificates maturing in a window, at risk first: amount, rate, maturity, attrition score and the signals behind it. Returns member_refs for tasks.', input: z.object(retentionWindow).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'rm', purviewScope: 'report_viewer', maxResultRowsToModel: 25, agents: ['retention'] },
+  { name: 'deposit_offer_rules', operation: 'deposit.offer_rules.get', description: 'The most a renewal may offer, by balance. No rate outside these can be offered.', input: z.object({}).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'rm', purviewScope: 'none', maxResultRowsToModel: 8, agents: ['retention'] },
+  { name: 'deposit_offer_cost', operation: 'deposit.offer_cost.calculate', description: 'What offering a rate on a group of maturing certificates would cost over a year, with each held to its offer rule. A rate above the rules is refused.', input: z.object({ rate: z.number().min(0).max(25).describe('The rate in percent, such as 4.5'), ...retentionWindow }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'rm', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: ['retention'] },
+] satisfies ToolDef[];
+
 const giEmployee = z.string().min(2).max(80).optional().describe('A person’s name. Omit for the user’s own.');
 const giBranch = z.string().min(2).max(40);
 
@@ -155,7 +168,7 @@ export const RELATIONSHIP_TOOLS = [
     requiredApp: 'referrals',
     purviewScope: 'com',
     maxResultRowsToModel: 1,
-    agents: ['goal'],
+    agents: ['goal', 'retention'],
   },
   {
     name: 'relationship_profile_get',
@@ -235,6 +248,8 @@ export interface GatewayContext {
   lap?: { details: boolean; leads?: boolean; admin?: boolean };
   /** Goals & Incentives access from the module matrix. */
   gi?: { leads?: boolean; approves?: boolean };
+  /** Retail leadership or deposit pricing class (spec 24.23). */
+  retention?: boolean;
 }
 
 export interface ReferralPayload {
@@ -364,7 +379,7 @@ export interface DeclineDraft {
 }
 
 export type GatewayResult =
-  | { ok: true; content: unknown; draft?: DraftResult; decline?: DeclineDraft; batch?: BatchDraft; inbox?: InboxItem[]; item?: InboxDetail; change?: ChangeDraft; summary?: PipelineSummary; found?: PipelineFound; application?: PipelineApplication & { history: { status: string; at: string }[]; asOf: string; stale: boolean }; statuses?: PipelineStatus[]; rate?: LapRate; tasks?: LapTaskDraft; threshold?: ThresholdDraft; atRisk?: { total: number; items: (AtRiskMember & { ref: string; followedUp: boolean })[] }; hits?: (PartyHit & { matchedOn?: string })[]; profile?: MemberProfile; topics?: Topic[]; explained?: ReturnType<RelationshipService['explain']>; scorecard?: Scorecard; team?: Scorecard[]; explanation?: ScoreExplanation; batch2?: PayoutBatch; batches?: PayoutBatch[]; payouts?: GiPayoutDraft; giChange?: GiChangeDraft }
+  | { ok: true; content: unknown; draft?: DraftResult; decline?: DeclineDraft; batch?: BatchDraft; inbox?: InboxItem[]; item?: InboxDetail; change?: ChangeDraft; summary?: PipelineSummary; found?: PipelineFound; application?: PipelineApplication & { history: { status: string; at: string }[]; asOf: string; stale: boolean }; statuses?: PipelineStatus[]; rate?: LapRate; tasks?: LapTaskDraft; threshold?: ThresholdDraft; atRisk?: { total: number; items: (AtRiskMember & { ref: string; followedUp: boolean })[] }; hits?: (PartyHit & { matchedOn?: string })[]; profile?: MemberProfile; topics?: Topic[]; explained?: ReturnType<RelationshipService['explain']>; scorecard?: Scorecard; team?: Scorecard[]; explanation?: ScoreExplanation; batch2?: PayoutBatch; batches?: PayoutBatch[]; payouts?: GiPayoutDraft; giChange?: GiChangeDraft; maturing?: { found: MaturingCertificates; atRiskOnly: boolean }; memberRefs?: string[]; offerCost?: OfferCost; offerRules?: string }
   | { ok: false; code: 'UNKNOWN_TOOL' | 'NOT_ALLOWED' | 'INVALID_INPUT' | 'RESERVED_KEY' | 'UNKNOWN_REF' | 'NO_ACCESS' | 'NOT_FOUND' | 'FORM_INCOMPLETE'; content: unknown };
 
 interface BatchDone {
@@ -416,12 +431,13 @@ export class ToolGateway {
       relationship?: RelationshipService;
       pipeline?: PipelineService;
       goals?: GoalsService;
+      retention?: RetentionService;
       semantic?: SemanticService | null;
       tenantRaise?: Partial<Record<string, RiskTier>>;
       /** Called for every member record opened through a tool; the access is audited (FE-RM-003). */
       onProfileView?: (partyId: number, ctx: GatewayContext) => void;
     },
-    private readonly tools: ToolDef[] = [...REFERRAL_TOOLS, ...RELATIONSHIP_TOOLS, ...INBOX_TOOLS, ...PIPELINE_TOOLS, ...GI_TOOLS],
+    private readonly tools: ToolDef[] = [...REFERRAL_TOOLS, ...RELATIONSHIP_TOOLS, ...INBOX_TOOLS, ...PIPELINE_TOOLS, ...GI_TOOLS, ...RETENTION_TOOLS],
   ) {}
 
   get relationship() {
@@ -431,7 +447,7 @@ export class ToolGateway {
   /** Tools the model may see for this user and agent (AI-ARC-021). */
   visible(ctx: GatewayContext, agent: AgentId = 'referral') {
     const apps = (t: ToolDef) => (Array.isArray(t.requiredApp) ? t.requiredApp : [t.requiredApp]);
-    return this.tools.filter((t) => (t.agents ?? ['referral']).includes(agent) && apps(t).some((a) => ctx.apps.includes(a)) && (t.operation.startsWith('gi.') ? this.deps.goals : t.operation.startsWith('lap.') ? this.deps.pipeline : t.operation.startsWith('referral.') || t.operation === 'relationship.party.search' || this.deps.relationship));
+    return this.tools.filter((t) => (t.agents ?? ['referral']).includes(agent) && apps(t).some((a) => ctx.apps.includes(a)) && (t.operation.startsWith('deposit.') ? this.deps.retention : t.operation.startsWith('gi.') ? this.deps.goals : t.operation.startsWith('lap.') ? this.deps.pipeline : t.operation.startsWith('referral.') || t.operation === 'relationship.party.search' || this.deps.relationship));
   }
 
   private async party(ref: string, ctx: GatewayContext) {
@@ -478,6 +494,20 @@ export class ToolGateway {
           const hits = rm ? await rm.search(String(args.name), ctx, def.maxResultRowsToModel) : await this.deps.referrals.searchParties(String(args.name), ctx, def.maxResultRowsToModel);
           const out = hits.map((h) => ({ member_ref: this.refFor(h.partyId, ctx), name: h.name, branch: h.branch, member_since: h.memberSince, number_ends: h.last4, products: h.products }));
           return { ok: true, content: { matches: out, count: out.length }, hits };
+        }
+        case 'deposit.certificates.maturing':
+        case 'deposit.offer_rules.get':
+        case 'deposit.offer_cost.calculate': {
+          if (!ctx.retention) return { ok: false, code: 'NOT_ALLOWED', content: { error: 'NOT_ALLOWED', message: 'Certificate retention is for retail leadership and deposit pricing. Ask your DI administrator if you need it.' } };
+          const filter = { days: args.days as number | undefined, minAmount: args.min_amount as number | undefined, atRiskOnly: Boolean(args.at_risk_only) };
+          if (def.operation === 'deposit.offer_rules.get') return { ok: true, content: { rules: OFFER_RULES }, offerRules: (await this.deps.retention!.maturing({ days: 1 }, ctx)).asOf };
+          if (def.operation === 'deposit.offer_cost.calculate') {
+            const offerCost = await this.deps.retention!.offerCost(Number(args.rate), filter, ctx);
+            return { ok: true, content: offerCost, offerCost };
+          }
+          const found = await this.deps.retention!.maturing(filter, ctx);
+          const top = found.items.slice(0, 25).map((c) => ({ member_ref: this.refFor(c.partyId, ctx), name: c.name, branch: c.branch, amount: c.amount, rate: c.rate, matures: c.matures, score: c.score, band: c.band, signals: c.signals }));
+          return { ok: true, content: { as_of: found.asOf, days: found.days, count: found.count, dollars: found.dollars, at_risk: found.atRisk, high: found.high, signals: found.signals, certificates: top }, maturing: { found, atRiskOnly: filter.atRiskOnly }, memberRefs: found.items.filter((c) => c.atRisk).slice(0, 25).map((c) => this.refFor(c.partyId, ctx)) };
         }
         case 'gi.scorecard.get': {
           const scorecard = await this.deps.goals!.scorecard(args.employee as string | undefined, giWho(ctx), ctx);
@@ -670,8 +700,10 @@ export class ToolGateway {
             const preferred = ['Phone', 'Email', 'Text'].includes(p.contact.preferred) ? p.contact.preferred : 'Phone';
             const check = await this.deps.referrals.check({ typeId: FOLLOW_UP_TYPE, fields: { preferred_contact: preferred } });
             const route = await this.deps.referrals.route(FOLLOW_UP_TYPE, id);
-            const reason = p.attrition.factors.find((f) => f.weight > 0)?.label ?? 'High attrition score';
-            items.push({ typeId: FOLLOW_UP_TYPE, partyId: id, fields: check.fields, notes: (a.notes ?? `Attrition score ${p.attrition.score} of 10: ${reason}.`).slice(0, 300), priority: 'High', toQueueId: route.queueId, name: `${p.name} (…${p.last4})`, branch: p.branch, to: route.queueName, reason });
+            // From the Retention agent, the reason to call is the certificate itself.
+            const cert = agent === 'retention' ? (await this.deps.retention?.maturing({ days: 365 }, ctx))?.items.find((c) => c.partyId === id) : undefined;
+            const reason = cert ? `${usd(cert.amount)} certificate at ${cert.rate}% matures ${new Date(`${cert.matures}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}` : (p.attrition.factors.find((f) => f.weight > 0)?.label ?? 'High attrition score');
+            items.push({ typeId: FOLLOW_UP_TYPE, partyId: id, fields: check.fields, notes: (a.notes ?? (cert ? `${reason}. Attrition score ${p.attrition.score} of 10. Call about the renewal; offers must stay within the offer rules.` : `Attrition score ${p.attrition.score} of 10: ${reason}.`)).slice(0, 300), priority: 'High', toQueueId: route.queueId, name: `${p.name} (…${p.last4})`, branch: p.branch, to: route.queueName, reason });
           }
           if (!items.length) return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: 'Everyone on that list already has an open follow-up.', skipped } };
           const payload: BatchPayload = { items };

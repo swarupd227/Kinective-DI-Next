@@ -4,7 +4,7 @@
 import { randomBytes } from 'node:crypto';
 import type { ApprovalCardBlock, ApprovalDecisionRequest, Block, KpiGroupBlock, ListBlock, Member360Block, SearchResult, StreamEvent, StreamingEnvelope, TableData } from '@dinext/block-schemas';
 import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, goalsTake, pipelineTake, referralTake, reportsTake, todayList, describeSchedule, hasClaudeCredentials, member360, memberTake, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
-import { ApprovalStore, CoreError, GoalsService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
+import { ApprovalStore, CoreError, GoalsService, RetentionService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
 import type { AppNotification, DiTake, GoalsIndex, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
 import { renderExport } from './exports.ts';
 import { SemanticService } from '@dinext/semantic';
@@ -148,7 +148,7 @@ const giAccess = (p: PersonaId) => ({ leads: PERSONAS[p].leadsBranch, approves: 
 
 const personaContext = (p: PersonaId) => {
   const s = PERSONAS[p].session;
-  return { purviewBranches: PERSONAS[p].purview, canViewSql: s.permissions.queryBrowser, employeeId: PERSONAS[p].employeeId, lap: lapAccess(p), gi: giAccess(p) };
+  return { purviewBranches: PERSONAS[p].purview, canViewSql: s.permissions.queryBrowser, employeeId: PERSONAS[p].employeeId, lap: lapAccess(p), gi: giAccess(p), retention: PERSONAS[p].retention };
 };
 
 /** Maps a run's sink calls to stream events (spec 12.4). Text is verified before it streams. */
@@ -237,7 +237,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       () => false,
     );
     const goals = hasGoals ? new GoalsService(pool) : null;
-    const workflow = referrals ? { referrals, relationship, gateway: new ToolGateway({ referrals, relationship: relationship ?? undefined, pipeline: pipeline ?? undefined, goals: goals ?? undefined, semantic, approvals: new ApprovalStore(pool), onProfileView }) } : null;
+    const workflow = referrals ? { referrals, relationship, gateway: new ToolGateway({ referrals, relationship: relationship ?? undefined, pipeline: pipeline ?? undefined, goals: goals ?? undefined, retention: new RetentionService(pool), semantic, approvals: new ApprovalStore(pool), onProfileView }) } : null;
     // Report templates exist once the tenant was seeded with Slice 6 or later.
     const hasReports = await pool.query('SELECT 1 FROM esp_report_templates LIMIT 1').then(
       () => true,

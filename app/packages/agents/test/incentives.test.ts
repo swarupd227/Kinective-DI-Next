@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateBlock, type Block } from '@dinext/block-schemas';
 import { ApprovalStore, CoreError, GoalsService, payFor, PipelineService, ReferralService, ruleText, type IncentiveRule } from '@dinext/di-core';
 import { createPool, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
-import { AuditLog, Concierge, GI_REQUEST, ToolGateway, parseIncentivesRequest, runIncentivesOffline, type IncentivesInput, type RunSink, type TenantRuntime } from '../src/index.ts';
+import { AuditLog, Concierge, GI_REQUEST, asksSomething, ToolGateway, parseIncentivesRequest, runIncentivesOffline, type IncentivesInput, type RunSink, type TenantRuntime } from '../src/index.ts';
 
 const SCHEMA = 'dinext_t_test_cu';
 const up = await warehouseAvailable(SCHEMA);
@@ -31,6 +31,13 @@ describe('payout rules', () => {
     expect(payFor(perUnit, 4, 6)).toMatchObject({ earned: 40, capped: false });
     expect(payFor(perUnit, 18, 6)).toMatchObject({ earned: 150, capped: true, next: null });
     expect(ruleText(perUnit, 'sold referrals')).toBe('$10 per sold referral, capped at $150');
+  });
+});
+
+describe('noticing a question', () => {
+  it('finds it even with a sentence after it', () => {
+    expect(asksSomething('What reason code should I use? Please also confirm it’s an increase.')).toBe(true);
+    expect(asksSomething('Approved the adjustment.')).toBe(false);
   });
 });
 

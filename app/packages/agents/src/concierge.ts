@@ -23,6 +23,7 @@ import { describeSchedule, newReportThread, REPORT_AGENT, type ReportGateway, ty
 import { runReportAgent, runReportOffline, type ReportOutcome } from './reportAgent.ts';
 import type { RunSink, StepUpdate } from './sink.ts';
 import { runToday, TODAY_REQUEST, type TodayOutcome } from './today.ts';
+import { RETENTION_AGENT, RETENTION_REQUEST, runRetention, runRetentionOffline, type RetentionInput, type RetentionOutcome } from './retention.ts';
 import { GI_AGENT, GI_REQUEST, incentivesSources, runIncentives, runIncentivesOffline, type IncentivesInput, type IncentivesOutcome } from './incentives.ts';
 
 /** Agents the Concierge can route to. Scripted ones are placeholders until their slices land. */
@@ -36,7 +37,7 @@ export const ROUTES = [
   { agent: 'relationship', name: RELATIONSHIP_AGENT, live: true, intents: ['member_lookup'], app: 'rm', examples: ['Pull up Suzanne Jackson at Westport', 'What should I talk to her about today?', 'Why is her attrition risk medium?', 'She declined the credit card offer'] },
   { agent: 'referral', name: REFERRAL_AGENT, live: true, intents: ['workflow_action'], app: 'referrals', examples: ['Refer Suzanne Jackson for a HELOC, she prefers email', 'Send Maria Gomez to the mortgage team'] },
   { agent: 'goals_incentives', name: GI_AGENT, live: true, intents: ['module_task'], app: 'gi', examples: ['How am I doing on my goals this month?', 'Why is my referral incentive only $40?', 'Who on my team is behind on goals?', 'Approve October incentive payouts for Westport'] },
-  { agent: 'deposit_retention', name: 'Deposit/Certificate Retention', live: false, intents: ['module_task'], app: null, examples: ['Find certificates at risk of leaving'] },
+  { agent: 'deposit_retention', name: RETENTION_AGENT, live: true, intents: ['module_task'], app: null, examples: ['Find certificates at risk of leaving', 'Which certificates over $50K mature in the next 90 days and look likely to leave?', 'What would it cost to match a 4.5% renewal for the at-risk group?'] },
 ] as const;
 
 export type RouteAgent = (typeof ROUTES)[number]['agent'] | 'help' | 'none';
@@ -79,6 +80,7 @@ export interface ConciergeTurn {
   employeeId?: number;
   lap?: PipelineInput['lap'];
   gi?: IncentivesInput['gi'];
+  retention?: boolean;
 }
 
 /**
@@ -136,6 +138,7 @@ function keywordClassify(text: string, memberInContext = false): Classification 
   const t = text.toLowerCase();
   const base = { confidence: 0.7, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' as const };
   if (GI_REQUEST.test(text)) return { ...base, intent: 'module_task', agent: 'goals_incentives' };
+  if (RETENTION_REQUEST.test(text)) return { ...base, intent: 'module_task', agent: 'deposit_retention' };
   if (GOAL_REQUEST.test(text)) return { ...base, intent: 'goal_request', agent: 'goal' };
   if (INBOX_REQUEST.test(text)) return { ...base, intent: 'inbox', agent: 'referral_inbox' };
   if (PIPELINE_REQUEST.test(text)) return { ...base, intent: 'pipeline', agent: 'loan_pipeline' };
@@ -174,7 +177,7 @@ const auditOutcome = (r: ReferralOutcome): AuditRecord['outcome'] =>
 
 const reportAudit = (r: ReportOutcome): AuditRecord['outcome'] => (r.outcome === 'approval' ? 'approval_requested' : r.outcome === 'clarify' ? 'clarify' : r.outcome === 'report' || r.outcome === 'list' ? 'answer' : r.outcome);
 
-const inboxAudit = (r: InboxOutcome | PipelineOutcome | IncentivesOutcome): AuditRecord['outcome'] => (r.outcome === 'approval' ? 'approval_requested' : r.outcome);
+const inboxAudit = (r: InboxOutcome | PipelineOutcome | IncentivesOutcome | RetentionOutcome): AuditRecord['outcome'] => (r.outcome === 'approval' ? 'approval_requested' : r.outcome);
 
 const goalAudit = (r: GoalOutcome): AuditRecord['outcome'] => (r.outcome === 'approval' ? 'approval_requested' : r.outcome);
 
@@ -326,7 +329,7 @@ export class Concierge {
 
       // A plain goal, inbox or pipeline request needs no model to recognise, and must not land on a one-step specialist.
       const memberChip = turn.context.some((c) => c.type === 'member');
-      classification = this.deps.model && !GI_REQUEST.test(screened.text) && !GOAL_REQUEST.test(screened.text) && !INBOX_REQUEST.test(screened.text) && !PIPELINE_REQUEST.test(screened.text) ? await this.classify(turn, screened.text, usage) : keywordClassify(screened.text, memberChip);
+      classification = this.deps.model && !GI_REQUEST.test(screened.text) && !RETENTION_REQUEST.test(screened.text) && !GOAL_REQUEST.test(screened.text) && !INBOX_REQUEST.test(screened.text) && !PIPELINE_REQUEST.test(screened.text) ? await this.classify(turn, screened.text, usage) : keywordClassify(screened.text, memberChip);
       if (classification.needs_clarification || classification.confidence < CONFIDENCE_THRESHOLD) {
         sink.routing('DI Concierge', 'Clarifying');
         await sink.block(noticeBlock('uncertain', 'Which of these did you mean?', 'DI Concierge', turn.runId, { options: classification.options.slice(0, 3).map((o, i) => ({ id: `o${i + 1}`, label: o })) }));
@@ -358,6 +361,20 @@ export class Concierge {
           }
           if (!turn.tenant.workflow) return { kind: 'scripted', agent: 'none' };
           return await this.pipeline(turn, screened.text, sink, usage, (r) => {
+            toolCalls = r.toolCalls;
+            outcome = inboxAudit(r);
+            error = r.error;
+          });
+        }
+        case 'deposit_retention': {
+          if (!turn.retention) {
+            sink.routing('DI Concierge', 'Retention not available');
+            await sink.block(noticeBlock('no_access', 'Certificate retention isn’t part of your DI access.', 'DI Concierge', turn.runId, { permission: 'Retail leadership or deposit pricing', detail: 'Ask your DI administrator if you need it.' }));
+            outcome = 'no_access';
+            return { kind: 'handled' };
+          }
+          if (!turn.tenant.workflow) return { kind: 'scripted', agent: 'deposit_retention' };
+          return await this.retention(turn, screened.text, sink, usage, (r) => {
             toolCalls = r.toolCalls;
             outcome = inboxAudit(r);
             error = r.error;
@@ -529,7 +546,7 @@ export class Concierge {
     const state = newGoalThread(text, newReportThread());
     state.status = 'closed';
     this.goalThreads.set(turn.threadId, state);
-    const r = await runToday({ runId: turn.runId, threadId: turn.threadId, user: turn.user, apps: turn.apps, purviewBranches: turn.purviewBranches, employeeId: turn.employeeId, lap: turn.lap, gi: turn.gi }, { gateway: turn.tenant.workflow!.gateway, beatMs: this.deps.beatMs }, state, sink);
+    const r = await runToday({ runId: turn.runId, threadId: turn.threadId, user: turn.user, apps: turn.apps, purviewBranches: turn.purviewBranches, employeeId: turn.employeeId, lap: turn.lap, gi: turn.gi, retention: turn.retention }, { gateway: turn.tenant.workflow!.gateway, beatMs: this.deps.beatMs }, state, sink);
     report(r);
     if (!r.approval) return { kind: 'handled' };
     const a = r.approval.record;
@@ -545,6 +562,23 @@ export class Concierge {
     usage.push(...r.usage);
     report(r);
     if (r.outcome === 'failed') await sink.block(noticeBlock('error', 'I couldn’t finish that.', PIPELINE_AGENT, turn.runId, { detail: 'Nothing was changed. Try again, or open the Loan Pipeline.', retryable: true }));
+    for (const id of r.superseded) void this.deps.audit.event({ eventType: 'ai.approval.superseded', tenant: turn.tenant.key, userId: turn.user.id, threadId: turn.threadId, runId: turn.runId, approvalId: id });
+    if (r.approval) {
+      const a = r.approval.record;
+      void this.deps.audit.event({ eventType: 'ai.approval.requested', tenant: turn.tenant.key, userId: turn.user.id, threadId: turn.threadId, runId: turn.runId, approvalId: a.approvalId, operation: a.operation, riskTier: a.riskTier, payloadHash: a.payloadHash });
+      return { kind: 'handled', approval: { approvalId: a.approvalId, card: r.approval.card }, superseded: r.superseded };
+    }
+    return { kind: 'handled' };
+  }
+
+  /** Certificates coming up for renewal, live or offline. Branch tasks wait on a card. */
+  private async retention(turn: ConciergeTurn, text: string, sink: RunSink, usage: Usage[], report: (r: RetentionOutcome) => void): Promise<ConciergeDecision> {
+    const gateway = turn.tenant.workflow!.gateway;
+    const input: RetentionInput = { runId: turn.runId, threadId: turn.threadId, text, user: turn.user, tenant: { name: turn.tenant.name, institutionType: turn.tenant.institutionType }, apps: turn.apps, purviewBranches: turn.purviewBranches, retention: turn.retention };
+    const r = this.deps.model ? await runRetention(input, { model: this.deps.model, gateway }, sink) : await runRetentionOffline(input, { gateway }, sink);
+    usage.push(...r.usage);
+    report(r);
+    if (r.outcome === 'failed') await sink.block(noticeBlock('error', 'I couldn’t finish that.', RETENTION_AGENT, turn.runId, { detail: 'Nothing was changed. Try again.', retryable: true }));
     for (const id of r.superseded) void this.deps.audit.event({ eventType: 'ai.approval.superseded', tenant: turn.tenant.key, userId: turn.user.id, threadId: turn.threadId, runId: turn.runId, approvalId: id });
     if (r.approval) {
       const a = r.approval.record;

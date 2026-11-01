@@ -255,13 +255,24 @@ Assumptions: all goals, credits, targets and reason codes are demo data, and Oct
 
 This release changes the data, so run `npm run db:seed`, which resets every tenant.
 
+### Certificate retention (Slice 16)
+
+Agent-led, with no page of its own. It needs no new data: certificates and attrition scores are already in the warehouse.
+
+- **Asking:** "Which certificates over $50K mature in the next 90 days and look likely to leave?" gives the count, dollars, the main signals and a table. "At risk" means a medium or high attrition score.
+- **What it would cost:** "What would it cost to offer 4.5% on the at-risk group?" is worked out in the DI Core with its inputs shown, one year of interest above current rates, with each renewal held to its offer rule. A rate above the rules is refused, so DI can't invent one.
+- **Acting on it:** "Create call tasks for the at-risk certificates" prepares tasks for the top five on one card, each noting the certificate. DI never contacts a member.
+- **Bringing it to you:** at-risk certificates maturing in 30 days appear in the day plan for retail leaders and deposit pricing.
+
+Assumptions: the offer rules are a demo list in code. Campaign audiences and rate exceptions aren't built.
+
 ### One person per browser (Slice 15)
 
 The demo has no sign-in, so the person picked in the avatar menu used to apply to everyone on the site. Each browser now keeps its own in a cookie, and a task and its approvals stay with the person who started them. This is still a demo switch, not security: Entra sign-in remains the real answer.
 
 ## Not done yet
 
-- **Agents:** a live golden-question evaluation on Claude (needs your approval), conversation memory beyond the server process, and a real Retention agent.
+- **Agents:** a live golden-question evaluation on Claude (needs your approval), and conversation memory beyond the server process.
 - **Reports:** PDF and Word exports, report snapshots ("By Report Date", spec 18.8), Table Summary and Detail report builders with their form block (spec 8.6, 8.7), the template settings form with every builder tab (FE-BLD-001), test mode with a PDF preview, drag-and-drop on the canvas, changing a template other people use (high risk with the users and schedules affected, FE-BLD-005), pinning reports to Home, and real delivery to recipients.
 - **Relationship Manager:** issue management ("Log an issue", spec 8.24), undoing a decline within 30 days (BE-RM-003), the classic Relationship Dashboard as a full app page with its left navigation, a call-centre screen pop (AS-090), alert rules and the opportunity threshold as tenant settings, and speaking member data aloud (off by default for branch-floor classes).
 - **Loan Pipeline:** the status map and duplicate rule editor, movement counting, crediting the original owner, build-time `lap.application.aged` events, and Indirect Lending. Thresholds apply on the next read rather than the next build.
