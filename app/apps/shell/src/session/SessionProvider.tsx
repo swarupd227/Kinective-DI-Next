@@ -77,7 +77,11 @@ function SessionBootstrap({ children }: { children: ReactNode }) {
       store: stream,
       clientVersion: '0.2.0',
       onState: setConnState,
-      onNotification: (n) => setNotifications((xs) => [n, ...xs.filter((x) => x.id !== n.id)]),
+      onNotification: (n) => {
+        setNotifications((xs) => [n, ...xs.filter((x) => x.id !== n.id)]);
+        // A new card joins Home at once. A decided one stays there, showing how it ended.
+        if (n.group === 'approvals' && !n.read) void queryClient.invalidateQueries({ queryKey: ['home'] });
+      },
       url: async () => {
         const res = await fetch('/v1/stream/ticket', { method: 'POST' });
         if (!res.ok) throw new Error('ticket');

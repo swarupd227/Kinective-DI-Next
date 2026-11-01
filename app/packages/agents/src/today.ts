@@ -34,6 +34,9 @@ export interface TodayItem {
   /** What to ask DI to act on this item. */
   ask: string;
   weight: number;
+  amount?: number;
+  /** Days past the threshold, or past the due date. */
+  past?: number;
 }
 
 export interface TodayPlan {
@@ -65,6 +68,8 @@ function applicationItem(a: PipelineApplication, own: boolean): TodayItem {
     link: `/m/lap?id=${a.applicationId}`,
     ask: own ? `Why is application #${a.applicationId} stuck?` : `Create a follow-up task for application #${a.applicationId}`,
     weight: applicationWeight(a),
+    amount: a.amount,
+    past: over,
   };
 }
 
@@ -79,6 +84,7 @@ function referralItem(i: InboxItem, own: boolean, now: number): TodayItem {
     link: `/workflows/referrals/inbox?id=${i.comId}`,
     ask: `Prepare me for my meeting with ${i.name}`,
     weight: referralWeight(i, now),
+    past: late,
   };
 }
 
@@ -102,12 +108,25 @@ export async function buildToday(who: TodayWho, gateway: ToolGateway, now = Date
   return { items: top, overdue: overdue.length, stalled: { count: found?.count ?? 0, dollars: found?.dollars ?? 0 }, followUps: chase.slice(0, FOLLOW_UPS).map((a) => a.applicationId) };
 }
 
+/** Why the first item leads, compared in code against its own kind of work, so it is always true. */
+export function whyFirst(items: TodayItem[]) {
+  const [first, ...rest] = items;
+  const peers = rest.filter((i) => i.kind === first?.kind);
+  if (!first || !peers.length) return '';
+  const beats = (key: 'amount' | 'past') => peers.every((i) => (first[key] ?? 0) > (i[key] ?? 0));
+  if (first.kind === 'referral') return beats('past') ? 'It leads because it is the most overdue here.' : 'It leads on days overdue and priority taken together.';
+  if (beats('amount') && beats('past')) return 'It leads because it is both the largest application here and the furthest past its threshold.';
+  if (beats('amount')) return 'It leads because it is the largest application here.';
+  if (beats('past')) return 'It leads because it is the furthest past its threshold.';
+  return 'It leads on dollars and days past the threshold taken together.';
+}
+
 export function todayText(p: TodayPlan) {
   const [first] = p.items;
   if (!first) return 'Nothing is overdue or stalled, so you’re clear to get on with your day.';
   const n = p.overdue + p.stalled.count;
   const rest = n > p.items.length ? ` In all, ${p.overdue ? `${p.overdue} overdue ${p.overdue === 1 ? 'referral' : 'referrals'}` : ''}${p.overdue && p.stalled.count ? ' and ' : ''}${p.stalled.count ? `${p.stalled.count} stalled ${p.stalled.count === 1 ? 'application' : 'applications'}` : ''}.` : '';
-  return `Start with **${first.title}**. ${first.why}${rest}`;
+  return `Start with **${first.title}**. ${first.why}${whyFirst(p.items) ? ` ${whyFirst(p.items)}` : ''}${rest}`;
 }
 
 /** The ranked list. On Home, each item starts the work; in a conversation it opens the record. */

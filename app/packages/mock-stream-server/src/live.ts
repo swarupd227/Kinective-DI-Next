@@ -3,9 +3,9 @@
 // key the Concierge runs its deterministic offline planner (spec 23.6.4).
 import { randomBytes } from 'node:crypto';
 import type { ApprovalCardBlock, ApprovalDecisionRequest, Block, KpiGroupBlock, ListBlock, Member360Block, SearchResult, StreamEvent, StreamingEnvelope, TableData } from '@dinext/block-schemas';
-import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, pipelineTake, referralTake, todayList, describeSchedule, hasClaudeCredentials, member360, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
+import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, pipelineTake, referralTake, reportsTake, todayList, describeSchedule, hasClaudeCredentials, member360, memberTake, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
 import { ApprovalStore, CoreError, PipelineService, ReferralService, RelationshipService, ReportStore, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
-import type { AppNotification, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
+import type { AppNotification, DiTake, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
 import { renderExport } from './exports.ts';
 import { SemanticService } from '@dinext/semantic';
 import { tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
@@ -90,7 +90,7 @@ export interface LiveRuntime {
   /** Member search for Ctrl+K and the voice picker: masked results within the purview (BE-RM-002). */
   searchMembers(persona: PersonaId, q: string): Promise<SearchResult[] | null>;
   /** The Reports app: templates the user can open and their schedules (spec 8.5–8.9). */
-  reports(persona: PersonaId): Promise<{ templates: ReportSummary[]; schedules: ScheduleSummary[] } | null>;
+  reports(persona: PersonaId): Promise<{ take: DiTake; templates: ReportSummary[]; schedules: ScheduleSummary[] } | null>;
   /** The Referrals app: a box of referrals with counts for the tabs (FE-REF-001). */
   referrals(persona: PersonaId, box: 'mine' | 'team' | 'sent'): Promise<ReferralsIndex | null>;
   /** For the bell: each of your own overdue referrals, or a count for a branch lead. */
@@ -306,7 +306,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       const party = await rm.resolve(token, { purviewBranches: PERSONAS[persona].purview });
       const profile = await rm.profile(party.partyId, { purviewBranches: PERSONAS[persona].purview });
       void audit.access({ tenant: rm.tenant, userId: s.user.id, partyId: party.partyId, via: 'workspace' }).catch(() => {});
-      return member360(profile);
+      return member360(profile, undefined, memberTake(profile, rm.nextBestConversation(profile)));
     },
 
     async reports(persona) {
@@ -314,10 +314,11 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       const s = PERSONAS[persona].session;
       if (!gw || !s.apps.includes('reports')) return null;
       const templates = await gw.store.list(s.user.id);
-      const schedules = await gw.store.schedules(s.user.id);
+      const schedules = (await gw.store.schedules(s.user.id)).map(scheduleSummary);
       return {
+        take: reportsTake(templates, schedules),
         templates: templates.map((t) => ({ templateId: t.templateId, name: t.name, folder: t.folder, status: t.status, periodType: t.definition.settings.periodType, description: t.definition.description, sections: t.definition.widgets.length, owner: t.ownerName, updatedAt: t.updatedAt, origin: t.origin ? `Created by ${t.origin.agent}, approved by ${t.origin.approvedBy}` : undefined })),
-        schedules: schedules.map(scheduleSummary),
+        schedules,
       };
     },
 

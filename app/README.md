@@ -222,6 +222,13 @@ DI brings the work to the person. Screens stay for checking and overriding.
 - **Pages:** Loan Pipeline and Referrals open with DI's view and its next step, above the figures.
 - **The record on screen:** an open application or referral goes to DI as context, so "why is it stuck?" and "mark it sold" mean that record.
 
+### DI comes to you (Slice 12)
+
+- **Decide from Home:** a card waiting in any of your tasks also shows in "Needs you", with a link to its task. The decision goes through the same approval service, and the task carries on from it.
+- **Members:** the 360 opens with the most serious alert and what to raise first, ordered by the same fixed rule as the talking points.
+- **Reports:** the library opens with a failed schedule, an unfinished draft or what's ready. A report opens with the biggest move the wrong way, and that line follows the month and branch controls.
+- **Why this order:** the day's plan says why the first item leads, by comparing it in code with the other work of its kind. This is not left to the model, which claimed a comparison that wasn't true when it was tried.
+
 ## Not done yet
 
 - **Agents:** a live golden-question evaluation on Claude (needs your approval), conversation memory beyond the server process, and real Goals & Incentives and Retention agents.

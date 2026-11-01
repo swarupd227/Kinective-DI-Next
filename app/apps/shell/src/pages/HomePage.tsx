@@ -27,7 +27,8 @@ export function HomePage() {
   const { api, startThread, session } = useSession();
   const { tabId } = useParams();
   const navigate = useNavigate();
-  const home = useQuery({ queryKey: ['home'], queryFn: () => api.home() });
+  // A task may have raised a card since the last visit, so Home always checks.
+  const home = useQuery({ queryKey: ['home'], queryFn: () => api.home(), refetchOnMount: 'always' });
   const [resolved, setResolved] = useState<Record<string, Resolution>>({});
 
   const onResolved = useCallback((block: Block, r: { decision: 'approved' | 'denied' | 'returned'; by: string; at: string }) => {
@@ -100,9 +101,20 @@ export function HomePage() {
                 </>
               )}
               <div className={clsx(styles.blocks, s.id === 'approvals' && styles.approvals)}>
-                {s.blocks.map((b) => (
-                  <BlockRenderer key={b.id} block={{ ...withResolution(b), title: s.id === 'approvals' ? b.title : undefined }} />
-                ))}
+                {s.blocks.map((b) => {
+                  const task = b.type === 'approval_card' ? s.tasks?.[b.data.approvalId] : undefined;
+                  const card = <BlockRenderer key={b.id} block={{ ...withResolution(b), title: s.id === 'approvals' ? b.title : undefined }} />;
+                  return task ? (
+                    <div key={b.id} className={styles.taskCard}>
+                      {card}
+                      <Link to={`/c/${task}`} className={styles.taskLink}>
+                        Open the task
+                      </Link>
+                    </div>
+                  ) : (
+                    card
+                  );
+                })}
               </div>
             </section>
           ))}

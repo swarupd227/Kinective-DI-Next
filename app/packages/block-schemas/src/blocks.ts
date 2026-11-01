@@ -258,6 +258,12 @@ export const definitionData = z.strictObject({
   trendable: z.boolean().default(true),
 });
 
+/** DI's view of a record: one sentence, and the next step it would take. Code writes both. */
+export const diTake = z.strictObject({
+  headline: z.string().max(300),
+  action: z.strictObject({ label: z.string().max(40), ask: z.string().max(200) }).optional(),
+});
+
 // ---- member_card and member_360 ---------------------------------------------------------------
 /** Spec 8.24, 24.15. Identifiers are masked to the last four digits; no SSN or date of birth (AI-AGT-151). */
 const tone = z.enum(['neutral', 'info', 'success', 'warning', 'danger', 'accent']);
@@ -353,6 +359,7 @@ export type Member360Section = z.infer<typeof member360Section>;
 export const member360Data = z.strictObject({
   ...memberHeader,
   alerts: z.array(z.strictObject({ id: z.string().max(40), label: z.string().max(120), tone })).max(12),
+  take: diTake.optional(),
   sections: z.array(member360Section).min(1).max(12),
 });
 
@@ -405,6 +412,8 @@ export const reportCanvasData = z.strictObject({
   mode: z.enum(['read', 'edit']),
   version: z.number().int().positive(),
   periodLabel: z.string().max(40),
+  /** Worked out on each run, so it follows the controls. */
+  take: diTake.optional(),
   controls: z.array(reportControl).max(6),
   widgets: z.array(reportWidget).max(24),
   pendingEdits: z.array(z.strictObject({ id: z.string().max(20), widgetId: z.string().max(30), summary: z.string().max(160), kind: z.enum(['add', 'change', 'remove', 'move']) })).max(24),

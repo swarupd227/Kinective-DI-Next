@@ -89,6 +89,7 @@ async function client() {
 
 const approve = (previewHash: string) => ({ decision: 'approve' as const, channel: 'click' as const, typedConfirmation: null, note: null, editedPlan: null, stepUpToken: null, clientContext: { blockVersionSeen: '1.2.0', previewHash } });
 const persona = (p: string) => fetch(`${base}/v1/session?persona=${p}`).then((r) => r.json());
+const waitingOnHome = async () => ((await (await fetch(`${base}/v1/home`)).json()) as { sections: { id: string; tasks?: Record<string, string> }[] }).sections.find((s) => s.id === 'approvals')!;
 const approvalNotices = async (detail: string) => ((await (await fetch(`${base}/v1/notifications`)).json()) as { notifications: { title: string; detail: string; read: boolean }[] }).notifications.filter((n) => n.detail === detail);
 
 describe.skipIf(!available)('a referral end to end through an approval card', () => {
@@ -154,6 +155,7 @@ describe.skipIf(!available)('a referral end to end through an approval card', ()
     expect(Object.fromEntries(card.preview.fields.map((f) => [f.label, f.value])).To).toBe('Mortgage Center (a team member claims it)');
     const { summary } = c.thread(t)!.blocks[c.thread(t)!.pendingApprovals.at(-1)!]!.envelope.data as { summary: string };
     expect(await approvalNotices(summary)).toMatchObject([{ title: 'Approval needed', read: false }]);
+    expect((await waitingOnHome()).tasks).toEqual({ [card.approvalId]: t });
 
     await persona('analyst');
     expect(await c.api.decide(card.approvalId, approve(card.previewHash), card.idempotencyKey)).toMatchObject({ ok: false });
@@ -162,6 +164,7 @@ describe.skipIf(!available)('a referral end to end through an approval card', ()
     expect(deny).toMatchObject({ ok: true, decision: 'denied' });
     await until(() => c.texts(t).includes('Nothing was sent.'));
     expect(await approvalNotices(summary)).toMatchObject([{ title: 'Approval denied', read: true }]);
+    expect((await waitingOnHome()).tasks).toBeUndefined();
     const [rows] = await admin.query('SELECT COUNT(*) AS n FROM esp_com_items WHERE approval_id = ?', [card.approvalId]);
     expect((rows as { n: number }[])[0]!.n).toBe(0);
     c.conn.stop();

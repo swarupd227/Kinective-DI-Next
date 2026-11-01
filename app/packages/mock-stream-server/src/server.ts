@@ -45,6 +45,8 @@ interface Run {
   abort?: AbortController;
 }
 
+const SETTLED = { approved: 'Approved', denied: 'Approval denied', returned: 'Sent back', expired: 'Approval expired' };
+
 interface PendingApproval {
   threadId: string | null;
   runId: string | null;
@@ -157,10 +159,10 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
   };
 
   /** A decided card asks nothing more of anyone, so its notice says how it ended and stops counting. */
-  const settleNotice = (a: PendingApproval, outcome: 'approved' | 'denied' | 'returned' | 'expired') => {
+  const settleNotice = (a: PendingApproval, outcome: keyof typeof SETTLED) => {
     const n = notifications.find((x) => x.id === a.noticeId);
     if (!n) return;
-    const settled: AppNotification = { ...n, title: `Approval ${outcome}`, at: new Date().toISOString(), read: true };
+    const settled: AppNotification = { ...n, title: SETTLED[outcome], at: new Date().toISOString(), read: true };
     notifications = notifications.map((x) => (x === n ? settled : x));
     pushNotice(settled);
   };
@@ -354,6 +356,12 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
 
   const visibleThreads = () => [...threads.values()].filter((t) => !t.deleted && !foreign(t));
   const pendingHomeCards = () => homeCards.filter((c) => !approvals.get(c.data.approvalId)?.decided);
+  /** Cards waiting in this person's tasks, so they can be decided from Home too. */
+  const waitingInTasks = () =>
+    [...approvals.values()].filter((a) => {
+      const t = a.threadId ? threads.get(a.threadId) : undefined;
+      return t && !t.deleted && !foreign(t) && !a.decided && new Date(a.card.data.expiresAt).getTime() > Date.now();
+    });
 
   /** The bell's view of work open right now, worked out on each read so it agrees with the screen. */
   const currentNotices = async (): Promise<AppNotification[]> => {
@@ -378,7 +386,10 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         return json(res, 200, sessionFor(persona, voice?.status()));
       }
       if (method === 'GET' && path === '/v1/home') {
-        const home = homeFor(persona, pendingHomeCards());
+        const waiting = waitingInTasks();
+        const home = homeFor(persona, [...waiting.map((a) => a.card), ...pendingHomeCards()]);
+        const asked = home.sections.find((s) => s.id === 'approvals');
+        if (asked && waiting.length) asked.tasks = Object.fromEntries(waiting.map((a) => [a.card.data.approvalId, a.threadId!]));
         // With the warehouse up, "What changed" and "Things to look at" come from real figures.
         const real = await live?.home(persona).catch((err) => (console.error('[home]', err), null));
         if (real) {

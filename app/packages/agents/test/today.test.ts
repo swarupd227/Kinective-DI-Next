@@ -2,10 +2,10 @@
 // Agent-led work: the day's ranking across modules, DI's view of a page, and the record on screen as
 // context, against the seeded warehouse. No model calls are made.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { validateBlock, type Block } from '@dinext/block-schemas';
-import { ApprovalStore, PipelineService, ReferralService, RelationshipService, type InboxItem } from '@dinext/di-core';
+import { validateBlock, type Block, type ReportWidgetView } from '@dinext/block-schemas';
+import { ApprovalStore, PipelineService, ReferralService, RelationshipService, type InboxItem, type MemberProfile, type Topic } from '@dinext/di-core';
 import { createPool, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
-import { AuditLog, Concierge, PIPELINE_REQUEST, TODAY_REQUEST, ToolGateway, buildToday, parsePipelineRequest, pipelineTake, referralTake, todayList, todayText, type RunSink, type StepUpdate, type TenantRuntime, type TodayWho } from '../src/index.ts';
+import { AuditLog, Concierge, PIPELINE_REQUEST, TODAY_REQUEST, ToolGateway, buildToday, goalSystemPrompt, newGoalThread, newReportThread, parsePipelineRequest, pipelineTake, referralTake, reportTake, reportsTake, memberTake, todayList, todayText, whyFirst, type RunSink, type StepUpdate, type TenantRuntime, type TodayItem, type TodayPlan, type TodayWho } from '../src/index.ts';
 
 const SCHEMA = 'dinext_t_test_cu';
 const up = await warehouseAvailable(SCHEMA);
@@ -37,6 +37,78 @@ describe('asking for the day', () => {
     expect(referralTake([item({}), item({ comId: 2, name: 'Grace Okafor', priority: 'Normal', dueAt: new Date().toISOString() })], true)).toEqual({ headline: 'Nora Chen’s retention follow-up comes first: overdue by 3 days. 2 are overdue in all.', action: { label: 'Prepare me', ask: 'Prepare me for my meeting with Nora Chen' } });
     expect(referralTake([item({})], false).headline).toContain('with Sofia Ruiz');
     expect(referralTake([], true).action).toBeUndefined();
+  });
+});
+
+describe('DI’s view of a record', () => {
+  const profile = (over: Partial<MemberProfile>) => ({ name: 'Suzanne Jackson', firstName: 'Suzanne', alerts: [], attrition: { factors: [{ label: 'Direct deposit stopped', weight: 2 }] }, ...over }) as MemberProfile;
+  const topic = (kind: Topic['kind'], headline: string, refer?: Topic['refer']): Topic => ({ id: 'T1', kind, headline, reason: '', refer });
+
+  it('leads with the most serious alert, then what to raise first', () => {
+    const p = profile({ alerts: [{ code: 'closed_accounts', label: '1 account closed', tone: 'info' }, { code: 'balance_drop', label: 'Deposits down 30% in 30 days', tone: 'warning' }] });
+    expect(memberTake(p, [topic('pending_application', 'HELOC application is pending')])).toEqual({ headline: 'Deposits down 30% in 30 days. Suzanne’s HELOC application is pending.', action: { label: 'Prepare me', ask: 'Prepare me for my meeting with Suzanne Jackson' } });
+  });
+
+  it('says a risk once, with the reason behind it', () => {
+    const p = profile({ alerts: [{ code: 'attrition_high', label: 'High attrition risk (8/10)', tone: 'danger' }] });
+    expect(memberTake(p, [topic('retention_risk', 'High attrition risk')]).headline).toBe('High attrition risk, mainly direct deposit stopped.');
+  });
+
+  it('tells the live agent which record is on screen, so a shared name needs no question', () => {
+    const svc = { model: { metrics: {} }, build: { latestMonthEnd: '2026-09-30', buildId: 'b' } } as never;
+    const input = { runId: 'R', threadId: 't', text: 'Prepare me', user: { id: 'u', name: 'Marcus Reed', title: 'Manager' }, tenant: { name: 'Harborview', institutionType: 'credit_union' as const }, apps: ['rm'], canViewSql: false };
+    const state = newGoalThread('Prepare me', newReportThread());
+    expect(goalSystemPrompt({ ...input, focus: { ref: 'M1', name: 'Suzanne Shah' } }, svc, state)).toContain('member_ref M1');
+    expect(goalSystemPrompt(input, svc, state)).not.toContain('person on screen');
+  });
+
+  it('asks for nothing when nothing needs attention', () => {
+    expect(memberTake(profile({}), [])).toEqual({ headline: 'Nothing needs attention for Suzanne today.' });
+  });
+
+  const kpi = (label: string, value: number, unit: 'bp' | 'percent', direction: 'up' | 'down', goodWhen: 'up' | 'down') => ({ id: label, title: label, gridPos: { x: 0, y: 0, w: 3, h: 2 }, view: { type: 'kpi', data: { label, value: 1, unit: 'percent', comparison: { label: 'vs Aug 2026', value, unit, direction, goodWhen } } } }) as ReportWidgetView;
+
+  it('picks a move the wrong way over a bigger good one, and follows the controls', () => {
+    const take = reportTake([kpi('Loan balance', 9, 'percent', 'up', 'up'), kpi('Delinquency ratio', 12, 'bp', 'up', 'down'), kpi('Deposit balance', 2, 'percent', 'down', 'up')], 'Sep 2026', 'Westport');
+    expect(take).toEqual({ headline: 'Deposit balance fell 2% vs Aug 2026, the biggest move the wrong way. 1 other measure also moved the wrong way.', action: { label: 'Why did it fall?', ask: 'Why did deposit balance fall in Sep 2026 at Westport?' } });
+  });
+
+  it('says so when everything moved the right way, and stays quiet with nothing to compare', () => {
+    expect(reportTake([kpi('Loan balance', 9, 'percent', 'up', 'up')], 'Sep 2026', 'all')?.headline).toBe('Loan balance rose 9% vs Aug 2026, and nothing moved the wrong way.');
+    expect(reportTake([], 'Sep 2026', 'all')).toBeUndefined();
+  });
+
+  it('opens the library on what went wrong, then what’s unfinished, then what’s ready', () => {
+    const s = (report: string, lastResult: 'ok' | 'failed' | null, lastRunAt: string | null) => ({ report, lastResult, lastRunAt });
+    expect(reportsTake([{ name: 'Mine', status: 'draft' }], [s('ALCO', 'failed', '2026-10-30')]).headline).toBe('Your ALCO schedule failed on its last run.');
+    expect(reportsTake([{ name: 'Mine', status: 'draft' }], [s('ALCO', 'ok', '2026-10-30')]).headline).toBe('Your draft Mine is waiting to be finished.');
+    expect(reportsTake([], [s('ALCO', 'ok', '2026-10-29'), s('Scorecard', 'ok', '2026-10-30')])).toEqual({ headline: 'All 2 of your scheduled reports ran. Scorecard is the latest.', action: { label: 'Open it', ask: 'Open the Scorecard report' } });
+    expect(reportsTake([], []).action).toBeUndefined();
+  });
+});
+
+describe('explaining the order', () => {
+  const app = (amount: number, past: number) => ({ kind: 'application', title: 'Tom Ruiz: first mortgage', why: '17 days in underwriting.', amount, past }) as TodayItem;
+  const referral = (past: number) => ({ kind: 'referral', title: 'Priya Murphy: auto loan', why: 'Overdue.', past }) as TodayItem;
+
+  it('claims only what the comparison shows', () => {
+    expect(whyFirst([app(9, 9), app(1, 1)])).toBe('It leads because it is both the largest application here and the furthest past its threshold.');
+    expect(whyFirst([app(9, 12), app(1, 13)])).toBe('It leads because it is the largest application here.');
+    expect(whyFirst([app(1, 13), app(9, 12)])).toBe('It leads because it is the furthest past its threshold.');
+    expect(whyFirst([app(5, 5), app(9, 1), app(1, 9)])).toBe('It leads on dollars and days past the threshold taken together.');
+    expect(whyFirst([referral(3), referral(2)])).toBe('It leads because it is the most overdue here.');
+    expect(whyFirst([referral(2), referral(2)])).toBe('It leads on days overdue and priority taken together.');
+  });
+
+  it('compares like with like, and says nothing with no peer', () => {
+    expect(whyFirst([referral(3), app(9, 9)])).toBe('');
+    expect(whyFirst([app(9, 9)])).toBe('');
+    expect(whyFirst([])).toBe('');
+  });
+
+  it('puts the reason after the first item', () => {
+    const plan = { items: [app(9, 9), app(1, 1)], overdue: 0, stalled: { count: 2, dollars: 0 }, followUps: [] } as TodayPlan;
+    expect(todayText(plan)).toBe('Start with **Tom Ruiz: first mortgage**. 17 days in underwriting. It leads because it is both the largest application here and the furthest past its threshold.');
   });
 });
 

@@ -3,7 +3,7 @@
 // from semantic queries, under the user's purview. Saving, scheduling and exporting are writes: the
 // gateway returns approval_required, and only the approved payload runs, once.
 import { z } from 'zod';
-import type { ApprovalCardBlock, Block, ReportCanvasBlock, ReportControl, ReportWidgetView } from '@dinext/block-schemas';
+import type { ApprovalCardBlock, Block, DiTake, ReportCanvasBlock, ReportControl, ReportWidgetView } from '@dinext/block-schemas';
 import { ApprovalStore, CoreError, DELIVERY_GROUPS, SCHEDULE_RECIPIENT_CAP, type ApprovalRecord, type Recipient, type ReportStore, type RiskTier, type ScheduleDraft, type ScheduleRow, type ShareDraft, type TemplateRow } from '@dinext/di-core';
 import { SemanticError, type SemanticService } from '@dinext/semantic';
 import type { ReportDefinition, ReportWidget, WidgetSize } from '@dinext/tenant-db';
@@ -175,6 +175,38 @@ export interface RunMeta {
   test?: boolean;
 }
 
+const lowerLabel = (s: string) => (/^[A-Z][a-z]/.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s);
+
+/** What stands out in this run: the biggest move the wrong way, or failing that, the biggest move. */
+export function reportTake(widgets: ReportWidgetView[], periodLabel: string, node: string): DiTake | undefined {
+  const moved = widgets.flatMap((w) => {
+    const c = w.view.type === 'kpi' ? w.view.data.comparison : undefined;
+    return w.view.type === 'kpi' && c && c.direction !== 'flat' && c.value !== 0 ? [{ label: w.view.data.label, c, worse: c.direction !== c.goodWhen, size: Math.abs(c.value) / (c.unit === 'bp' ? 100 : 1) }] : [];
+  });
+  const [top] = moved.sort((a, b) => Number(b.worse) - Number(a.worse) || b.size - a.size);
+  if (!top) return undefined;
+  const others = moved.filter((m) => m.worse).length - 1;
+  const change = top.c.unit === 'bp' ? `${Math.abs(top.c.value)} bp` : `${Math.abs(top.c.value)}%`;
+  const rise = top.c.direction === 'up' ? 'rise' : 'fall';
+  const verdict = others > 0 ? `, the biggest move the wrong way. ${others} other ${others === 1 ? 'measure' : 'measures'} also moved the wrong way.` : top.worse ? ', the only move the wrong way.' : ', and nothing moved the wrong way.';
+  const headline = `${top.label} ${top.c.direction === 'up' ? 'rose' : 'fell'} ${change} ${top.c.label}${verdict}`;
+  return { headline, action: { label: `Why did it ${rise}?`, ask: `Why did ${lowerLabel(top.label)} ${rise} in ${periodLabel}${node === 'all' ? '' : ` at ${node}`}?` } };
+}
+
+/** The library's first line: a schedule that went wrong, then a draft left open, then what's ready. */
+export function reportsTake(templates: { name: string; status: string }[], schedules: { report: string; lastResult: 'ok' | 'empty' | 'failed' | null; lastRunAt: string | null }[]): DiTake {
+  const failed = schedules.find((s) => s.lastResult === 'failed');
+  if (failed) return { headline: `Your ${failed.report} schedule failed on its last run.`, action: { label: 'Show my schedules', ask: 'Which reports are scheduled for me?' } };
+  const empty = schedules.find((s) => s.lastResult === 'empty');
+  if (empty) return { headline: `Your ${empty.report} schedule ran with no data.`, action: { label: 'Show my schedules', ask: 'Which reports are scheduled for me?' } };
+  const draft = templates.find((t) => t.status === 'draft');
+  if (draft) return { headline: `Your draft ${draft.name} is waiting to be finished.`, action: { label: 'Open the draft', ask: `Open the ${draft.name} report` } };
+  const ran = schedules.filter((s) => s.lastRunAt).sort((a, b) => b.lastRunAt!.localeCompare(a.lastRunAt!));
+  if (ran[0]) return { headline: `${ran.length === 1 ? 'Your scheduled report' : `All ${ran.length} of your scheduled reports`} ran. ${ran[0].report} is the latest.`, action: { label: 'Open it', ask: `Open the ${ran[0].report} report` } };
+  if (schedules.length) return { headline: `${schedules.length === 1 ? 'Your scheduled report runs' : `Your ${schedules.length} scheduled reports run`} after tonight’s build.` };
+  return { headline: 'Nothing is scheduled for you yet. Open a report and ask DI to send it to you.' };
+}
+
 /** report.run: renders a definition for control values as a report_canvas block. */
 export async function runReport(def: ReportDefinition, input: ReportControls, svc: SemanticService, ctx: RunContext, meta: RunMeta): Promise<{ canvas: ReportCanvasBlock; notice?: string }> {
   const c = resolveControls(def, input, svc, ctx);
@@ -208,6 +240,7 @@ export async function runReport(def: ReportDefinition, input: ReportControls, sv
       mode: meta.mode,
       version: meta.version,
       periodLabel: c.periodLabel,
+      take: reportTake(widgets, c.periodLabel, c.node),
       controls: c.controls,
       widgets,
       pendingEdits: def.pendingEdits.map((e) => ({ id: e.id, widgetId: e.widgetId, summary: e.summary, kind: e.kind })),

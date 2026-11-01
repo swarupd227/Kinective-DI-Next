@@ -469,7 +469,7 @@ const jsonSchema = (schema: z.ZodType) => {
   return s as Anthropic.Beta.BetaTool['input_schema'];
 };
 
-function systemPrompt(input: GoalInput, svc: SemanticService, state: GoalThread) {
+export function systemPrompt(input: GoalInput, svc: SemanticService, state: GoalThread) {
   const metrics = Object.values(svc.model.metrics).map((m) => `${m.name} (${m.label}): by ${m.dimensionsAllowed.join(', ') || 'institution only'}`);
   return `You are DI, the agent inside Kinective Data Intelligence for ${input.tenant.name}. ${input.user.name} (${input.user.title}) hands you a goal, and you see it through. The latest complete month is ${svc.build.latestMonthEnd.slice(0, 7)} (nightly build ${svc.build.buildId}).
 
@@ -492,7 +492,7 @@ Rules:
 
 Metrics you can use:
 ${metrics.join('\n')}
-${state.followUps ? `\nFollow-ups waiting for approval, which the user may be changing: ${state.followUps.names.join(', ')} (${state.followUps.refs.join(', ')}).` : ''}${state.note ? `\nThe note waiting for approval, which the user may be changing:\nTo: ${state.note.recipients.join(', ')}\nSubject: ${state.note.subject}\n${state.note.body}` : ''}`;
+${input.focus ? `\nThe person on screen is <data>${input.focus.name}</data>, member_ref ${input.focus.ref}. When the goal is about them, this is the exact record: skip find_member, even if others share the name, and start at review_member.\n` : ''}${state.followUps ? `\nFollow-ups waiting for approval, which the user may be changing: ${state.followUps.names.join(', ')} (${state.followUps.refs.join(', ')}).` : ''}${state.note ? `\nThe note waiting for approval, which the user may be changing:\nTo: ${state.note.recipients.join(', ')}\nSubject: ${state.note.subject}\n${state.note.body}` : ''}`;
 }
 
 const MEMBER_TOOLS = ['find_member', 'review_member', 'suggest_topics', 'write_talking_points', 'find_at_risk'];

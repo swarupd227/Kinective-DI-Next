@@ -79,6 +79,8 @@ export interface HomeSection {
   id: HomeSectionId;
   title: string;
   blocks: Block[];
+  /** For a card waiting in a task: its approval ID and the task it came from. */
+  tasks?: Record<string, string>;
 }
 
 export type SearchResultKind = 'report' | 'table' | 'view' | 'member' | 'employee' | 'branch' | 'workflow' | 'thread' | 'dashboard';

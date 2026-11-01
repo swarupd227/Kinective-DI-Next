@@ -1,6 +1,6 @@
 // Member blocks (spec 8.24, 9.4): the member_card and the member_360, written by code from the DI
 // Core profile. The model never fills these in; it only writes the talking points beside them.
-import type { ListBlock, Member360Block, MemberCardBlock, MemberScore } from '@dinext/block-schemas';
+import type { DiTake, ListBlock, Member360Block, MemberCardBlock, MemberScore } from '@dinext/block-schemas';
 import { OPPORTUNITY_THRESHOLD, type MemberProfile, type PartyMatch, type Topic } from '@dinext/di-core';
 import { newBlockId, TENANT_UTC_OFFSET } from './answer.ts';
 
@@ -94,8 +94,30 @@ export function matchCard(h: PartyMatch, token: string, person: 'member' | 'cust
   };
 }
 
+const lowerFirst = (s: string) => (/^[A-Z][a-z]/.test(s) ? s.charAt(0).toLowerCase() + s.slice(1) : s);
+
+/** The first topic, in the fixed order of nextBestConversation, as a sentence. */
+function topicLine(t: Topic, p: MemberProfile) {
+  if (t.kind === 'pending_application') return `${p.firstName}’s ${lowerFirst(t.headline)}`;
+  if (t.kind === 'retention_risk') {
+    const main = p.attrition.factors.find((f) => f.weight > 0);
+    return `${t.headline}${main ? `, mainly ${lowerFirst(main.label)}` : ''}`;
+  }
+  if (t.kind === 'product_opportunity') return `The best next product is ${t.refer?.product ?? t.headline.replace('Next best product: ', '')}`;
+  return `${p.firstName} is ${lowerFirst(t.headline)}`;
+}
+
+/** What matters about this person today: the most serious alert, then what to raise first. */
+export function memberTake(p: MemberProfile, topics: Topic[]): DiTake {
+  const [first] = topics;
+  const alert = p.alerts.find((a) => a.tone === 'danger') ?? p.alerts.find((a) => a.tone === 'warning');
+  const parts = [...(alert && !(alert.code === 'attrition_high' && first?.kind === 'retention_risk') ? [alert.label] : []), ...(first ? [topicLine(first, p)] : [])];
+  if (!parts.length) return { headline: `Nothing needs attention for ${p.firstName} today.` };
+  return { headline: `${parts.join('. ')}.`, action: { label: 'Prepare me', ask: `Prepare me for my meeting with ${p.name}` } };
+}
+
 /** The full record, in the Relationship Dashboard's section order [BK p11] (FE-RM-001). */
-export function member360(p: MemberProfile, runId?: string): Member360Block {
+export function member360(p: MemberProfile, runId?: string, take?: DiTake): Member360Block {
   const attrition = scores(p)[0]!;
   const change = depositChange(p);
   const lastLogin = p.lastLogin ? `Last login ${longDate(p.lastLogin)}` : undefined;
@@ -116,6 +138,7 @@ export function member360(p: MemberProfile, runId?: string): Member360Block {
     data: {
       ...header(p),
       alerts,
+      ...(take ? { take } : {}),
       sections: [
         {
           kind: 'overview',

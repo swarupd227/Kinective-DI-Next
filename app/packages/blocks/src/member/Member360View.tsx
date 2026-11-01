@@ -7,6 +7,7 @@ import type { Member360Block, Member360Section } from '@dinext/block-schemas';
 import { Badge, Button } from '@dinext/ui';
 import { useBlockHost } from '../context.tsx';
 import { formatValue } from '../format.ts';
+import { DiTakeView } from '../take/DiTakeView.tsx';
 import { memberActions, PersonHeader, ScoreMeter, type MemberHeader } from './shared.tsx';
 import styles from './Member.module.css';
 
@@ -66,6 +67,7 @@ export function Member360View({ block }: { block: Member360Block }) {
           ))}
         </ul>
       )}
+      {d.take && <DiTakeView take={d.take} onAct={(ask) => host.onAction?.(block, { id: 'take', kind: 'explain', label: d.take!.action!.label, params: { memberRef: d.memberRef, label: d.displayName, question: ask } })} />}
       <div role="tablist" aria-label={`${d.displayName} record sections`} className={styles.tabs}>
         {d.sections.map((s, i) => (
           <button

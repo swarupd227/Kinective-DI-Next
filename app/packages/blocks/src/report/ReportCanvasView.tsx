@@ -8,6 +8,7 @@ import type { BlockAction, ReportCanvasBlock, ReportWidgetView } from '@dinext/b
 import { Badge, Button, IconButton, Menu } from '@dinext/ui';
 import { BlockRenderer } from '../BlockRenderer.tsx';
 import { useBlockHost, type ReportEditOp } from '../context.tsx';
+import { DiTakeView } from '../take/DiTakeView.tsx';
 import styles from './ReportCanvasView.module.css';
 
 const WIDTHS = ['quarter', 'third', 'half', 'full'] as const;
@@ -92,6 +93,8 @@ export function ReportCanvasView({ block }: { block: ReportCanvasBlock }) {
           />
         </div>
       </header>
+
+      {d.take && <DiTakeView take={d.take} busy={busy} onAct={(q) => ask('take', d.take!.action!.label, q)} />}
 
       {d.controls.length > 0 && (
         <div className={styles.controls} role="group" aria-label="Report controls">

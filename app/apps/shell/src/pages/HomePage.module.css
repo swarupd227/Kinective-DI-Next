@@ -205,3 +205,16 @@
     grid-template-columns: 1fr;
   }
 }
+
+.taskCard {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.taskLink {
+  justify-self: start;
+  color: var(--color-accent-default);
+  font-size: var(--type-caption-size);
+}
