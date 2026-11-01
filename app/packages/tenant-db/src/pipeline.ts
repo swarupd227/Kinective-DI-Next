@@ -40,6 +40,18 @@ export const PIPELINE_DDL = [
      decided_count INT NOT NULL,
      PRIMARY KEY (month_end, branch_id, loan_category)
    )`,
+  // What an application is waiting on, as the LOS records it. Names and next steps are the tenant's.
+  `CREATE TABLE mod_lap_hold_reason (
+     hold_code VARCHAR(24) PRIMARY KEY,
+     label VARCHAR(80) NOT NULL,
+     waiting_on VARCHAR(40) NOT NULL,
+     next_step VARCHAR(120) NOT NULL
+   )`,
+  `CREATE TABLE cdm_loan_app_hold (
+     application_id INT PRIMARY KEY,
+     hold_code VARCHAR(24) NOT NULL,
+     since_date DATE NOT NULL
+   )`,
   // The LOS feed loads on its own; a build can finish without it (spec 24.18 failure behaviour).
   `CREATE TABLE meta_lap_load (
      load_date DATE PRIMARY KEY,
@@ -59,6 +71,21 @@ export const LAP_STATUSES = [
   ['AUTO_APPROVED', 'Auto approved', 'Approved by the LOS decision rules.', 0, 1, 'Auto Approved', 6, null],
   ['APPROVED', 'Approved', 'Approved by a lender.', 0, 1, 'Approved', 7, null],
   ['WITHDRAWN', 'Withdrawn', 'Withdrawn by the applicant. Hidden from pipeline views.', 0, 0, 'Withdrawn', 8, null],
+] as const;
+
+/** Demo hold reasons [Assumption]: confirm the real LOS records these before relying on them. */
+export const LAP_HOLDS = [
+  ['INTAKE', 'It hasn’t been picked up for review', 'the lending queue', 'Get it assigned for review.', 'RECEIVED', null],
+  ['INCOMPLETE_APP', 'The application is missing required details', 'the applicant', 'Get the missing details from the applicant.', 'RECEIVED', null],
+  ['INCOME_DOCS', 'Proof of income hasn’t come in', 'the applicant', 'Follow up with the applicant for proof of income.', 'DOCUMENTS', null],
+  ['ID_DOCS', 'ID verification is outstanding', 'the applicant', 'Follow up with the applicant to finish ID verification.', 'DOCUMENTS', null],
+  ['INSURANCE', 'Proof of insurance hasn’t come in', 'the applicant', 'Follow up with the applicant for proof of insurance.', 'DOCUMENTS', /auto|mortgage|heloc/i],
+  ['FINANCIALS', 'Business financial statements are incomplete', 'the applicant', 'Follow up with the applicant for the missing statements.', 'DOCUMENTS', /business|commercial/i],
+  ['APPRAISAL', 'The appraisal isn’t back', 'the appraiser', 'Check when the appraisal is due.', 'UNDERWRITING', /mortgage|heloc/i],
+  ['TITLE', 'Title work is still open', 'the title company', 'Check on the title work.', 'UNDERWRITING', /mortgage|heloc/i],
+  ['UW_QUEUE', 'It’s in the underwriter’s queue, not yet reviewed', 'the underwriter', 'Ask underwriting where it sits in the queue.', 'UNDERWRITING', null],
+  ['DTI', 'Debt-to-income needs a second review', 'the underwriter', 'Go through income and debts with the underwriter.', 'UNDERWRITING', null],
+  ['COUNTER_REPLY', 'The applicant hasn’t answered the counter offer', 'the applicant', 'Follow up with the applicant on the offer.', 'COUNTER', null],
 ] as const;
 
 export const LAP_APPLICATION_COLUMNS = ['application_id', 'party_id', 'product', 'amount', 'status_group', 'status_detail', 'applied_date', 'decided_date', 'status_code', 'status_since', 'owner_employee_id', 'branch_id', 'loan_category', 'is_duplicate'];
@@ -163,6 +190,16 @@ export function generatePipeline(t: GeneratedTenant, applications: unknown[][]) 
     if (a.code !== 'RECEIVED') history.push([a.id, a.code, a.since]);
   }
 
+  // Keyed on the application, not the generator, so adding these moved no existing figure. Some have
+  // no reason recorded, as real LOS data doesn't.
+  const holds: unknown[][] = [];
+  for (const a of apps) {
+    const options = LAP_HOLDS.filter((h) => h[4] === a.code && (!h[5] || h[5].test(a.product)));
+    if (!options.length || a.duplicate || unit(a.id, 91) < 0.1) continue;
+    const waited = Math.round((asOf - Date.parse(`${a.since}T00:00:00Z`)) / DAY);
+    holds.push([a.id, options[Math.floor(unit(a.id, 92) * options.length)]![0], after(a.since, Math.min(waited, Math.floor(unit(a.id, 93) * 3)))]);
+  }
+
   // Complete months only, like the rest of the history tables.
   const lastMonth = ymd(new Date(Date.UTC(new Date(asOf).getUTCFullYear(), new Date(asOf).getUTCMonth(), 0)));
   const monthEnd = (date: string) => {
@@ -190,6 +227,7 @@ export function generatePipeline(t: GeneratedTenant, applications: unknown[][]) 
   return {
     applications: apps.map((a) => [a.id, a.party, a.product, a.amount, a.group, a.detail, a.applied, a.decided, a.code, a.since, a.owner, a.branch, a.category, a.duplicate ? 1 : 0]),
     history,
+    holds,
     months: [...months.values()],
   };
 }

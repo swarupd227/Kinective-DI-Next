@@ -38,6 +38,8 @@ export interface PipelineApplication {
   stalled: boolean;
   owner: { employeeId: number; name: string } | null;
   branch: string;
+  /** What it's waiting on, when the LOS records it. Only open applications have one. */
+  hold: { label: string; waitingOn: string; nextStep: string; days: number } | null;
 }
 
 export interface PipelineCell {
@@ -70,6 +72,8 @@ export interface PipelineFilter {
   /** More than this many days in the current status. */
   minDays?: number;
   minAmount?: number;
+  /** Part of a hold reason or of who it's waiting on. */
+  waitingOn?: string;
   /** Open applications only, unless a finished group or status is asked for. */
   includeFinished?: boolean;
 }
@@ -82,6 +86,8 @@ export interface PipelineFound {
   dollars: number;
   oldestDays: number;
   byProduct: { product: string; count: number; dollars: number }[];
+  /** Counts by who each is waiting on, largest first. Counts only, so totals-only roles see them. */
+  holds: { waitingOn: string; count: number }[];
   /** Empty without Application Details access. */
   items: PipelineApplication[];
   detailsHidden: boolean;
@@ -104,9 +110,11 @@ const between = (from: string, to: string) => Math.max(0, Math.round((Date.parse
 const has = (text: string, part: string) => text.toLowerCase().includes(part.toLowerCase());
 
 const APP_SQL = `SELECT a.application_id, a.party_id, a.product, a.amount, a.status_code, a.status_since, a.applied_date, a.decided_date, a.owner_employee_id,
-    p.first_name, p.last_name, b.name AS branch, e.display_name AS owner_name, s.label, s.reporting_group, s.in_progress
+    p.first_name, p.last_name, b.name AS branch, e.display_name AS owner_name, s.label, s.reporting_group, s.in_progress,
+    hr.label AS hold_label, hr.waiting_on, hr.next_step, ah.since_date AS hold_since
   FROM cdm_loan_application a JOIN cdm_party p ON p.party_id = a.party_id JOIN cdm_location b ON b.int_id = a.branch_id
-  JOIN mod_lap_status_map s ON s.status_code = a.status_code LEFT JOIN cdm_employee e ON e.employee_id = a.owner_employee_id`;
+  JOIN mod_lap_status_map s ON s.status_code = a.status_code LEFT JOIN cdm_employee e ON e.employee_id = a.owner_employee_id
+  LEFT JOIN cdm_loan_app_hold ah ON ah.application_id = a.application_id LEFT JOIN mod_lap_hold_reason hr ON hr.hold_code = ah.hold_code`;
 
 export class PipelineService {
   constructor(private readonly pool: Pool) {}
@@ -196,6 +204,7 @@ export class PipelineService {
       stalled: threshold !== null && daysInStatus > threshold,
       owner: r.owner_employee_id && r.owner_name ? { employeeId: r.owner_employee_id as number, name: r.owner_name as string } : null,
       branch: r.branch as string,
+      hold: open && r.hold_label ? { label: r.hold_label as string, waitingOn: r.waiting_on as string, nextStep: r.next_step as string, days: between(day(r.hold_since), asOf) } : null,
     };
   }
 
@@ -247,7 +256,7 @@ export class PipelineService {
     const finished = f.includeFinished || f.group !== undefined;
     const { apps } = await this.rows(f.view, who, ctx, asOf, finished ? ['(s.in_progress = 1 OR a.applied_date >= ? - INTERVAL ? DAY)'] : ['s.in_progress = 1'], finished ? [asOf, SUMMARY_WINDOW_DAYS] : []);
     const hits = apps
-      .filter((a) => (!f.status || has(a.status, f.status)) && (!f.group || has(a.group, f.group)) && (!f.product || has(a.product, f.product)) && (!f.stalledOnly || a.stalled) && (f.minDays === undefined || a.daysInStatus > f.minDays) && (f.minAmount === undefined || a.amount > f.minAmount))
+      .filter((a) => (!f.status || has(a.status, f.status)) && (!f.group || has(a.group, f.group)) && (!f.product || has(a.product, f.product)) && (!f.stalledOnly || a.stalled) && (f.minDays === undefined || a.daysInStatus > f.minDays) && (f.minAmount === undefined || a.amount > f.minAmount) && (!f.waitingOn || (a.hold !== null && has(`${a.hold.label} ${a.hold.waitingOn}`, f.waitingOn))))
       .sort((a, b) => Number(b.stalled) - Number(a.stalled) || b.daysInStatus - a.daysInStatus);
     const products = new Map<string, { product: string; count: number; dollars: number }>();
     for (const a of hits) {
@@ -256,7 +265,10 @@ export class PipelineService {
       p.dollars += a.amount;
       products.set(a.product, p);
     }
-    return { asOf, stale, view: f.view, count: hits.length, dollars: hits.reduce((s, a) => s + a.amount, 0), oldestDays: Math.max(0, ...hits.map((a) => a.daysInStatus)), byProduct: [...products.values()].sort((a, b) => b.count - a.count), items: who.details ? hits : [], detailsHidden: !who.details };
+    const waiting = new Map<string, number>();
+    for (const { hold } of hits) if (hold) waiting.set(hold.waitingOn, (waiting.get(hold.waitingOn) ?? 0) + 1);
+    const holds = [...waiting].map(([waitingOn, count]) => ({ waitingOn, count })).sort((a, b) => b.count - a.count);
+    return { asOf, stale, view: f.view, holds, count: hits.length, dollars: hits.reduce((s, a) => s + a.amount, 0), oldestDays: Math.max(0, ...hits.map((a) => a.daysInStatus)), byProduct: [...products.values()].sort((a, b) => b.count - a.count), items: who.details ? hits : [], detailsHidden: !who.details };
   }
 
   /** One application with its path through the statuses. Outside the purview it reads as not found. */

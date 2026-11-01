@@ -7,7 +7,7 @@ import { newBlockId } from './answer.ts';
 import type { ToolCallRecord } from './audit.ts';
 import { inStatus, midSentence as lower, type GatewayContext, type ToolGateway } from './gateway.ts';
 import { GOAL_AGENT, type GoalThread } from './goal.ts';
-import { money, taskCard } from './pipelineAgent.ts';
+import { mostWaitOn, money, taskCard } from './pipelineAgent.ts';
 import type { RunSink } from './sink.ts';
 
 export const TODAY_REQUEST = /\bwhat should (i|we) (do|work on|focus on|start with|tackle)\b|\bplan (my|our) day\b|\bwhat needs (me|my attention)\b|\bwhere should i start\b|\bget (me|us) ready for (the|my|our) (day|week)\b/i;
@@ -63,7 +63,7 @@ function applicationItem(a: PipelineApplication, own: boolean): TodayItem {
     id: `a${a.applicationId}`,
     kind: 'application',
     title: `${a.name}: ${money(a.amount)} ${lower(a.product)}`,
-    why: `${days(a.daysInStatus)} ${inStatus(a.status)}, ${over} over the ${a.threshold}-day threshold.${own || !a.owner ? '' : ` With ${a.owner.name}.`}`,
+    why: `${days(a.daysInStatus)} ${inStatus(a.status)}, ${over} over the ${a.threshold}-day threshold.${a.hold ? ` ${a.hold.label}.` : ''}${own || !a.owner ? '' : ` With ${a.owner.name}.`}`,
     badge: 'Stalled',
     link: `/m/lap?id=${a.applicationId}`,
     ask: own ? `Why is application #${a.applicationId} stuck?` : `Create a follow-up task for application #${a.applicationId}`,
@@ -148,11 +148,11 @@ export function todayList(p: TodayPlan, runId: string, opts: { startsWork?: bool
 
 export function pipelineTake(f: PipelineFound, own: boolean): DiTake {
   if (!f.count) return { headline: 'Nothing has stalled. The pipeline is moving.' };
-  if (f.detailsHidden) return { headline: `${f.count} applications have stalled, worth ${money(f.dollars)}. ${f.byProduct[0]!.product} is the largest group, with ${f.byProduct[0]!.count}.`, action: { label: 'Ask about the funnel', ask: 'Show the pipeline by product' } };
+  if (f.detailsHidden) return { headline: `${f.count} applications have stalled, worth ${money(f.dollars)}. ${f.byProduct[0]!.product} is the largest group, with ${f.byProduct[0]!.count}.${mostWaitOn(f)}`, action: { label: 'Ask about the funnel', ask: 'Show the pipeline by product' } };
   const ranked = [...f.items].sort((a, b) => applicationWeight(b) - applicationWeight(a));
   const top = ranked[0]!;
   const n = Math.min(FOLLOW_UPS, ranked.length);
-  const headline = `${f.count} ${f.count === 1 ? 'has' : 'have'} stalled. ${top.name}’s ${money(top.amount)} ${lower(top.product)} matters most: ${days(top.daysInStatus)} ${inStatus(top.status)}, over the ${top.threshold}-day threshold.`;
+  const headline = `${f.count} ${f.count === 1 ? 'has' : 'have'} stalled. ${top.name}’s ${money(top.amount)} ${lower(top.product)} matters most: ${days(top.daysInStatus)} ${inStatus(top.status)}, over the ${top.threshold}-day threshold.${top.hold ? ` ${top.hold.label}.` : ''}${mostWaitOn(f)}`;
   if (own) return { headline, action: { label: 'Why is it stuck?', ask: `Why is application #${top.applicationId} stuck?` } };
   return { headline, action: { label: `Create follow-ups for the top ${n}`, ask: `Create follow-up tasks for applications ${ranked.slice(0, n).map((a) => `#${a.applicationId}`).join(', ')}` } };
 }

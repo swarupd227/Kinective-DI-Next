@@ -203,6 +203,7 @@ export interface PipelineApplicationRow {
   stalled: boolean;
   owner: { employeeId: number; name: string } | null;
   branch: string;
+  hold: { label: string; waitingOn: string; nextStep: string; days: number } | null;
 }
 
 /** GET /v1/lap/applications. Items are empty without Application Details. */

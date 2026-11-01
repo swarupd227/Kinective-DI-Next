@@ -18,7 +18,7 @@ const MAX_TOOL_CALLS = 8;
 const TURN_BUDGET_MS = 60_000;
 
 /** Asks about loan applications, as opposed to loans on the books or the data pipeline. */
-export const PIPELINE_REQUEST = /(?<![/])(?<!data )\bpipeline\b(?! agent)|\bloan app(lication)?s?\b|\b(my|pending|stalled|open) app(lication)?s\b|\bunderwriting\b|\bcounter offers?\b|\bstall(ed|s)?\b|\bapproval rate\b|\bapplications? #?\d{2,}\b/i;
+export const PIPELINE_REQUEST = /(?<![/])(?<!data )\bpipeline\b(?! agent)|\bloan app(lication)?s?\b|\b(my|pending|stalled|open) app(lication)?s\b|\bunderwriting\b|\bcounter offers?\b|\bstall(ed|s)?\b|\bapproval rate\b|\bapplications? #?\d{2,}\b|\bwaiting on (an? |the )?(appraisals?|appraiser|title|underwriter|applicants?)\b/i;
 
 /** The agent makes tasks for staff; it does not reach out to anyone (AI-AGT-181). */
 export const CONTACT_APPLICANT = /\b(email|e-mail|call|text|phone|message|contact|write to|notify)\b[^.?!]*\b(applicants?|borrowers?|members?|customers?)\b/i;
@@ -55,11 +55,17 @@ const freshness = (s: { asOf: string; stale: boolean }) => ({ kind: 'nightly_bui
 
 const provenance = (runId: string, operation: string) => ({ agent: PIPELINE_AGENT, runId, operations: [operation], sources: [{ kind: 'table' as const, label: 'Loan Application Pipeline', ref: 'table:cdm_loan_application' }] });
 
+/** The pattern across a set of applications, when more than one shares it. */
+export const mostWaitOn = (f: Pick<PipelineFound, 'holds'>) => {
+  const [top] = f.holds;
+  return top && top.count > 1 ? ` ${top.count} are waiting on ${top.waitingOn}.` : '';
+};
+
 /** The sentence the spec's dialog gives: count, dollars and the oldest, and last names for read-back. */
 export function foundText(f: PipelineFound, what: string) {
   if (!f.count) return `Nothing ${what}. ${load(f)}`;
   const oldest = f.items.slice(0, 3).map((a) => `${a.lastName} ${a.daysInStatus}`);
-  return `**${apps(f.count)}** worth **${money(f.dollars)}** ${what}. ${load(f)} The oldest has waited **${f.oldestDays} days**${oldest.length ? ` (${oldest.join(', ')})` : ''}.${f.detailsHidden ? ' Your access shows totals, not individual applications.' : ''}`;
+  return `**${apps(f.count)}** worth **${money(f.dollars)}** ${what}. ${load(f)} The oldest has waited **${f.oldestDays} days**${oldest.length ? ` (${oldest.join(', ')})` : ''}.${f.count > 1 ? mostWaitOn(f) : ''}${f.detailsHidden ? ' Your access shows totals, not individual applications.' : ''}`;
 }
 
 export function applicationList(items: PipelineApplication[], f: Pick<PipelineFound, 'asOf' | 'stale'>, runId: string, title: string): ListBlock {
@@ -78,7 +84,7 @@ export function applicationList(items: PipelineApplication[], f: Pick<PipelineFo
         subtitle: `${money(a.amount)} · ${a.status} · ${a.owner?.name ?? 'No owner'} · ${a.branch}`.slice(0, 240),
         meta: `#${a.applicationId} · ${a.daysInStatus} ${a.daysInStatus === 1 ? 'day' : 'days'}`,
         link: `/m/lap?id=${a.applicationId}`,
-        ...(a.stalled ? { badge: { label: 'Stalled', tone: 'danger' as const }, why: `${a.daysInStatus} days ${inStatus(a.status)}, over the ${a.threshold}-day threshold.` } : {}),
+        ...(a.stalled ? { badge: { label: 'Stalled', tone: 'danger' as const }, why: `${a.daysInStatus} days ${inStatus(a.status)}, over the ${a.threshold}-day threshold.${a.hold ? ` ${a.hold.label}.` : ''}` } : {}),
       })),
     },
   };
@@ -151,11 +157,17 @@ export const withoutFigures = (note: string) =>
     .filter((s) => !/\d/.test(s))
     .join(' ');
 
-/** One application in words: where it is, for how long, and who has it. */
+/** What's holding it up, from the LOS. With nothing recorded, it says so and doesn't guess. */
+function holdText(h: PipelineApplication['hold']) {
+  if (!h) return 'The LOS doesn’t record what it’s waiting on.';
+  return `**${h.label}.** ${h.days ? `It has waited on ${h.waitingOn} for **${h.days} ${h.days === 1 ? 'day' : 'days'}**.` : `It’s waiting on ${h.waitingOn}.`} ${h.nextStep}`;
+}
+
+/** One application in words: where it is, for how long, who has it, and what it's waiting on. */
 export function applicationText(a: PipelineApplication & { history: { status: string; at: string }[]; asOf: string; stale: boolean }) {
   const since = a.history.at(-1)?.at;
   if (!a.open) return `**${a.name}’s ${midSentence(a.product)}** (${money(a.amount)}) is ${midSentence(a.status)}. ${load(a)}`;
-  return `**${a.name}’s ${midSentence(a.product)}** (${money(a.amount)}) has been ${inStatus(a.status)} for **${a.daysInStatus} ${a.daysInStatus === 1 ? 'day' : 'days'}**${a.threshold !== null ? `${a.stalled ? ', over' : ', within'} the ${a.threshold}-day threshold` : ''}${since ? `, since ${shortDate(since)}` : ''}. ${a.owner ? `${a.owner.name} has it. ` : ''}${load(a)}`;
+  return `**${a.name}’s ${midSentence(a.product)}** (${money(a.amount)}) has been ${inStatus(a.status)} for **${a.daysInStatus} ${a.daysInStatus === 1 ? 'day' : 'days'}**${a.threshold !== null ? `${a.stalled ? ', over' : ', within'} the ${a.threshold}-day threshold` : ''}${since ? `, since ${shortDate(since)}` : ''}. ${a.owner ? `${a.owner.name} has it. ` : ''}${holdText(a.hold)} ${load(a)}`;
 }
 
 export function rateText(r: LapRate) {
@@ -250,7 +262,8 @@ How you work:
 - "Show my applications", "what's stuck in underwriting", "over $50,000": lap_applications_list, then finish with outcome "list".
 - "More than five days" is min_days 5. Say which status with status, such as "underwriting" or "counter offer".
 - "Show the pipeline", "by product", "the funnel": lap_summary_get, then outcome "summary".
-- One application, such as "why is application 482 stuck?": lap_application_get, then outcome "detail". The screen already gives the status, days, dates, threshold and owner, so don't repeat them, whatever the question. Your message is one short sentence on what the path suggests, or that the data doesn't show the cause. Never speculate about the people involved.
+- One application, such as "why is application 482 stuck?": lap_application_get, then outcome "detail". Code already writes the status, days, dates, threshold, owner and what it's waiting on, or that the LOS records nothing, so never repeat them, whatever the question. Your message is one short sentence on anything the path adds, or empty if it adds nothing. Never guess at a cause or speculate about the people involved.
+- "Why are my applications stuck?", "which are waiting on an appraisal?": lap_applications_list, with waiting_on if they name it, then outcome "list". Code states the pattern.
 - Approval rates: lap_approval_rate_get, then outcome "rate". It covers the last two complete months.
 - Follow-ups: find the applications, then lap_follow_ups_create with their numbers. Thresholds: lap_threshold_set. Each returns approval_required: finish with outcome "approval" and never say it is done.
 - Finish every turn with finish_turn, exactly once. Code writes the figures on screen; your message only adds context.
@@ -391,7 +404,7 @@ export async function runPipeline(input: PipelineInput, deps: { model: ModelClie
 
 export type PipelineIntent =
   | { intent: 'summary'; view?: string }
-  | { intent: 'list'; view?: string; status?: string; product?: string; stalled: boolean; minDays?: number; minAmount?: number }
+  | { intent: 'list'; view?: string; status?: string; product?: string; stalled: boolean; minDays?: number; minAmount?: number; waitingOn?: string }
   | { intent: 'rate'; product?: string }
   | { intent: 'detail'; id: number }
   | { intent: 'tasks'; ids: number[]; status?: string; minDays?: number; stalled: boolean }
@@ -402,6 +415,7 @@ const PRODUCT_WORD = /\b(auto|mortgage|heloc|personal|credit card|business|consu
 const viewFrom = (t: string) => (/\b(my branch|my location|location)\b/i.test(t) ? 'location' : /\bteam\b/i.test(t) ? 'team' : /\b(institution|whole|everyone|all branches)\b/i.test(t) ? 'institution' : /\b(my|mine)\b/i.test(t) ? 'mine' : undefined);
 const statusFrom = (t: string) => STATUS_WORD.exec(t)?.[1]?.toLowerCase().replace(/ offers?$/, ' offer').replace(/^documents?$/, 'documents');
 const productFrom = (t: string) => PRODUCT_WORD.exec(t)?.[1];
+const waitingFrom = (t: string) => /\bwaiting on (?:an? |the )?(appraisal|appraiser|title|underwriter|applicant)s?\b/i.exec(t)?.[1]?.toLowerCase();
 
 /** Reads plain requests the way people say them. Exported for tests. */
 export function parsePipelineRequest(text: string): PipelineIntent {
@@ -418,10 +432,11 @@ export function parsePipelineRequest(text: string): PipelineIntent {
   if (named[0]) return { intent: 'detail', id: named[0] };
   if (/\b(by product|funnel|summary)\b/i.test(t) || /\b(the|my|our) pipeline\b/i.test(t)) return { intent: 'summary', view: viewFrom(t) };
   const amount = /\$\s?([\d,]+)(k?)/i.exec(t);
-  return { intent: 'list', view: viewFrom(t), status: statusFrom(t), product: productFrom(t), stalled: /\b(stall(ed|s)?|stuck)\b/i.test(t), minDays, minAmount: amount ? Number(amount[1]!.replace(/,/g, '')) * (amount[2] ? 1000 : 1) : undefined };
+  return { intent: 'list', view: viewFrom(t), status: statusFrom(t), product: productFrom(t), stalled: /\b(stall(ed|s)?|stuck)\b/i.test(t), minDays, minAmount: amount ? Number(amount[1]!.replace(/,/g, '')) * (amount[2] ? 1000 : 1) : undefined, waitingOn: waitingFrom(t) };
 }
 
-const describe = (p: { status?: string; stalled: boolean; minDays?: number; minAmount?: number }) => {
+const describe = (p: { status?: string; stalled: boolean; minDays?: number; minAmount?: number; waitingOn?: string }) => {
+  if (p.waitingOn) return `are waiting on ${/^(title)$/.test(p.waitingOn) ? 'title work' : `the ${p.waitingOn}`}`;
   const where = p.status ? (p.status === 'counter offer' ? 'at counter offer' : p.status === 'documents' ? 'waiting on documents' : `in ${p.status}`) : 'open';
   return `${p.stalled ? 'have stalled' : 'are'} ${p.stalled && !p.status ? '' : where}${p.minDays !== undefined ? ` more than ${p.minDays} days` : ''}${p.minAmount !== undefined ? ` over ${money(p.minAmount)}` : ''}`.replace(/ +/g, ' ').trim();
 };
@@ -467,6 +482,6 @@ export async function runPipelineOffline(input: PipelineInput, deps: { gateway: 
     const r = await call('lap_follow_ups_create', { application_ids: ids });
     return r.ok ? show('approval', 'Check this and approve it. Nothing is created until you do.', { tasks: r.tasks }, input, sink, base) : refused(r);
   }
-  const r = await call('lap_applications_list', { ...(p.view ? { view: p.view } : {}), ...(p.status ? { status: p.status } : {}), ...(p.product ? { product: p.product } : {}), stalled_only: p.stalled, ...(p.minDays !== undefined ? { min_days: p.minDays } : {}), ...(p.minAmount !== undefined ? { min_amount: p.minAmount } : {}) });
+  const r = await call('lap_applications_list', { ...(p.view ? { view: p.view } : {}), ...(p.status ? { status: p.status } : {}), ...(p.product ? { product: p.product } : {}), stalled_only: p.stalled, ...(p.minDays !== undefined ? { min_days: p.minDays } : {}), ...(p.minAmount !== undefined ? { min_amount: p.minAmount } : {}), ...(p.waitingOn ? { waiting_on: p.waitingOn } : {}) });
   return r.ok ? show('list', '', { found: r.found && { result: r.found, what: describe(p) } }, input, sink, base) : refused(r);
 }

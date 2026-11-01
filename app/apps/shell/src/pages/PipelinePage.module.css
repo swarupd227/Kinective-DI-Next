@@ -358,3 +358,7 @@
     text-align: left;
   }
 }
+
+.hold {
+  margin: 0;
+}

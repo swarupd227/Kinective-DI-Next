@@ -6,7 +6,7 @@ import { validateBlock, type Block } from '@dinext/block-schemas';
 import { ApprovalStore, CoreError, PipelineService, ReferralService, RelationshipService } from '@dinext/di-core';
 import { SemanticService } from '@dinext/semantic';
 import { createPool, markDuplicates, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
-import { AuditLog, CONTACT_APPLICANT, Concierge, INBOX_REQUEST, PIPELINE_REQUEST, foundText, parsePipelineRequest, withoutFigures, rateText, runPipelineOffline, summaryBlocks, ToolGateway, type PipelineInput, type RunSink, type TenantRuntime } from '../src/index.ts';
+import { AuditLog, CONTACT_APPLICANT, Concierge, INBOX_REQUEST, mostWaitOn, PIPELINE_REQUEST, applicationText, foundText, parsePipelineRequest, withoutFigures, rateText, runPipelineOffline, summaryBlocks, ToolGateway, type PipelineInput, type RunSink, type TenantRuntime } from '../src/index.ts';
 
 const SCHEMA = 'dinext_t_test_cu';
 const up = await warehouseAvailable(SCHEMA);
@@ -33,6 +33,24 @@ describe('recognising pipeline work', () => {
     expect(parsePipelineRequest('Show counter offers over $50,000')).toMatchObject({ intent: 'list', status: 'counter offer', minAmount: 50_000 });
     expect(parsePipelineRequest('Create follow-up tasks for pending apps older than 10 days')).toMatchObject({ intent: 'tasks', minDays: 10, stalled: false });
     expect(parsePipelineRequest('Set the underwriting stall threshold for auto to 3 days')).toEqual({ intent: 'threshold', status: 'underwriting', product: 'auto', days: 3 });
+  });
+
+  it('hears what an application is waiting on', () => {
+    expect(PIPELINE_REQUEST.test('Which ones are waiting on an appraisal?')).toBe(true);
+    expect(parsePipelineRequest('Which of my apps are waiting on an appraisal?')).toMatchObject({ intent: 'list', waitingOn: 'appraisal' });
+  });
+
+  it('says what holds an application up, and says so when nothing is recorded', () => {
+    const app = { name: 'Tom Ruiz', product: 'First mortgage', amount: 255_100, open: true, status: 'In underwriting', daysInStatus: 17, threshold: 5, stalled: true, owner: { name: 'Ana Ruiz' }, history: [{ status: 'In underwriting', at: '2026-10-08' }], asOf: '2026-10-25', stale: false };
+    const held = applicationText({ ...app, hold: { label: 'The appraisal isn’t back', waitingOn: 'the appraiser', nextStep: 'Check when the appraisal is due.', days: 9 } } as never);
+    expect(held).toContain('**The appraisal isn’t back.** It has waited on the appraiser for **9 days**. Check when the appraisal is due.');
+    expect(applicationText({ ...app, hold: null } as never)).toContain('The LOS doesn’t record what it’s waiting on.');
+  });
+
+  it('states a pattern only when more than one shares it', () => {
+    expect(mostWaitOn({ holds: [{ waitingOn: 'the appraiser', count: 6 }] })).toBe(' 6 are waiting on the appraiser.');
+    expect(mostWaitOn({ holds: [{ waitingOn: 'the appraiser', count: 1 }] })).toBe('');
+    expect(mostWaitOn({ holds: [] })).toBe('');
   });
 
   it('keeps only what a note adds to the record beside it', () => {

@@ -18,7 +18,7 @@ const when = (iso: string) => {
 };
 
 export function ConversationsPage() {
-  const { api } = useSession();
+  const { api, dropThreadNotices } = useSession();
   const toast = useToast();
   const qc = useQueryClient();
   const [q, setQ] = useState('');
@@ -33,7 +33,8 @@ export function ConversationsPage() {
   const update = useMutation({ mutationFn: (v: { id: string; title?: string; archived?: boolean }) => api.updateThread(v.id, v), onSuccess: invalidate });
   const remove = useMutation({
     mutationFn: (id: string) => api.deleteThread(id),
-    onSuccess: () => {
+    onSuccess: (_, id) => {
+      dropThreadNotices(id);
       toast.show('Conversation deleted');
       void invalidate();
     },

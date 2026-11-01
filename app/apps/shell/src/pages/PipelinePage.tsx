@@ -196,6 +196,7 @@ function Row({ app, selected, onOpen }: { app: PipelineApplicationRow; selected:
         <span className={styles.sub}>
           {app.product} · {app.status} · {app.owner?.name ?? 'No owner'}
         </span>
+        {app.hold && <span className={styles.sub}>{app.hold.label}</span>}
       </span>
       <span className={styles.rowSide}>
         {app.stalled ? (
@@ -303,6 +304,11 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
         <p className={styles.alert}>
           <CircleAlert size={14} aria-hidden />
           {days(a.daysInStatus)} in this status, over the {a.threshold}-day threshold, as of the {shortDate(a.asOf)} LOS load.
+        </p>
+      )}
+      {a.hold && (
+        <p className={styles.hold}>
+          <strong>{a.hold.label}.</strong> {a.hold.days > 0 ? `Waiting on ${a.hold.waitingOn} for ${days(a.hold.days)}.` : `Waiting on ${a.hold.waitingOn}.`} {a.hold.nextStep}
         </p>
       )}
       <dl className={styles.facts}>

@@ -3,7 +3,7 @@
 import mysql from 'mysql2/promise';
 import { ADMIN_DB_URL, DEFAULT_DB_URL, dbSsl } from './db.ts';
 import { AS_OF, BUILD, generate, TENANTS } from './generate.ts';
-import { generatePipeline, LAP_APPLICATION_COLUMNS, LAP_STATUSES, PIPELINE_DDL, PIPELINE_WRITE_TABLES } from './pipeline.ts';
+import { generatePipeline, LAP_APPLICATION_COLUMNS, LAP_HOLDS, LAP_STATUSES, PIPELINE_DDL, PIPELINE_WRITE_TABLES } from './pipeline.ts';
 import { generateRelationship, RELATIONSHIP_DDL } from './relationship.ts';
 import { reportSeed } from './reports.ts';
 import { TENANT_DDL } from './schema.ts';
@@ -52,6 +52,8 @@ async function main() {
     for (const ddl of PIPELINE_DDL) await admin.query(ddl);
     await insert(admin, 'mod_lap_status_map', ['status_code', 'label', 'definition', 'in_progress', 'visible', 'reporting_group', 'sort_order', 'stall_days'], LAP_STATUSES.map((s) => [...s]));
     await insert(admin, 'cdm_loan_app_status_history', ['application_id', 'status_code', 'entered_date'], lap.history);
+    await insert(admin, 'mod_lap_hold_reason', ['hold_code', 'label', 'waiting_on', 'next_step'], LAP_HOLDS.map((h) => h.slice(0, 4) as unknown[]));
+    await insert(admin, 'cdm_loan_app_hold', ['application_id', 'hold_code', 'since_date'], lap.holds);
     await insert(admin, 'hist_lap_month', ['month_end', 'branch_id', 'loan_category', 'application_count', 'approved_count', 'decided_count'], lap.months);
     await insert(admin, 'meta_lap_load', ['load_date', 'state'], [[AS_OF, 'completed']]);
     for (const ddl of WORKFLOW_DDL) await admin.query(ddl);

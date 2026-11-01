@@ -229,6 +229,15 @@ DI brings the work to the person. Screens stay for checking and overriding.
 - **Reports:** the library opens with a failed schedule, an unfinished draft or what's ready. A report opens with the biggest move the wrong way, and that line follows the month and branch controls.
 - **Why this order:** the day's plan says why the first item leads, by comparing it in code with the other work of its kind. This is not left to the model, which claimed a comparison that wasn't true when it was tried.
 
+### Why it's stuck (Slice 13)
+
+- **Reasons from the LOS:** open applications carry what they're waiting on and since when. The reasons are demo data until the real LOS is confirmed to record them. About one in ten have none, and DI says so rather than guessing.
+- **Asking:** "Why is it stuck?" gives the reason, who it's waiting on, for how long and the next step. "Which are waiting on an appraisal?" filters by it.
+- **Follow-ups:** each task carries the reason and that next step, instead of a generic note. DI still never contacts applicants.
+- **Patterns:** the Pipeline's view, the day plan and lists say what most are waiting on. Roles with totals only see the counts.
+
+This release changes the data, so run `npm run db:seed`, which resets every tenant.
+
 ## Not done yet
 
 - **Agents:** a live golden-question evaluation on Claude (needs your approval), conversation memory beyond the server process, and real Goals & Incentives and Retention agents.

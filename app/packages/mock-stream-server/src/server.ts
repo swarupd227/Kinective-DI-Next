@@ -574,6 +574,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         if (method === 'DELETE') {
           // Removed from the list only; the audit record of prompts and approvals is kept (spec 6.6).
           t.deleted = true;
+          notifications = notifications.filter((n) => n.link !== `/c/${t.summary.threadId}`);
           return json(res, 204);
         }
       }

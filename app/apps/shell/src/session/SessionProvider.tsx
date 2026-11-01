@@ -19,6 +19,8 @@ export interface SessionValue {
   terms: Terms;
   can: (app: AppId) => boolean;
   notifications: AppNotification[];
+  /** A deleted task's notices go with it. */
+  dropThreadNotices: (threadId: string) => void;
   markRead: (ids: string[]) => void;
   /** Sends a message to a thread, following it first so its events arrive (spec 12.3). */
   send: (threadId: string, text: string, context?: ContextRef[], slashCommand?: string, opts?: SendOptions) => Promise<void>;
@@ -107,6 +109,8 @@ function SessionBootstrap({ children }: { children: ReactNode }) {
     };
   }, [api, session]);
 
+  const dropThreadNotices = useCallback((threadId: string) => setNotifications((xs) => xs.filter((n) => n.link !== `/c/${threadId}`)), []);
+
   const markRead = useCallback(
     (ids: string[]) => {
       // Marking read is harmless and reversible, so it is optimistic (spec 11.7).
@@ -157,12 +161,13 @@ function SessionBootstrap({ children }: { children: ReactNode }) {
       terms: terminology(session.tenant.institutionType),
       can: (app) => apps.has(app),
       notifications,
+      dropThreadNotices,
       markRead,
       send,
       startThread,
       switchPersona,
     };
-  }, [session, api, live, connState, notifications, markRead, send, startThread, switchPersona]);
+  }, [session, api, live, connState, notifications, dropThreadNotices, markRead, send, startThread, switchPersona]);
 
   if (sessionQuery.isError) {
     return (
