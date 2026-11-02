@@ -191,7 +191,7 @@ export function ApprovalCardView({ block }: { block: ApprovalCardBlock }) {
                 {d.confirmation.stepUp && (
                   <li>
                     <KeyRound size={16} aria-hidden />
-                    You will be asked to sign in again before this is approved.
+                    In production you would sign in again to approve this. The demo skips that step.
                   </li>
                 )}
               </ul>

@@ -43,7 +43,7 @@ export interface ModuleChange {
   risk: RiskTier;
   /** Something to type before approving, such as a regulator issue's number. */
   typed?: { prompt: string; expected: string };
-  /** Sign in again before approving, as every admin write does (AI-AGT-140). */
+  /** Needs a step-up token before approving, as every admin write does (AI-AGT-140). The demo issues it silently. */
   stepUp?: boolean;
   /** What the tool's apply needs, stored with the approval. */
   apply: unknown;
