@@ -3,8 +3,8 @@
 // key the Concierge runs its deterministic offline planner (spec 23.6.4).
 import { randomBytes } from 'node:crypto';
 import type { ApprovalCardBlock, ApprovalDecisionRequest, Block, KpiGroupBlock, ListBlock, Member360Block, SearchResult, StreamEvent, StreamingEnvelope, TableData } from '@dinext/block-schemas';
-import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, goalsTake, pipelineTake, referralTake, reportsTake, todayList, describeSchedule, hasClaudeCredentials, member360, memberTake, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
-import { ApprovalStore, CoreError, GoalsService, RetentionService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
+import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, callReportModule, campaignModule, collectionsModule, complianceModule, dataLogsModule, goalsTake, ModuleGateway, onboardingModule, operationsModule, pipelineTake, segModule, referralTake, reportsTake, todayList, describeSchedule, hasClaudeCredentials, member360, memberTake, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
+import { ApprovalStore, CallReportService, CampaignService, CollectionsService, CoreError, DataLogService, GoalsService, IssueService, OnboardingService, OperationsService, RetentionService, SegService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
 import type { AppNotification, DiTake, GoalsIndex, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
 import { renderExport } from './exports.ts';
 import { SemanticService } from '@dinext/semantic';
@@ -148,7 +148,7 @@ const giAccess = (p: PersonaId) => ({ leads: PERSONAS[p].leadsBranch, approves: 
 
 const personaContext = (p: PersonaId) => {
   const s = PERSONAS[p].session;
-  return { purviewBranches: PERSONAS[p].purview, canViewSql: s.permissions.queryBrowser, employeeId: PERSONAS[p].employeeId, lap: lapAccess(p), gi: giAccess(p), retention: PERSONAS[p].retention };
+  return { purviewBranches: PERSONAS[p].purview, canViewSql: s.permissions.queryBrowser, employeeId: PERSONAS[p].employeeId, lap: lapAccess(p), gi: giAccess(p), retention: PERSONAS[p].retention, modules: PERSONAS[p].modules ?? [] };
 };
 
 /** Maps a run's sink calls to stream events (spec 12.4). Text is verified before it streams. */
@@ -231,6 +231,12 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       () => false,
     );
     const pipeline = hasPipeline ? new PipelineService(pool) : null;
+    // The business modules exist once the tenant was seeded with Slice 17 or later.
+    const hasModules = await pool.query('SELECT 1 FROM cpm_issue LIMIT 1').then(
+      () => true,
+      () => false,
+    );
+    const modules = hasModules ? new ModuleGateway(new ApprovalStore(pool), [complianceModule(new IssueService(pool), pool), onboardingModule(new OnboardingService(pool)), dataLogsModule(new DataLogService(pool)), operationsModule(new OperationsService(pool)), callReportModule(new CallReportService(pool)), collectionsModule(new CollectionsService(pool)), campaignModule(new CampaignService(pool)), segModule(new SegService(pool), () => new Date().toISOString().slice(0, 10))]) : null;
     // Goals & Incentives exists once the tenant was seeded with Slice 14 or later.
     const hasGoals = await pool.query('SELECT 1 FROM mod_gi_goal LIMIT 1').then(
       () => true,
@@ -247,7 +253,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     const [staff] = await pool.query('SELECT DISTINCT display_name FROM cdm_employee');
     const dims = semantic.dimensionValues;
     const vocabulary = [...new Set([...(dims.branch ?? []), ...(dims.region ?? []), ...(dims.loan_category ?? []), ...(dims.deposit_category ?? []), ...(staff as { display_name: string }[]).map((s) => s.display_name).filter((s) => !/^\w\. /.test(s))])];
-    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, runtime: { key: t.key, name, institutionType, semantic, workflow, reports } });
+    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules } });
   }
   if (!tenants.size) return null;
 
@@ -306,6 +312,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
           employeeId: PERSONAS[persona].employeeId,
           lap: lapAccess(persona),
           gi: giAccess(persona),
+          modules: PERSONAS[persona].modules ?? [],
         },
         sink,
       );
@@ -391,7 +398,10 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       const gateway = tenantFor(persona)?.runtime.workflow?.gateway;
       if (!gateway) return null;
       const s = PERSONAS[persona].session;
-      const plan = await buildToday({ user: s.user, apps: s.apps, ...personaContext(persona) }, gateway);
+      const tenant = tenantFor(persona)!;
+      const context = personaContext(persona);
+      const moreWork = () => tenant.runtime.modules?.today({ user: s.user, purviewBranches: context.purviewBranches, employeeId: context.employeeId, modules: context.modules, leads: context.gi.leads, runId: 'R-today', threadId: 'today' }) ?? Promise.resolve([]);
+      const plan = await buildToday({ user: s.user, apps: s.apps, ...context, moreWork }, gateway);
       return plan.items.length ? todayList(plan, 'R-today', { startsWork: true }) : null;
     },
 

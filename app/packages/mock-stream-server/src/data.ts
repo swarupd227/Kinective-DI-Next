@@ -33,6 +33,8 @@ interface Persona {
   approvesIncentives?: boolean;
   /** Retail leadership or deposit pricing (spec 24.23). */
   retention?: boolean;
+  /** Business modules this class can use, with datalogs-approve for those who approve. */
+  modules?: string[];
   suggestions: string[];
 }
 
@@ -64,7 +66,8 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     lendingAdmin: true,
     approvesIncentives: true,
     retention: true,
-    suggestions: ['What should I do today?', 'Show the October payouts', 'Get me ready for Thursday’s ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'Prepare me for my meeting with Suzanne Jackson', 'Brief me'],
+    modules: ['compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'callreport', 'collections', 'campaigns', 'seg'],
+    suggestions: ['What should I do today?', 'Show the October payouts', 'Which regulatory issues are open more than 3 weeks?', 'Are we ready to file Q3?', 'Show the early-warning list', 'Get me ready for Thursday’s ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'Prepare me for my meeting with Suzanne Jackson', 'Brief me'],
   },
   analyst: {
     session: {
@@ -74,7 +77,8 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       permissions: { queryBrowser: true, dashboardAdmin: false },
     },
     retention: true,
-    suggestions: ['/query loans opened last week by branch', 'Build a table summary of fees by product', 'Show loan growth by branch for Q3 vs Q2', 'Find certificates at risk of leaving'],
+    modules: ['compliance', 'datalogs', 'operations', 'callreport', 'campaigns'],
+    suggestions: ['/query loans opened last week by branch', 'Which campaigns produced the most loan dollars?', 'Which checks failed?', 'Build a table summary of fees by product', 'Show loan growth by branch for Q3 vs Q2', 'Find certificates at risk of leaving'],
   },
   branch: {
     session: {
@@ -89,6 +93,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     lapDetails: true,
     approvesIncentives: true,
     retention: true,
+    modules: ['compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'collections', 'seg'],
     suggestions: ['What should I do today?', 'Who on my team is behind on goals?', 'Approve the October payouts for Westport', 'What’s on my team’s plate?', 'Show the pipeline by product for my branch', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups', 'Refer Suzanne Jackson for a HELOC, she prefers a call after 5 pm', 'Show my overdue onboarding touch points', 'Show Northgate loan detail'],
   },
   lender: {
@@ -113,6 +118,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     floor: true,
     purview: ['Westport'],
     employeeId: 4,
+    modules: ['compliance', 'onboarding', 'datalogs'],
     suggestions: ['What should I do today?', 'How am I doing on my goals this month?', 'Why is my referral incentive only $40?', 'What’s on my plate today?', 'Show my overdue referrals', 'Prepare me for my meeting with Suzanne Jackson'],
   },
   bank_cfo: {
@@ -125,6 +131,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     },
     approvesIncentives: true,
     retention: true,
+    modules: ['compliance', 'datalogs', 'datalogs-approve', 'collections', 'campaigns'],
     suggestions: ['Get me ready for Thursday’s ALCO meeting', 'Brief me', 'Show loan growth by branch for Q3 vs Q2', 'Show the October payouts'],
   },
   admin: {
@@ -134,7 +141,8 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       apps: ['home', 'conversations', 'tables', 'queries', 'datalogs', 'users', 'admin', 'files'],
       permissions: { queryBrowser: true, dashboardAdmin: true },
     },
-    suggestions: ['Did last night\'s build finish?', 'Create a user for Maria Gomez as a Westport MSR', 'Which uploaders missed their late-file time?', 'Run the protocol resilience test'],
+    modules: ['datalogs', 'datalogs-approve', 'operations', 'admin'],
+    suggestions: ['Did last night\'s build finish?', 'Create a user for Maria Gomez as a Westport MSR', 'Which uploaders missed their late-file time?', 'Who can approve incentives?', 'Run the protocol resilience test'],
   },
 };
 
@@ -310,38 +318,9 @@ export function usersToTell(employeeId: number | undefined, branch: string | und
     .map((p) => p.session.user.id);
 }
 
-export function homeApprovals(id: PersonaId, mkId: (p: string, n?: number) => string): ApprovalCardBlock[] {
-  if (id !== 'executive' && id !== 'bank_cfo') return [];
-  const expires = new Date(Date.now() + 8 * 3600_000).toISOString();
-  const dataLog: ApprovalCardBlock = {
-    id: mkId('blk_', 16),
-    type: 'approval_card',
-    version: '1.2.0',
-    title: 'Data log',
-    provenance: { agent: 'Data Logs', operations: ['datalog.entry.approve'], sources: [{ kind: 'workflow', label: 'Data Logs', ref: 'datalog:4471' }] },
-    freshness: { kind: 'workflow_event' },
-    data: {
-      approvalId: mkId('apr_', 14),
-      summary: 'Approve data log #4471 "Branch cash count adjustment"',
-      riskTier: 'medium',
-      operation: 'datalog.entry.approve',
-      requestedBy: { kind: 'user', onBehalfOf: 'user:3310', onBehalfOfName: 'J. Ortiz' },
-      preview: {
-        kind: 'diff',
-        changes: [
-          { label: 'Westport vault cash', before: '$412,300.00', after: '$411,950.00' },
-          { label: 'Reason', before: '—', after: 'Recount after armoured car delivery' },
-        ],
-      },
-      affected: { records: 1, users: 1, external: 0 },
-      confirmation: { methods: ['click', 'keyboard', 'voice'], typedValue: null, stepUp: false, secondApprover: null, noteRequired: false },
-      editablePlan: false,
-      expiresAt: expires,
-      idempotencyKey: `idem_${mkId('', 24)}`,
-      previewHash: 'sha256:7b1e4a90cc21',
-    },
-  };
-  return [dataLog];
+/** Waiting approvals not tied to a task. Real work now reaches Home through the day plan. */
+export function homeApprovals(_id: PersonaId, _mkId: (p: string, n?: number) => string): ApprovalCardBlock[] {
+  return [];
 }
 
 // ---- Search ---------------------------------------------------------------------------------------

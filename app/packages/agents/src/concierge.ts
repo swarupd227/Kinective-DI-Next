@@ -24,6 +24,7 @@ import { runReportAgent, runReportOffline, type ReportOutcome } from './reportAg
 import type { RunSink, StepUpdate } from './sink.ts';
 import { runToday, TODAY_REQUEST, type TodayOutcome } from './today.ts';
 import { RETENTION_AGENT, RETENTION_REQUEST, runRetention, runRetentionOffline, type RetentionInput, type RetentionOutcome } from './retention.ts';
+import { runModule, runModuleOffline, type ModuleContext, type ModuleGateway, type ModuleOutcome, type ModuleSpec } from './moduleAgent.ts';
 import { GI_AGENT, GI_REQUEST, incentivesSources, runIncentives, runIncentivesOffline, type IncentivesInput, type IncentivesOutcome } from './incentives.ts';
 
 /** Agents the Concierge can route to. Scripted ones are placeholders until their slices land. */
@@ -64,6 +65,8 @@ export interface TenantRuntime {
   workflow?: { referrals: ReferralService; gateway: ToolGateway; relationship?: RelationshipService | null } | null;
   /** Report templates, schedules and exports over the semantic layer. */
   reports?: { gateway: ReportGateway } | null;
+  /** The business modules on the shared agent. */
+  modules?: ModuleGateway | null;
 }
 
 export interface ConciergeTurn {
@@ -81,6 +84,8 @@ export interface ConciergeTurn {
   lap?: PipelineInput['lap'];
   gi?: IncentivesInput['gi'];
   retention?: boolean;
+  /** Modules this person's class can use. */
+  modules?: string[];
 }
 
 /**
@@ -104,6 +109,7 @@ export interface ApprovalDecisionInput {
   employeeId?: number;
   lap?: PipelineInput['lap'];
   gi?: IncentivesInput['gi'];
+  modules?: string[];
 }
 
 export type ApprovalDecisionResult = { status: number; body: unknown; resolved?: 'approved' | 'denied' | 'returned' };
@@ -177,7 +183,7 @@ const auditOutcome = (r: ReferralOutcome): AuditRecord['outcome'] =>
 
 const reportAudit = (r: ReportOutcome): AuditRecord['outcome'] => (r.outcome === 'approval' ? 'approval_requested' : r.outcome === 'clarify' ? 'clarify' : r.outcome === 'report' || r.outcome === 'list' ? 'answer' : r.outcome);
 
-const inboxAudit = (r: InboxOutcome | PipelineOutcome | IncentivesOutcome | RetentionOutcome): AuditRecord['outcome'] => (r.outcome === 'approval' ? 'approval_requested' : r.outcome);
+const inboxAudit = (r: InboxOutcome | PipelineOutcome | IncentivesOutcome | RetentionOutcome | ModuleOutcome): AuditRecord['outcome'] => (r.outcome === 'approval' ? 'approval_requested' : r.outcome);
 
 const goalAudit = (r: GoalOutcome): AuditRecord['outcome'] => (r.outcome === 'approval' ? 'approval_requested' : r.outcome);
 
@@ -192,6 +198,8 @@ export class Concierge {
   private readonly goalThreads = new Map<string, GoalThread>();
   /** An incentive request waiting on the answer to DI's question: a reason code or a note. */
   private readonly giAsking = new Map<string, string>();
+  /** The same for the module agents: the module, and what was asked for. */
+  private readonly moduleAsking = new Map<string, { spec: ModuleSpec; text: string }>();
   /** Reference tokens per thread (MBR_n → party), shared by the agents so a member keeps one name. */
   private readonly members = new Map<string, Map<string, number>>();
   private readonly counter = { n: 0 };
@@ -251,6 +259,20 @@ export class Concierge {
           outcome = goalAudit(r);
           error = r.error;
         });
+      }
+
+      // A module's own request, or the answer to a question it asked, needs no model to route.
+      const waiting = this.moduleAsking.get(turn.threadId);
+      const matched = turn.tenant.modules?.match(screened.text) ?? null;
+      const module = matched ?? (waiting && screened.text.length <= 200 ? waiting.spec : null);
+      if (module && turn.tenant.modules) {
+        classification = { intent: 'module_task', agent: 'none', confidence: 1, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' };
+        const text = !matched && waiting ? `${waiting.text}: ${screened.text}` : screened.text;
+        const r = await this.module(turn, module, text, sink, usage);
+        toolCalls = r.toolCalls;
+        outcome = inboxAudit(r);
+        error = r.error;
+        return r.approval ? { kind: 'handled', approval: { approvalId: r.approval.record.approvalId, card: r.approval.card }, superseded: r.superseded } : { kind: 'handled', superseded: r.superseded };
       }
 
       // "MISSED-CREDIT" alone answers DI's question; it isn't a new request.
@@ -546,7 +568,7 @@ export class Concierge {
     const state = newGoalThread(text, newReportThread());
     state.status = 'closed';
     this.goalThreads.set(turn.threadId, state);
-    const r = await runToday({ runId: turn.runId, threadId: turn.threadId, user: turn.user, apps: turn.apps, purviewBranches: turn.purviewBranches, employeeId: turn.employeeId, lap: turn.lap, gi: turn.gi, retention: turn.retention }, { gateway: turn.tenant.workflow!.gateway, beatMs: this.deps.beatMs }, state, sink);
+    const r = await runToday({ runId: turn.runId, threadId: turn.threadId, user: turn.user, apps: turn.apps, purviewBranches: turn.purviewBranches, employeeId: turn.employeeId, lap: turn.lap, gi: turn.gi, retention: turn.retention, moreWork: () => this.moreWork(turn) }, { gateway: turn.tenant.workflow!.gateway, beatMs: this.deps.beatMs }, state, sink);
     report(r);
     if (!r.approval) return { kind: 'handled' };
     const a = r.approval.record;
@@ -569,6 +591,36 @@ export class Concierge {
       return { kind: 'handled', approval: { approvalId: a.approvalId, card: r.approval.card }, superseded: r.superseded };
     }
     return { kind: 'handled' };
+  }
+
+  private moduleContext(t: { user: { id: string; name: string }; purviewBranches?: string[]; employeeId?: number; modules?: string[]; gi?: IncentivesInput['gi'] }, runId: string, threadId: string): ModuleContext {
+    return { user: t.user, purviewBranches: t.purviewBranches, employeeId: t.employeeId, modules: t.modules ?? [], leads: t.gi?.leads, runId, threadId };
+  }
+
+  private moreWork(turn: ConciergeTurn) {
+    return turn.tenant.modules?.today(this.moduleContext(turn, turn.runId, turn.threadId)) ?? Promise.resolve([]);
+  }
+
+  /** A business module's turn, live or offline. Any write waits on a card. */
+  private async module(turn: ConciergeTurn, spec: ModuleSpec, text: string, sink: RunSink, usage: Usage[]): Promise<ModuleOutcome> {
+    const gateway = turn.tenant.modules!;
+    const input = { runId: turn.runId, threadId: turn.threadId, text, user: turn.user, tenant: { name: turn.tenant.name }, purviewBranches: turn.purviewBranches, employeeId: turn.employeeId, modules: turn.modules ?? [], leads: turn.gi?.leads };
+    if (!input.modules.includes(spec.id)) {
+      sink.routing('DI Concierge', `${spec.agent} not available`);
+      await sink.block(noticeBlock('no_access', spec.noAccess, 'DI Concierge', turn.runId, { permission: spec.agent, detail: 'Ask your DI administrator if you need it.' }));
+      return { outcome: 'not_found', toolCalls: [], usage: [], superseded: [] };
+    }
+    const r = this.deps.model ? await runModule(spec, input, { model: this.deps.model, gateway }, sink) : await runModuleOffline(spec, input, { gateway }, sink);
+    usage.push(...r.usage);
+    if (r.asked) this.moduleAsking.set(turn.threadId, { spec, text });
+    else this.moduleAsking.delete(turn.threadId);
+    if (r.outcome === 'failed') await sink.block(noticeBlock('error', 'I couldn’t finish that.', spec.agent, turn.runId, { detail: 'Nothing was changed. Try again.', retryable: true }));
+    for (const id of r.superseded) void this.deps.audit.event({ eventType: 'ai.approval.superseded', tenant: turn.tenant.key, userId: turn.user.id, threadId: turn.threadId, runId: turn.runId, approvalId: id });
+    if (r.approval) {
+      const a = r.approval.record;
+      void this.deps.audit.event({ eventType: 'ai.approval.requested', tenant: turn.tenant.key, userId: turn.user.id, threadId: turn.threadId, runId: turn.runId, approvalId: a.approvalId, operation: a.operation, riskTier: a.riskTier, payloadHash: a.payloadHash });
+    }
+    return r;
   }
 
   /** Certificates coming up for renewal, live or offline. Branch tasks wait on a card. */
@@ -766,6 +818,28 @@ export class Concierge {
     }
     const isDecline = approval.operation === 'relationship.suggestion.decline';
     const isInboxChange = ['referral.stage.update', 'referral.note.add', 'referral.reassign'].includes(approval.operation);
+    const modules = d.tenant.modules;
+    if (modules?.has(approval.operation)) {
+      const agentName = modules.spec(approval.operation)!.agent;
+      later(async () => {
+        if (decision !== 'approved') {
+          await sink.text(decision === 'denied' ? 'Nothing was changed.' : 'Returned with your note. Nothing was changed. Tell me what to change and I’ll prepare a new card.', agentName);
+          sink.done?.(null);
+          return;
+        }
+        try {
+          const { spec, payload } = await modules.execute(approval, this.moduleContext(d, d.runId, d.threadId));
+          void this.deps.audit.event({ eventType: 'ai.action.executed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, operation: approval.operation, resultRef: approval.operation });
+          await sink.text(payload.done, spec.agent, spec.sources);
+          sink.done?.({ notify: payload.notify ?? [] });
+        } catch (err) {
+          void this.deps.audit.event({ eventType: 'ai.action.failed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, error: err instanceof Error ? err.message : String(err) });
+          await sink.block(noticeBlock('error', 'That could not be completed.', agentName, d.runId, { detail: 'Nothing was changed. The approval was not used, so you can ask again.', referenceId: d.runId.slice(-12) }));
+          sink.done?.(null);
+        }
+      });
+      return { status: 200, body, resolved: decision };
+    }
     const isReport = approval.operation.startsWith('report.');
     const isPipeline = approval.operation.startsWith('lap.');
     const isIncentive = approval.operation.startsWith('gi.');
@@ -930,6 +1004,6 @@ export class Concierge {
     await sink.text(b.narrative, BRIEFING_AGENT, [{ kind: 'report', label: `Nightly build ${svc.build.buildId}` }]);
     await sink.block(b.kpis);
     await sink.block(b.trend);
-    if (b.lookAt[0]) sink.suggestion(b.lookAt[0].question);
+    for (const item of b.lookAt.slice(0, 3)) sink.suggestion(item.question);
   }
 }

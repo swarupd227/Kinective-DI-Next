@@ -227,6 +227,9 @@ async function show(kind: z.infer<typeof InboxFinish>['outcome'], message: strin
   if (kind === 'list' && s.listed) {
     await sink.text(summary(s.listed.items, s.listed.box, s.listed.filtered), INBOX_AGENT);
     if (s.listed.items.length) await sink.block(inboxList(s.listed.items, s.listed.box, input.runId));
+    const [first] = s.listed.items;
+    if (first && input.apps.includes('rm')) sink.suggestion(`Prepare me for my meeting with ${first.name}`);
+    if (!s.listed.filtered) sink.suggestion(s.listed.box === 'team' ? 'Show my team’s overdue referrals' : 'Show my overdue referrals');
     return { ...base, outcome: 'answer', superseded: [] };
   }
   if (kind === 'approval' && s.change) {

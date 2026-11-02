@@ -133,7 +133,7 @@ describe('mock stream server and client protocol', () => {
 
     await api.session('executive');
     const home = await api.home();
-    expect(home.sections[0]!.id).toBe('approvals');
+    expect(home.sections[0]!.id).toBe('what_changed');
     expect((await api.search('jackson')).length).toBe(2);
   });
 

@@ -7,6 +7,7 @@ import { newBlockId } from './answer.ts';
 import type { ToolCallRecord } from './audit.ts';
 import { inStatus, midSentence as lower, type GatewayContext, type ToolGateway } from './gateway.ts';
 import { GOAL_AGENT, type GoalThread } from './goal.ts';
+import type { ModuleWork } from './moduleAgent.ts';
 import { mostWaitOn, money, taskCard } from './pipelineAgent.ts';
 import type { RunSink } from './sink.ts';
 
@@ -24,11 +25,13 @@ export interface TodayWho {
   lap?: GatewayContext['lap'];
   gi?: GatewayContext['gi'];
   retention?: boolean;
+  /** Waiting work from the other modules. */
+  moreWork?: () => Promise<ModuleWork[]>;
 }
 
 export interface TodayItem {
   id: string;
-  kind: 'referral' | 'application' | 'totals' | 'payouts' | 'certificates';
+  kind: 'referral' | 'application' | 'totals' | 'payouts' | 'certificates' | 'module';
   title: string;
   why: string;
   badge: string;
@@ -131,6 +134,7 @@ export async function buildToday(who: TodayWho, gateway: ToolGateway, now = Date
     const ask = 'Which certificates mature in the next 30 days and are at risk?';
     items.push({ id: 'certificates', kind: 'certificates', title: `${found30.count} ${found30.count === 1 ? 'certificate' : 'certificates'} at risk`, why: `${money(found30.dollars)} maturing in the next 30 days, and ${found30.count === 1 ? 'it looks' : 'they look'} likely to leave.`, badge: 'At risk', link: `/c/new?q=${encodeURIComponent(ask)}`, ask, weight: 90 });
   }
+  for (const w of (await who.moreWork?.()) ?? []) items.push({ ...w, kind: 'module', link: `/c/new?q=${encodeURIComponent(w.ask)}` });
   items.sort((a, b) => b.weight - a.weight);
   // Each kind of work keeps a place, so big loans can't hide an overdue referral.
   const top = items.slice(0, MAX_ITEMS);
@@ -172,7 +176,7 @@ export function todayList(p: TodayPlan, runId: string, opts: { startsWork?: bool
     ...(opts.label ? { output: { label: opts.label } } : {}),
     data: {
       layout: 'list',
-      items: p.items.map((i) => ({ id: i.id, title: i.title, subtitle: i.why, link: opts.startsWork ? `/c/new?q=${encodeURIComponent(i.ask)}` : i.link, badge: { label: i.badge, tone: i.kind === 'payouts' || i.kind === 'certificates' ? ('warning' as const) : ('danger' as const) } })),
+      items: p.items.map((i) => ({ id: i.id, title: i.title, subtitle: i.why, link: opts.startsWork ? `/c/new?q=${encodeURIComponent(i.ask)}` : i.link, badge: { label: i.badge, tone: i.kind === 'payouts' || i.kind === 'certificates' || i.kind === 'module' ? ('warning' as const) : ('danger' as const) } })),
     },
   };
 }

@@ -3,6 +3,7 @@
 import mysql from 'mysql2/promise';
 import { ADMIN_DB_URL, DEFAULT_DB_URL, dbSsl } from './db.ts';
 import { AS_OF, BUILD, generate, TENANTS } from './generate.ts';
+import { DATALOG_TYPES, generateModules, MODULE_FIXTURES, MODULES_DDL, MODULES_WRITE_TABLES } from './modules.ts';
 import { generateGoals, GI_GOALS, GI_INCENTIVES, GI_TIERS, GOALS_DDL, GOALS_WRITE_TABLES } from './goals.ts';
 import { generatePipeline, LAP_APPLICATION_COLUMNS, LAP_HOLDS, LAP_STATUSES, PIPELINE_DDL, PIPELINE_WRITE_TABLES } from './pipeline.ts';
 import { generateRelationship, RELATIONSHIP_DDL } from './relationship.ts';
@@ -66,6 +67,26 @@ async function main() {
     await insert(admin, 'mod_gi_period', ['period_end', 'state'], gi.periods);
     await insert(admin, 'cdm_gi_credit', ['goal_id', 'employee_id', 'period_end', 'occurred', 'label', 'value', 'state'], gi.credits);
     await insert(admin, 'mod_gi_adjustment', ['employee_id', 'period_end', 'amount', 'reason_code', 'note', 'status', 'created_by'], gi.adjustments);
+    for (const ddl of MODULES_DDL) await admin.query(ddl);
+    const mods = generateModules(t, profile.institutionType);
+    await insert(admin, 'cpm_issue', ['issue_id', 'party_id', 'kind', 'source', 'category', 'summary', 'status', 'owner_employee_id', 'branch_id', 'opened', 'respond_by', 'resolve_by', 'closed', 'resolution', 'root_cause'], mods.issues);
+    await insert(admin, 'cpm_issue_history', ['issue_id', 'at', 'actor', 'action', 'note'], mods.history);
+    await insert(admin, 'onb_task', ['task_id', 'party_id', 'touch', 'day_offset', 'due', 'status', 'assignee_employee_id', 'branch_id', 'done_on', 'note'], mods.tasks);
+    await insert(admin, 'esp_datalog_type', ['type_id', 'label', 'financial', 'requires_approval'], DATALOG_TYPES.map((x) => [...x]));
+    await insert(admin, 'esp_datalog', ['log_id', 'type_id', 'title', 'amount', 'branch_id', 'status', 'created_by', 'created_name', 'created_on'], mods.logs);
+    await insert(admin, 'esp_datalog_history', ['log_id', 'at', 'actor', 'from_status', 'to_status', 'note'], mods.logHistory);
+    const fx = MODULE_FIXTURES;
+    await insert(admin, 'ops_upload', ['source', 'due_by', 'arrived', 'late'], fx.uploads);
+    await insert(admin, 'ops_dq_check', ['domain', 'dimension', 'name', 'status', 'rows_failed'], fx.checks);
+    await insert(admin, 'iam_user', ['user_id', 'name', 'user_class', 'branch', 'status'], [...fx.classes.map((c) => [...c, 'Active']), ...(t.employees as [number, string, string, number][]).filter((e) => e[0] > 6).map((e) => [`emp:${e[0]}`, e[1], e[2] === 'Loan officer' ? 'Lender' : e[2] === 'Branch manager' ? 'Manager' : 'MSR', String(t.locations[e[3] - 1]![1]), 'Active']), ['emp:2', 'Tom Walsh', 'Lender', 'Westport', 'Active']]);
+    if (profile.institutionType === 'credit_union') {
+      await insert(admin, 'cr_line', ['code', 'schedule', 'name'], fx.lines);
+      await insert(admin, 'cr_entry', ['code', 'entry_type', 'source', 'multiplier', 'prior_value', 'current_value'], fx.entries);
+      await insert(admin, 'cr_check', ['name', 'status', 'detail'], fx.crChecks);
+      await insert(admin, 'seg_company', ['company_id', 'name', 'stage', 'members', 'new_members', 'loans', 'deposits', 'owner', 'sponsorship'], fx.companies);
+      await insert(admin, 'seg_interaction', ['company_id', 'at', 'kind', 'note', 'by_name'], fx.interactions);
+    }
+    await insert(admin, 'cmp_campaign', ['campaign_id', 'name', 'channel', 'product', 'sent', 'applications', 'loan_dollars'], fx.campaigns);
     for (const ddl of WORKFLOW_DDL) await admin.query(ddl);
     const wf = workflowSeed(profile, t.employees);
     await insert(admin, 'mod_ref_types', ['type_id', 'category', 'label', 'description', 'route_rule', 'fields', 'active'], wf.types);
@@ -76,7 +97,7 @@ async function main() {
     // The application account reads tenant data only (spec 26.2: read-only on customer tables), and
     // writes only the workflow store, through approved DI Core operations.
     await admin.query(`GRANT SELECT ON \`${profile.schema}\`.* TO 'dinext'@'%'`);
-    for (const table of [...WORKFLOW_WRITE_TABLES, ...PIPELINE_WRITE_TABLES, ...GOALS_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
+    for (const table of [...WORKFLOW_WRITE_TABLES, ...PIPELINE_WRITE_TABLES, ...GOALS_WRITE_TABLES, ...MODULES_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     console.log(`${profile.key}: ${t.parties.length} parties, ${t.loans.length} loans, ${t.deposits.length} deposit accounts, ${t.histLoan.length} loan history rows, ${rm.interactions.length} interactions in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   }
   await admin.end();

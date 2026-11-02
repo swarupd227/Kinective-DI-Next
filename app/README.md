@@ -255,6 +255,24 @@ Assumptions: all goals, credits, targets and reason codes are demo data, and Oct
 
 This release changes the data, so run `npm run db:seed`, which resets every tenant.
 
+### Business modules (Slice 17)
+
+Compliance, Onboarding and Data Logs share one agent in `moduleAgent.ts`. A module brings its tools, prompt and a plain-language planner; the shared agent validates calls, keeps every write behind an approval card, runs live or offline, and remembers a question it asked. Waiting work from each module joins the day plan and Home.
+
+- **Compliance & Problem Management:** "Which regulatory issues are open more than 3 weeks?", "Summarise case 3307" (labelled AI draft, quoting the record), "What are the top root causes?", "Log a complaint from James Lee about a double fee", "Escalate issue 3307", "Close issue 3307 with resolution: fee refunded". DI proposes a source and category for a person to confirm, and never decides whether something is a regulatory complaint under a rule. A regulatory issue needs a root cause to close, and closing one from a regulator is high risk with its number typed.
+- **Onboarding:** "What onboarding calls do I have today?", "Which touch points are overdue?" with a talking point for each, "Which new members haven't set up direct deposit?", and marking, snoozing or moving a touch point. Seven days past due counts as missed. DI never sends a member a letter or email.
+- **Data Logs:** create by describing it, submit, approve or return with a note, and "Why was my log returned?". Every step stays in the history, nobody approves their own, and a financial log is high risk with its number typed. Real logs replace the scripted card on Home.
+
+- **Operations and Admin:** "Did last night's build finish?", "Which checks failed?", "Which uploaders missed their late-file time?", "Who can approve incentives?" and "Why can't Tom Walsh see the Westport referrals?", answered from the rules rather than the model. Creating or locking a user is high risk and asks you to sign in again. DI won't change your own user and won't impersonate anyone.
+- **5300 Call Report (credit unions):** "Are we ready to file Q3?", "How is 025B calculated?", "Show schedule A changes over 10%". The agent is read-only: export and mapping changes stay with people in the 5300 workspace.
+- **Collections Early Warning:** loans still current whose borrower shows stress, with the signals. Outreach tasks wait on a card. DI never contacts a borrower or changes a loan.
+- **Campaigns:** results by loan dollars, and saving an audience with suppression applied in code and its counts shown. Export isn't built.
+- **SEG (credit unions):** performance, a meeting brief, logging interactions and moving stages, with a note needed from board stages on.
+
+Assumptions: SLA days, reason lists, capabilities, suppression rules and all data are demo values. Approved incentive logs don't yet feed payouts, and these modules have no page of their own.
+
+This release changes the data, so run `npm run db:seed`.
+
 ### Certificate retention (Slice 16)
 
 Agent-led, with no page of its own. It needs no new data: certificates and attrition scores are already in the warehouse.

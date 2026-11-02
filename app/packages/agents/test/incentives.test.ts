@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateBlock, type Block } from '@dinext/block-schemas';
 import { ApprovalStore, CoreError, GoalsService, payFor, PipelineService, ReferralService, ruleText, type IncentiveRule } from '@dinext/di-core';
 import { createPool, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
-import { AuditLog, Concierge, GI_REQUEST, asksSomething, ToolGateway, parseIncentivesRequest, runIncentivesOffline, type IncentivesInput, type RunSink, type TenantRuntime } from '../src/index.ts';
+import { AuditLog, Concierge, GI_REQUEST, asksSomething, incentiveNextSteps, ToolGateway, parseIncentivesRequest, runIncentivesOffline, type IncentivesInput, type RunSink, type TenantRuntime } from '../src/index.ts';
 
 const SCHEMA = 'dinext_t_test_cu';
 const up = await warehouseAvailable(SCHEMA);
@@ -38,6 +38,26 @@ describe('noticing a question', () => {
   it('finds it even with a sentence after it', () => {
     expect(asksSomething('What reason code should I use? Please also confirm it’s an increase.')).toBe(true);
     expect(asksSomething('Approved the adjustment.')).toBe(false);
+  });
+});
+
+describe('next steps', () => {
+  const goal = (name: string, ruleName: string) => ({ name, qualifier: false, rule: { name: ruleName } });
+  const card = { employeeId: 4, goals: [goal('New checking accounts', 'New checking incentive'), goal('Referrals sold', 'Referrals sold incentive')] } as never;
+
+  it('offers someone only what their access can do', () => {
+    expect(incentiveNextSteps('scorecard', { employeeId: 4 }, card)).toEqual(['Explain my new checking incentive', 'Explain my referrals sold incentive']);
+    expect(incentiveNextSteps('explain', { employeeId: 4 }, card)).toEqual(['How am I doing on my goals this month?']);
+    expect(incentiveNextSteps('scorecard', { employeeId: 4, gi: { leads: true, approves: true } }, card)).toContain('Show the October payouts');
+  });
+
+  it('points a manager at the people behind', () => {
+    const team = [{ behind: true, name: 'J. Ortiz' }, { behind: false, name: 'Ana Ruiz' }] as never;
+    expect(incentiveNextSteps('team', { gi: { leads: true } }, undefined, team)).toEqual(['Tell the people who are behind', 'How is J. Ortiz doing?']);
+  });
+
+  it('routes every step back to this agent', () => {
+    for (const t of ['Explain my new checking incentive', 'How am I doing on my goals this month?', 'Show the October payouts', 'Who on my team is behind on goals?', 'Tell the people who are behind']) expect(GI_REQUEST.test(t), t).toBe(true);
   });
 });
 

@@ -146,12 +146,12 @@ export function Playground() {
                   <AgentResponse
                     agent={t.agents.at(-1) ?? 'DI Concierge'}
                     footer={
-                      t.suggestion && (
-                        <button type="button" className={styles.suggestion} onClick={() => void send(t.suggestion!)}>
+                      t.suggestions?.map((s) => (
+                        <button key={s} type="button" className={styles.suggestion} onClick={() => void send(s)}>
                           <Lightbulb size={14} aria-hidden />
-                          {t.suggestion}
+                          {s}
                         </button>
-                      )
+                      ))
                     }
                   >
                     {t.blockIds.length === 0 && t.state === 'running' && <Thinking />}

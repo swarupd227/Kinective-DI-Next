@@ -237,6 +237,22 @@ interface Shown {
 /** A question anywhere in the reply: it may be followed by a sentence, as in "Which code? Also confirm it's an increase." */
 export const asksSomething = (message: string) => message.includes('?');
 
+/** What someone would ask next. Code writes these, so each fits the person's access. */
+export function incentiveNextSteps(kind: 'scorecard' | 'team' | 'explain', input: Pick<IncentivesInput, 'employeeId' | 'gi'>, card?: Scorecard, team?: Scorecard[]) {
+  const steps: string[] = [];
+  const own = card && card.employeeId === input.employeeId;
+  const paid = card ? measured(card).filter((g) => g.rule) : [];
+  if (kind === 'scorecard' && own) for (const g of paid.slice(0, 2)) steps.push(`Explain my ${g.rule!.name.toLowerCase().replace(/ incentive$/, '')} incentive`);
+  if (kind === 'explain' && own) steps.push('How am I doing on my goals this month?');
+  if (kind === 'team') {
+    const behind = team?.filter((c) => c.behind) ?? [];
+    if (behind.length) steps.push('Tell the people who are behind');
+    if (behind[0]) steps.push(`How is ${behind[0].name} doing?`);
+  } else if (input.gi?.leads) steps.push('Who on my team is behind on goals?');
+  if (input.gi?.approves) steps.push('Show the October payouts');
+  return steps;
+}
+
 /** Shows an outcome. Shared by the live agent and the offline planner. */
 async function show(kind: z.infer<typeof IncentivesFinish>['outcome'], message: string, s: Shown, input: IncentivesInput, sink: RunSink, base: Pick<IncentivesOutcome, 'toolCalls' | 'usage'>): Promise<IncentivesOutcome> {
   const answer = { ...base, outcome: 'answer' as const, superseded: [] };
@@ -244,16 +260,19 @@ async function show(kind: z.infer<typeof IncentivesFinish>['outcome'], message: 
   if (kind === 'scorecard' && s.card) {
     await sink.text(`${scorecardText(s.card, s.card.employeeId === input.employeeId)}${extra}`, GI_AGENT);
     await sink.block(scorecardBlock(s.card, input.runId));
+    for (const step of incentiveNextSteps('scorecard', input, s.card)) sink.suggestion(step);
     return answer;
   }
   if (kind === 'team' && s.team) {
     await sink.text(`${teamText(s.team)}${extra}`, GI_AGENT);
     await sink.block(teamBlock(s.team, input.runId));
+    for (const step of incentiveNextSteps('team', input, undefined, s.team)) sink.suggestion(step);
     return answer;
   }
   if (kind === 'explain' && s.explained) {
     await sink.text(`${explainText(s.explained, s.explained.card.employeeId === input.employeeId)}${extra}`, GI_AGENT);
     await sink.block(explainBlock(s.explained, input.runId));
+    for (const step of incentiveNextSteps('explain', input, s.explained.card as Scorecard)) sink.suggestion(step);
     return answer;
   }
   if (kind === 'payouts' && s.batch) {
@@ -281,6 +300,8 @@ async function show(kind: z.infer<typeof IncentivesFinish>['outcome'], message: 
     return { ...base, outcome: 'approval', approval: { record: s.giChange.approval, card }, superseded: s.giChange.superseded };
   }
   await sink.text(message || 'I couldn’t find that.', GI_AGENT);
+  // A refusal shouldn't be a dead end: offer what this person can see.
+  if (kind === 'not_found' && input.employeeId !== undefined) sink.suggestion('How am I doing on my goals this month?');
   return { ...base, outcome: kind === 'not_found' ? 'not_found' : 'answer', superseded: [], asked: asksSomething(message) };
 }
 

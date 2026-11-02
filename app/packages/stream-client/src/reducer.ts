@@ -16,7 +16,7 @@ export type RunState = 'running' | 'completed' | 'failed' | 'cancelled';
 
 export type Turn =
   | { kind: 'user'; id: string; text: string; at: string }
-  | { kind: 'agent'; id: string; runId: string; agents: string[]; blockIds: string[]; state: RunState; at: string; suggestion?: string };
+  | { kind: 'agent'; id: string; runId: string; agents: string[]; blockIds: string[]; state: RunState; at: string; suggestions?: string[] };
 
 export interface ThreadState {
   threadId: string;
@@ -178,7 +178,8 @@ export function reduce(s: ThreadState, e: StreamEvent): ThreadState {
     }
 
     case 'suggestion':
-      return { ...next, turns: updateTurn(s, e.runId, (t) => ({ ...t, suggestion: e.text })) };
+      // Several can follow one answer; three is enough to choose from at a glance.
+      return { ...next, turns: updateTurn(s, e.runId, (t) => ({ ...t, suggestions: [...new Set([...(t.suggestions ?? []), e.text])].slice(0, 3) })) };
 
     default:
       // Unknown or session-level events advance the sequence only (FE-API-001).

@@ -88,12 +88,16 @@ export function AgentTurn({
         })}
         {step && <Thinking>{step}…</Thinking>}
       </div>
-      {turn.suggestion && (
+      {turn.suggestions && (
         // Suggestions never start a write; they ask a follow-up question (FE-EXP-020).
-        <button type="button" className={styles.suggestion} onClick={() => onSuggestion(turn.suggestion!)}>
-          <Lightbulb size={14} aria-hidden />
-          {turn.suggestion}
-        </button>
+        <div className={styles.suggestions} role="group" aria-label="Next steps">
+          {turn.suggestions.map((s) => (
+            <button key={s} type="button" className={styles.suggestion} onClick={() => onSuggestion(s)}>
+              <Lightbulb size={14} aria-hidden />
+              {s}
+            </button>
+          ))}
+        </div>
       )}
     </article>
   );

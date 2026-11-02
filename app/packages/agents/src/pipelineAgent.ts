@@ -298,6 +298,7 @@ async function show(kind: z.infer<typeof PipelineFinish>['outcome'], message: st
   if (kind === 'summary' && s.summary) {
     await sink.text(summaryText(s.summary), PIPELINE_AGENT);
     for (const b of summaryBlocks(s.summary, input.runId)) await sink.block(b);
+    if (s.summary.stalled.count && input.lap?.details) sink.suggestion('Show my stalled applications');
     return answer;
   }
   if (kind === 'list' && s.found) {
@@ -305,6 +306,10 @@ async function show(kind: z.infer<typeof PipelineFinish>['outcome'], message: st
     await sink.text(foundText(f, s.found.what), PIPELINE_AGENT);
     if (f.items.length) await sink.block(applicationList(f.items, f, input.runId, 'Applications'));
     else if (f.count) await sink.block(totalsTable(f, input.runId));
+    const [first] = f.items;
+    if (first) sink.suggestion(`Why is application #${first.applicationId} stuck?`);
+    if (first?.open) sink.suggestion(`Create a follow-up task for application #${first.applicationId}`);
+    sink.suggestion('Show the pipeline by product');
     return answer;
   }
   if (kind === 'detail' && s.application) {
@@ -317,6 +322,7 @@ async function show(kind: z.infer<typeof PipelineFinish>['outcome'], message: st
   }
   if (kind === 'rate' && s.rate) {
     await sink.text(rateText(s.rate), PIPELINE_AGENT);
+    sink.suggestion('Show the pipeline by product');
     return answer;
   }
   if (kind === 'approval' && (s.tasks || s.threshold)) {

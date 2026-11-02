@@ -1,4 +1,6 @@
 export { ApprovalStore, ApprovalError, APPROVAL_TTL_MS, canonical, payloadHash, type ApprovalRecord, type ApprovalStatus, type RiskTier } from './approvals.ts';
+export { CallReportService, CampaignService, CollectionsService, OperationsService, SegService, CAPABILITIES, SEG_STAGES, USER_CLASSES, type DirectoryUser, type SegCompany, type WatchedLoan } from './modules2.ts';
+export { DataLogService, IssueService, OnboardingService, findPerson, ISSUE_REGULATORS, ISSUE_ROOT_CAUSES, type DataLog, type Issue, type IssueDetail, type IssueFilter, type TouchPoint } from './modules.ts';
 export { RetentionService, OFFER_RULES, offerRate, type Certificate, type MaturingCertificates, type OfferCost, type RetentionFilter } from './retention.ts';
 export { GoalsService, payFor, ruleText, usd, type GoalsWho, type GoalScore, type IncentiveRule, type PayoutBatch, type PayoutLine, type ScoreExplanation, type Scorecard } from './goals.ts';
 export { PipelineService, PIPELINE_VIEWS, SUMMARY_WINDOW_DAYS, type PipelineView, type PipelineWho, type PipelineApplication, type PipelineCell, type PipelineSummary, type PipelineFilter, type PipelineFound, type PipelineStatus } from './pipeline.ts';

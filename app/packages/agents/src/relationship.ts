@@ -324,6 +324,13 @@ async function show(s: Show, c: { input: RelationshipInput; rm: RelationshipServ
     return { token: profile.token, name: profile.name };
   };
   const agent = RELATIONSHIP_AGENT;
+  // The next things to do with this person. Each refers to the record, so a shared name can't confuse it.
+  const nextSteps = (p: MemberProfile, talk: boolean) => {
+    if (talk) sink.suggestion(`What should I talk to this ${p.person} about today?`);
+    const offer = p.opportunities.find((o) => o.referralTypeId);
+    if (offer && input.apps.includes('referrals')) sink.suggestion(`Refer ${p.name} for ${/^[aeiou]/i.test(offer.product) ? 'an' : 'a'} ${offer.product}`);
+    sink.suggestion(`Why is this ${p.person}’s attrition risk ${p.attrition.band.toLowerCase()}?`);
+  };
   switch (s.kind) {
     case 'member': {
       const profile = loaded.profile!;
@@ -332,6 +339,7 @@ async function show(s: Show, c: { input: RelationshipInput; rm: RelationshipServ
       await sink.block(withReferActions(memberCard(profile, input.runId), profile));
       if (s.points.length) await sink.block(talkingPoints(s.points, profile, input.runId));
       remember(`${intro}${s.points.length ? ` Talking points: ${s.points.map((x) => x.text).join(' / ')}` : ''}`);
+      nextSteps(profile, !s.points.length);
       return done('member', { focus: focusOn(profile) });
     }
     case 'explained': {
@@ -342,6 +350,7 @@ async function show(s: Show, c: { input: RelationshipInput; rm: RelationshipServ
       await sink.text(text, agent);
       await sink.block(scoreFactors(e, profile, input.runId));
       remember(text);
+      nextSteps(profile, true);
       return done('explained', { focus: focusOn(profile) });
     }
     case 'household': {

@@ -123,6 +123,7 @@ async function show(kind: ReportFinishOutcome, message: string, shown: Shown, c:
       if (message) await sink.text(message, c.agent);
       if (last?.notice) await sink.block(noticeBlock('build_status', last.notice, c.agent, input.runId));
       await sink.block(last!.canvas!);
+      if (last!.canvas!.data.mode === 'read') sink.suggestion('Send this to me every Monday');
       remember(message || `Showed ${last!.canvas!.data.name} for ${last!.canvas!.data.periodLabel}.`);
       return done('report');
     }
