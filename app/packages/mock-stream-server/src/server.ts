@@ -544,6 +544,29 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
           throw err;
         }
       }
+      const appView = /^\/v1\/apps\/([a-z]+)$/.exec(path);
+      if (method === 'GET' && appView) {
+        const view = await live?.appView(persona(), appView[1] as never).catch((e: unknown) => {
+          console.error(`[apps] ${appView[1]}: ${(e as Error).message}`);
+          return null;
+        });
+        return view ? json(res, 200, view) : json(res, 404, { code: 'NOT_FOUND' });
+      }
+      if (method === 'POST' && path === '/v1/queries/run') {
+        const { sql } = await readBody<{ sql?: unknown }>(req);
+        try {
+          const run = typeof sql === 'string' ? await live?.runQuery(persona(), sql) : null;
+          return run ? json(res, 200, run) : json(res, 403, { code: 'NO_ACCESS', message: 'Queries need the Query Browser permission and access to every branch.' });
+        } catch (e) {
+          return json(res, 400, { code: 'INVALID', message: (e as Error).message });
+        }
+      }
+      if (method === 'POST' && path === '/v1/feedback') {
+        const body = await readBody<{ runId?: unknown; rating?: unknown; comment?: unknown }>(req);
+        if (typeof body.runId !== 'string' || !/^[\w-]{1,40}$/.test(body.runId) || (body.rating !== 'up' && body.rating !== 'down')) return json(res, 400, { code: 'INVALID' });
+        const kept = await live?.feedback(persona(), { runId: body.runId, rating: body.rating, comment: typeof body.comment === 'string' ? body.comment : undefined });
+        return json(res, kept ? 204 : 503);
+      }
       if (method === 'GET' && path === '/v1/notifications') {
         const all = [...notifications.filter((n) => n.userId === me()), ...(await currentNotices())];
         return json(res, 200, { notifications: all.sort((a, b) => b.at.localeCompare(a.at)) });

@@ -231,6 +231,8 @@ export const listData = z.strictObject({
         title: z.string().max(160),
         subtitle: z.string().max(240).optional(),
         meta: z.string().max(80).optional(),
+        /** The figure to scan down: a count, an amount or an age, before the title. */
+        lead: z.string().max(12).optional(),
         icon: listIcon.optional(),
         /** A DI Next deep link (spec 11.4). Relative paths only. */
         link: z.string().regex(/^\/[^/]/).optional(),
@@ -367,6 +369,20 @@ export const member360Data = z.strictObject({
 const block = <T extends string, D extends z.ZodType>(type: T, data: D) =>
   z.strictObject({ ...envelopeFields, type: z.literal(type), data });
 
+const lineageNode = z.strictObject({
+  kind: z.enum(['table', 'rollup', 'load', 'file', 'source', 'unknown']),
+  label: z.string().max(120),
+  detail: z.string().max(200).optional(),
+  lastLoad: z.string().max(30).optional(),
+  dq: z.strictObject({ state: z.enum(['passed', 'failed', 'unknown']), passed: z.number().int(), failed: z.number().int() }).optional(),
+});
+
+export const lineageData = z.strictObject({
+  metric: z.string().max(120),
+  definition: z.string().max(800),
+  lanes: z.array(z.strictObject({ nodes: z.array(lineageNode).max(8) })).max(12),
+});
+
 export const textBlock = block('text', textData);
 export const kpiBlock = block('kpi', kpiData);
 export const kpiGroupBlock = block('kpi_group', kpiGroupData);
@@ -377,6 +393,7 @@ export const planStepsBlock = block('plan_steps', planStepsData);
 export const approvalCardBlock = block('approval_card', approvalData);
 export const listBlock = block('list', listData);
 export const definitionCardBlock = block('definition_card', definitionData);
+export const lineageGraphBlock = block('lineage_graph', lineageData);
 export const memberCardBlock = block('member_card', memberCardData);
 export const member360Block = block('member_360', member360Data);
 
@@ -439,6 +456,7 @@ export const blockSchema = z.discriminatedUnion('type', [
   approvalCardBlock,
   listBlock,
   definitionCardBlock,
+  lineageGraphBlock,
 ]);
 
 export type Block = z.infer<typeof blockSchema>;
@@ -455,6 +473,7 @@ export type PlanStep = z.infer<typeof planStep>;
 export type ApprovalCardBlock = BlockOf<'approval_card'>;
 export type ListBlock = BlockOf<'list'>;
 export type DefinitionCardBlock = BlockOf<'definition_card'>;
+export type LineageGraphBlock = BlockOf<'lineage_graph'>;
 export type MemberCardBlock = BlockOf<'member_card'>;
 export type Member360Block = BlockOf<'member_360'>;
 export type MemberScore = z.infer<typeof memberScore>;
@@ -476,4 +495,5 @@ export const blockSchemasByType = {
   approval_card: approvalCardBlock,
   list: listBlock,
   definition_card: definitionCardBlock,
+  lineage_graph: lineageGraphBlock,
 } as const;

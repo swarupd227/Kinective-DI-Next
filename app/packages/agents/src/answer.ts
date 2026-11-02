@@ -252,11 +252,18 @@ const freshness = (r: SemanticResult): Block['freshness'] => ({ kind: 'nightly_b
 
 const unitOf = (f: MetricFormat) => (f === 'currency' ? 'currency' : f === 'count' ? 'count' : 'percent');
 
-const blockActions = (): Block['actions'] => [
+/** Opens the lineage of the block's first metric (spec 24.10). */
+const traceAction = (sources: Block['provenance']['sources']): NonNullable<Block['actions']> => {
+  const metric = sources.find((s) => s.kind === 'metric');
+  return metric ? [{ id: 'lineage', kind: 'ask_followup', label: 'Where does this number come from?', params: { question: `Where does ${metric.label.replace(/ \(definition\)$/, '')} come from?` } }] : [];
+};
+
+const blockActions = (sources: Block['provenance']['sources']): Block['actions'] => [
   { id: 'explain', kind: 'explain', label: 'Explain' },
   { id: 'open', kind: 'open_workspace', label: 'Open grid' },
   { id: 'pin', kind: 'pin', label: 'Pin', riskTier: 'low' },
   { id: 'export', kind: 'export', label: 'Export' },
+  ...traceAction(sources),
 ];
 
 export function buildBlock(spec: BlockSpec, results: Map<string, SemanticResult>, definitions: Map<string, MetricDefinition>, agent: string, runId: string): Block {
@@ -270,7 +277,7 @@ export function buildBlock(spec: BlockSpec, results: Map<string, SemanticResult>
       title: `${d.label}: definition`,
       provenance: { agent, runId, operations: ['semantic.metric.get'], sources: [{ kind: 'metric', label: d.label, ref: `metric:${d.name}` }] },
       freshness: { kind: 'static' },
-      actions: [{ id: 'trace', kind: 'ask_followup', label: 'Trace to source', params: { question: `Trace ${d.label} to its source tables` } }],
+      actions: [{ id: 'trace', kind: 'ask_followup', label: 'Where does this come from?', params: { question: `Where does ${d.label} come from?` } }],
       data: { term: d.label, metricRef: d.name, definition: d.description, formula: d.formula, regulatoryBasis: d.regulatoryBasis, owner: d.owner, version: d.version, dimensions: d.dimensionsAllowed, trendable: d.trendable },
     };
     return block;
@@ -288,7 +295,7 @@ export function buildBlock(spec: BlockSpec, results: Map<string, SemanticResult>
       title: spec.title,
       provenance: prov,
       freshness: freshness(result),
-      actions: blockActions(),
+      actions: blockActions(prov.sources),
       data: {
         columns: result.columns.map((c, i) => ({
           field: c.key,
@@ -328,7 +335,7 @@ export function buildBlock(spec: BlockSpec, results: Map<string, SemanticResult>
       title: spec.title,
       provenance: prov,
       freshness: freshness(result),
-      actions: [{ id: 'explain', kind: 'explain', label: 'Explain' }, { id: 'pin', kind: 'pin', label: 'Pin', riskTier: 'low' }],
+      actions: [{ id: 'explain', kind: 'explain', label: 'Explain' }, { id: 'pin', kind: 'pin', label: 'Pin', riskTier: 'low' }, ...traceAction(prov.sources)],
       data: { label: col.label, value, unit: unitOf(col.format), format: col.format === 'currency' ? { compact: true, decimals: 2 } : { decimals: col.format === 'percent_1' ? 1 : 2 }, comparison, metricRef: `metric:${spec.metric}` },
     };
     return block;
@@ -366,7 +373,7 @@ export function buildBlock(spec: BlockSpec, results: Map<string, SemanticResult>
     subtitle: spec.subtitle,
     provenance: prov,
     freshness: freshness(result),
-    actions: blockActions(),
+    actions: blockActions(prov.sources),
     a11y: {
       summary: `${spec.chart === 'line' ? 'Line' : spec.chart === 'donut' ? 'Donut' : 'Bar'} chart of ${col.label.toLowerCase()} by ${xCol.label.toLowerCase()}${spec.series_by ? `, split by ${spec.series_by}` : ''}. Values range from ${formatMetric(Math.min(...values), col.format)} to ${formatMetric(Math.max(...values), col.format)}. Switch to the table view for every value.`.slice(0, 600),
     },

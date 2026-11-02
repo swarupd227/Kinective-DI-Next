@@ -13,7 +13,7 @@ import { useUi } from '../shell/uiStore.ts';
 import page from './Page.module.css';
 import styles from './GoalsPage.module.css';
 
-const money = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
+const money = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: Number.isInteger(n) ? 0 : 2 }).format(n);
 const whole = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
 const value = (g: GoalCard['goals'][number], n: number) => (g.unit === 'currency' ? whole(n) : n.toLocaleString('en-US'));
 
@@ -96,6 +96,12 @@ function Team({ cards }: { cards: GoalCard[] }) {
                 <th scope="row">
                   {c.name}
                   <span className={styles.sub}>{c.role}</span>
+                  {c.behind && (
+                    <span className={styles.flag}>
+                      <CircleAlert size={12} aria-hidden />
+                      Behind
+                    </span>
+                  )}
                 </th>
                 <td>{c.branch}</td>
                 <td>

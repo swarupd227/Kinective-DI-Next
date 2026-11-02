@@ -39,6 +39,8 @@ export interface TodayItem {
   /** What to ask DI to act on this item. */
   ask: string;
   weight: number;
+  /** The figure that leads the row on Home. */
+  lead?: string;
   amount?: number;
   /** Days past the threshold, or past the due date. */
   past?: number;
@@ -73,6 +75,7 @@ function applicationItem(a: PipelineApplication, own: boolean): TodayItem {
     link: `/m/lap?id=${a.applicationId}`,
     ask: own ? `Why is application #${a.applicationId} stuck?` : `Create a follow-up task for application #${a.applicationId}`,
     weight: applicationWeight(a),
+    lead: money(a.amount),
     amount: a.amount,
     past: over,
   };
@@ -89,6 +92,7 @@ function referralItem(i: InboxItem, own: boolean, now: number): TodayItem {
     link: `/workflows/referrals/inbox?id=${i.comId}`,
     ask: `Prepare me for my meeting with ${i.name}`,
     weight: referralWeight(i, now),
+    lead: `${late}d late`,
     past: late,
   };
 }
@@ -164,6 +168,9 @@ export function todayText(p: TodayPlan) {
   return `Start with **${first.title}**. ${first.why}${whyFirst(p.items) ? ` ${whyFirst(p.items)}` : ''}${rest}`;
 }
 
+/** Rows that start with their own count lead with it; a payout leads with what it's worth. */
+export const leadOf = (why: string, title: string) => /^\d[\d,]*/.exec(title)?.[0] ?? /\$\d[\d,]*(?:\.\d+)?[KM]?/.exec(why)?.[0]?.replace(/\.00$/, '');
+
 /** The ranked list. On Home, each item starts the work; in a conversation it opens the record. */
 export function todayList(p: TodayPlan, runId: string, opts: { startsWork?: boolean; label?: string } = {}): ListBlock {
   return {
@@ -171,12 +178,12 @@ export function todayList(p: TodayPlan, runId: string, opts: { startsWork?: bool
     type: 'list',
     version: '1.0.0',
     title: 'Your day',
-    provenance: { agent: GOAL_AGENT, runId, operations: ['today.rank'], sources: [{ kind: 'workflow', label: 'Referrals and Loan Pipeline', ref: 'workflow:today' }] },
+    provenance: { agent: GOAL_AGENT, runId, operations: ['today.rank'], sources: [{ kind: 'workflow', label: 'Your work across DI', ref: 'workflow:today' }] },
     freshness: { kind: 'workflow_event' },
     ...(opts.label ? { output: { label: opts.label } } : {}),
     data: {
       layout: 'list',
-      items: p.items.map((i) => ({ id: i.id, title: i.title, subtitle: i.why, link: opts.startsWork ? `/c/new?q=${encodeURIComponent(i.ask)}` : i.link, badge: { label: i.badge, tone: i.kind === 'payouts' || i.kind === 'certificates' || i.kind === 'module' ? ('warning' as const) : ('danger' as const) } })),
+      items: p.items.map((i) => ({ id: i.id, title: i.title, subtitle: i.why, lead: i.lead ?? leadOf(i.why, i.title), link: opts.startsWork ? `/c/new?q=${encodeURIComponent(i.ask)}` : i.link, badge: { label: i.badge, tone: i.kind === 'payouts' || i.kind === 'certificates' || i.kind === 'module' ? ('warning' as const) : ('danger' as const) } })),
     },
   };
 }

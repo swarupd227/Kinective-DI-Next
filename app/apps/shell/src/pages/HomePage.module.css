@@ -218,3 +218,10 @@
   color: var(--color-accent-default);
   font-size: var(--type-caption-size);
 }
+
+/* On a phone, three prompts keep "Needs you" on the first screen. */
+@media (width < 640px) {
+  .prompts li:nth-child(n + 4) {
+    display: none;
+  }
+}

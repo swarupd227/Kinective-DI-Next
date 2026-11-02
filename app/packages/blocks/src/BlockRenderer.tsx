@@ -11,6 +11,7 @@ import { PlanStepsView } from './plan/PlanStepsView.tsx';
 import { ApprovalCardView } from './approval/ApprovalCardView.tsx';
 import { ListView } from './list/ListView.tsx';
 import { DefinitionCardView } from './definition/DefinitionCardView.tsx';
+import { LineageGraphView } from './lineage/LineageGraphView.tsx';
 import { useBlockHost } from './context.tsx';
 import styles from './BlockRenderer.module.css';
 
@@ -87,6 +88,12 @@ export function BlockRenderer({ block, status = 'complete', progressText }: Bloc
       return (
         <BlockFrame block={b} status={status} progressText={progressText}>
           {complete ? <DefinitionCardView block={b} /> : <TextSkeleton />}
+        </BlockFrame>
+      );
+    case 'lineage_graph':
+      return (
+        <BlockFrame block={b} status={status} progressText={progressText}>
+          {complete ? <LineageGraphView block={b} /> : <TableSkeleton />}
         </BlockFrame>
       );
     case 'list':

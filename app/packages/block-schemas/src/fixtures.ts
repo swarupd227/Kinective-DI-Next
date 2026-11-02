@@ -5,6 +5,7 @@ import type {
   ChartBlock,
   KpiBlock,
   KpiGroupBlock,
+  LineageGraphBlock,
   Member360Block,
   MemberCardBlock,
   MemberScore,
@@ -170,6 +171,24 @@ export const lineChartFixture: ChartBlock = {
     axes: { y: [{ title: 'Rate', unit: 'percent' }] },
     markLines: [{ value: 0.7, label: 'Watch level 0.70%' }],
     legend: true,
+  },
+};
+
+export const lineageFixture: LineageGraphBlock = {
+  id: 'blk_lineageDelinq01',
+  type: 'lineage_graph',
+  version: '1.0.0',
+  title: 'Where Delinquency ratio (60+ days) comes from',
+  provenance: { agent: 'Data Lineage', sources: [] },
+  freshness: { kind: 'nightly_build', asOf: '2026-10-25T00:00:00Z' },
+  a11y: { summary: 'Delinquency ratio reads loan accounts, loaded nightly from the core extract.' },
+  data: {
+    metric: 'Delinquency ratio (60+ days)',
+    definition: 'Balance of open loans 60 or more days past due, divided by the balance of all open loans.',
+    lanes: [
+      { nodes: [{ kind: 'table', label: 'Loan accounts', detail: 'cdm_loan: days_delinquent, balance', lastLoad: '2026-10-25 02:48', dq: { state: 'failed', passed: 4, failed: 2 } }, { kind: 'load', label: 'Nightly core load', lastLoad: '2026-10-25 02:48' }, { kind: 'file', label: 'core_extract_20261025.txt' }, { kind: 'source', label: 'Core processor' }] },
+      { nodes: [{ kind: 'table', label: 'cdm_other', dq: { state: 'unknown', passed: 0, failed: 0 } }, { kind: 'unknown', label: 'Unknown source', detail: 'No lineage recorded' }] },
+    ],
   },
 };
 

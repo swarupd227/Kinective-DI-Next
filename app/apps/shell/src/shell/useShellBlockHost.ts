@@ -6,6 +6,8 @@ import type { Block, BlockAction, ContextRef } from '@dinext/block-schemas';
 import type { ApprovalResult, BlockHost } from '@dinext/blocks';
 import { useToast } from '@dinext/ui';
 import { useSession } from '../session/SessionProvider.tsx';
+import { APP_META } from './apps.tsx';
+import { opensBeside, viewLabel } from './paneViews.ts';
 import { useUi } from './uiStore.ts';
 
 const humanise = (metricRef: string) => metricRef.replace(/^metric:/, '').replaceAll('_', ' ');
@@ -48,7 +50,12 @@ export function useShellBlockHost({ threadId, onResolved, approvalDisplay = 'ful
       runReport: (templateRef, controls) => api.runReport(templateRef, controls).catch(() => null),
       editReport: (templateRef, op, controls) => api.editReport(templateRef, op, controls).catch(() => null),
       // Export downloads are plain links to the server, not routes in the app.
-      onNavigate: (link) => (link.startsWith('/v1/exports/') ? window.location.assign(link) : navigate(link)),
+      onNavigate: (link) => {
+        if (link.startsWith('/v1/exports/')) return window.location.assign(link);
+        // During a task, a view opens beside it, so the conversation keeps its place.
+        if (threadId && opensBeside(link)) return openWorkspace({ kind: 'page', path: link, label: viewLabel(link, Object.values(APP_META)) });
+        return void navigate(link);
+      },
       onAction: (block, action) => {
         const label = labelOf(block, action);
         // Member actions carry the record token: the request goes with a member chip, never a number (FE-RM-003).

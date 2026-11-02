@@ -62,6 +62,7 @@ function Row({ item, onOpen }: { item: Item; onOpen?: () => void }) {
   const body = (
     <>
       {item.icon && <span className={clsx(styles.icon, item.badge && styles[`icon_${item.badge.tone}`])}>{icons[item.icon]}</span>}
+      {item.lead && <span className={clsx(styles.lead, 'dn-num', item.badge && styles[`lead_${item.badge.tone}`])}>{item.lead}</span>}
       <span className={styles.text}>
         <span className={styles.title}>{item.title}</span>
         {item.subtitle && <span className={styles.subtitle}>{item.subtitle}</span>}

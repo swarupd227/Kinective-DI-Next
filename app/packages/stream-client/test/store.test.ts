@@ -145,4 +145,11 @@ describe('stream store ordering (FE-ARCH-030)', () => {
     expect(s.store.getState().unknownEvents).toBe(1);
     expect(thread().lastSeq).toBe(2);
   });
+
+  it('keeps up to three different next steps on a turn', () => {
+    const { s, thread } = setup();
+    s.applyMany([ev({ type: 'run.started', runId: 'R1', agents: [] }), ...['One', 'Two', 'Two', 'Three', 'Four'].map((text) => ev({ type: 'suggestion', runId: 'R1', text }))]);
+    const turn = thread().turns.find((x) => x.kind === 'agent');
+    expect(turn).toMatchObject({ suggestions: ['One', 'Two', 'Three'] });
+  });
 });

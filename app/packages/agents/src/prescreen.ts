@@ -43,7 +43,7 @@ export function prescreen(input: string, counter = { n: 0 }): Prescreened {
     const digits = m.replace(/\D/g, '');
     return digits.length >= 13 && luhn(digits) ? mint('card', m.trim()) : m;
   });
-  // Bare runs of 8 to 17 digits read as account or loan numbers. Years and amounts are shorter.
-  text = text.replace(/\b\d{8,17}\b/g, (m) => mint('account', m));
+  // Bare runs of 8 to 17 digits read as account or loan numbers. Years and amounts are shorter. A run ID such as R-20261102-b1a9 is neither.
+  text = text.replace(/(?<!\bR-(?=\d{8}-\w))\b\d{8,17}\b/g, (m) => mint('account', m));
   return { text, tokens, findings, blocked };
 }

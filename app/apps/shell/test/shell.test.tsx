@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 import type { ReactElement } from 'react';
@@ -108,6 +108,16 @@ describe('navigation rail (FE-EXP-003)', () => {
   it('marks the active app for assistive technology', () => {
     renderShell(<NavRail />, makeSession(), '/home');
     expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('opens the phone menu, and an app from it beside the task', async () => {
+    window.matchMedia = ((query: string) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+    renderShell(<NavRail />, makeSession(), '/c/thr_1');
+    expect(screen.queryByRole('navigation', { name: 'Apps' })).toBeNull();
+    act(() => useUi.getState().setMobileNav(true));
+    await userEvent.click(screen.getByRole('link', { name: 'Reports' }));
+    expect(useUi.getState().workspace).toMatchObject({ kind: 'page', path: '/reports', label: 'Reports' });
+    expect(useUi.getState().mobileNavOpen).toBe(false);
   });
 });
 

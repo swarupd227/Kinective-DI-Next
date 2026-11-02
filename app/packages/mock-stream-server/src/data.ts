@@ -66,8 +66,8 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     lendingAdmin: true,
     approvesIncentives: true,
     retention: true,
-    modules: ['compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'callreport', 'collections', 'campaigns', 'seg'],
-    suggestions: ['What should I do today?', 'Show the October payouts', 'Which regulatory issues are open more than 3 weeks?', 'Are we ready to file Q3?', 'Show the early-warning list', 'Get me ready for Thursday’s ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'Prepare me for my meeting with Suzanne Jackson', 'Brief me'],
+    modules: ['governance', 'calendar', 'files', 'lineage', 'ai-admin', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'callreport', 'collections', 'campaigns', 'seg'],
+    suggestions: ['What should I do today?', 'Show the October payouts', 'Which regulatory issues are open more than 3 weeks?', 'Where does delinquency come from?', 'Are we ready to file Q3?', 'Show the early-warning list', 'Get me ready for Thursday’s ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'Prepare me for my meeting with Suzanne Jackson', 'Brief me'],
   },
   analyst: {
     session: {
@@ -77,7 +77,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       permissions: { queryBrowser: true, dashboardAdmin: false },
     },
     retention: true,
-    modules: ['compliance', 'datalogs', 'operations', 'callreport', 'campaigns'],
+    modules: ['governance', 'files', 'lineage', 'compliance', 'datalogs', 'operations', 'callreport', 'campaigns'],
     suggestions: ['/query loans opened last week by branch', 'Which campaigns produced the most loan dollars?', 'Which checks failed?', 'Build a table summary of fees by product', 'Show loan growth by branch for Q3 vs Q2', 'Find certificates at risk of leaving'],
   },
   branch: {
@@ -93,7 +93,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     lapDetails: true,
     approvesIncentives: true,
     retention: true,
-    modules: ['compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'collections', 'seg'],
+    modules: ['governance', 'calendar', 'lineage', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'collections', 'seg'],
     suggestions: ['What should I do today?', 'Who on my team is behind on goals?', 'Approve the October payouts for Westport', 'What’s on my team’s plate?', 'Show the pipeline by product for my branch', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups', 'Refer Suzanne Jackson for a HELOC, she prefers a call after 5 pm', 'Show my overdue onboarding touch points', 'Show Northgate loan detail'],
   },
   lender: {
@@ -106,6 +106,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     purview: ['Westport'],
     employeeId: 1,
     lapDetails: true,
+    modules: ['governance'],
     suggestions: ['What should I do today?', 'How am I doing on my goals this month?', 'Which of my apps have sat in underwriting more than five days?', 'Show my stalled applications', 'Create follow-up tasks for my stalled applications', 'What’s on my plate today?'],
   },
   msr: {
@@ -118,7 +119,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     floor: true,
     purview: ['Westport'],
     employeeId: 4,
-    modules: ['compliance', 'onboarding', 'datalogs'],
+    modules: ['governance', 'compliance', 'onboarding', 'datalogs'],
     suggestions: ['What should I do today?', 'How am I doing on my goals this month?', 'Why is my referral incentive only $40?', 'What’s on my plate today?', 'Show my overdue referrals', 'Prepare me for my meeting with Suzanne Jackson'],
   },
   bank_cfo: {
@@ -131,7 +132,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     },
     approvesIncentives: true,
     retention: true,
-    modules: ['compliance', 'datalogs', 'datalogs-approve', 'collections', 'campaigns'],
+    modules: ['governance', 'files', 'lineage', 'compliance', 'datalogs', 'datalogs-approve', 'collections', 'campaigns'],
     suggestions: ['Get me ready for Thursday’s ALCO meeting', 'Brief me', 'Show loan growth by branch for Q3 vs Q2', 'Show the October payouts'],
   },
   admin: {
@@ -141,8 +142,8 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       apps: ['home', 'conversations', 'tables', 'queries', 'datalogs', 'users', 'admin', 'files'],
       permissions: { queryBrowser: true, dashboardAdmin: true },
     },
-    modules: ['datalogs', 'datalogs-approve', 'operations', 'admin'],
-    suggestions: ['Did last night\'s build finish?', 'Create a user for Maria Gomez as a Westport MSR', 'Which uploaders missed their late-file time?', 'Who can approve incentives?', 'Run the protocol resilience test'],
+    modules: ['governance', 'files', 'lineage', 'ai-admin', 'datalogs', 'datalogs-approve', 'operations', 'admin'],
+    suggestions: ['Did last night\'s build finish?', 'Create a user for Maria Gomez as a Westport MSR', 'Which uploaders missed their late-file time?', 'Who can approve incentives?', 'Show AI cost by agent for October', 'Show every high-risk approval made through agents', 'Run the protocol resilience test'],
   },
 };
 

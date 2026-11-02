@@ -17,6 +17,15 @@ import styles from './HomePage.module.css';
 type Resolution = NonNullable<ApprovalCardBlock['data']['resolution']>;
 
 /** The narrative marks key figures with **bold**; nothing else in it is markup. */
+/** Enough to start from. The list below is what matters; a wall of prompts pushes it off the screen. */
+const MAX_PROMPTS = 4;
+
+/** The server greets in the institution's time; this is the time where the person is reading. */
+const greetingNow = (greeting: string) => {
+  const hour = new Date().getHours();
+  return greeting.replace(/^Good \w+/, `Good ${hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening'}`);
+};
+
 const Narrative = ({ text }: { text: string }) => (
   <p className={styles.narrative}>
     {text.split('**').map((part, i) => (i % 2 ? <strong key={i}>{part}</strong> : part))}
@@ -67,11 +76,11 @@ export function HomePage() {
     <BlockHostProvider value={host}>
       <div className={styles.page}>
         <header className={styles.hero}>
-          <h1 className={styles.greeting}>{h.greeting}</h1>
+          <h1 className={styles.greeting}>{greetingNow(h.greeting)}</h1>
           <ConversationBar collapsedByDefault={false} hero />
           {h.suggestions.length > 0 && (
             <ul className={styles.prompts} aria-label="Try asking">
-              {h.suggestions.map((s) => (
+              {h.suggestions.slice(0, MAX_PROMPTS).map((s) => (
                 <li key={s}>
                   <button type="button" className={styles.prompt} onClick={() => void ask(s)}>
                     {s}

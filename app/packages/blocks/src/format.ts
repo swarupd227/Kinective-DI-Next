@@ -62,6 +62,8 @@ export const formatAxis = (value: number, unit: ValueUnit | undefined) => {
 export function formatAsOf(iso: string | undefined): string {
   if (!iso) return 'Data as of nightly build';
   const d = new Date(iso);
+  // A feed that only knows its date has no time to show; a converted midnight would be made up.
+  if (iso.endsWith('T00:00:00Z')) return `Data as of ${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(d)}`;
   const date = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(d);
   const time = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
   return `Data as of nightly build ${date} ${time}`;

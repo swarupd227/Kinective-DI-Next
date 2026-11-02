@@ -152,6 +152,55 @@ export interface ReferralsIndex {
 export type ReferralAction = { kind: 'start' } | { kind: 'note'; text: string } | { kind: 'close'; stage: 'Sold' | 'Not Interested' | 'Done'; note?: string } | { kind: 'assign'; employeeId: number };
 
 /** DI's view of a page: one sentence, and the next step it would take. Code writes both. */
+export type AppViewId = 'calendar' | 'files' | 'queries' | 'users' | 'admin' | 'datalogs' | 'seg' | 'callreport' | 'workflows' | 'rm';
+
+export interface AppTile {
+  label: string;
+  value: string;
+  detail?: string;
+  tone?: 'neutral' | 'warning' | 'danger';
+}
+
+export interface AppEvent {
+  date: string;
+  kind: string;
+  title: string;
+  detail: string;
+  late: boolean;
+  ask: string;
+}
+
+export interface SavedQueryView {
+  name: string;
+  folder: string;
+  description: string;
+  sql: string;
+}
+
+/** A workspace page: DI's view, then the figures and records to check. */
+export interface AppView {
+  title: string;
+  lede: string;
+  take: DiTake;
+  tiles: AppTile[];
+  prompts: string[];
+  blocks: Block[];
+  /** Plainly says what this page can't do yet. */
+  notice?: string;
+  links?: { label: string; to: string }[];
+  events?: AppEvent[];
+  today?: string;
+  saved?: SavedQueryView[];
+}
+
+export interface QueryRun {
+  statementType: 'SELECT';
+  tables: string[];
+  rowCount: number;
+  truncated: boolean;
+  block: Block;
+}
+
 export interface DiTake {
   headline: string;
   action?: { label: string; ask: string };

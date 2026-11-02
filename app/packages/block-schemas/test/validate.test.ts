@@ -6,6 +6,7 @@ import {
   chartFixture,
   kpiFixture,
   kpiGroupFixture,
+  lineageFixture,
   lineChartFixture,
   member360Fixture,
   memberCardFixture,
@@ -17,6 +18,7 @@ import {
 } from '../src/fixtures.ts';
 
 const fixtures = [
+  lineageFixture,
   reportCanvasFixture,
   memberCardFixture,
   member360Fixture,

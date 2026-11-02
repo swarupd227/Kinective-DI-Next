@@ -1,6 +1,9 @@
 // Experience Layer REST calls used in Slice 0 (spec 12.1, 12.3, 12.5).
 import type {
   AppNotification,
+  AppView,
+  AppViewId,
+  QueryRun,
   ApprovalDecisionRequest,
   ApprovalErrorCode,
   HomeBriefing,
@@ -117,6 +120,14 @@ export function createApiClient({ baseUrl, token }: ApiClientOptions) {
     member: (token: string, signal?: AbortSignal) => get<{ block: Member360Block }>(`/v1/members/${encodeURIComponent(token)}`, signal).then((r) => r.block),
     notifications: () => get<{ notifications: AppNotification[] }>('/v1/notifications').then((r) => r.notifications),
     markNotificationsRead: (ids: string[]) => send<void>('POST', '/v1/notifications/read', { ids }),
+    appView: (id: AppViewId) => get<AppView>(`/v1/apps/${id}`),
+    async runQuery(sql: string): Promise<QueryRun> {
+      const res = await fetch(`${baseUrl}/v1/queries/run`, { method: 'POST', headers: headers(), body: JSON.stringify({ sql }) });
+      const json = (await res.json().catch(() => ({}))) as QueryRun & { message?: string };
+      if (!res.ok) throw new Error(json.message ?? 'That query could not run.');
+      return json;
+    },
+    feedback: (f: { runId: string; rating: 'up' | 'down'; comment?: string }) => send<void>('POST', '/v1/feedback', f),
     table: (tableId: string) => get<TableData>(`/v1/tables/${encodeURIComponent(tableId)}`),
 
     async stepUp(): Promise<string | null> {

@@ -3,9 +3,9 @@
 // seeded warehouse. No model calls are made.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateBlock, type Block } from '@dinext/block-schemas';
-import { ApprovalStore, CoreError, GoalsService, payFor, PipelineService, ReferralService, ruleText, type IncentiveRule } from '@dinext/di-core';
+import { ApprovalStore, CoreError, furthestBehind, GoalsService, payFor, PipelineService, ReferralService, ruleText, type IncentiveRule } from '@dinext/di-core';
 import { createPool, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
-import { AuditLog, Concierge, GI_REQUEST, asksSomething, incentiveNextSteps, ToolGateway, parseIncentivesRequest, runIncentivesOffline, type IncentivesInput, type RunSink, type TenantRuntime } from '../src/index.ts';
+import { AuditLog, Concierge, GI_REQUEST, asksSomething, incentiveNextSteps, shortfalls, teamBlock, teamText, ToolGateway, parseIncentivesRequest, runIncentivesOffline, type IncentivesInput, type RunSink, type TenantRuntime } from '../src/index.ts';
 
 const SCHEMA = 'dinext_t_test_cu';
 const up = await warehouseAvailable(SCHEMA);
@@ -58,6 +58,42 @@ describe('next steps', () => {
 
   it('routes every step back to this agent', () => {
     for (const t of ['Explain my new checking incentive', 'How am I doing on my goals this month?', 'Show the October payouts', 'Who on my team is behind on goals?', 'Tell the people who are behind']) expect(GI_REQUEST.test(t), t).toBe(true);
+  });
+});
+
+describe('who is behind', () => {
+  const goal = (name: string, pct: number, qualifier = false) => ({ name, pct, qualifier, actual: pct, target: 100 });
+  const card = (name: string, branch: string, goals: unknown[], behind = true) => ({ name, branch, role: 'MSR', period: 'October 2026', goals, behind, total: 0 }) as never;
+  const ortiz = card('J. Ortiz', 'Westport', [goal('Member survey score', 76, true), goal('Referrals sold', 117)]);
+  const ruiz = card('Sofia Ruiz', 'Westport', [goal('Referrals sold', 67), goal('New checking accounts', 90)]);
+  const fine = card('Ana Ruiz', 'Westport', [goal('Funded loan dollars', 130)], false);
+
+  it('says what someone is short on, the most serious first', () => {
+    expect(shortfalls(ortiz)).toEqual(['Member survey score 76, under 100']);
+    expect(shortfalls(ruiz)).toEqual(['Referrals sold 67%', 'New checking accounts 90%']);
+  });
+
+  it('names one branch plainly, and says when there are more to see', () => {
+    expect(teamText([ortiz, ruiz, fine])).toBe('2 of 3 are behind for October 2026. They are: **J. Ortiz** (member survey score 76, under 100), **Sofia Ruiz** (referrals sold 67%).');
+    const many = [1, 2, 3, 4, 5].map((n) => card(`P${n}`, n % 2 ? 'Westport' : 'Eastgate', [goal('Referrals sold', 50 + n)]));
+    const text = teamText(many as never);
+    expect(text).toContain('5 of 5 across 2 branches are behind');
+    expect(text).toContain('**P1**, Westport');
+    expect(text).toContain('and 1 more');
+  });
+
+  it('lists only those behind when asked, and shows the branch across branches', () => {
+    const one = teamBlock([ortiz, ruiz, fine], 'R-1', true) as unknown as { title: string; data: { rows: { name: string; goals: string }[]; columns: { field: string }[] } };
+    expect(one.title).toBe('Behind on goals');
+    expect(one.data.rows.map((r) => r.name)).toEqual(['J. Ortiz', 'Sofia Ruiz']);
+    expect(one.data.columns.map((c) => c.field)).not.toContain('branch');
+    const both = teamBlock([ortiz, card('E. Kim', 'Eastgate', [goal('Referrals sold', 60)])], 'R-2', true) as unknown as { data: { columns: { field: string }[] } };
+    expect(both.data.columns.map((c) => c.field)).toContain('branch');
+  });
+
+  it('puts a missed qualifier first, then the lowest percent', () => {
+    expect(furthestBehind({ qualified: false, goals: [] })).toBe(-1);
+    expect(furthestBehind({ qualified: true, goals: [goal('A', 80), goal('B', 60)] as never })).toBe(60);
   });
 });
 
@@ -251,7 +287,7 @@ describe.skipIf(!up)('incentives against the warehouse', () => {
     const out = await runIncentivesOffline(input('Tell the people who are behind on goals', 'thr_gi13'), { gateway }, recorder().sink);
     const card = out.approval!.card;
     expect(card.data.riskTier).toBe('medium');
-    const names = card.data.preview.kind === 'diff' ? card.data.preview.changes.map((c) => c.label) : [];
+    const names = card.data.preview.kind === 'bulk' ? card.data.preview.sample.map((n) => n.name) : [];
     expect(names).toContain('Tom Walsh');
     expect(names).not.toContain('Marcus Reed');
     const done = await approveIt(out, marcusCtx);

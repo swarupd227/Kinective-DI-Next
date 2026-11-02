@@ -364,7 +364,7 @@ function Preview({ preview }: { preview: ApprovalPreview }) {
           )}
           <table className={styles.sample}>
             <caption className="dn-visually-hidden">
-              Sample of {preview.sample.length} of {preview.count} records
+              {preview.sample.length < preview.count ? `Sample of ${preview.sample.length} of ${preview.count} records` : `All ${preview.count} records`}
             </caption>
             <thead>
               <tr>

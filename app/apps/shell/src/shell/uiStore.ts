@@ -3,8 +3,8 @@
 import { create } from 'zustand';
 import type { Block, ContextRef } from '@dinext/block-schemas';
 
-/** A table from the catalog, a block's own rows at full size ("Open grid"), a member's 360 by token, a task's progress, or one of its outputs. */
-export type WorkspaceView = { kind: 'table'; tableId: string; label: string } | { kind: 'block'; block: Block; label: string } | { kind: 'member'; ref: string; label: string } | { kind: 'task'; threadId: string; label: string } | { kind: 'output'; threadId: string; blockId: string; label: string };
+/** A table from the catalog, a block's own rows at full size ("Open grid"), a member's 360 by token, a task's progress, one of its outputs, or a whole view opened beside the task. */
+export type WorkspaceView = { kind: 'table'; tableId: string; label: string } | { kind: 'block'; block: Block; label: string } | { kind: 'member'; ref: string; label: string } | { kind: 'task'; threadId: string; label: string } | { kind: 'output'; threadId: string; blockId: string; label: string } | { kind: 'page'; path: string; label: string };
 
 export interface RecentItem {
   kind: 'thread' | 'view';

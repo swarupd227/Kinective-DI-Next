@@ -72,19 +72,33 @@ export function scorecardBlock(c: Scorecard, runId: string): Block {
   return table(`${c.name}: ${c.period}`, runId, 'gi.scorecard.get', [{ field: 'goal', headerName: 'Goal', type: 'text' }, { field: 'actual', headerName: 'Actual', type: 'text' }, { field: 'target', headerName: 'Target', type: 'text' }, { field: 'pct', headerName: 'Of goal', type: 'text' }, { field: 'earned', headerName: 'Earned', type: 'currency' }], c.goals.map((g) => ({ goal: g.name, actual: amount(g, g.actual), target: amount(g, g.target), pct: `${g.pct}%`, earned: g.earned })), c.asOf);
 }
 
+/** What someone is short on, most serious first: a missed qualifier, then goals under 100%. */
+export function shortfalls(c: Scorecard) {
+  const gate = c.goals.find((g) => g.qualifier && g.actual < g.target);
+  const under = measured(c).filter((g) => g.pct < 100).sort((x, y) => x.pct - y.pct);
+  return [...(gate ? [`${gate.name} ${gate.actual}, under ${gate.target}`] : []), ...under.map((g) => `${g.name} ${g.pct}%`)];
+}
+
+const branchesIn = (cards: Scorecard[]) => new Set(cards.map((c) => c.branch)).size;
+
 export function teamText(cards: Scorecard[]) {
   const behind = cards.filter((c) => c.behind);
   const [first] = cards;
   if (!first) return 'There’s nobody to show.';
   if (!behind.length) return `Everyone is at or above goal for ${first.period}.`;
-  const worst = behind.map((c) => {
-    const g = measured(c).sort((a, b) => a.pct - b.pct)[0];
-    return g && g.pct < 100 ? `**${c.name}** (${g.name.toLowerCase()}, ${g.pct}%)` : `**${c.name}** (survey score under the qualifier)`;
-  });
-  return `${behind.length} of ${cards.length} ${behind.length === 1 ? 'is' : 'are'} behind for ${first.period}: ${worst.slice(0, 4).join(', ')}.`;
+  const branches = branchesIn(cards);
+  const worst = behind.slice(0, 4).map((c) => `**${c.name}**${branches > 1 ? `, ${c.branch}` : ''} (${shortfalls(c)[0]!.replace(/^[A-Z][a-z]/, (m) => m.toLowerCase())})`);
+  const rest = behind.length - worst.length;
+  const where = branches > 1 ? ` across ${branches} branches` : '';
+  return `${behind.length} of ${cards.length}${where} ${behind.length === 1 ? 'is' : 'are'} behind for ${first.period}. ${branches > 1 || rest ? 'Furthest behind' : 'They are'}: ${worst.join(', ')}${rest ? `, and ${rest} more` : ''}.`;
 }
 
-export const teamBlock = (cards: Scorecard[], runId: string) => table('Team scorecards', runId, 'gi.scorecard.get', [{ field: 'name', headerName: 'Name', type: 'text' }, { field: 'role', headerName: 'Role', type: 'text' }, { field: 'goals', headerName: 'Goals', type: 'text' }, { field: 'earned', headerName: 'Earned', type: 'currency' }], cards.map((c) => ({ name: c.name, role: c.role, goals: measured(c).map((g) => `${g.name} ${g.pct}%`).join(', ') || 'None', earned: c.total })), cards[0]?.asOf);
+/** "Who's behind?" lists only those people and what they're short on; a scorecard lists everyone. */
+export function teamBlock(cards: Scorecard[], runId: string, behindOnly = false) {
+  const shown = behindOnly ? cards.filter((c) => c.behind) : cards;
+  const columns: TableBlock['data']['columns'] = [{ field: 'name', headerName: 'Name', type: 'text' }, ...(branchesIn(cards) > 1 ? [{ field: 'branch', headerName: 'Branch', type: 'text' as const }] : []), { field: 'role', headerName: 'Role', type: 'text' }, { field: 'goals', headerName: behindOnly ? 'Behind on' : 'Goals', type: 'text' }, { field: 'earned', headerName: 'Earned', type: 'currency' }];
+  return table(behindOnly ? 'Behind on goals' : 'Team scorecards', runId, 'gi.scorecard.get', columns, shown.map((c) => ({ name: c.name, branch: c.branch, role: c.role, goals: (behindOnly ? shortfalls(c) : measured(c).map((g) => `${g.name} ${g.pct}%`)).join(', ') || 'None', earned: c.total })), cards[0]?.asOf);
+}
 
 /** "$10 per sold referral, cap $150. You have 4 sold..." (spec 24.17 example dialog). */
 export function explainText(e: ScoreExplanation, own: boolean) {
@@ -177,7 +191,10 @@ export function changeCard(d: GiChangeDraft, input: Pick<IncentivesInput, 'runId
       riskTier: d.approval.riskTier,
       operation: d.payload.operation,
       requestedBy: { kind: 'agent_run', runId: input.runId, agent: GI_AGENT, onBehalfOf: input.user.id, onBehalfOfName: input.user.name },
-      preview: { kind: 'diff', changes: d.payload.changes },
+      // A note has nothing to compare it with, so the card reads as who gets what.
+      preview: d.payload.notes
+        ? { kind: 'bulk', description: 'Each person sees their note in the bell.', count: d.payload.notes.length, columns: [{ field: 'name', headerName: 'To', type: 'text' }, { field: 'text', headerName: 'Note', type: 'text' }], sample: d.payload.notes.slice(0, 10).map((n) => ({ name: n.name, text: n.text })) }
+        : { kind: 'diff', changes: d.payload.changes },
       affected: { records: Math.max(1, d.payload.notes?.length ?? 1), users: d.payload.notes?.length ?? 0, external: 0 },
       confirmation: { methods: high ? ['click', 'keyboard'] : ['click', 'keyboard', 'voice'], typedValue: null, stepUp: false, secondApprover: null, noteRequired: false },
       editablePlan: false,
@@ -265,7 +282,8 @@ async function show(kind: z.infer<typeof IncentivesFinish>['outcome'], message: 
   }
   if (kind === 'team' && s.team) {
     await sink.text(`${teamText(s.team)}${extra}`, GI_AGENT);
-    await sink.block(teamBlock(s.team, input.runId));
+    const behindOnly = /\bbehind\b/i.test(input.text);
+    if (!behindOnly || s.team.some((c) => c.behind)) await sink.block(teamBlock(s.team, input.runId, behindOnly));
     for (const step of incentiveNextSteps('team', input, undefined, s.team)) sink.suggestion(step);
     return answer;
   }

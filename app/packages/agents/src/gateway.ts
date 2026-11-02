@@ -550,7 +550,7 @@ export class ToolGateway {
           const team = await this.deps.goals!.team(args.branch as string | undefined, giWho(ctx), ctx);
           const notes = team.filter((c) => c.behind && c.employeeId !== ctx.employeeId).map((c) => {
             const g = c.goals.filter((x) => !x.qualifier).sort((a, b) => a.pct - b.pct)[0];
-            return { employeeId: c.employeeId, name: c.name, text: g && g.pct < 100 ? `${c.period}: ${g.name} is at ${g.pct}% of goal. Let’s talk about what would help.` : `${c.period}: your member survey score is under the level that incentives need. Let’s talk about it.` };
+            return { employeeId: c.employeeId, name: c.name, text: g && g.pct < 100 ? `You’re at ${g.pct}% of your ${midSentence(g.name)} goal for ${c.period.split(' ')[0]}. Let’s talk about what would help.` : `Your member survey score for ${c.period.split(' ')[0]} is under the level incentives need. Let’s talk about it.` };
           });
           if (!notes.length) return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: 'Nobody on the team is behind, so there’s nothing to send.' } };
           return this.giDraft(def, ctx, { operation: def.operation, summary: `Send a note to ${notes.length} ${notes.length === 1 ? 'person' : 'people'} behind on goals`, changes: notes.slice(0, 8).map((n) => ({ label: n.name, before: '—', after: n.text })), text: `I’ve drafted a note to ${notes.length === 1 ? 'one person' : `${notes.length} people`} behind on goals.`, done: `Sent ${notes.length === 1 ? 'the note' : `${notes.length} notes`}. They appear in each person’s bell. Delivery is simulated in this demo.`, apply: {}, notes });

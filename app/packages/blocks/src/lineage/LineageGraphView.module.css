@@ -1,0 +1,78 @@
+.graph {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.metric {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-accent-text);
+}
+
+.lane {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.node,
+.gap {
+  display: grid;
+  flex: 1 1 140px;
+  gap: var(--space-1);
+  align-content: start;
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.gap {
+  border-style: dashed;
+  background: transparent;
+}
+
+.label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.detail {
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-mono);
+  overflow-wrap: anywhere;
+}
+
+.muted {
+  color: var(--color-text-muted);
+}
+
+.passed,
+.failed {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-text-secondary);
+}
+
+.failed {
+  color: var(--color-danger-text);
+  font-weight: var(--weight-semibold);
+}
+
+.arrow {
+  align-self: center;
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}

@@ -74,6 +74,24 @@ a.main:hover {
   color: var(--color-accent-text);
 }
 
+.lead {
+  flex-shrink: 0;
+  min-width: 64px;
+  white-space: nowrap;
+  font-size: var(--type-h3-size);
+  font-weight: var(--weight-semibold);
+  line-height: var(--type-h3-line);
+  text-align: right;
+}
+
+.lead_danger {
+  color: var(--color-status-danger-text, var(--color-text-primary));
+}
+
+.lead_warning {
+  color: var(--color-status-warning-text, var(--color-text-primary));
+}
+
 .text {
   display: grid;
   flex: 1;

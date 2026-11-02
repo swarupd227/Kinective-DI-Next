@@ -17,6 +17,9 @@ import { AgentTurn, EmptyConversation, UserTurn } from '../conversation/Turns.ts
 import styles from './ThreadPage.module.css';
 import page from './Page.module.css';
 
+/** Room for the sticky task title above the question. */
+const QUESTION_OFFSET = 72;
+
 export function ThreadPage() {
   const { threadId = '', blockId } = useParams();
   const { api, connection, stream, send, terms } = useSession();
@@ -62,21 +65,44 @@ export function ThreadPage() {
     [threadId],
   );
 
-  // Keep the newest content in view unless the user has scrolled up to read.
+  // Hold the latest question at the top, so the answer reads from its first line as it arrives,
+  // rather than ending on whatever came last. Any scrolling by the user stops this until they ask again.
   const pinned = useRef(true);
+  const questions = useRef(0);
   useEffect(() => {
     const canvas = document.getElementById('canvas');
     if (!canvas) return;
-    const onScroll = () => {
-      pinned.current = canvas.scrollHeight - canvas.scrollTop - canvas.clientHeight < 120;
+    const release = () => {
+      pinned.current = false;
     };
-    canvas.addEventListener('scroll', onScroll, { passive: true });
-    return () => canvas.removeEventListener('scroll', onScroll);
+    canvas.addEventListener('wheel', release, { passive: true });
+    canvas.addEventListener('touchmove', release, { passive: true });
+    return () => {
+      canvas.removeEventListener('wheel', release);
+      canvas.removeEventListener('touchmove', release);
+    };
   }, []);
   useLayoutEffect(() => {
     const canvas = document.getElementById('canvas');
-    if (canvas && pinned.current && !blockId) canvas.scrollTop = canvas.scrollHeight;
+    if (!canvas || blockId) return;
+    const asked = canvas.querySelectorAll('[data-question]');
+    if (asked.length !== questions.current) {
+      questions.current = asked.length;
+      pinned.current = true;
+    }
+    const latest = asked[asked.length - 1];
+    if (!latest || !pinned.current) return;
+    const top = latest.getBoundingClientRect().top - canvas.getBoundingClientRect().top + canvas.scrollTop - QUESTION_OFFSET;
+    canvas.scrollTop = Math.min(top, canvas.scrollHeight - canvas.clientHeight);
   });
+
+  // A card waiting for a decision is the next thing to do, so it's brought into view.
+  const waiting = thread?.pendingApprovals.at(-1);
+  useEffect(() => {
+    if (!waiting) return;
+    pinned.current = false;
+    document.getElementById(`b-${waiting}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [waiting]);
 
   // /c/:threadId/b/:blockId scrolls to the block and highlights it (spec 11.4).
   const blockReady = Boolean(blockId && thread?.blocks[blockId]);
@@ -156,7 +182,7 @@ export function ThreadPage() {
           t.kind === 'user' ? (
             <UserTurn key={t.id} turn={t} />
           ) : (
-            <AgentTurn key={t.id} turn={t} thread={thread} highlight={blockId} onSuggestion={(s) => void send(threadId, s)} />
+            <AgentTurn key={t.id} turn={t} thread={thread} highlight={blockId} onSuggestion={(s) => void send(threadId, s)} onFeedback={(runId, rating, comment) => api.feedback({ runId, rating, comment })} />
           ),
         )}
       </BlockHostProvider>

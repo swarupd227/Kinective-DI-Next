@@ -24,7 +24,7 @@ export interface AuditRecord {
   /** The question after pre-screen masking; raw identifiers are never written (AI-GRD-031). */
   question: string;
   maskedIdentifiers: number;
-  route: { intent: string; agent: string; confidence: number | null; mode: 'live' | 'offline' | 'deterministic' };
+  route: { intent: string; agent: string; confidence: number | null; mode: 'live' | 'offline' | 'deterministic'; label?: string };
   toolCalls: ToolCallRecord[];
   outcome: 'answer' | 'unmatched' | 'clarify' | 'not_supported' | 'no_access' | 'failed' | 'cancelled' | 'scripted' | 'approval_requested' | 'not_found';
   numericRemovals: string[];
@@ -38,12 +38,20 @@ export interface AuditRecord {
 const DATA_DIR = process.env.DI_DATA_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '.data');
 
 export class AuditLog {
+  /** Each tenant's usage ledger, which the AI usage reports read (spec 8.21). */
+  private readonly ledgers = new Map<string, (r: AuditRecord) => Promise<void>>();
+
   constructor(private readonly dir = DATA_DIR) {}
+
+  ledger(tenant: string, write: (r: AuditRecord) => Promise<void>) {
+    this.ledgers.set(tenant, write);
+  }
 
   async record(r: Omit<AuditRecord, 'at' | 'totalCostUsd' | 'usage'> & { usage: Usage[] }) {
     const usage = r.usage.map((u) => ({ ...u, costUsd: Math.round(costUsd(u) * 1e6) / 1e6 }));
     const full: AuditRecord = { ...r, at: new Date().toISOString(), usage, totalCostUsd: Math.round(usage.reduce((s, u) => s + u.costUsd, 0) * 1e6) / 1e6 };
     await this.append(join('audit', `${full.at.slice(0, 10)}.jsonl`), full);
+    await this.ledgers.get(full.tenant)?.(full).catch(() => {});
     return full;
   }
 

@@ -50,6 +50,12 @@ export function AppShell() {
 
   useEffect(() => setMobileNav(false), [location.pathname, setMobileNav]);
 
+  // A view opened beside a task belongs to that task; leaving it for a page leaves the view too.
+  const besideTask = workspace?.kind === 'page';
+  useEffect(() => {
+    if (besideTask && !threadId) useUi.getState().closeWorkspace();
+  }, [besideTask, threadId]);
+
   const wide = bp === 'desktop' || bp === 'laptop';
   const side = workspace && wide && !workspaceMaximized;
   const overlay = workspace && !side ? (workspaceMaximized ? 'max' : 'sheet') : null;

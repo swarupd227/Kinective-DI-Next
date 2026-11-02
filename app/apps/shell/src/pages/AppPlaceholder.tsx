@@ -1,18 +1,20 @@
 // Apps whose work runs through DI start the conversation from here. Views with no agent behind them
 // yet say so plainly.
 import { useNavigate, useParams } from 'react-router';
-import { Construction, Sparkles } from 'lucide-react';
+import { Construction, Search, Sparkles } from 'lucide-react';
+import { Button } from '@dinext/ui';
 import { useSession } from '../session/SessionProvider.tsx';
+import { useUi } from '../shell/uiStore.ts';
 import { APP_META } from '../shell/apps.tsx';
 import page from './Page.module.css';
 
 const PROMPTS: Record<string, string[]> = {
   reports: ['Show me last month\'s executive summary', 'Find the ALCO report'],
   workflows: ["What's in my referrals inbox?", 'Refer Suzanne Jackson for a HELOC, she prefers a call after 5 pm'],
-  rm: ['Tell me about Suzanne Jackson before I call'],
+  rm: ['Tell me about Suzanne Jackson before I call', 'Find members at risk of leaving and draft follow-ups', 'Which members should I call this week?'],
   datalogs: ['Show the data logs waiting for approval', 'Show my returned data logs'],
   users: ['Who can approve incentives?', 'Create a user for Maria Gomez as a Westport MSR'],
-  admin: ["Did last night's build finish?", 'Which checks failed?', 'Which uploaders missed their late-file time?'],
+  admin: ["Did last night's build finish?", 'Which checks failed?', 'Show AI cost by agent for October', 'Show the negative feedback'],
   seg: ['Which SEGs had the most new members?', 'Prepare me for my SEG meeting with Albany Medical'],
   callreport: ['Are we ready to file Q3?', 'Show schedule A changes over 10% from last quarter'],
 };
@@ -34,6 +36,11 @@ export function AppPlaceholder({ app }: { app: string }) {
       <p className={page.lede}>
         {agentLed ? 'Ask here and DI does the work. Anything that changes data waits for your approval.' : `The classic ${meta?.label ?? ''} view is planned for ${meta?.phase ?? 'a later phase'}. In the meantime you can ask DI.`}
       </p>
+      {key === 'rm' && (
+        <Button variant="primary" icon={<Search size={16} aria-hidden />} onClick={() => useUi.getState().setPalette(true)}>
+          Find a person
+        </Button>
+      )}
       <ul className={page.prompts} aria-label="Ask instead">
         {prompts.map((p) => (
           <li key={p}>

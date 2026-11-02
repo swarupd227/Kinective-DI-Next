@@ -2,7 +2,7 @@
 // only the apps the user's class permits and the tenant has licensed. Collapses to icons with
 // tooltips; on tablets and phones it is a menu drawer.
 import { useQuery } from '@tanstack/react-query';
-import { Link, NavLink } from 'react-router';
+import { Link, NavLink, useMatch } from 'react-router';
 import { useStore } from 'zustand';
 import clsx from 'clsx';
 import { ChevronRight, CircleCheck, Hand, Loader2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Plus, Search } from 'lucide-react';
@@ -13,6 +13,7 @@ import { useSession } from '../session/SessionProvider.tsx';
 import { APP_META } from './apps.tsx';
 import { NotificationsButton } from './NotificationsPanel.tsx';
 import { UserMenu } from './TopBar.tsx';
+import { opensBeside } from './paneViews.ts';
 import { useUi } from './uiStore.ts';
 import { useBreakpoint } from './useBreakpoint.ts';
 import styles from './NavRail.module.css';
@@ -56,6 +57,8 @@ export function NavRail() {
   const expanded = drawer || !navCollapsed;
   const threads = useQuery({ queryKey: ['threads', ''], queryFn: () => api.threads(), enabled: expanded, refetchInterval: 10_000 });
   const live = useStore(stream.store, (s) => s.threads);
+  const newTask = Boolean(useMatch('/c/new'));
+  const inTask = Boolean(useMatch('/c/:threadId/*')) && !newTask;
   if (drawer && !mobileNavOpen) return null;
 
   // Banks never see credit-union-only modules, even if a licence record lists them (FE-EXP-003).
@@ -69,7 +72,19 @@ export function NavRail() {
     const link = (
       // A plain className: Tooltip's Slot would stringify NavLink's function form. NavLink sets
       // aria-current="page" on the active app, which the CSS styles.
-      <NavLink to={meta.path} className={styles.item} aria-label={expanded ? undefined : meta.label} end={a === 'home'}>
+      <NavLink
+        to={meta.path}
+        className={styles.item}
+        aria-label={expanded ? undefined : meta.label}
+        end={a === 'home'}
+        onClick={(e) => {
+          // During a task an app opens beside it. Ctrl or Cmd-click still opens it on its own.
+          if (!inTask || !opensBeside(meta.path) || e.ctrlKey || e.metaKey || e.shiftKey) return;
+          e.preventDefault();
+          setMobileNav(false);
+          useUi.getState().openWorkspace({ kind: 'page', path: meta.path, label: meta.label });
+        }}
+      >
         <span className={styles.icon}>{meta.icon}</span>
         {expanded && <span className={styles.label}>{meta.label}</span>}
       </NavLink>

@@ -269,6 +269,24 @@ Compliance, Onboarding and Data Logs share one agent in `moduleAgent.ts`. A modu
 - **Campaigns:** results by loan dollars, and saving an audience with suppression applied in code and its counts shown. Export isn't built.
 - **SEG (credit unions):** performance, a meeting brief, logging interactions and moving stages, with a note needed from board stages on.
 
+## Workspace pages (Slice 20)
+
+Every app now opens a real page: DI's view first, then key figures, then the records to check. The pages use the same DI Core services and purview as the agents, so a page and an answer agree. Changes still happen in a task, behind an approval card.
+
+- **Calendar:** a month view of dated work: touch points, issue deadlines and maturing certificates. Choosing an item asks DI about it. Dates count from the last build. Creating and moving events isn't built.
+- **Files:** sample documents with folders and who can see them. "Find the dealer agreement for Smith Ford" works. Uploading, opening and moving files isn't built.
+- **Queries:** a SQL editor with saved queries. It runs one SELECT at a time over curated tables on the read-only account, refuses personal data columns, stops at 500 rows and 8 seconds, and is limited to people with Query Browser and access to every branch.
+- **Users, Admin, Data Logs, Workflows, SEG and 5300 Call Report:** live figures and tables from their modules.
+- **Relationship Manager:** search by name to open a record.
+
+## Trust and governance (Slice 19)
+
+- **Data Lineage:** "Where does delinquency come from?", or "Where does this number come from?" on any result, shows the tables and columns read, the load, the file and the source system, with the last load and data quality result at each step. The graph comes from the lineage catalog and the semantic model, never the model's guess. A table with no lineage shows as an unknown source. "What breaks if we change cdm_loan.days_delinquent?" lists the measures and reports that depend on it.
+- **AI usage:** every turn is written to a ledger the application can add to but not change. "Show AI cost by agent for October", "Who used the most tokens?", "Open the trace for run R-…" and "Show every high-risk approval made through agents" need the AI usage permission. Anyone can ask "How much have I used this month?" and open their own runs.
+- **Feedback:** every answer has thumbs up and down with an optional comment, kept with its run. "Show the negative feedback" is the review queue.
+
+October's usage history and three of its approvals are demo data, marked `source = 'demo'` in `ai_run`. Real turns are added beside them. Lineage files and load names are demo values. Voice cost isn't in the ledger yet.
+
 Assumptions: SLA days, reason lists, capabilities, suppression rules and all data are demo values. Approved incentive logs don't yet feed payouts, and these modules have no page of their own.
 
 This release changes the data, so run `npm run db:seed`.

@@ -115,6 +115,9 @@ export function ruleText(r: IncentiveRule, unitLabel: string) {
   return r.tiers.map((t) => `${whole(t.amount)} at ${t.lowerPct}%`).join(', ');
 }
 
+/** Lowest percent of goal. A missed qualifier ranks first, because it stops every incentive. */
+export const furthestBehind = (c: Pick<Scorecard, 'goals' | 'qualified'>) => (c.qualified ? Math.min(...c.goals.filter((g) => !g.qualifier).map((g) => g.pct), Infinity) : -1);
+
 /** Worth a second look: a large jump on last month, in dollars and in proportion. */
 const unusual = (amount: number, prior: number) => amount - prior >= 100 && (prior === 0 || amount >= prior * 1.5);
 
@@ -220,7 +223,7 @@ export class GoalsService {
     const seen = this.visible(staff, who, ctx).filter((s) => !branch || s.branch.toLowerCase() === branch.toLowerCase());
     if (!seen.length) throw new CoreError('NOT_FOUND', branch ? `There’s no branch called “${branch}” that you can see.` : 'There’s nobody to show.');
     const wanted = new Set(seen.map((s) => s.employeeId));
-    return (await this.cards(current.end, staff)).filter((c) => wanted.has(c.employeeId)).sort((a, b) => Number(b.behind) - Number(a.behind) || a.name.localeCompare(b.name));
+    return (await this.cards(current.end, staff)).filter((c) => wanted.has(c.employeeId)).sort((a, b) => Number(b.behind) - Number(a.behind) || furthestBehind(a) - furthestBehind(b) || a.name.localeCompare(b.name));
   }
 
   /** gi.score.explain: the qualifying records, the rule and where the target came from (AI-AGT-170). */

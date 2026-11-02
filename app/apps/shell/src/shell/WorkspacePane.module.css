@@ -111,6 +111,11 @@
   overflow: auto;
 }
 
+.pageBody {
+  padding: 0;
+  overflow: hidden;
+}
+
 @keyframes pane-in {
   from {
     opacity: 0;

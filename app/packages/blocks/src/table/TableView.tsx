@@ -4,7 +4,8 @@ import type { TableBlock } from '@dinext/block-schemas';
 import DataGrid from './DataGrid.tsx';
 import styles from './TableView.module.css';
 
-const MAX_AUTO_HEIGHT_ROWS = 10;
+// Enough for a team or a branch list to read in the conversation without a scrollbar inside it.
+const MAX_AUTO_HEIGHT_ROWS = 25;
 
 export default function TableView({ block }: { block: TableBlock }) {
   const { columns, rows = [], sort } = block.data;

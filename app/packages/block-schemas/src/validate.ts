@@ -13,6 +13,7 @@ export const BLOCK_SUPPORT = {
   approval_card: '1.x',
   list: '1.x',
   definition_card: '1.x',
+  lineage_graph: '1.x',
   member_card: '1.x',
   member_360: '1.x',
   report_canvas: '1.x',

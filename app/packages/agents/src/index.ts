@@ -10,9 +10,11 @@ export { ModuleGateway, moduleCard, moduleTable, runModule, runModuleOffline, ty
 export { complianceModule, proposeCategory } from './compliance.ts';
 export { onboardingModule, talkingPoint } from './onboarding.ts';
 export { dataLogsModule } from './dataLogs.ts';
+export { governanceModule, lineageModule } from './governance.ts';
+export { calendarModule, filesModule } from './workspace.ts';
 export { callReportModule, campaignModule, collectionsModule, operationsModule, segModule } from './moreModules.ts';
 export { runRetention, runRetentionOffline, parseRetentionRequest, maturingText, costText, RETENTION_AGENT, RETENTION_REQUEST, type RetentionInput, type RetentionOutcome } from './retention.ts';
-export { asksSomething, incentiveNextSteps, runIncentives, runIncentivesOffline, parseIncentivesRequest, scorecardText, teamText, explainText, batchText, batchesText, payoutCard, GI_AGENT, GI_REQUEST, type IncentivesInput, type IncentivesOutcome } from './incentives.ts';
+export { asksSomething, incentiveNextSteps, runIncentives, runIncentivesOffline, parseIncentivesRequest, scorecardText, shortfalls, teamBlock, teamText, explainText, batchText, batchesText, payoutCard, GI_AGENT, GI_REQUEST, type IncentivesInput, type IncentivesOutcome } from './incentives.ts';
 export { runInbox, runInboxOffline, parseInboxRequest, inboxList, changeCard, InboxFinish, INBOX_AGENT, INBOX_REQUEST, type InboxOutcome, type InboxInput } from './inbox.ts';
 export { memberCard, member360, memberTake, matchCard, talkingPoints, scoreFactors, householdList, RELATIONSHIP_AGENT } from './member.ts';
 export { runReferral, runReferralOffline, parseReferral, referralCard, newReferralThread, REFERRAL_AGENT, FinishTurn, type ReferralThread, type ReferralOutcome } from './referral.ts';

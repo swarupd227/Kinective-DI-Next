@@ -3,10 +3,13 @@
 // key the Concierge runs its deterministic offline planner (spec 23.6.4).
 import { randomBytes } from 'node:crypto';
 import type { ApprovalCardBlock, ApprovalDecisionRequest, Block, KpiGroupBlock, ListBlock, Member360Block, SearchResult, StreamEvent, StreamingEnvelope, TableData } from '@dinext/block-schemas';
-import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, callReportModule, campaignModule, collectionsModule, complianceModule, dataLogsModule, goalsTake, ModuleGateway, onboardingModule, operationsModule, pipelineTake, segModule, referralTake, reportsTake, todayList, describeSchedule, hasClaudeCredentials, member360, memberTake, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
-import { ApprovalStore, CallReportService, CampaignService, CollectionsService, CoreError, DataLogService, GoalsService, IssueService, OnboardingService, OperationsService, RetentionService, SegService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
-import type { AppNotification, DiTake, GoalsIndex, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
+import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, calendarModule, callReportModule, filesModule, governanceModule, lineageModule, campaignModule, collectionsModule, complianceModule, dataLogsModule, goalsTake, ModuleGateway, onboardingModule, operationsModule, pipelineTake, segModule, referralTake, reportsTake, todayList, describeSchedule, hasClaudeCredentials, member360, memberTake, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
+import { ApprovalStore, QueryService, GovernanceService, LineageService, CallReportService, CampaignService, CollectionsService, CoreError, DataLogService, GoalsService, IssueService, OnboardingService, OperationsService, RetentionService, SegService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type CoreContext, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
+import type { AppNotification, AppView, AppViewId, QueryRun, DiTake, GoalsIndex, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
+import { createAppViews } from './appViews.ts';
 import { renderExport } from './exports.ts';
+import type { AppId } from '@dinext/block-schemas';
+import type { ModuleContext } from '@dinext/agents';
 import { SemanticService } from '@dinext/semantic';
 import { tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { PERSONAS, type PersonaId } from './data.ts';
@@ -57,6 +60,7 @@ const scheduleSummary = (s: ScheduleRow): ScheduleSummary => ({ scheduleId: s.sc
 interface Tenant {
   runtime: TenantRuntime;
   pool: Pool;
+  governance: GovernanceService | null;
   pipeline: PipelineService | null;
   goals: GoalsService | null;
   /** Words for the recogniser: branches, products and staff, never members (FE-VOICE-061). */
@@ -75,6 +79,12 @@ export interface LiveRunResult {
 export interface LiveRuntime {
   concierge: Concierge;
   mode: 'live' | 'offline';
+  /** A workspace page, under the person's purview. Null when it isn't theirs to see. */
+  appView(persona: PersonaId, id: AppViewId): Promise<AppView | null>;
+  /** Runs one read-only query. Refuses anything else, and anyone without Query Browser. */
+  runQuery(persona: PersonaId, sql: string): Promise<QueryRun | null>;
+  /** A rating of one answer, kept with its run (spec 26, FE-EXP feedback). */
+  feedback(persona: PersonaId, f: { runId: string; rating: 'up' | 'down'; comment?: string }): Promise<boolean>;
   /** Runs one turn of the Concierge. */
   run(persona: PersonaId, req: { threadId: string; runId: string; text: string; context: ConciergeTurn['context'] }, emit: (e: Emit) => void, signal: AbortSignal, speed: number): Promise<LiveRunResult>;
   /**
@@ -203,6 +213,15 @@ const applicationView = ({ partyId, ...a }: PipelineApplication, rm: Relationshi
 
 const referralView = ({ partyId, senderUserId: _sender, ...i }: InboxItem, rm: RelationshipService | null): ReferralSummary => ({ ...i, memberRef: rm?.token(partyId) ?? '' });
 
+/** Which app each workspace page belongs to. */
+const APP_ACCESS: Record<AppViewId, AppId> = { calendar: 'calendar', files: 'files', queries: 'queries', users: 'users', admin: 'admin', datalogs: 'datalogs', seg: 'seg', callreport: 'callreport', workflows: 'workflows', rm: 'rm' };
+
+const viewDeps = (pool: Pool, institutionType: string, who: { purviewBranches?: string[]; employeeId?: number; modules: string[]; leads?: boolean; retention: boolean }) => ({ pool, blockId, person: institutionType === 'bank' ? ('customer' as const) : ('member' as const), ctx: { purviewBranches: who.purviewBranches } as CoreContext, employeeId: who.employeeId, leads: Boolean(who.leads), modules: who.modules, retention: who.retention });
+
+const calendarFor = (pool: Pool, institutionType: string, ctx: ModuleContext) => createAppViews(viewDeps(pool, institutionType, { purviewBranches: ctx.purviewBranches, employeeId: ctx.employeeId, modules: ctx.modules, leads: ctx.leads, retention: ctx.modules.includes('calendar') })).calendarEvents();
+
+const AGENT_LABELS: Record<string, string> = { analytics: 'Analytics Q&A', report_builder: 'Report Builder', referral: 'Referrals', relationship: 'Relationship', goal: 'DI', dashboard: 'Briefing', none: 'DI Concierge' };
+
 export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promise<LiveRuntime | null> {
   const tenants = new Map<string, Tenant>();
   const audit = new AuditLog();
@@ -236,7 +255,15 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       () => true,
       () => false,
     );
-    const modules = hasModules ? new ModuleGateway(new ApprovalStore(pool), [complianceModule(new IssueService(pool), pool), onboardingModule(new OnboardingService(pool)), dataLogsModule(new DataLogService(pool)), operationsModule(new OperationsService(pool)), callReportModule(new CallReportService(pool)), collectionsModule(new CollectionsService(pool)), campaignModule(new CampaignService(pool)), segModule(new SegService(pool), () => new Date().toISOString().slice(0, 10))]) : null;
+    // The usage ledger exists once the tenant was seeded with Slice 19 or later.
+    const hasLedger = await pool.query('SELECT 1 FROM ai_run LIMIT 1').then(
+      () => true,
+      () => false,
+    );
+    const governance = hasLedger ? new GovernanceService(pool) : null;
+    if (governance) audit.ledger(t.key, (r) => governance.record({ runId: r.runId, at: r.at, userId: r.userId, threadId: r.threadId, agent: r.route.label ?? AGENT_LABELS[r.route.agent] ?? r.route.agent, intent: r.route.intent, mode: r.route.mode, question: r.question, outcome: r.outcome, model: r.usage.at(-1)?.model ?? null, inputTokens: r.usage.reduce((n, u) => n + u.inputTokens, 0), outputTokens: r.usage.reduce((n, u) => n + u.outputTokens, 0), cacheReadTokens: r.usage.reduce((n, u) => n + u.cacheReadTokens, 0), costUsd: r.totalCostUsd, toolCalls: r.toolCalls }));
+    const governanceModules = governance ? [lineageModule(new LineageService(pool, semantic.model)), governanceModule(governance, () => new Date().getFullYear())] : [];
+    const modules = hasModules ? new ModuleGateway(new ApprovalStore(pool), [...governanceModules, calendarModule((ctx) => calendarFor(pool, institutionType, ctx)), filesModule(), complianceModule(new IssueService(pool), pool), onboardingModule(new OnboardingService(pool)), dataLogsModule(new DataLogService(pool)), operationsModule(new OperationsService(pool)), callReportModule(new CallReportService(pool)), collectionsModule(new CollectionsService(pool)), campaignModule(new CampaignService(pool)), segModule(new SegService(pool), () => new Date().toISOString().slice(0, 10))]) : null;
     // Goals & Incentives exists once the tenant was seeded with Slice 14 or later.
     const hasGoals = await pool.query('SELECT 1 FROM mod_gi_goal LIMIT 1').then(
       () => true,
@@ -253,7 +280,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     const [staff] = await pool.query('SELECT DISTINCT display_name FROM cdm_employee');
     const dims = semantic.dimensionValues;
     const vocabulary = [...new Set([...(dims.branch ?? []), ...(dims.region ?? []), ...(dims.loan_category ?? []), ...(dims.deposit_category ?? []), ...(staff as { display_name: string }[]).map((s) => s.display_name).filter((s) => !/^\w\. /.test(s))])];
-    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules } });
+    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, governance, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules } });
   }
   if (!tenants.size) return null;
 
@@ -278,6 +305,34 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
   return {
     concierge,
     mode: model ? 'live' : 'offline',
+    async appView(persona, id) {
+      const t = tenantFor(persona);
+      const p = PERSONAS[persona];
+      if (!t || !t.runtime.modules || !p.session.apps.includes(APP_ACCESS[id])) return null;
+      return createAppViews(viewDeps(t.pool, t.runtime.institutionType, { purviewBranches: p.purview, employeeId: p.employeeId, modules: p.modules ?? [], leads: giAccess(persona).leads, retention: Boolean(p.retention) })).views[id]();
+    },
+
+    async runQuery(persona, sql) {
+      const t = tenantFor(persona);
+      const p = PERSONAS[persona];
+      if (!t || !p.session.permissions.queryBrowser || p.purview) return null;
+      const r = await new QueryService(t.pool).run(sql);
+      void audit.event({ eventType: 'query.executed', tenant: t.runtime.key, userId: p.session.user.id, threadId: '', runId: '', approvalId: '', tables: r.tables, rows: r.rows.length });
+      return {
+        statementType: r.statementType,
+        tables: r.tables,
+        rowCount: r.rows.length,
+        truncated: r.truncated,
+        block: { id: blockId(), type: 'table', version: '1.0.0', title: 'Results', provenance: { agent: 'Queries', operations: ['query.execute'], sources: [] }, freshness: { kind: 'workflow_event' }, data: { columns: r.columns.map((c) => ({ field: c, headerName: c, type: r.rows.some((row) => typeof row[c] === 'string') ? ('text' as const) : ('number' as const) })), rows: r.rows, rowCount: r.rows.length } },
+      };
+    },
+
+    async feedback(persona, f) {
+      const g = tenantFor(persona)?.governance;
+      if (!g) return false;
+      await g.feedback({ ...f, userId: PERSONAS[persona].session.user.id });
+      return true;
+    },
 
     async run(persona, req, emit, signal, speed) {
       const tenant = tenantFor(persona);

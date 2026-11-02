@@ -16,3 +16,5 @@ DI_Feature_Inventory.docx
 DI_Next_Backlog.docx
 DI_Next_Backlog.xlsx
 DI_Next_Specification.docx
+
+*.tsbuildinfo

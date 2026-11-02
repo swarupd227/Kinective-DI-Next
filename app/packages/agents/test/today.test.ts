@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateBlock, type Block, type ReportWidgetView } from '@dinext/block-schemas';
 import { ApprovalStore, PipelineService, ReferralService, RelationshipService, type InboxItem, type MemberProfile, type Topic } from '@dinext/di-core';
 import { createPool, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
+import { leadOf } from '../src/today.ts';
 import { AuditLog, Concierge, PIPELINE_REQUEST, TODAY_REQUEST, ToolGateway, buildToday, goalSystemPrompt, newGoalThread, newReportThread, parsePipelineRequest, pipelineTake, referralTake, reportTake, reportsTake, memberTake, todayList, todayText, whyFirst, type RunSink, type StepUpdate, type TenantRuntime, type TodayItem, type TodayPlan, type TodayWho } from '../src/index.ts';
 
 const SCHEMA = 'dinext_t_test_cu';
@@ -249,5 +250,14 @@ describe.skipIf(!up)('the day against the warehouse', () => {
     const out = await concierge.handle(turn(ana, 'thr_day6', 'What’s on my plate today?', [chip]), r.sink);
     expect(out).toMatchObject({ kind: 'handled' });
     expect(r.blocks[0]).toMatchObject({ title: 'Your open referrals' });
+  });
+});
+
+describe('the figure that leads a row', () => {
+  it('is the row\u2019s own count, or else a clean amount from its reason', () => {
+    expect(leadOf('3 regulatory.', '4 issues past due')).toBe('4');
+    expect(leadOf('4 people, $790.00, 3 flagged.', 'October payouts: Westport')).toBe('$790');
+    expect(leadOf('$1,250.50, 2 flagged.', 'November payouts')).toBe('$1,250.50');
+    expect(leadOf('Waiting on you.', 'A task')).toBeUndefined();
   });
 });

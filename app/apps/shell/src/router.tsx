@@ -15,6 +15,10 @@ const ConversationsPage = lazy(() => import('./pages/ConversationsPage.tsx').the
 const TablesPage = lazy(() => import('./pages/TablesPage.tsx').then((m) => ({ default: m.TablesPage })));
 const TablePage = lazy(() => import('./pages/TablesPage.tsx').then((m) => ({ default: m.TablePage })));
 const AppPlaceholder = lazy(() => import('./pages/AppPlaceholder.tsx').then((m) => ({ default: m.AppPlaceholder })));
+const AppViewPage = lazy(() => import('./pages/AppViewPage.tsx').then((m) => ({ default: m.AppViewPage })));
+const CalendarPage = lazy(() => import('./pages/AppViewPage.tsx').then((m) => ({ default: m.CalendarPage })));
+const QueriesPage = lazy(() => import('./pages/AppViewPage.tsx').then((m) => ({ default: m.QueriesPage })));
+const MembersPage = lazy(() => import('./pages/AppViewPage.tsx').then((m) => ({ default: m.MembersPage })));
 const NotFound = lazy(() => import('./pages/NotFound.tsx').then((m) => ({ default: m.NotFound })));
 const MemberPage = lazy(() => import('./pages/MemberPage.tsx').then((m) => ({ default: m.MemberPage })));
 const ReportsPage = lazy(() => import('./pages/ReportsPage.tsx').then((m) => ({ default: m.ReportsPage })));
@@ -46,19 +50,21 @@ export const router = createBrowserRouter([
           { path: 'reports/:templateId', element: guarded('reports', <ReportPage />) },
           { path: 'reports/*', element: guarded('reports', <ReportsPage />) },
           { path: 'workflows/referrals/*', element: guarded('referrals', <ReferralsPage />) },
-          { path: 'workflows/*', element: guarded('workflows', <AppPlaceholder app="workflows" />) },
-          { path: 'calendar/*', element: guarded('calendar', <AppPlaceholder app="calendar" />) },
-          { path: 'files/*', element: guarded('files', <AppPlaceholder app="files" />) },
-          { path: 'datalogs/*', element: guarded('datalogs', <AppPlaceholder app="datalogs" />) },
-          { path: 'queries/*', element: guarded('queries', <AppPlaceholder app="queries" />) },
-          { path: 'admin/users/*', element: guarded('users', <AppPlaceholder app="users" />) },
-          { path: 'admin/*', element: guarded('admin', <AppPlaceholder app="admin" />) },
-          { path: 'members', element: guarded('rm', <AppPlaceholder app="rm" />) },
-          { path: 'customers', element: guarded('rm', <AppPlaceholder app="rm" />) },
+          { path: 'workflows/*', element: guarded('workflows', <AppViewPage app="workflows" />) },
+          { path: 'calendar/*', element: guarded('calendar', <CalendarPage />) },
+          { path: 'files/*', element: guarded('files', <AppViewPage app="files" />) },
+          { path: 'datalogs/*', element: guarded('datalogs', <AppViewPage app="datalogs" />) },
+          { path: 'queries/*', element: guarded('queries', <QueriesPage />) },
+          { path: 'admin/users/*', element: guarded('users', <AppViewPage app="users" />) },
+          { path: 'admin/*', element: guarded('admin', <AppViewPage app="admin" />) },
+          { path: 'members', element: guarded('rm', <MembersPage />) },
+          { path: 'customers', element: guarded('rm', <MembersPage />) },
           { path: 'members/:ref', element: guarded('rm', <MemberPage />) },
           { path: 'customers/:ref', element: guarded('rm', <MemberPage />) },
           { path: 'm/lap/*', element: guarded('lap', <PipelinePage />) },
           { path: 'm/gi/*', element: guarded('gi', <GoalsPage />) },
+          { path: 'm/seg/*', element: guarded('seg', <AppViewPage app="seg" />) },
+          { path: 'm/callreport/*', element: guarded('callreport', <AppViewPage app="callreport" />) },
           { path: 'm/:module/*', element: page(<AppPlaceholder app="module" />) },
           { path: '*', element: page(<NotFound />) },
         ],

@@ -234,6 +234,7 @@ export class Concierge {
     let outcome: AuditRecord['outcome'] = 'answer';
     let numericRemovals: string[] = [];
     let classification: Classification | null = null;
+    let moduleAgent: string | undefined;
     let error: string | undefined;
     const screened = prescreen(turn.text, this.counter);
     const svc = turn.tenant.semantic;
@@ -267,6 +268,7 @@ export class Concierge {
       const module = matched ?? (waiting && screened.text.length <= 200 ? waiting.spec : null);
       if (module && turn.tenant.modules) {
         classification = { intent: 'module_task', agent: 'none', confidence: 1, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' };
+        moduleAgent = module.agent;
         const text = !matched && waiting ? `${waiting.text}: ${screened.text}` : screened.text;
         const r = await this.module(turn, module, text, sink, usage);
         toolCalls = r.toolCalls;
@@ -550,7 +552,7 @@ export class Concierge {
           runId: turn.runId,
           question: screened.text,
           maskedIdentifiers: screened.findings.length,
-          route: { intent: classification?.intent ?? 'unclear', agent: classification?.agent ?? 'none', confidence: classification?.confidence ?? null, mode: this.deps.model ? 'live' : 'offline' },
+          route: { intent: classification?.intent ?? 'unclear', agent: classification?.agent ?? 'none', confidence: classification?.confidence ?? null, mode: this.deps.model ? 'live' : 'offline', label: moduleAgent },
           toolCalls,
           outcome,
           numericRemovals,
@@ -1005,5 +1007,6 @@ export class Concierge {
     await sink.block(b.kpis);
     await sink.block(b.trend);
     for (const item of b.lookAt.slice(0, 3)) sink.suggestion(item.question);
+    if (!b.lookAt.length) sink.suggestion('What should I do today?');
   }
 }
