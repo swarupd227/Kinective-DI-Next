@@ -269,6 +269,16 @@ Compliance, Onboarding and Data Logs share one agent in `moduleAgent.ts`. A modu
 - **Campaigns:** results by loan dollars, and saving an audience with suppression applied in code and its counts shown. Export isn't built.
 - **SEG (credit unions):** performance, a meeting brief, logging interactions and moving stages, with a note needed from board stages on.
 
+## Calendar events and file uploads (Slice 23)
+
+The Calendar and Files pages can now change data, the agent-led way: you ask DI, DI prepares a card, and nothing changes until you approve it. The pages show the result.
+
+- **Calendar (spec 8.14):** "Schedule a follow-up with Suzanne Jackson next Tuesday at 2 pm about the HELOC referral", "Move my 3 pm dealer visit to Thursday" and "Cancel the branch huddle". The day, time and length are read from your words in code, relative to today, and the card reads them back ("Tuesday 3 November at 2 pm"); the model never works out a date. With no time or no day, DI asks. A bare hour reads as working hours (8 to 11 am, 12 to 7 pm). Your own calendar is low risk; inviting a colleague, or moving or cancelling an event a colleague is invited to, is medium, and they're told. Inviting a member (anyone who isn't on staff) stays low. Your events sit in the month view beside touch points, issue deadlines and certificates. You see your own events and the ones you're invited to; anyone else's reads as not found, and only the owner can move or cancel one.
+- **Files (spec 8.15):** choose a file and a folder on the Files page. The upload is checked on the server (PDF, images, Office, CSV and text only, by the file's first bytes rather than what the browser claims, up to 5 MB) and kept as Staged, in no folder. DI then prepares the card to save it: My Files is low risk, a shared folder is medium. "Save this file to the Lending > Dealer Docs folder", "Move Westport huddle notes.txt to the Marketing folder" and "Delete Westport huddle notes.txt" work too. Moving and deleting are medium, and a delete goes to the Recycle Bin, never out of the table. Uploads download from the page under the same folder rules; the sample library has no content and says so. Board Packs, Lending/Dealer Docs and Finance/ALCO need `files-board`, `files-lending` and `files-finance` in the person's module list; outside your folders a file isn't listed, found or downloadable.
+- New tables `cal_event` and `fil_file`, with a few demo events in late October and two small uploads. Approving twice never adds a second row: a create is keyed on its approval, and a move, save or delete only changes a row still in the state the card showed.
+
+Not built: **virus scanning** (the page and every save card say plainly that uploads aren't scanned), syncing with Outlook or Google Calendar, restoring from the Recycle Bin, recurring events, attaching files in chat, and cleaning up uploads that were never saved (they drop out of DI's reach after a day but stay in the table). This release changes the data, so run `npm run db:seed`.
+
 ## Module pages (Slice 22)
 
 Campaign Success, Onboarding Manager, Compliance, Predictive Analytics, Data Quality, Integrations and Classes now have pages, like the other apps: DI's view, the figures, the records, and the questions to ask. They read the same services as their agents.
@@ -289,8 +299,8 @@ Neither has a map yet: places show as a visit order with miles. Dealer and prosp
 
 Every app now opens a real page: DI's view first, then key figures, then the records to check. The pages use the same DI Core services and purview as the agents, so a page and an answer agree. Changes still happen in a task, behind an approval card.
 
-- **Calendar:** a month view of dated work: touch points, issue deadlines and maturing certificates. Choosing an item asks DI about it. Dates count from the last build. Creating and moving events isn't built.
-- **Files:** sample documents with folders and who can see them. "Find the dealer agreement for Smith Ford" works. Uploading, opening and moving files isn't built.
+- **Calendar:** a month view of dated work: touch points, issue deadlines and maturing certificates. Choosing an item asks DI about it. Dates count from the last build. Slice 23 adds your own events.
+- **Files:** sample documents with folders and who can see them. "Find the dealer agreement for Smith Ford" works. Slice 23 adds uploads.
 - **Queries:** a SQL editor with saved queries. It runs one SELECT at a time over curated tables on the read-only account, refuses personal data columns, stops at 500 rows and 8 seconds, and is limited to people with Query Browser and access to every branch.
 - **Users, Admin, Data Logs, Workflows, SEG and 5300 Call Report:** live figures and tables from their modules.
 - **Relationship Manager:** search by name to open a record.
@@ -329,7 +339,7 @@ The demo has no sign-in, so the person picked in the avatar menu used to apply t
 - **Relationship Manager:** issue management ("Log an issue", spec 8.24), undoing a decline within 30 days (BE-RM-003), the classic Relationship Dashboard as a full app page with its left navigation, a call-centre screen pop (AS-090), alert rules and the opportunity threshold as tenant settings, and speaking member data aloud (off by default for branch-floor classes).
 - **Loan Pipeline:** the status map and duplicate rule editor, movement counting, crediting the original owner, build-time `lap.application.aged` events, and Indirect Lending. Thresholds apply on the next read rather than the next build.
 - **Workflow:** email notifications, tenant-set SLA rules and escalation, undo for medium writes (spec 6.11), second approvers, the New Referral form, CC, and data-verified success matching.
-- **Home and threads:** pinning with undo, Home edit mode, sharing threads, a plan preview for multi-step writes, and file upload.
+- **Home and threads:** pinning with undo, Home edit mode, sharing threads, a plan preview for multi-step writes, and attaching a file in a conversation (uploads work from the Files page).
 - **Blocks:** the remaining catalogue blocks (pivot, form, timeline, map, funnel, lineage_graph, report_canvas, file_drop, sql_view). The form block is next in line, for "Edit first".
 - **Voice:** hands-free "Hey DI" with an on-device wake word, dictation into form fields, read-back on any block, voice settings (microphone choice, input test, silence threshold, speech rate control in the UI), voice latency telemetry, and Spanish.
 - **Azure, beyond the demo:** Entra ID sign-in with per-user sessions and class-based access (spec 25.5), Key Vault with managed identity for secrets, durable audit storage, Application Insights, more than one replica (conversations move out of server memory), private networking for MySQL, and a GitHub Actions pipeline.

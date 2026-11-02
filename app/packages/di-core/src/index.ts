@@ -1,7 +1,7 @@
 export { ApprovalStore, ApprovalError, APPROVAL_TTL_MS, canonical, payloadHash, type ApprovalRecord, type ApprovalStatus, type RiskTier } from './approvals.ts';
 export { TaskService, type Person, type TaskItem } from './tasks.ts';
 export { IndirectService, ProspectService, directionsLink, miles, visitOrder, type DealerFigures, type Prospect } from './growth.ts';
-export { CalendarService, FILE_FOLDERS, FILE_LIBRARY, QueryService, SAVED_QUERIES, findFiles, type CalendarEvent, type LibraryFile, type QueryResult, type SavedQuery } from './workspace.ts';
+export { CalendarService, CalendarStore, FileStore, FILE_FOLDERS, FILE_LIBRARY, MAX_UPLOAD_BYTES, MY_FILES, QueryService, SAVED_QUERIES, UPLOAD_EXTENSIONS, checkUpload, clock, findFiles, folderNamed, foldersFor, type CalendarEvent, type LibraryFile, type Meeting, type QueryResult, type SavedQuery } from './workspace.ts';
 export { GovernanceService, LineageService, LINEAGE_CATALOG, type CatalogEntry, type LineageModel, type LineageNode, type RunEntry, type UsageGroup } from './governance.ts';
 export { CallReportService, CampaignService, CollectionsService, OperationsService, SegService, CAPABILITIES, SEG_STAGES, USER_CLASSES, type DirectoryUser, type SegCompany, type WatchedLoan } from './modules2.ts';
 export { DataLogService, IssueService, OnboardingService, findPerson, ISSUE_REGULATORS, ISSUE_ROOT_CAUSES, type DataLog, type Issue, type IssueDetail, type IssueFilter, type TouchPoint } from './modules.ts';

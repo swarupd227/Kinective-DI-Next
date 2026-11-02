@@ -127,6 +127,13 @@ export function createApiClient({ baseUrl, token }: ApiClientOptions) {
       if (!res.ok) throw new Error(json.message ?? 'That query could not run.');
       return json;
     },
+    /** Stages an upload as base64. Nothing is saved to a folder until DI's card is approved (spec 8.15). */
+    async stageFile(f: { name: string; data: string }): Promise<{ fileId: number; name: string; type: string; sizeKb: number }> {
+      const res = await fetch(`${baseUrl}/v1/files/stage`, { method: 'POST', headers: headers(), body: JSON.stringify(f) });
+      const json = (await res.json().catch(() => ({}))) as { fileId: number; name: string; type: string; sizeKb: number; message?: string };
+      if (!res.ok) throw new Error(json.message ?? 'That file could not be uploaded.');
+      return json;
+    },
     feedback: (f: { runId: string; rating: 'up' | 'down'; comment?: string }) => send<void>('POST', '/v1/feedback', f),
     table: (tableId: string) => get<TableData>(`/v1/tables/${encodeURIComponent(tableId)}`),
 

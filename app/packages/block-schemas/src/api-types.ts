@@ -180,6 +180,17 @@ export interface AppEvent {
   ask: string;
 }
 
+export interface AppFile {
+  name: string;
+  folder: string;
+  type: string;
+  sizeKb: number;
+  owner: string;
+  modified: string;
+  /** Where an upload downloads from. Sample documents have no content, so no link. */
+  download?: string;
+}
+
 export interface SavedQueryView {
   name: string;
   folder: string;
@@ -201,6 +212,9 @@ export interface AppView {
   events?: AppEvent[];
   today?: string;
   saved?: SavedQueryView[];
+  /** The Files page: what the person can see, and the folders they can save to. */
+  files?: AppFile[];
+  folders?: string[];
 }
 
 export interface QueryRun {

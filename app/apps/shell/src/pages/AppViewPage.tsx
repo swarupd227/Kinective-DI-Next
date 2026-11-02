@@ -7,7 +7,7 @@ import { useMutation } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { BlockHostProvider, BlockRenderer } from '@dinext/blocks';
 import { Button, Skeleton } from '@dinext/ui';
-import type { AppEvent, AppView, AppViewId, QueryRun, SavedQueryView, SearchResult } from '@dinext/block-schemas';
+import type { AppEvent, AppFile, AppView, AppViewId, QueryRun, SavedQueryView, SearchResult } from '@dinext/block-schemas';
 import { ApiError } from '@dinext/stream-client';
 import { useSession } from '../session/SessionProvider.tsx';
 import { DiTake } from '../shell/DiTake.tsx';
@@ -184,6 +184,127 @@ function Month({ events, today }: { events: AppEvent[]; today: string }) {
 export function CalendarPage() {
   const q = useView('calendar', '/calendar');
   return <Frame q={q}>{(v) => <Month events={v.events ?? []} today={v.today ?? new Date().toISOString().slice(0, 10)} />}</Frame>;
+}
+
+// ---- files --------------------------------------------------------------------------------------
+
+const ACCEPT = '.pdf,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt';
+const MAX_BYTES = 5 * 1024 * 1024;
+
+/** The file's bytes as base64, without the data URL prefix. */
+const base64 = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).replace(/^data:[^,]*,/, ''));
+    r.onerror = () => reject(r.error ?? new Error('That file could not be read.'));
+    r.readAsDataURL(file);
+  });
+
+/** Uploading stages the file; DI then prepares the card that saves it. The server checks type and size again. */
+function Upload({ folders }: { folders: string[] }) {
+  const { api, startThread } = useSession();
+  const navigate = useNavigate();
+  const [file, setFile] = useState<File | null>(null);
+  const [folder, setFolder] = useState(folders[0] ?? '');
+  const stage = useMutation<void, Error, { file: File; folder: string }>({
+    mutationFn: async (u) => {
+      if (u.file.size > MAX_BYTES) throw new Error(`That file is ${(u.file.size / 1024 / 1024).toFixed(1)} MB. Files can be up to 5 MB.`);
+      const staged = await api.stageFile({ name: u.file.name, data: await base64(u.file) });
+      const id = await startThread(`Save “${staged.name}” to the ${u.folder} folder`);
+      navigate(`/c/${id}`);
+    },
+  });
+  if (!folders.length) return null;
+  return (
+    <section className={styles.query} aria-labelledby="upload-file">
+      <h2 id="upload-file" className={styles.heading}>
+        Upload a file
+      </h2>
+      <div className={styles.uploadRow}>
+        <label className={styles.field}>
+          <span className={styles.tileLabel}>File</span>
+          <input
+            type="file"
+            accept={ACCEPT}
+            onChange={(e) => {
+              setFile(e.target.files?.[0] ?? null);
+              stage.reset();
+            }}
+          />
+        </label>
+        <label className={styles.field}>
+          <span className={styles.tileLabel}>Save to</span>
+          <select className={styles.select} value={folder} onChange={(e) => setFolder(e.target.value)}>
+            {folders.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <p className={styles.tileLabel}>PDF, images, Office, CSV or text, up to 5 MB. DI prepares a card to save it, and nothing is saved until you approve.</p>
+      <div>
+        <Button variant="primary" disabled={!file || stage.isPending} onClick={() => file && stage.mutate({ file, folder })}>
+          {stage.isPending ? 'Uploading…' : 'Upload and ask DI to save it'}
+        </Button>
+      </div>
+      {stage.isError && (
+        <p className={styles.message} role="alert">
+          {stage.error.message}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function FileList({ files }: { files: AppFile[] }) {
+  return (
+    <section aria-labelledby="all-files">
+      <h2 id="all-files" className={styles.heading}>
+        All files
+      </h2>
+      {files.length ? (
+        <ul className={styles.saved}>
+          {files.map((f) => (
+            <li key={`${f.folder}/${f.name}/${f.download ?? ''}`} className={styles.file}>
+              <span className={styles.tileLabel}>
+                {f.folder} · {f.type} · {f.sizeKb.toLocaleString()} KB
+              </span>
+              <strong>{f.name}</strong>
+              <span className={styles.tileLabel}>
+                {f.owner}, {f.modified}
+              </span>
+              {f.download ? (
+                <a className={styles.link} href={f.download} download={f.name}>
+                  Download
+                </a>
+              ) : (
+                <span className={styles.tileLabel}>Sample document, no content to download</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className={styles.tileLabel}>There are no files in your folders yet.</p>
+      )}
+    </section>
+  );
+}
+
+export function FilesPage() {
+  const q = useView('files', '/files');
+  return (
+    <Frame q={q}>
+      {(v) => (
+        <>
+          <Upload folders={v.folders ?? []} />
+          <FileList files={v.files ?? []} />
+          <Blocks view={v} />
+        </>
+      )}
+    </Frame>
+  );
 }
 
 // ---- queries ------------------------------------------------------------------------------------

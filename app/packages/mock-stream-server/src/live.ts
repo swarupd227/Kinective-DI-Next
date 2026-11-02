@@ -4,7 +4,7 @@
 import { randomBytes } from 'node:crypto';
 import type { ApprovalCardBlock, ApprovalDecisionRequest, Block, KpiGroupBlock, ListBlock, Member360Block, SearchResult, StreamEvent, StreamingEnvelope, TableData } from '@dinext/block-schemas';
 import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, tasksModule, indirectModule, prospectingModule, calendarModule, callReportModule, filesModule, governanceModule, lineageModule, campaignModule, collectionsModule, complianceModule, dataLogsModule, goalsTake, ModuleGateway, onboardingModule, operationsModule, pipelineTake, segModule, referralTake, reportsTake, todayList, describeSchedule, hasClaudeCredentials, member360, memberTake, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
-import { ApprovalStore, TaskService, IndirectService, ProspectService, QueryService, GovernanceService, LineageService, CallReportService, CampaignService, CollectionsService, CoreError, DataLogService, GoalsService, IssueService, OnboardingService, OperationsService, RetentionService, SegService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type CoreContext, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
+import { ApprovalStore, CalendarStore, FileStore, foldersFor, TaskService, IndirectService, ProspectService, QueryService, GovernanceService, LineageService, CallReportService, CampaignService, CollectionsService, CoreError, DataLogService, GoalsService, IssueService, OnboardingService, OperationsService, RetentionService, SegService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type CoreContext, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
 import type { AppNotification, AppView, AppViewId, QueryRun, DiTake, GoalsIndex, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
 import { createAppViews } from './appViews.ts';
 import { renderExport } from './exports.ts';
@@ -65,6 +65,8 @@ interface Tenant {
   goals: GoalsService | null;
   /** Words for the recogniser: branches, products and staff, never members (FE-VOICE-061). */
   vocabulary: string[];
+  /** Uploaded files, once the tenant was seeded with Slice 23 or later. */
+  files: FileStore | null;
 }
 
 export interface LiveRunResult {
@@ -127,6 +129,10 @@ export interface LiveRuntime {
   editReport(persona: PersonaId, templateId: string, op: Parameters<ReportGateway['edit']>[1], controls: ReportControls): Promise<ReportCanvasBlock | null>;
   /** An approved export, rendered under the user's purview when downloaded (spec 18.6). */
   exportFile(persona: PersonaId, exportId: string): Promise<{ fileName: string; contentType: string; body: Buffer } | null>;
+  /** Keeps an upload as Staged for its uploader; nothing is in a folder until a save is approved (spec 8.15). */
+  stageFile(persona: PersonaId, f: { name: string; body: Buffer }): Promise<{ fileId: number; name: string; type: string; sizeKb: number } | null>;
+  /** An uploaded file's content, under the same folder rules as the page. Null reads as not found. */
+  fileContent(persona: PersonaId, fileId: number): Promise<{ name: string; mime: string; body: Buffer } | null>;
   /** Runs every active schedule as the nightly build would (local stand-in for the after-build trigger). */
   runSchedules(persona: PersonaId): Promise<ScheduleSummary[] | null>;
   /** The tenant's own words for speech recognition (spec 7.8). */
@@ -216,9 +222,9 @@ const referralView = ({ partyId, senderUserId: _sender, ...i }: InboxItem, rm: R
 /** Which app each workspace page belongs to. */
 const APP_ACCESS: Record<AppViewId, AppId> = { calendar: 'calendar', files: 'files', queries: 'queries', users: 'users', admin: 'admin', datalogs: 'datalogs', seg: 'seg', callreport: 'callreport', workflows: 'workflows', rm: 'rm', indirect: 'indirect', prospecting: 'prospecting', campaigns: 'campaigns', onboarding: 'onboarding', compliance: 'compliance', predictive: 'predictive', dq: 'dq', tasks: 'tasks', integrations: 'integrations', classes: 'classes' };
 
-const viewDeps = (pool: Pool, institutionType: string, who: { purviewBranches?: string[]; employeeId?: number; modules: string[]; leads?: boolean; retention: boolean; user?: { id: string; name: string } }) => ({ pool, blockId, user: who.user ?? { id: '', name: '' }, person: institutionType === 'bank' ? ('customer' as const) : ('member' as const), ctx: { purviewBranches: who.purviewBranches } as CoreContext, employeeId: who.employeeId, leads: Boolean(who.leads), modules: who.modules, retention: who.retention });
+const viewDeps = (pool: Pool, institutionType: string, who: { purviewBranches?: string[]; employeeId?: number; modules: string[]; leads?: boolean; retention: boolean; user?: { id: string; name: string } }, workspace = false) => ({ pool, blockId, user: who.user ?? { id: '', name: '' }, person: institutionType === 'bank' ? ('customer' as const) : ('member' as const), ctx: { purviewBranches: who.purviewBranches } as CoreContext, employeeId: who.employeeId, leads: Boolean(who.leads), modules: who.modules, retention: who.retention, workspace });
 
-const calendarFor = (pool: Pool, institutionType: string, ctx: ModuleContext) => createAppViews(viewDeps(pool, institutionType, { purviewBranches: ctx.purviewBranches, employeeId: ctx.employeeId, modules: ctx.modules, leads: ctx.leads, retention: ctx.modules.includes('calendar') })).calendarEvents();
+const calendarFor = (pool: Pool, institutionType: string, ctx: ModuleContext, workspace: boolean) => createAppViews(viewDeps(pool, institutionType, { purviewBranches: ctx.purviewBranches, employeeId: ctx.employeeId, modules: ctx.modules, leads: ctx.leads, retention: ctx.modules.includes('calendar'), user: ctx.user }, workspace)).calendarEvents();
 
 const AGENT_LABELS: Record<string, string> = { analytics: 'Analytics Q&A', report_builder: 'Report Builder', referral: 'Referrals', relationship: 'Relationship', goal: 'DI', dashboard: 'Briefing', none: 'DI Concierge' };
 
@@ -276,8 +282,19 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       () => false,
     );
     if (hasTasks) growthModulesExtra.push(tasksModule(new TaskService(pool), new OperationsService(pool), today));
+    // Calendar events and uploads exist once the tenant was seeded with Slice 23 or later.
+    const hasWorkspace = await pool.query('SELECT 1 FROM cal_event LIMIT 1').then(
+      () => true,
+      () => false,
+    );
+    const files = hasWorkspace ? new FileStore(pool) : null;
+    // Colleagues by whole words of their name, so "Ana" never matches "Manager".
+    const colleagues = async (name: string) => {
+      const want = name.toLowerCase().split(/\s+/).filter(Boolean);
+      return (await new OperationsService(pool).users()).filter((u) => u.status === 'Active' && want.every((w) => u.name.toLowerCase().split(/\s+/).includes(w))).map((u) => ({ userId: u.userId, name: u.name }));
+    };
     const growthModules = growth ? [indirectModule(new IndirectService(pool), growth.dealers, today), prospectingModule(new ProspectService(pool), growth.companies, growth.stages, today)] : [];
-    const modules = hasModules ? new ModuleGateway(new ApprovalStore(pool), [...governanceModules, ...growthModulesExtra, calendarModule((ctx) => calendarFor(pool, institutionType, ctx)), filesModule(), ...growthModules, complianceModule(new IssueService(pool), pool), onboardingModule(new OnboardingService(pool)), dataLogsModule(new DataLogService(pool)), operationsModule(new OperationsService(pool)), callReportModule(new CallReportService(pool)), collectionsModule(new CollectionsService(pool)), campaignModule(new CampaignService(pool)), segModule(new SegService(pool), () => new Date().toISOString().slice(0, 10))]) : null;
+    const modules = hasModules ? new ModuleGateway(new ApprovalStore(pool), [...governanceModules, ...growthModulesExtra, calendarModule((ctx) => calendarFor(pool, institutionType, ctx, hasWorkspace), hasWorkspace ? new CalendarStore(pool) : null, colleagues, today), filesModule(files, today), ...growthModules, complianceModule(new IssueService(pool), pool), onboardingModule(new OnboardingService(pool)), dataLogsModule(new DataLogService(pool)), operationsModule(new OperationsService(pool)), callReportModule(new CallReportService(pool)), collectionsModule(new CollectionsService(pool)), campaignModule(new CampaignService(pool)), segModule(new SegService(pool), () => new Date().toISOString().slice(0, 10))]) : null;
     // Goals & Incentives exists once the tenant was seeded with Slice 14 or later.
     const hasGoals = await pool.query('SELECT 1 FROM mod_gi_goal LIMIT 1').then(
       () => true,
@@ -294,7 +311,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     const [staff] = await pool.query('SELECT DISTINCT display_name FROM cdm_employee');
     const dims = semantic.dimensionValues;
     const vocabulary = [...new Set([...(dims.branch ?? []), ...(dims.region ?? []), ...(dims.loan_category ?? []), ...(dims.deposit_category ?? []), ...(staff as { display_name: string }[]).map((s) => s.display_name).filter((s) => !/^\w\. /.test(s))])];
-    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, governance, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules } });
+    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, governance, files, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules } });
   }
   if (!tenants.size) return null;
 
@@ -323,7 +340,21 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       const t = tenantFor(persona);
       const p = PERSONAS[persona];
       if (!t || !t.runtime.modules || !p.session.apps.includes(APP_ACCESS[id])) return null;
-      return createAppViews(viewDeps(t.pool, t.runtime.institutionType, { purviewBranches: p.purview, employeeId: p.employeeId, modules: p.modules ?? [], leads: giAccess(persona).leads, retention: Boolean(p.retention), user: { id: p.session.user.id, name: p.session.user.name } })).views[id]();
+      return createAppViews(viewDeps(t.pool, t.runtime.institutionType, { purviewBranches: p.purview, employeeId: p.employeeId, modules: p.modules ?? [], leads: giAccess(persona).leads, retention: Boolean(p.retention), user: { id: p.session.user.id, name: p.session.user.name } }, Boolean(t.files))).views[id]();
+    },
+
+    async stageFile(persona, f) {
+      const t = tenantFor(persona);
+      const p = PERSONAS[persona];
+      if (!t?.files || !p.session.apps.includes('files') || !p.modules?.includes('files')) return null;
+      return t.files.stage({ name: f.name, body: f.body, owner: { userId: p.session.user.id, name: p.session.user.name }, on: new Date().toISOString().slice(0, 10) });
+    },
+
+    async fileContent(persona, fileId) {
+      const t = tenantFor(persona);
+      const p = PERSONAS[persona];
+      if (!t?.files || !p.session.apps.includes('files')) return null;
+      return t.files.content(p.session.user.id, foldersFor(p.modules ?? []), fileId);
     },
 
     async runQuery(persona, sql) {

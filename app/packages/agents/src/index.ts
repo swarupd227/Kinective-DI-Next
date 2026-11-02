@@ -11,7 +11,7 @@ export { complianceModule, proposeCategory } from './compliance.ts';
 export { onboardingModule, talkingPoint } from './onboarding.ts';
 export { dataLogsModule } from './dataLogs.ts';
 export { governanceModule, lineageModule } from './governance.ts';
-export { calendarModule, filesModule } from './workspace.ts';
+export { calendarModule, filesModule, parseWhen, spokenWhen, type When } from './workspace.ts';
 export { indirectModule, prospectingModule } from './growth.ts';
 export { tasksModule } from './tasks.ts';
 export { callReportModule, campaignModule, collectionsModule, operationsModule, segModule } from './moreModules.ts';

@@ -22,6 +22,7 @@ const PipelinePage = load(() => import('../pages/PipelinePage.tsx'), 'PipelinePa
 const MemberPage = load(() => import('../pages/MemberPage.tsx'), 'MemberPage');
 const AppViewPage = lazy(() => import('../pages/AppViewPage.tsx').then((m) => ({ default: m.AppViewPage })));
 const CalendarPage = load(() => import('../pages/AppViewPage.tsx'), 'CalendarPage');
+const FilesPage = load(() => import('../pages/AppViewPage.tsx'), 'FilesPage');
 const QueriesPage = load(() => import('../pages/AppViewPage.tsx'), 'QueriesPage');
 const MembersPage = load(() => import('../pages/AppViewPage.tsx'), 'MembersPage');
 
@@ -100,7 +101,7 @@ function Inside({ label, threadId, leave }: { label: string; threadId?: string; 
               <Route path="/workflows/referrals/*" element={guard('referrals', <ReferralsPage />)} />
               <Route path="/workflows/*" element={guard('workflows', <AppViewPage app="workflows" />)} />
               <Route path="/calendar/*" element={guard('calendar', <CalendarPage />)} />
-              <Route path="/files/*" element={guard('files', <AppViewPage app="files" />)} />
+              <Route path="/files/*" element={guard('files', <FilesPage />)} />
               <Route path="/datalogs/*" element={guard('datalogs', <AppViewPage app="datalogs" />)} />
               <Route path="/queries/*" element={guard('queries', <QueriesPage />)} />
               <Route path="/tasks/*" element={guard('tasks', <AppViewPage app="tasks" />)} />

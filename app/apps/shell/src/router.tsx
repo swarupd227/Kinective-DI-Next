@@ -17,6 +17,7 @@ const TablePage = lazy(() => import('./pages/TablesPage.tsx').then((m) => ({ def
 const AppPlaceholder = lazy(() => import('./pages/AppPlaceholder.tsx').then((m) => ({ default: m.AppPlaceholder })));
 const AppViewPage = lazy(() => import('./pages/AppViewPage.tsx').then((m) => ({ default: m.AppViewPage })));
 const CalendarPage = lazy(() => import('./pages/AppViewPage.tsx').then((m) => ({ default: m.CalendarPage })));
+const FilesPage = lazy(() => import('./pages/AppViewPage.tsx').then((m) => ({ default: m.FilesPage })));
 const QueriesPage = lazy(() => import('./pages/AppViewPage.tsx').then((m) => ({ default: m.QueriesPage })));
 const MembersPage = lazy(() => import('./pages/AppViewPage.tsx').then((m) => ({ default: m.MembersPage })));
 const NotFound = lazy(() => import('./pages/NotFound.tsx').then((m) => ({ default: m.NotFound })));
@@ -53,7 +54,7 @@ export const router = createBrowserRouter([
           { path: 'workflows/*', element: guarded('workflows', <AppViewPage app="workflows" />) },
           { path: 'tasks/*', element: guarded('tasks', <AppViewPage app="tasks" />) },
           { path: 'calendar/*', element: guarded('calendar', <CalendarPage />) },
-          { path: 'files/*', element: guarded('files', <AppViewPage app="files" />) },
+          { path: 'files/*', element: guarded('files', <FilesPage />) },
           { path: 'datalogs/*', element: guarded('datalogs', <AppViewPage app="datalogs" />) },
           { path: 'queries/*', element: guarded('queries', <QueriesPage />) },
           { path: 'admin/classes/*', element: guarded('classes', <AppViewPage app="classes" />) },
