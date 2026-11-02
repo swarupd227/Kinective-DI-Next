@@ -1,4 +1,5 @@
 export { ApprovalStore, ApprovalError, APPROVAL_TTL_MS, canonical, payloadHash, type ApprovalRecord, type ApprovalStatus, type RiskTier } from './approvals.ts';
+export { WorkflowDefService, splitFields, type Definition, type Problem } from './workflowDefs.ts';
 export { TaskService, type Person, type TaskItem } from './tasks.ts';
 export { IndirectService, ProspectService, directionsLink, miles, visitOrder, type DealerFigures, type Prospect } from './growth.ts';
 export { CalendarService, FILE_FOLDERS, FILE_LIBRARY, QueryService, SAVED_QUERIES, findFiles, type CalendarEvent, type LibraryFile, type QueryResult, type SavedQuery } from './workspace.ts';

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { opensBeside, viewLabel } from '../src/shell/paneViews.ts';
+import { opensBeside, sourceApp, viewLabel } from '../src/shell/paneViews.ts';
 
 describe('views beside a task', () => {
   it('opens views beside the conversation, and leaves tasks and Home as pages', () => {
@@ -24,5 +24,15 @@ describe('the pane knows every view', () => {
     const views = [...read('../src/router.tsx').matchAll(/path: '([^']+)'/g)].map((m) => m[1]!.replace(/\/?\*$/, '')).filter((p) => opensBeside(`/${p}`) && !p.includes(':'));
     expect(views.length).toBeGreaterThan(10);
     expect(views.filter((v) => !pane.has(v))).toEqual([]);
+  });
+});
+
+describe('source chips', () => {
+  it('open the module that owns a table, and leave other tables to the table viewer', () => {
+    expect(sourceApp('mod_gi_goal')).toBe('gi');
+    expect(sourceApp('cdm_loan_application')).toBe('lap');
+    expect(sourceApp('ind_dealer_month')).toBe('indirect');
+    expect(sourceApp('loan_accounts')).toBeUndefined();
+    expect(sourceApp('cdm_loan')).toBeUndefined();
   });
 });

@@ -49,6 +49,7 @@ export const router = createBrowserRouter([
           { path: 'reports', element: guarded('reports', <ReportsPage />) },
           { path: 'reports/:templateId', element: guarded('reports', <ReportPage />) },
           { path: 'reports/*', element: guarded('reports', <ReportsPage />) },
+          { path: 'workflows/builder/*', element: guarded('wfbuilder', <AppViewPage app="wfbuilder" />) },
           { path: 'workflows/referrals/*', element: guarded('referrals', <ReferralsPage />) },
           { path: 'workflows/*', element: guarded('workflows', <AppViewPage app="workflows" />) },
           { path: 'tasks/*', element: guarded('tasks', <AppViewPage app="tasks" />) },

@@ -7,7 +7,7 @@ import type { ApprovalResult, BlockHost } from '@dinext/blocks';
 import { useToast } from '@dinext/ui';
 import { useSession } from '../session/SessionProvider.tsx';
 import { APP_META } from './apps.tsx';
-import { opensBeside, viewLabel } from './paneViews.ts';
+import { opensBeside, sourceApp, viewLabel } from './paneViews.ts';
 import { useUi } from './uiStore.ts';
 
 const humanise = (metricRef: string) => metricRef.replace(/^metric:/, '').replaceAll('_', ' ');
@@ -31,7 +31,7 @@ export interface ShellHostOptions {
 }
 
 export function useShellBlockHost({ threadId, onResolved, approvalDisplay = 'full' }: ShellHostOptions = {}): BlockHost {
-  const { session, api, send, startThread } = useSession();
+  const { session, api, send, startThread, can } = useSession();
   const navigate = useNavigate();
   const toast = useToast();
   const { openWorkspace, addContext } = useUi.getState();
@@ -99,6 +99,9 @@ export function useShellBlockHost({ threadId, onResolved, approvalDisplay = 'ful
         if ((source.kind === 'table' || source.kind === 'view') && source.ref?.startsWith('table:')) {
           // Table chips open the table in the workspace with the block's filters (FE-EXP-111).
           const tableId = source.ref.slice('table:'.length);
+          // A module's own table opens that module's page beside the task: the view people work in.
+          const app = sourceApp(tableId);
+          if (app && can(app)) return openWorkspace({ kind: 'page', path: APP_META[app]!.path, label: APP_META[app]!.label });
           openWorkspace({ kind: 'table', tableId, label: source.label });
           addContext(threadId ?? 'new', { type: 'table', ref: tableId, label: source.label });
         } else if (source.kind === 'metric') {
@@ -124,5 +127,5 @@ export function useShellBlockHost({ threadId, onResolved, approvalDisplay = 'ful
         if (option) void ask(option.label);
       },
     };
-  }, [session, api, send, startThread, navigate, toast, threadId, onResolved, approvalDisplay, openWorkspace, addContext]);
+  }, [session, api, send, startThread, can, navigate, toast, threadId, onResolved, approvalDisplay, openWorkspace, addContext]);
 }

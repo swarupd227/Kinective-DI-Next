@@ -269,6 +269,12 @@ Compliance, Onboarding and Data Logs share one agent in `moduleAgent.ts`. A modu
 - **Campaigns:** results by loan dollars, and saving an audience with suppression applied in code and its counts shown. Export isn't built.
 - **SEG (credit unions):** performance, a meeting brief, logging interactions and moving stages, with a note needed from board stages on.
 
+## Workflow Builder (Slice 23)
+
+Describe a workflow and DI drafts it: "Create a workflow for branch maintenance requests with category, location, urgency and photo, routed to Facilities by location". Attachments become non-persistent fields. Changes to a live workflow ("Add a 'Waiting on member' stage between Active and Sold for referrals", "Fallback to Sam Taylor") go to a draft. Drafts are low risk. Publishing is high risk and is refused while validation finds a problem, each listed with a fix (a new queue with no fallback, a duplicate field, an inactive fallback user). The publish card shows a test route for a sample item per rule, the differences from the live version and the open items affected. The Workflow Builder page lists the definitions with today's columns.
+
+Not yet: the Referrals app keeps its built-in stages, so a published referral stage change is recorded but not shown there; Form Layout and the Referral Builder Worksheet upload aren't built.
+
 ## Module pages (Slice 22)
 
 Campaign Success, Onboarding Manager, Compliance, Predictive Analytics, Data Quality, Integrations and Classes now have pages, like the other apps: DI's view, the figures, the records, and the questions to ask. They read the same services as their agents.

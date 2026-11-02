@@ -98,6 +98,7 @@ function Inside({ label, threadId, leave }: { label: string; threadId?: string; 
               <Route path="/reports" element={guard('reports', <ReportsPage />)} />
               <Route path="/reports/:templateId" element={guard('reports', <ReportPage />)} />
               <Route path="/workflows/referrals/*" element={guard('referrals', <ReferralsPage />)} />
+              <Route path="/workflows/builder/*" element={guard('wfbuilder', <AppViewPage app="wfbuilder" />)} />
               <Route path="/workflows/*" element={guard('workflows', <AppViewPage app="workflows" />)} />
               <Route path="/calendar/*" element={guard('calendar', <CalendarPage />)} />
               <Route path="/files/*" element={guard('files', <AppViewPage app="files" />)} />

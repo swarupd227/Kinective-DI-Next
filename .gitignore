@@ -18,3 +18,6 @@ DI_Next_Backlog.xlsx
 DI_Next_Specification.docx
 
 *.tsbuildinfo
+
+# Sub-agent worktrees
+.claude/worktrees/

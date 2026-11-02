@@ -2,7 +2,7 @@
 // and records to check. They read the same DI Core services the agents use, under the same purview,
 // so a page and an answer always agree. Changes happen in a task, behind an approval card.
 import type { AppTile, AppView, AppViewId, Block, TableBlock } from '@dinext/block-schemas';
-import { TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CallReportService, DataLogService, FILE_FOLDERS, FILE_LIBRARY, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
+import { WorkflowDefService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CallReportService, DataLogService, FILE_FOLDERS, FILE_LIBRARY, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 
 type ColumnSpec = TableBlock['data']['columns'][number];
@@ -304,6 +304,20 @@ export function createAppViews(deps: ViewDeps) {
         prompts: ['Who can approve incentives?', 'Why can’t Sofia Ruiz approve incentives?'],
         notice: 'Read only. Changing what a class can do isn’t built yet; changing a person’s user goes through DI with an approval.',
         blocks: [table('Classes', 'iam.class.list', [text('userClass', 'Class'), text('capabilities', 'Can'), { field: 'active', headerName: 'Active users', type: 'count' }, { field: 'locked', headerName: 'Locked', type: 'count' }], list.map((c) => ({ userClass: c.userClass, capabilities: c.capabilities.join(', '), active: c.active, locked: c.locked })))],
+      };
+    },
+    async wfbuilder() {
+      const defs = await new WorkflowDefService(pool).list();
+      const live = defs.filter((d) => d.status === 'Active');
+      const drafts = defs.filter((d) => d.status === 'Draft');
+      return {
+        title: 'Workflow Builder',
+        lede: 'Workflow definitions: fields, stages and routing. Describe a workflow or a change; it becomes a draft, and nothing is live until it’s published.',
+        take: { headline: `${count(live.length, 'live workflow')}${drafts.length ? ` and ${count(drafts.length, 'draft')}: ${drafts.map((d) => d.name).join(', ')}` : ''}. ${live.reduce((n, d) => n + d.openItems, 0)} open items run on them.`, action: { label: 'Describe a new workflow', ask: 'Create a workflow for branch maintenance requests with category, location, urgency and photo, routed to Facilities by location' } },
+        tiles: [{ label: 'Live', value: String(live.length) }, { label: 'Drafts', value: String(drafts.length), tone: drafts.length ? 'warning' : 'neutral' }, { label: 'Open items', value: String(live.reduce((n, d) => n + d.openItems, 0)) }],
+        prompts: ['Create a workflow for branch maintenance requests with category, location, urgency and photo, routed to Facilities by location', 'Add a "Waiting on member" stage between Active and Sold for referrals', ...drafts.map((d) => `Test the routing for the ${d.name} workflow`)],
+        notice: 'Publishing records the definition and creates its queue. The Referrals app still uses its built-in stages, so a referral stage change is recorded here but not yet shown there.',
+        blocks: [table('Definitions', 'workflow.definition.list', [{ field: 'id', headerName: 'ID', type: 'number' }, text('name', 'Name'), text('folder', 'Folder'), text('persistent', 'Persistent fields'), text('nonPersistent', 'Non-persistent fields'), text('stages', 'Stages'), text('routing', 'Routing'), text('status', 'Status'), { field: 'open', headerName: 'Open items', type: 'count' }, text('icon', 'Desktop icon path')], [...live, ...drafts].map((d) => ({ id: d.defId, name: d.name, folder: d.folder, persistent: d.spec.persistent.map((f) => f.label).join(', '), nonPersistent: d.spec.nonPersistent.map((f) => f.label).join(', ') || '—', stages: d.spec.stages.join(' → '), routing: `${d.spec.route.queue}${d.spec.route.byLocation ? ' by location' : ''}${d.spec.route.fallback ? `; fallback ${d.spec.route.fallback}` : ''}`, status: d.status === 'Draft' ? 'Draft' : `Live v${d.version}`, open: d.openItems, icon: d.icon })))],
       };
     },
     async rm() {

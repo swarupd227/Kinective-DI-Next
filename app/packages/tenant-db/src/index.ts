@@ -4,6 +4,7 @@ export { TENANT_DDL, TENANT_TABLES } from './schema.ts';
 export { REPORT_DDL, REPORT_WRITE_TABLES, stockReports, reportSeed, type ReportDefinition, type ReportWidget, type ReportSettings, type PendingEdit, type WidgetSize } from './reports.ts';
 export { RELATIONSHIP_DDL, RELATIONSHIP_TABLES, SCORE_MODELS, generateRelationship, type ScoreFactor } from './relationship.ts';
 export { MODULES_DDL, MODULES_WRITE_TABLES, MODULE_FIXTURES, DATALOG_TYPES, generateModules } from './modules.ts';
+export { WORKFLOW_DEF_DDL, WORKFLOW_DEF_WRITE_TABLES, SEED_DEFINITIONS, seedWorkflowDefs, type WfField, type WfSpec } from './workflowDefs.ts';
 export { TASKS_DDL, TASKS_WRITE_TABLES, seedTasks } from './tasks.ts';
 export { GROWTH_DDL, GROWTH_WRITE_TABLES, PROSPECT_DISPOSITIONS, PROSPECT_STAGES, branchPlace, seedGrowth } from './growth.ts';
 export { GOVERNANCE_APPEND_TABLES, GOVERNANCE_DDL, generateGovernance } from './governance.ts';

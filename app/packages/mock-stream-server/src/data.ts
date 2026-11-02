@@ -139,10 +139,10 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     session: {
       user: user('user:1002', 'Sam Taylor', 'DI Administrator', 'Administrator'),
       tenant: CU,
-      apps: ['home', 'conversations', 'tasks', 'tables', 'queries', 'datalogs', 'dq', 'integrations', 'users', 'classes', 'admin', 'files'],
+      apps: ['home', 'conversations', 'tasks', 'tables', 'queries', 'datalogs', 'dq', 'integrations', 'wfbuilder', 'users', 'classes', 'admin', 'files'],
       permissions: { queryBrowser: true, dashboardAdmin: true },
     },
-    modules: ['governance', 'tasks', 'mytime', 'files', 'lineage', 'ai-admin', 'datalogs', 'datalogs-approve', 'operations', 'admin'],
+    modules: ['governance', 'tasks', 'mytime', 'workflow-builder', 'files', 'lineage', 'ai-admin', 'datalogs', 'datalogs-approve', 'operations', 'admin'],
     suggestions: ['Did last night\'s build finish?', 'Create a user for Maria Gomez as a Westport MSR', 'Which uploaders missed their late-file time?', 'Who can approve incentives?', 'Show AI cost by agent for October', 'Show every high-risk approval made through agents', 'Run the protocol resilience test'],
   },
 };

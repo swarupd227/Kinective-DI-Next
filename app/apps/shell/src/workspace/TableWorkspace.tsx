@@ -22,7 +22,7 @@ export function TableWorkspace({ tableId, full = false }: { tableId: string; ful
     const missing = q.error instanceof ApiError && q.error.status === 404;
     return (
       <p className={styles.message} role="alert">
-        {missing ? 'This table has no rows in the local mock yet. Loan Accounts is available.' : 'The table could not be loaded. Try again in a moment.'}
+        {missing ? 'There’s no table view of this data yet. Ask DI about it in the conversation instead.' : 'The table could not be loaded. Try again in a moment.'}
       </p>
     );
   }

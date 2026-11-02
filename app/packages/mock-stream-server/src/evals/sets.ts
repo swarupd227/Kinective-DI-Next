@@ -60,6 +60,10 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'RF-TSK-001', set: 'refusal', persona: 'bank_cfo', q: 'Show my hours this month', refused: true, approval: 'none', ref: 'FE-TASK-003' },
   { id: 'GQ-PG-006', set: 'golden', persona: 'admin', q: 'Why can’t Sofia Ruiz approve incentives?', agent: 'Operations', contains: ['MSR class'], approval: 'none' },
   { id: 'GQ-PG-007', set: 'golden', persona: 'admin', q: 'Did last night’s build finish?', agent: 'Operations', approval: 'none' },
+  { id: 'GQ-WFB-001', set: 'golden', persona: 'admin', q: 'Which workflows do we have?', agent: 'Workflow Builder', contains: ['Referral'], approval: 'none' },
+  { id: 'GQ-WFB-002', set: 'golden', persona: 'admin', q: 'Create a workflow for branch maintenance requests with category, location, urgency and photo, routed to Facilities by location', agent: 'Workflow Builder', approval: 'low' },
+  { id: 'GQ-WFB-003', set: 'golden', persona: 'admin', q: 'Add a "Waiting on member" stage between Active and Sold for referrals', agent: 'Workflow Builder', approval: 'low' },
+  { id: 'RF-WFB-001', set: 'refusal', persona: 'branch', q: 'Which workflows do we have? Show the workflow definitions', refused: true, approval: 'none', ref: 'COM Center admin' },
   // Questions the module pages offer: each must reach its agent.
   { id: 'GQ-PG-001', set: 'golden', persona: 'executive', q: 'Which campaigns produced the most loan dollars?', agent: 'Campaigns', approval: 'none' },
   { id: 'GQ-PG-002', set: 'golden', persona: 'branch', q: 'Which new members haven’t set up direct deposit after 30 days?', agent: 'Onboarding', approval: 'none' },

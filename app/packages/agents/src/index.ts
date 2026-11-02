@@ -14,6 +14,7 @@ export { governanceModule, lineageModule } from './governance.ts';
 export { calendarModule, filesModule } from './workspace.ts';
 export { indirectModule, prospectingModule } from './growth.ts';
 export { tasksModule } from './tasks.ts';
+export { workflowBuilderModule } from './workflowBuilder.ts';
 export { callReportModule, campaignModule, collectionsModule, operationsModule, segModule } from './moreModules.ts';
 export { runRetention, runRetentionOffline, parseRetentionRequest, maturingText, costText, RETENTION_AGENT, RETENTION_REQUEST, type RetentionInput, type RetentionOutcome } from './retention.ts';
 export { asksSomething, incentiveNextSteps, runIncentives, runIncentivesOffline, parseIncentivesRequest, scorecardText, shortfalls, teamBlock, teamText, explainText, batchText, batchesText, payoutCard, GI_AGENT, GI_REQUEST, type IncentivesInput, type IncentivesOutcome } from './incentives.ts';
