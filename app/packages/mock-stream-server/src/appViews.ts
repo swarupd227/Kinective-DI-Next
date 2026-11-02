@@ -2,7 +2,7 @@
 // and records to check. They read the same DI Core services the agents use, under the same purview,
 // so a page and an answer always agree. Changes happen in a task, behind an approval card.
 import type { AppTile, AppView, AppViewId, Block, TableBlock } from '@dinext/block-schemas';
-import { WorkflowDefService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CallReportService, DataLogService, FILE_FOLDERS, FILE_LIBRARY, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
+import { WorkflowDefService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 
 type ColumnSpec = TableBlock['data']['columns'][number];
@@ -17,6 +17,8 @@ export interface ViewDeps {
   leads: boolean;
   modules: string[];
   retention: boolean;
+  /** Calendar events and uploads are loaded (Slice 23 or later). */
+  workspace?: boolean;
 }
 
 const usd = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
@@ -33,8 +35,8 @@ export function createAppViews(deps: ViewDeps) {
   const retention = new RetentionService(pool);
 
   const calendarEvents = async () => {
-    const service = new CalendarService({ onboarding: onboarding as never, issues: issues as never, retention: retention as never });
-    const items = await service.events({ employeeId: deps.leads ? undefined : deps.employeeId, canUse: (s) => (s === 'retention' ? deps.retention : deps.modules.includes(s)), ctx });
+    const service = new CalendarService({ onboarding: onboarding as never, issues: issues as never, retention: retention as never, meetings: deps.workspace ? new CalendarStore(pool) : null });
+    const items = await service.events({ employeeId: deps.leads ? undefined : deps.employeeId, userId: deps.user.id || undefined, canUse: (s) => (s === 'retention' ? deps.retention : deps.modules.includes(s)), ctx });
     const today = (await onboarding.list({ overdueOnly: true }, ctx)).asOf;
     return { today, items };
   };
@@ -48,26 +50,32 @@ export function createAppViews(deps: ViewDeps) {
       const next = overdue[0] ?? week[0];
       return {
         title: 'Calendar',
-        lede: `Dated work from your modules, as of the last build on ${today}.`,
+        lede: `Your events, and dated work from your modules as of the last build on ${today}. Ask DI to add, move or cancel an event.`,
         take: { headline: overdue.length ? `${count(overdue.length, 'item')} overdue. Start with ${next?.title}.` : next ? `Next up: ${next.title}, on ${next.date}.` : 'Nothing is scheduled in the next few weeks.', action: { label: 'What’s due this week?', ask: 'What’s due this week?' } },
         tiles: [{ label: 'Overdue', value: String(overdue.length), tone: overdue.length ? 'danger' : 'neutral' }, { label: 'Today', value: String(items.filter((e) => e.date === today).length) }, { label: 'Next 7 days', value: String(week.length) }],
-        prompts: ['What’s due this week?', 'Show the calendar for the next two weeks'],
+        prompts: ['What’s due this week?', 'Show the calendar for the next two weeks', 'Schedule a follow-up with Suzanne Jackson next Tuesday at 2 pm about the HELOC referral'],
+        notice: 'Events live in DI only. Syncing with Outlook or Google Calendar isn’t built.',
         events: items.map(({ date, kind, title, detail, late, ask }) => ({ date, kind, title, detail, late, ask })),
         today,
         blocks: [],
       };
     },
     async files() {
-      const folders = Object.keys(FILE_FOLDERS);
-      const newest = [...FILE_LIBRARY].sort((a, b) => b.modified.localeCompare(a.modified))[0]!;
+      // Only the folders this person can see; a file anywhere else isn't listed or counted.
+      const folders = foldersFor(deps.modules);
+      const uploads = deps.workspace ? await new FileStore(pool).list(deps.user.id, folders) : [];
+      const all = [...uploads, ...FILE_LIBRARY.filter((f) => folders.includes(f.folder))].sort((a, b) => b.modified.localeCompare(a.modified));
+      const newest = all[0];
       return {
         title: 'Files',
-        lede: 'Documents your institution keeps in DI.',
-        take: { headline: `${count(FILE_LIBRARY.length, 'file')} in ${count(folders.length, 'folder')}. The newest is ${newest.name}.`, action: { label: 'Find a document', ask: 'Find the dealer agreement for Smith Ford' } },
-        tiles: [{ label: 'Files', value: String(FILE_LIBRARY.length) }, { label: 'Folders', value: String(folders.length) }, { label: 'Total size', value: `${(FILE_LIBRARY.reduce((n, f) => n + f.sizeKb, 0) / 1024).toFixed(1)} MB` }],
+        lede: 'Documents your institution keeps in DI, in the folders you can see.',
+        take: { headline: newest ? `${count(all.length, 'file')} in ${count(folders.length, 'folder')}. The newest is ${newest.name}.` : 'There are no files in your folders yet.', action: { label: 'Find a document', ask: 'Find the dealer agreement for Smith Ford' } },
+        tiles: [{ label: 'Files', value: String(all.length) }, { label: 'Uploaded', value: String(uploads.length) }, { label: 'Total size', value: `${(all.reduce((n, f) => n + f.sizeKb, 0) / 1024).toFixed(1)} MB` }],
         prompts: ['Find the dealer agreement for Smith Ford', 'Who can see the Board Packs folder?'],
-        notice: 'These are sample documents. Uploading, opening and moving files aren’t built yet.',
-        blocks: [table('All files', 'files.list', [text('name', 'Name'), text('folder', 'Folder'), text('type', 'Type'), { field: 'size', headerName: 'Size (KB)', type: 'number' }, text('owner', 'Owner'), text('modified', 'Modified')], FILE_LIBRARY.map((f) => ({ name: f.name, folder: f.folder, type: f.type, size: f.sizeKb, owner: f.owner, modified: f.modified }))), table('Folders', 'files.folders', [text('folder', 'Folder'), { field: 'files', headerName: 'Files', type: 'count' }, text('access', 'Who can see it')], folders.map((folder) => ({ folder, files: FILE_LIBRARY.filter((f) => f.folder === folder).length, access: FILE_FOLDERS[folder]! })))],
+        notice: deps.workspace ? 'Uploads aren’t virus scanned: scanning isn’t available yet. Only open files from people you trust. Sample documents are names only, with no content to download.' : 'Uploading isn’t set up in this environment. These are sample documents with no content.',
+        files: all.map((f) => ({ name: f.name, folder: f.folder, type: f.type, sizeKb: f.sizeKb, owner: f.owner, modified: f.modified, ...(f.fileId ? { download: `/v1/files/${f.fileId}/content` } : {}) })),
+        folders: deps.workspace ? folders : [],
+        blocks: [table('Folders', 'files.folders', [text('folder', 'Folder'), { field: 'files', headerName: 'Files', type: 'count' }, text('access', 'Who can see it')], folders.map((folder) => ({ folder, files: all.filter((f) => f.folder === folder).length, access: FILE_FOLDERS[folder]! })))],
       };
     },
     async queries() {

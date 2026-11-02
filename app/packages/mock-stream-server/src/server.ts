@@ -298,6 +298,17 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     return (raw ? JSON.parse(raw) : {}) as T;
   };
 
+  /** The body as text, or null once it passes the cap. The rest is read and dropped. */
+  const readCapped = async (req: IncomingMessage, cap: number) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const c of req) {
+      size += (c as Buffer).length;
+      if (size <= cap) chunks.push(c as Buffer);
+    }
+    return size > cap ? null : Buffer.concat(chunks).toString('utf8');
+  };
+
   /** Live cards: the same confirmation rules, then the approval service decides and the write runs. */
   const decideLive = async (approvalId: string, a: PendingApproval, key: string, body: ApprovalDecisionRequest) => {
     const r = await live!.decide(
@@ -560,6 +571,35 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         } catch (e) {
           return json(res, 400, { code: 'INVALID', message: (e as Error).message });
         }
+      }
+      // ---- files (spec 8.15) ----
+      if (method === 'POST' && path === '/v1/files/stage') {
+        // Base64 in JSON: 5 MB of file is about 6.7 MB of text. Anything bigger is refused unparsed.
+        const raw = await readCapped(req, 7_200_000);
+        if (raw === null) return json(res, 413, { code: 'TOO_LARGE', message: 'Files can be up to 5 MB.' });
+        let body: { name?: unknown; data?: unknown };
+        try {
+          body = JSON.parse(raw) as typeof body;
+        } catch {
+          return json(res, 400, { code: 'INVALID', message: 'Send a file name and its content.' });
+        }
+        if (typeof body.name !== 'string' || typeof body.data !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(body.data)) return json(res, 400, { code: 'INVALID', message: 'Send a file name and its content.' });
+        try {
+          const staged = await live?.stageFile(persona(), { name: body.name, body: Buffer.from(body.data, 'base64') });
+          return staged ? json(res, 201, staged) : json(res, 403, { code: 'NO_ACCESS', message: 'Uploading isn’t part of your access, or isn’t set up here.' });
+        } catch (err) {
+          if (err instanceof CoreError) return json(res, 422, { code: err.code, message: err.message });
+          throw err;
+        }
+      }
+      const fileContent = /^\/v1\/files\/(\d+)\/content$/.exec(path);
+      if (method === 'GET' && fileContent) {
+        // Outside the person's folders and not found give the same answer.
+        const f = await live?.fileContent(persona(), Number(fileContent[1]));
+        if (!f) return json(res, 404, { code: 'NOT_FOUND', message: 'That file was not found, or it is outside your access.' });
+        res.writeHead(200, { 'content-type': f.mime, 'content-disposition': `attachment; filename="${f.name.replace(/[^\w .()-]/g, '_')}"`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+        res.end(f.body);
+        return;
       }
       if (method === 'POST' && path === '/v1/feedback') {
         const body = await readBody<{ runId?: unknown; rating?: unknown; comment?: unknown }>(req);

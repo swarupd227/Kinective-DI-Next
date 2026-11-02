@@ -6,6 +6,7 @@ export { RELATIONSHIP_DDL, RELATIONSHIP_TABLES, SCORE_MODELS, generateRelationsh
 export { MODULES_DDL, MODULES_WRITE_TABLES, MODULE_FIXTURES, DATALOG_TYPES, generateModules } from './modules.ts';
 export { WORKFLOW_DEF_DDL, WORKFLOW_DEF_WRITE_TABLES, SEED_DEFINITIONS, seedWorkflowDefs, type WfField, type WfSpec } from './workflowDefs.ts';
 export { TASKS_DDL, TASKS_WRITE_TABLES, seedTasks } from './tasks.ts';
+export { WORKSPACE_DDL, WORKSPACE_WRITE_TABLES, seedWorkspace } from './workspace.ts';
 export { GROWTH_DDL, GROWTH_WRITE_TABLES, PROSPECT_DISPOSITIONS, PROSPECT_STAGES, branchPlace, seedGrowth } from './growth.ts';
 export { GOVERNANCE_APPEND_TABLES, GOVERNANCE_DDL, generateGovernance } from './governance.ts';
 export { GOALS_DDL, GOALS_WRITE_TABLES, GI_GOALS, GI_INCENTIVES, GI_TIERS, GI_PERIOD, GI_PRIOR, generateGoals } from './goals.ts';

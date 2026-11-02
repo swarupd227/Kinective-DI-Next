@@ -66,7 +66,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     lendingAdmin: true,
     approvesIncentives: true,
     retention: true,
-    modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'lineage', 'ai-admin', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'callreport', 'collections', 'campaigns', 'seg'],
+    modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'ai-admin', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'callreport', 'collections', 'campaigns', 'seg'],
     suggestions: ['What should I do today?', 'Show the October payouts', 'Which regulatory issues are open more than 3 weeks?', 'Where does delinquency come from?', 'Are we ready to file Q3?', 'Show the early-warning list', 'Get me ready for Thursday’s ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'Prepare me for my meeting with Suzanne Jackson', 'Brief me'],
   },
   analyst: {
@@ -77,7 +77,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       permissions: { queryBrowser: true, dashboardAdmin: false },
     },
     retention: true,
-    modules: ['governance', 'tasks', 'mytime', 'files', 'lineage', 'compliance', 'datalogs', 'operations', 'callreport', 'campaigns'],
+    modules: ['governance', 'tasks', 'mytime', 'files', 'files-finance', 'lineage', 'compliance', 'datalogs', 'operations', 'callreport', 'campaigns'],
     suggestions: ['/query loans opened last week by branch', 'Which campaigns produced the most loan dollars?', 'Which checks failed?', 'Build a table summary of fees by product', 'Show loan growth by branch for Q3 vs Q2', 'Find certificates at risk of leaving'],
   },
   branch: {
@@ -132,7 +132,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     },
     approvesIncentives: true,
     retention: true,
-    modules: ['governance', 'tasks', 'files', 'lineage', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'datalogs', 'datalogs-approve', 'collections', 'campaigns'],
+    modules: ['governance', 'tasks', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'datalogs', 'datalogs-approve', 'collections', 'campaigns'],
     suggestions: ['Get me ready for Thursday’s ALCO meeting', 'Brief me', 'Show loan growth by branch for Q3 vs Q2', 'Show the October payouts'],
   },
   admin: {
@@ -142,7 +142,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       apps: ['home', 'conversations', 'tasks', 'tables', 'queries', 'datalogs', 'dq', 'integrations', 'wfbuilder', 'users', 'classes', 'admin', 'files'],
       permissions: { queryBrowser: true, dashboardAdmin: true },
     },
-    modules: ['governance', 'tasks', 'mytime', 'workflow-builder', 'files', 'lineage', 'ai-admin', 'datalogs', 'datalogs-approve', 'operations', 'admin'],
+    modules: ['governance', 'tasks', 'mytime', 'workflow-builder', 'files', 'files-board', 'lineage', 'ai-admin', 'datalogs', 'datalogs-approve', 'operations', 'admin'],
     suggestions: ['Did last night\'s build finish?', 'Create a user for Maria Gomez as a Westport MSR', 'Which uploaders missed their late-file time?', 'Who can approve incentives?', 'Show AI cost by agent for October', 'Show every high-risk approval made through agents', 'Run the protocol resilience test'],
   },
 };
