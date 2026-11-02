@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import {
+  BriefcaseBusiness,
   Calendar,
+  Car,
   ClipboardList,
   Database,
   FileBarChart,
@@ -45,6 +47,8 @@ export const APP_META: Record<string, AppMeta> = {
   referrals: { label: 'Referrals', icon: i(Share2), path: '/workflows/referrals/inbox', group: 'modules', phase: 'Phase 1, referrals slice' },
   lap: { label: 'Loan Pipeline', icon: i(Landmark), path: '/m/lap', group: 'modules', phase: 'Phase 1, lending slice' },
   gi: { label: 'Goals & Incentives', icon: i(Target), path: '/m/gi', group: 'modules', phase: 'Phase 2' },
+  indirect: { label: 'Indirect Lending', icon: i(Car), path: '/m/indirect', group: 'modules' },
+  prospecting: { label: 'Prospecting', icon: i(BriefcaseBusiness), path: '/m/prospecting', group: 'modules' },
   seg: { label: 'SEG Management', icon: i(Network), path: '/m/seg', group: 'modules', phase: 'Phase 3' },
   callreport: { label: '5300 Call Report', icon: i(Database), path: '/m/callreport', group: 'modules', phase: 'Phase 3' },
   users: { label: 'Users', icon: i(Users), path: '/admin/users', group: 'admin', phase: 'Phase 3' },

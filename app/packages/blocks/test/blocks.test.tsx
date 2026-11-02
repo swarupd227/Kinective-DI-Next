@@ -112,6 +112,9 @@ describe('validation and safety (spec 9.1, FE-GEN-010)', () => {
     expect(safeHref('//evil.example')).toBeNull();
     expect(safeHref('https://help.kinective.com/a')).toBe('https://help.kinective.com/a');
     expect(safeHref('http://help.kinective.com/a')).toBeNull();
+    expect(safeHref('https://www.google.com/maps/dir/?api=1&origin=42.6,-73.7&destination=42.7,-73.8')).toContain('/maps/dir/');
+    expect(safeHref('https://www.google.com/search?q=x')).toBeNull();
+    expect(safeHref('https://google.com.evil.example/maps/dir/')).toBeNull();
   });
 
   it('offers a table view for charts (FE-GEN-002)', async () => {

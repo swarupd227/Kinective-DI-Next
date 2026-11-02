@@ -2,7 +2,7 @@
 // and records to check. They read the same DI Core services the agents use, under the same purview,
 // so a page and an answer always agree. Changes happen in a task, behind an approval card.
 import type { AppTile, AppView, AppViewId, Block, TableBlock } from '@dinext/block-schemas';
-import { CalendarService, CallReportService, DataLogService, FILE_FOLDERS, FILE_LIBRARY, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
+import { IndirectService, ProspectService, CalendarService, CallReportService, DataLogService, FILE_FOLDERS, FILE_LIBRARY, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 
 type ColumnSpec = TableBlock['data']['columns'][number];
@@ -164,6 +164,37 @@ export function createAppViews(deps: ViewDeps) {
         prompts: ['What’s in my referrals inbox?', 'What should I do today?'],
         links: [{ label: 'Open Referrals', to: '/workflows/referrals/inbox' }],
         blocks: [table('Open work', 'workflow.summary', [text('name', 'Workflow'), { field: 'count', headerName: 'Open', type: 'count' }], open.map(({ name, count: n }) => ({ name, count: n })))],
+      };
+    },
+    async indirect() {
+      const ind = new IndirectService(pool);
+      const p = await ind.performance('month', ctx);
+      const sum = (k: 'received' | 'funded' | 'fundedAmount') => p.dealers.reduce((n, d) => n + d[k], 0);
+      const prior = p.dealers.reduce((n, d) => n + d.prior.funded, 0);
+      const drop = [...p.dealers].filter((d) => d.prior.funded > d.funded).sort((x, y) => (x.funded - x.prior.funded) - (y.funded - y.prior.funded))[0];
+      return {
+        title: 'Indirect Lending',
+        lede: `Dealer performance for ${p.label}, against ${p.priorLabel}.`,
+        take: { headline: p.partial ? `${count(sum('funded'), 'loan')} funded through dealers in ${p.label}, against ${prior} in all of ${p.priorLabel}. ${p.dealers.sort((x, y) => y.funded - x.funded)[0]?.name ?? ''} leads so far.` : `${count(sum('funded'), 'loan')} funded through dealers in ${p.label}, ${sum('funded') >= prior ? 'up' : 'down'} from ${prior}.${drop ? ` ${drop.name} fell most, to ${drop.funded} from ${drop.prior.funded}.` : ''}`, action: { label: 'Plan dealer visits', ask: `Plan visits for my top five dealers near ${p.dealers[0]?.branch ?? ''}` } },
+        tiles: [{ label: 'Dealers', value: String(p.dealers.length) }, { label: 'Received', value: sum('received').toLocaleString('en-US') }, { label: 'Funded', value: sum('funded').toLocaleString('en-US') }, { label: 'Funded $', value: usd(sum('fundedAmount')) }],
+        prompts: ['Which dealers had the biggest drop in funded loans this month?', 'How did Smith Ford do this quarter compared with last?', ...(deps.modules.includes('indirect-direct') ? ['How many indirect borrowers became direct members this year?'] : [])],
+        notice: 'Dealer locations are shown as a visit list with miles between stops. A map isn’t built yet.',
+        blocks: [table(`Dealers, ${p.label}`, 'indirect.dealer.performance', [text('name', 'Dealer'), text('branch', 'Branch'), { field: 'received', headerName: 'Received', type: 'count' }, { field: 'approved', headerName: 'Approved', type: 'count' }, { field: 'funded', headerName: 'Funded', type: 'count' }, { field: 'amount', headerName: 'Funded $', type: 'currency' }, { field: 'fico', headerName: 'Avg FICO', type: 'number' }, text('rep', 'Rep'), text('status', 'Status')], p.dealers.map((d) => ({ name: d.name, branch: d.branch, received: d.received, approved: d.approved, funded: d.funded, amount: d.fundedAmount, fico: d.avgFico, rep: d.rep, status: d.status })))],
+      };
+    },
+    async prospecting() {
+      const prs = new ProspectService(pool);
+      const [list, funnel] = await Promise.all([prs.list({}, ctx), prs.funnel(ctx)]);
+      const due = list.filter((p) => p.nextFollowUp && p.nextFollowUp <= new Date().toISOString().slice(0, 10));
+      const biggest = list[0];
+      return {
+        title: 'Prospecting',
+        lede: 'Business prospects through the funnel.',
+        take: { headline: `${count(list.length, 'prospect')} in the funnel${due.length ? `, ${due.length} with a follow-up due` : ''}.${biggest ? ` The largest is ${biggest.company}, in ${biggest.stage}.` : ''}`, action: { label: 'Plan a route', ask: `Plan a route to prospects within 10 miles of ${biggest?.branch ?? ''}` } },
+        tiles: funnel.map((f) => ({ label: f.stage, value: String(f.count) })),
+        prompts: ['Show my prospects in Qualified with assets over $5 million', 'What’s our conversion from Prospect to Application this quarter?'],
+        notice: 'Routes are shown as a list with miles and a directions link. A map isn’t built yet.',
+        blocks: [table('Prospects', 'prospect.list', [text('company', 'Company'), text('stage', 'Stage'), text('grade', 'Grade'), { field: 'assets', headerName: 'Assets', type: 'currency' }, text('disposition', 'Disposition'), text('owner', 'Owner'), text('next', 'Next follow-up'), text('branch', 'Branch')], list.map((p) => ({ company: p.company, stage: p.stage, grade: p.grade, assets: p.assets, disposition: p.disposition, owner: p.owner, next: p.nextFollowUp ?? '—', branch: p.branch })))],
       };
     },
     async rm() {

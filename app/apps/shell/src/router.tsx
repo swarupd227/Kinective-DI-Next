@@ -63,6 +63,8 @@ export const router = createBrowserRouter([
           { path: 'customers/:ref', element: guarded('rm', <MemberPage />) },
           { path: 'm/lap/*', element: guarded('lap', <PipelinePage />) },
           { path: 'm/gi/*', element: guarded('gi', <GoalsPage />) },
+          { path: 'm/indirect/*', element: guarded('indirect', <AppViewPage app="indirect" />) },
+          { path: 'm/prospecting/*', element: guarded('prospecting', <AppViewPage app="prospecting" />) },
           { path: 'm/seg/*', element: guarded('seg', <AppViewPage app="seg" />) },
           { path: 'm/callreport/*', element: guarded('callreport', <AppViewPage app="callreport" />) },
           { path: 'm/:module/*', element: page(<AppPlaceholder app="module" />) },

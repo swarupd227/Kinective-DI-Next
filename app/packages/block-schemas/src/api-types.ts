@@ -22,7 +22,9 @@ export type AppId =
   | 'lap'
   | 'gi'
   | 'seg'
-  | 'callreport';
+  | 'callreport'
+  | 'indirect'
+  | 'prospecting';
 
 export interface BuildStatus {
   state: 'completed' | 'running' | 'failed' | 'late';
@@ -152,7 +154,7 @@ export interface ReferralsIndex {
 export type ReferralAction = { kind: 'start' } | { kind: 'note'; text: string } | { kind: 'close'; stage: 'Sold' | 'Not Interested' | 'Done'; note?: string } | { kind: 'assign'; employeeId: number };
 
 /** DI's view of a page: one sentence, and the next step it would take. Code writes both. */
-export type AppViewId = 'calendar' | 'files' | 'queries' | 'users' | 'admin' | 'datalogs' | 'seg' | 'callreport' | 'workflows' | 'rm';
+export type AppViewId = 'calendar' | 'files' | 'queries' | 'users' | 'admin' | 'datalogs' | 'seg' | 'callreport' | 'workflows' | 'rm' | 'indirect' | 'prospecting';
 
 export interface AppTile {
   label: string;

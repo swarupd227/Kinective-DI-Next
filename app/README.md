@@ -269,6 +269,13 @@ Compliance, Onboarding and Data Logs share one agent in `moduleAgent.ts`. A modu
 - **Campaigns:** results by loan dollars, and saving an audience with suppression applied in code and its counts shown. Export isn't built.
 - **SEG (credit unions):** performance, a meeting brief, logging interactions and moving stages, with a note needed from board stages on.
 
+## Indirect Lending and Prospecting (Slice 21)
+
+- **Indirect Lending:** "How did Smith Ford do this quarter compared with last?", "Which dealers had the biggest drop in funded loans this month?", "Plan visits for my top five dealers near Westport" (visit order with miles and a directions link) and "Log a visit to Smith Ford: met the finance manager", which adds a visit and sets Date Last Visited. Changing a dealer's rep is medium risk. "How many indirect borrowers became direct members this year?" needs its own permission. Funded counts and dollars are the warehouse's own indirect loans, one dealer per loan; received, decisions and FICO are demo values.
+- **Prospecting:** the funnel and prospects by stage and assets, "Plan a route to prospects within 10 miles of Westport", logging a call (low risk) and moving a stage (medium), both on the prospect's timeline, and conversion between stages for the quarter. Stages and dispositions come from the tenant's configuration.
+
+Neither has a map yet: places show as a visit order with miles. Dealer and prospect names, places and history are demo values.
+
 ## Workspace pages (Slice 20)
 
 Every app now opens a real page: DI's view first, then key figures, then the records to check. The pages use the same DI Core services and purview as the agents, so a page and an answer agree. Changes still happen in a task, behind an approval card.
