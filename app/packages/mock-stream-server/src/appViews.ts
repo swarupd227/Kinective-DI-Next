@@ -2,7 +2,7 @@
 // and records to check. They read the same DI Core services the agents use, under the same purview,
 // so a page and an answer always agree. Changes happen in a task, behind an approval card.
 import type { AppTile, AppView, AppViewId, Block, TableBlock } from '@dinext/block-schemas';
-import { IndirectService, ProspectService, CalendarService, CallReportService, DataLogService, FILE_FOLDERS, FILE_LIBRARY, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
+import { TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CallReportService, DataLogService, FILE_FOLDERS, FILE_LIBRARY, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 
 type ColumnSpec = TableBlock['data']['columns'][number];
@@ -13,6 +13,7 @@ export interface ViewDeps {
   person: 'member' | 'customer';
   ctx: CoreContext;
   employeeId?: number;
+  user: { id: string; name: string };
   leads: boolean;
   modules: string[];
   retention: boolean;
@@ -195,6 +196,114 @@ export function createAppViews(deps: ViewDeps) {
         prompts: ['Show my prospects in Qualified with assets over $5 million', 'What’s our conversion from Prospect to Application this quarter?'],
         notice: 'Routes are shown as a list with miles and a directions link. A map isn’t built yet.',
         blocks: [table('Prospects', 'prospect.list', [text('company', 'Company'), text('stage', 'Stage'), text('grade', 'Grade'), { field: 'assets', headerName: 'Assets', type: 'currency' }, text('disposition', 'Disposition'), text('owner', 'Owner'), text('next', 'Next follow-up'), text('branch', 'Branch')], list.map((p) => ({ company: p.company, stage: p.stage, grade: p.grade, assets: p.assets, disposition: p.disposition, owner: p.owner, next: p.nextFollowUp ?? '—', branch: p.branch })))],
+      };
+    },
+    async campaigns() {
+      const cmp = new CampaignService(pool);
+      const list = await cmp.results();
+      const sum = (k: 'sent' | 'applications' | 'dollars') => list.reduce((n, c) => n + c[k], 0);
+      const best = [...list].sort((a, b) => b.applications / b.sent - a.applications / a.sent)[0];
+      return {
+        title: 'Campaign Success',
+        lede: 'Campaigns by the loans they produced. Attribution uses each campaign’s response window.',
+        take: { headline: list[0] ? `${list[0].name} produced the most loan dollars, ${usd(list[0].dollars)}. ${best && best.name !== list[0].name ? `${best.name} had the best response, ${Math.round((best.applications / best.sent) * 1000) / 10}% of those sent applied.` : ''}` : 'No campaigns have run.', action: { label: 'Build an audience', ask: 'Build an audience of members with no auto loan' } },
+        tiles: [{ label: 'Campaigns', value: String(list.length) }, { label: 'Sent', value: sum('sent').toLocaleString('en-US') }, { label: 'Applications', value: sum('applications').toLocaleString('en-US') }, { label: 'Loan dollars', value: usd(sum('dollars')) }],
+        prompts: ['Which campaigns produced the most loan dollars?', 'Build an audience of members with no auto loan'],
+        blocks: [table('Campaigns', 'campaign.results', [text('name', 'Campaign'), text('channel', 'Channel'), text('product', 'Product'), { field: 'sent', headerName: 'Sent', type: 'count' }, { field: 'applications', headerName: 'Applications', type: 'count' }, text('response', 'Response'), { field: 'dollars', headerName: 'Loan dollars', type: 'currency' }], list.map((c) => ({ name: c.name, channel: c.channel, product: c.product, sent: c.sent, applications: c.applications, response: `${Math.round((c.applications / c.sent) * 1000) / 10}%`, dollars: c.dollars })))],
+      };
+    },
+    async onboarding() {
+      const [open, noDd] = await Promise.all([onboarding.list({ employeeId: deps.leads ? undefined : deps.employeeId, withinDays: 14 }, ctx), onboarding.noDirectDeposit(ctx)]);
+      const first = open.items.find((t) => t.daysLate > 0) ?? open.items[0];
+      return {
+        title: 'Onboarding Manager',
+        lede: `New ${deps.person}s’ touch points, as of the last build on ${open.asOf}. Seven days late counts as missed.`,
+        take: { headline: open.overdue ? `${count(open.overdue, 'touch point')} overdue, ${open.missed} missed. Start with ${first?.member}, ${first?.touch.toLowerCase()}.` : 'No touch points are overdue.', action: { label: 'Show what’s overdue', ask: 'Show my overdue onboarding touch points' } },
+        tiles: [{ label: 'Open, next two weeks', value: String(open.count) }, { label: 'Overdue', value: String(open.overdue), tone: open.overdue ? 'danger' : 'neutral' }, { label: 'Missed', value: String(open.missed), tone: open.missed ? 'danger' : 'neutral' }, { label: 'No direct deposit after 30 days', value: String(noDd.items.length), tone: noDd.items.length ? 'warning' : 'neutral' }],
+        prompts: ['Show my overdue onboarding touch points', 'Which new members haven’t set up direct deposit after 30 days?'],
+        blocks: [table('Touch points', 'onboarding.task.list', [text('member', 'Member'), text('touch', 'Touch point'), text('due', 'Due'), text('state', 'State'), text('assignee', 'With'), text('branch', 'Branch')], open.items.slice(0, 100).map((t) => ({ member: `${t.member} (…${t.last4})`, touch: t.touch, due: t.due, state: t.state, assignee: t.assignee ?? 'Branch queue', branch: t.branch })))],
+      };
+    },
+    async compliance() {
+      const all = await issues.list({}, ctx);
+      const regulatory = all.items.filter((i) => i.kind === 'regulatory');
+      const overdue = all.items.filter((i) => i.overdue);
+      return {
+        title: 'Compliance',
+        lede: `Open issues and complaints, as of ${all.asOf}. Regulatory issues must be resolved in 15 days, others in 30.`,
+        take: { headline: overdue.length ? `${count(overdue.length, 'issue')} past their resolve-by date, ${overdue.filter((i) => i.kind === 'regulatory').length} regulatory. The oldest is ${all.oldestDays} days.` : `${count(all.count, 'issue')} open, none overdue.`, action: { label: 'Show regulatory issues', ask: 'Which regulatory issues are open more than 3 weeks?' } },
+        tiles: [{ label: 'Open', value: String(all.count) }, { label: 'Regulatory', value: String(regulatory.length) }, { label: 'Past due', value: String(overdue.length), tone: overdue.length ? 'danger' : 'neutral' }, { label: 'Oldest', value: `${all.oldestDays} days` }],
+        prompts: ['Which regulatory issues are open more than 3 weeks?', 'Show the past-due compliance issues'],
+        blocks: [table('Open issues', 'cpm.issue.list', [{ field: 'id', headerName: 'Issue', type: 'number' }, text('kind', 'Kind'), text('source', 'Source'), text('category', 'Category'), text('member', 'Member'), { field: 'age', headerName: 'Age (days)', type: 'number' }, text('due', 'Resolve by'), text('owner', 'Owner'), text('branch', 'Branch')], all.items.slice(0, 100).map((i) => ({ id: i.issueId, kind: i.kind === 'regulatory' ? 'Regulatory' : 'Customer', source: i.source, category: i.category, member: `${i.member} (…${i.last4})`, age: i.ageDays, due: `${i.resolveBy}${i.overdue ? ', overdue' : ''}`, owner: i.owner ?? 'Unassigned', branch: i.branch })))],
+      };
+    },
+    async predictive() {
+      const scope = ctx.purviewBranches ? ' JOIN cdm_party p ON p.party_id = s.party_id JOIN cdm_location b ON b.int_id = p.primary_branch_id WHERE b.name IN (?)' : '';
+      const [bands] = (await pool.query(`SELECT s.score, COUNT(*) AS n, MAX(s.model_version) AS model, MAX(s.run_date) AS run FROM cdm_attrition_score s${scope} GROUP BY s.score`, ctx.purviewBranches ? [ctx.purviewBranches.length ? ctx.purviewBranches : ['']] : [])) as unknown as [{ score: number; n: number; model: string; run: unknown }[]];
+      const by = (band: string) => bands.filter((b) => attritionBand(b.score) === band).reduce((n, b) => n + Number(b.n), 0);
+      const model = bands[0]?.model ?? '—';
+      const run = String(bands[0]?.run instanceof Date ? (bands[0].run as Date).toISOString() : bands[0]?.run ?? '').slice(0, 10);
+      const [watch, certificates] = await Promise.all([new CollectionsService(pool).watchlist(ctx), deps.retention ? retention.maturing({ days: 90, atRiskOnly: true }, ctx) : null]);
+      return {
+        title: 'Predictive Analytics',
+        lede: `Scores from ${model}, run ${run}. A score of 7 or more is high risk of leaving, 4 to 6 medium.`,
+        take: { headline: `${by('High').toLocaleString('en-US')} ${deps.person}s are at high risk of leaving and ${by('Medium').toLocaleString('en-US')} at medium risk. ${watch.count.toLocaleString('en-US')} current loans show stress.`, action: { label: 'Who’s at risk of leaving?', ask: `Find ${deps.person}s at risk of leaving and draft follow-ups` } },
+        tiles: [{ label: 'High risk of leaving', value: by('High').toLocaleString('en-US'), tone: 'danger' }, { label: 'Medium risk', value: by('Medium').toLocaleString('en-US'), tone: 'warning' }, { label: 'Loans showing stress', value: watch.count.toLocaleString('en-US') }, ...(certificates ? [{ label: 'Certificates at risk, 90 days', value: usd(certificates.atRisk.dollars), detail: `${certificates.atRisk.count} certificates` } satisfies AppTile] : [])],
+        prompts: [`Find ${deps.person}s at risk of leaving and draft follow-ups`, 'Show the early-warning list', ...(deps.retention ? ['Which certificates mature in the next 90 days and are at risk?'] : [])],
+        blocks: [table('Attrition score distribution', 'predictive.scores.distribution', [{ field: 'score', headerName: 'Score', type: 'number' }, text('band', 'Band'), { field: 'members', headerName: deps.person === 'member' ? 'Members' : 'Customers', type: 'count' }], [...bands].sort((a, b) => b.score - a.score).map((b) => ({ score: b.score, band: attritionBand(b.score), members: Number(b.n) }))), table('Loan stress signals', 'collections.watchlist.signals', [text('label', 'Signal'), { field: 'count', headerName: 'Loans', type: 'count' }], watch.signals.map((s) => ({ label: s.label, count: s.count })))],
+      };
+    },
+    async dq() {
+      const checks = await operations.checks(false);
+      const dims = [...new Set(checks.items.map((c) => c.dimension))];
+      const domains = [...new Set(checks.items.map((c) => c.domain))];
+      const passed = (list: typeof checks.items) => `${list.filter((c) => c.passed).length} of ${list.length}`;
+      return {
+        title: 'Data Quality',
+        lede: 'Last night’s checks across six dimensions, by data domain.',
+        take: { headline: checks.failed ? `${count(checks.failed, 'check')} failed of ${checks.total}: ${checks.items.filter((c) => !c.passed).map((c) => `${c.name} (${c.rowsFailed.toLocaleString('en-US')} rows)`).join(', ')}.` : `All ${checks.total} checks passed.`, action: { label: 'Where does a failure matter?', ask: 'Where does 60+ delinquency come from?' } },
+        tiles: dims.map((d) => { const own = checks.items.filter((c) => c.dimension === d); return { label: d, value: passed(own), tone: own.some((c) => !c.passed) ? ('danger' as const) : ('neutral' as const) }; }),
+        prompts: ['Which checks failed?', 'Where does 60+ delinquency come from?'],
+        blocks: [table('By domain', 'dq.status_report', [text('domain', 'Domain'), text('passed', 'Passed'), { field: 'rows', headerName: 'Rows failing', type: 'count' }], domains.map((d) => { const own = checks.items.filter((c) => c.domain === d); return { domain: d, passed: passed(own), rows: own.reduce((n, c) => n + c.rowsFailed, 0) }; })), table('Checks', 'dq.status_report', [text('domain', 'Domain'), text('dimension', 'Dimension'), text('name', 'Check'), text('result', 'Result')], checks.items.map((c) => ({ domain: c.domain, dimension: c.dimension, name: c.name, result: c.passed ? 'Passed' : `Failed, ${c.rowsFailed} rows` })))],
+      };
+    },
+    async tasks() {
+      const svc = new TaskService(pool);
+      const m = await svc.mine({ userId: deps.user.id, name: deps.user.name, employeeId: deps.employeeId }, ctx);
+      const time = deps.modules.includes('mytime') ? await svc.hours(deps.user.id) : null;
+      const first = m.items[0];
+      return {
+        title: 'Tasks',
+        lede: `Everything open for you, from every source, as of ${m.asOf}.`,
+        take: { headline: m.items.length ? `${count(m.items.length, 'item')} open${m.late ? `, ${m.late} past due` : ''}. ${first ? `First: ${first.title}.` : ''}` : 'You have nothing open.', action: { label: 'Add a task', ask: 'Create a task to ' } },
+        tiles: [...m.bySource.map((s) => ({ label: s.source, value: String(s.count) })), { label: 'Past due', value: String(m.late), tone: m.late ? ('danger' as const) : ('neutral' as const) }, ...(time?.month ? [{ label: `Hours, ${new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(new Date(`${time.month}-15T00:00:00Z`))}`, value: String(time.total) } satisfies AppTile] : [])],
+        prompts: ['What are my tasks today?', ...(time ? ['Show my hours this month'] : [])],
+        blocks: [table('Open', 'task.list', [text('title', 'Task'), text('source', 'Source'), text('due', 'Due'), text('status', 'Status')], m.items.map((i) => ({ title: i.title, source: i.source, due: i.due ?? '—', status: i.due && i.due < m.asOf ? 'Past due' : i.status }))), ...(time?.month ? [table(`My hours, ${time.month}`, 'time.summary', [text('project', 'Project'), { field: 'hours', headerName: 'Hours', type: 'number' }], time.byProject)] : [])],
+      };
+    },
+    async integrations() {
+      const build = await operations.build();
+      const late = build.uploads.filter((u) => u.late);
+      return {
+        title: 'Integrations',
+        lede: `Where the data comes from, and how last night’s loads went. Data as of ${build.asOf}.`,
+        take: { headline: late.length ? `${count(late.length, 'source')} arrived late: ${late.map((u) => `${u.source}, due ${u.dueBy}, arrived ${u.arrived}`).join('; ')}. The build ${build.state} with what was there.` : `Every source arrived on time, and the build ${build.state}.`, action: { label: 'Which uploaders were late?', ask: 'Which uploaders missed their late-file time?' } },
+        tiles: [{ label: 'Sources', value: String(build.uploads.length) }, { label: 'Late', value: String(late.length), tone: late.length ? 'warning' : 'neutral' }, { label: 'Last build', value: build.state }],
+        prompts: ['Which uploaders missed their late-file time?', 'Did last night’s build finish?'],
+        notice: 'Read only. Adding a source, connections and credentials are set up by Kinective and aren’t built here yet.',
+        blocks: [table('Data sources', 'ingestion.sources', [text('source', 'Source'), text('method', 'How it arrives'), text('dueBy', 'Due by'), text('arrived', 'Arrived'), text('state', 'Last load')], build.uploads.map((u) => ({ source: u.source, method: u.method, dueBy: u.dueBy, arrived: u.arrived, state: u.late ? 'Late' : 'On time' })))],
+      };
+    },
+    async classes() {
+      const list = await operations.classes();
+      return {
+        title: 'Classes',
+        lede: 'Roles, what each can do in DI, and who holds them.',
+        take: { headline: `${count(list.length, 'class', 'classes')} and ${list.reduce((n, c) => n + c.active, 0)} active users. Ask DI who can do something, or why someone can’t.`, action: { label: 'Who can approve incentives?', ask: 'Who can approve incentives?' } },
+        tiles: list.map((c) => ({ label: c.userClass, value: String(c.active) })),
+        prompts: ['Who can approve incentives?', 'Why can’t Sofia Ruiz approve incentives?'],
+        notice: 'Read only. Changing what a class can do isn’t built yet; changing a person’s user goes through DI with an approval.',
+        blocks: [table('Classes', 'iam.class.list', [text('userClass', 'Class'), text('capabilities', 'Can'), { field: 'active', headerName: 'Active users', type: 'count' }, { field: 'locked', headerName: 'Locked', type: 'count' }], list.map((c) => ({ userClass: c.userClass, capabilities: c.capabilities.join(', '), active: c.active, locked: c.locked })))],
       };
     },
     async rm() {

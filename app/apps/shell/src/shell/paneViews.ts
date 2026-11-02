@@ -1,7 +1,7 @@
 // Which views can open beside a conversation, so a task keeps its place while the person checks one.
 // A conversation, Home and anything outside the app still navigate as a page.
 
-const BESIDE = /^\/(m\/|reports\b|tables\b|workflows\b|calendar\b|files\b|datalogs\b|queries\b|members\b|customers\b|admin\b)/;
+const BESIDE = /^\/(m\/|reports\b|tables\b|workflows\b|calendar\b|files\b|datalogs\b|queries\b|members\b|customers\b|admin\b|tasks\b|dq\b|integrations\b)/;
 
 export const opensBeside = (path: string) => BESIDE.test(path);
 

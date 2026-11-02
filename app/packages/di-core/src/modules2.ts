@@ -29,13 +29,16 @@ export interface DirectoryUser {
   status: string;
 }
 
+const SOURCE_METHODS: Record<string, string> = { 'Core extract': 'Core connection, nightly snapshot', 'Card processor': 'SFTP folder, scheduled uploader', 'Goal scores': 'File upload', 'LOS feed': 'API connection' };
+
 export class OperationsService {
   constructor(private readonly pool: Pool) {}
 
   async build() {
     const [b] = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM meta_build ORDER BY as_of_date DESC LIMIT 1');
     const uploads = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM ops_upload ORDER BY source');
-    return { buildId: b?.build_id as string, asOf: day(b?.as_of_date), state: b?.state as string, completedAt: String(b?.completed_at ?? ''), uploads: uploads.map((u) => ({ source: u.source as string, dueBy: u.due_by as string, arrived: u.arrived as string, late: u.late === 1 })) };
+    // How each source arrives. Demo values, like the sources themselves.
+    return { buildId: b?.build_id as string, asOf: day(b?.as_of_date), state: b?.state as string, completedAt: String(b?.completed_at ?? ''), uploads: uploads.map((u) => ({ source: u.source as string, method: SOURCE_METHODS[u.source as string] ?? 'File upload', dueBy: u.due_by as string, arrived: u.arrived as string, late: u.late === 1 })) };
   }
 
   async checks(onlyFailed: boolean) {
@@ -59,6 +62,12 @@ export class OperationsService {
   }
 
   /** Who holds a capability, from class alone. */
+  /** Each class, what it can do and how many active people hold it (spec 8.20). */
+  async classes() {
+    const users = await this.users();
+    return USER_CLASSES.map((c) => ({ userClass: c, capabilities: CLASSES[c]!.map((k) => CAPABILITIES[k]!), active: users.filter((u) => u.userClass === c && u.status === 'Active').length, locked: users.filter((u) => u.userClass === c && u.status !== 'Active').length }));
+  }
+
   async whoCan(capability: string) {
     const classes = USER_CLASSES.filter((c) => CLASSES[c]!.includes(capability));
     const users = (await this.users()).filter((u) => classes.includes(u.userClass) && u.status === 'Active');

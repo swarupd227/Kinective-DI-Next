@@ -4,22 +4,24 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarClock, ChevronRight, FileBarChart, PlayCircle, Search, Sparkles } from 'lucide-react';
+import { CalendarClock, ChevronRight, FileBarChart, ListTree, PlayCircle, Rows3, Search, Sigma, Sparkles } from 'lucide-react';
 import { BlockHostProvider, BlockRenderer } from '@dinext/blocks';
 import { Badge, Button, SegmentedControl, Skeleton, TextInput, useToast } from '@dinext/ui';
 import { ApiError, type ReportsIndex } from '@dinext/stream-client';
 import { useSession } from '../session/SessionProvider.tsx';
 import { useShellBlockHost } from '../shell/useShellBlockHost.ts';
 import { useUi } from '../shell/uiStore.ts';
+import { DetailReports, OnDemandReports, TableSummary } from './ReportTypes.tsx';
 import page from './Page.module.css';
 import styles from './ReportsPage.module.css';
 
-type Tab = 'library' | 'schedules';
+type Tab = 'library' | 'summary' | 'detail' | 'ondemand' | 'schedules';
+const TABS: Tab[] = ['library', 'summary', 'detail', 'ondemand', 'schedules'];
 
 export function ReportsPage() {
   const { api } = useSession();
   const [params, setParams] = useSearchParams();
-  const tab: Tab = params.get('tab') === 'schedules' ? 'schedules' : 'library';
+  const tab: Tab = TABS.find((t) => t === params.get('tab')) ?? 'library';
   const [filter, setFilter] = useState('');
   const q = useQuery({ queryKey: ['reports'], queryFn: () => api.reports() });
 
@@ -50,15 +52,18 @@ export function ReportsPage() {
         <SegmentedControl
           label="Reports view"
           value={tab}
-          onChange={(v) => setParams(v === 'schedules' ? { tab: 'schedules' } : {})}
+          onChange={(v) => setParams(v === 'library' ? {} : { tab: v })}
           options={[
-            { value: 'library', label: 'Library', icon: <FileBarChart size={14} aria-hidden /> },
+            { value: 'library', label: 'Periodic', icon: <FileBarChart size={14} aria-hidden /> },
+            { value: 'summary', label: 'Table Summary', icon: <Sigma size={14} aria-hidden /> },
+            { value: 'detail', label: 'Detail', icon: <Rows3 size={14} aria-hidden /> },
+            { value: 'ondemand', label: 'On-Demand', icon: <ListTree size={14} aria-hidden /> },
             { value: 'schedules', label: `Schedules${q.data?.schedules.length ? ` (${q.data.schedules.length})` : ''}`, icon: <CalendarClock size={14} aria-hidden /> },
           ]}
         />
       </header>
 
-      {q.isPending && <Skeleton height="200px" radius="md" />}
+      {q.isPending && (tab === 'library' || tab === 'schedules') && <Skeleton height="200px" radius="md" />}
       {q.isError && (
         <p className={styles.message} role="alert">
           {q.error instanceof ApiError && q.error.status === 404 ? 'Reports are not loaded in this environment. Run npm run db:seed, then restart the server.' : 'Reports could not be loaded. Try again in a moment.'}
@@ -105,6 +110,9 @@ export function ReportsPage() {
         </>
       )}
 
+      {tab === 'summary' && <TableSummary />}
+      {tab === 'detail' && <DetailReports />}
+      {tab === 'ondemand' && <OnDemandReports />}
       {q.data && tab === 'schedules' && <Schedules schedules={q.data.schedules} />}
     </div>
   );

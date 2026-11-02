@@ -10,6 +10,7 @@
     "dev": "tsx watch --env-file-if-exists=../../.env src/main.ts",
     "start": "tsx --env-file-if-exists=../../.env src/main.ts",
     "start:offline": "tsx --env-file-if-exists=../../.env src/main.ts --offline",
+    "eval": "tsx --env-file-if-exists=../../.env src/evals/run.ts",
     "start:demo-voice": "tsx --env-file-if-exists=../../.env src/main.ts --offline --fake-voice"
   },
   "dependencies": {

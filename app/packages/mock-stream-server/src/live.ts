@@ -3,8 +3,8 @@
 // key the Concierge runs its deterministic offline planner (spec 23.6.4).
 import { randomBytes } from 'node:crypto';
 import type { ApprovalCardBlock, ApprovalDecisionRequest, Block, KpiGroupBlock, ListBlock, Member360Block, SearchResult, StreamEvent, StreamingEnvelope, TableData } from '@dinext/block-schemas';
-import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, indirectModule, prospectingModule, calendarModule, callReportModule, filesModule, governanceModule, lineageModule, campaignModule, collectionsModule, complianceModule, dataLogsModule, goalsTake, ModuleGateway, onboardingModule, operationsModule, pipelineTake, segModule, referralTake, reportsTake, todayList, describeSchedule, hasClaudeCredentials, member360, memberTake, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
-import { ApprovalStore, IndirectService, ProspectService, QueryService, GovernanceService, LineageService, CallReportService, CampaignService, CollectionsService, CoreError, DataLogService, GoalsService, IssueService, OnboardingService, OperationsService, RetentionService, SegService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type CoreContext, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
+import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, tasksModule, indirectModule, prospectingModule, calendarModule, callReportModule, filesModule, governanceModule, lineageModule, campaignModule, collectionsModule, complianceModule, dataLogsModule, goalsTake, ModuleGateway, onboardingModule, operationsModule, pipelineTake, segModule, referralTake, reportsTake, todayList, describeSchedule, hasClaudeCredentials, member360, memberTake, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
+import { ApprovalStore, TaskService, IndirectService, ProspectService, QueryService, GovernanceService, LineageService, CallReportService, CampaignService, CollectionsService, CoreError, DataLogService, GoalsService, IssueService, OnboardingService, OperationsService, RetentionService, SegService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type CoreContext, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
 import type { AppNotification, AppView, AppViewId, QueryRun, DiTake, GoalsIndex, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
 import { createAppViews } from './appViews.ts';
 import { renderExport } from './exports.ts';
@@ -214,9 +214,9 @@ const applicationView = ({ partyId, ...a }: PipelineApplication, rm: Relationshi
 const referralView = ({ partyId, senderUserId: _sender, ...i }: InboxItem, rm: RelationshipService | null): ReferralSummary => ({ ...i, memberRef: rm?.token(partyId) ?? '' });
 
 /** Which app each workspace page belongs to. */
-const APP_ACCESS: Record<AppViewId, AppId> = { calendar: 'calendar', files: 'files', queries: 'queries', users: 'users', admin: 'admin', datalogs: 'datalogs', seg: 'seg', callreport: 'callreport', workflows: 'workflows', rm: 'rm', indirect: 'indirect', prospecting: 'prospecting' };
+const APP_ACCESS: Record<AppViewId, AppId> = { calendar: 'calendar', files: 'files', queries: 'queries', users: 'users', admin: 'admin', datalogs: 'datalogs', seg: 'seg', callreport: 'callreport', workflows: 'workflows', rm: 'rm', indirect: 'indirect', prospecting: 'prospecting', campaigns: 'campaigns', onboarding: 'onboarding', compliance: 'compliance', predictive: 'predictive', dq: 'dq', tasks: 'tasks', integrations: 'integrations', classes: 'classes' };
 
-const viewDeps = (pool: Pool, institutionType: string, who: { purviewBranches?: string[]; employeeId?: number; modules: string[]; leads?: boolean; retention: boolean }) => ({ pool, blockId, person: institutionType === 'bank' ? ('customer' as const) : ('member' as const), ctx: { purviewBranches: who.purviewBranches } as CoreContext, employeeId: who.employeeId, leads: Boolean(who.leads), modules: who.modules, retention: who.retention });
+const viewDeps = (pool: Pool, institutionType: string, who: { purviewBranches?: string[]; employeeId?: number; modules: string[]; leads?: boolean; retention: boolean; user?: { id: string; name: string } }) => ({ pool, blockId, user: who.user ?? { id: '', name: '' }, person: institutionType === 'bank' ? ('customer' as const) : ('member' as const), ctx: { purviewBranches: who.purviewBranches } as CoreContext, employeeId: who.employeeId, leads: Boolean(who.leads), modules: who.modules, retention: who.retention });
 
 const calendarFor = (pool: Pool, institutionType: string, ctx: ModuleContext) => createAppViews(viewDeps(pool, institutionType, { purviewBranches: ctx.purviewBranches, employeeId: ctx.employeeId, modules: ctx.modules, leads: ctx.leads, retention: ctx.modules.includes('calendar') })).calendarEvents();
 
@@ -269,8 +269,15 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       () => null,
     );
     const today = () => new Date().toISOString().slice(0, 10);
+    const growthModulesExtra: ReturnType<typeof tasksModule>[] = [];
+    // Tasks exist once the tenant was seeded with Slice 22 or later.
+    const hasTasks = await pool.query('SELECT 1 FROM tsk_task LIMIT 1').then(
+      () => true,
+      () => false,
+    );
+    if (hasTasks) growthModulesExtra.push(tasksModule(new TaskService(pool), new OperationsService(pool), today));
     const growthModules = growth ? [indirectModule(new IndirectService(pool), growth.dealers, today), prospectingModule(new ProspectService(pool), growth.companies, growth.stages, today)] : [];
-    const modules = hasModules ? new ModuleGateway(new ApprovalStore(pool), [...governanceModules, calendarModule((ctx) => calendarFor(pool, institutionType, ctx)), filesModule(), ...growthModules, complianceModule(new IssueService(pool), pool), onboardingModule(new OnboardingService(pool)), dataLogsModule(new DataLogService(pool)), operationsModule(new OperationsService(pool)), callReportModule(new CallReportService(pool)), collectionsModule(new CollectionsService(pool)), campaignModule(new CampaignService(pool)), segModule(new SegService(pool), () => new Date().toISOString().slice(0, 10))]) : null;
+    const modules = hasModules ? new ModuleGateway(new ApprovalStore(pool), [...governanceModules, ...growthModulesExtra, calendarModule((ctx) => calendarFor(pool, institutionType, ctx)), filesModule(), ...growthModules, complianceModule(new IssueService(pool), pool), onboardingModule(new OnboardingService(pool)), dataLogsModule(new DataLogService(pool)), operationsModule(new OperationsService(pool)), callReportModule(new CallReportService(pool)), collectionsModule(new CollectionsService(pool)), campaignModule(new CampaignService(pool)), segModule(new SegService(pool), () => new Date().toISOString().slice(0, 10))]) : null;
     // Goals & Incentives exists once the tenant was seeded with Slice 14 or later.
     const hasGoals = await pool.query('SELECT 1 FROM mod_gi_goal LIMIT 1').then(
       () => true,
@@ -316,7 +323,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       const t = tenantFor(persona);
       const p = PERSONAS[persona];
       if (!t || !t.runtime.modules || !p.session.apps.includes(APP_ACCESS[id])) return null;
-      return createAppViews(viewDeps(t.pool, t.runtime.institutionType, { purviewBranches: p.purview, employeeId: p.employeeId, modules: p.modules ?? [], leads: giAccess(persona).leads, retention: Boolean(p.retention) })).views[id]();
+      return createAppViews(viewDeps(t.pool, t.runtime.institutionType, { purviewBranches: p.purview, employeeId: p.employeeId, modules: p.modules ?? [], leads: giAccess(persona).leads, retention: Boolean(p.retention), user: { id: p.session.user.id, name: p.session.user.name } })).views[id]();
     },
 
     async runQuery(persona, sql) {

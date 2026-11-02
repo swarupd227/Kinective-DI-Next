@@ -21,6 +21,24 @@
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  container-type: inline-size;
+}
+
+/* A page here sits beside the conversation, so it drops the full-page margins, and its title is
+   left to screen readers: the pane's own header already shows it. */
+.view > :first-child {
+  max-width: none;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-5) var(--space-8);
+}
+
+.view h1 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .failed {

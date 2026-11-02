@@ -24,7 +24,7 @@ export function complianceModule(issues: IssueService, pool: Pool): ModuleSpec {
     id: 'compliance',
     prefix: 'cpm',
     agent: 'Compliance & Problem Management',
-    request: /\b(complaints?|CFPB|NCUA|OCC|FDIC|BBB|root causes?)\b|\bregulatory issues?\b|\bopen issues\b|\b(?:issue|case) #?\d{3,}\b/i,
+    request: /\b(complaints?|CFPB|NCUA|OCC|FDIC|BBB|root causes?)\b|\bregulatory issues?\b|\bopen issues\b|\bcompliance issues?\b|\b(past[- ]due|overdue) issues\b|\b(?:issue|case) #?\d{3,}\b/i,
     noAccess: 'Compliance issues aren’t part of your DI access.',
     sources: [{ kind: 'table', label: 'Issues', ref: 'table:cpm_issue' }],
     prompt: ({ tenant, user, title }) => `You are the Compliance & Problem Management agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) works member and regulatory issues.

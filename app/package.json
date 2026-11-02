@@ -11,6 +11,7 @@
     "dev:workbench": "npm run tokens && concurrently -k -n mock,gallery -c cyan,magenta \"npm -w @dinext/mock-stream-server run dev\" \"npm -w @dinext/gallery run dev\"",
     "db:up": "docker compose up -d --wait",
     "db:seed": "npm -w @dinext/tenant-db run seed",
+    "eval": "npm -w @dinext/mock-stream-server run eval --",
     "tokens": "node packages/tokens/scripts/build.mjs",
     "schemas": "npm -w @dinext/block-schemas run build:json",
     "build": "npm run tokens && npm -w @dinext/shell run build && npm -w @dinext/gallery run build",

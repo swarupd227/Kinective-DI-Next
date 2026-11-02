@@ -30,7 +30,9 @@ export interface CatalogResult {
 
 export const MATCH_THRESHOLD = 3;
 
-const STOP = new Set(['the', 'a', 'an', 'of', 'for', 'by', 'in', 'on', 'to', 'and', 'or', 'what', 'how', 'is', 'are', 'was', 'were', 'our', 'my', 'me', 'show', 'give', 'tell', 'did', 'do', 'does', 'vs', 'versus', 'compared', 'with', 'last', 'this', 'per', 'each', 'all', 'at', 'from', 'over', 'which', 'many', 'much']);
+const STOP = new Set(['the', 'a', 'an', 'of', 'for', 'by', 'in', 'on', 'to', 'and', 'or', 'what', 'how', 'is', 'are', 'was', 'were', 'our', 'my', 'me', 'show', 'give', 'tell', 'did', 'do', 'does', 'vs', 'versus', 'compared', 'with', 'last', 'this', 'per', 'each', 'all', 'at', 'from', 'over', 'which', 'many', 'much',
+  // Everyday grammar, so "How many members do we have?" is not refused for "we" and "have".
+  'we', 'us', 'i', 'you', 'your', 'they', 'their', 'it', 'its', 'have', 'has', 'had', 'got', 'get', 'be', 'been', 'being', 'there', 'that', 'these', 'those', 'any', 'so', 'just', 'right', 'whats', 'hows', 'currently']);
 
 const stem = (w: string) => w.replace(/'s$/, '').replace(/(ies)$/, 'y').replace(/(?<=[a-z]{3})s$/, '');
 export const tokens = (text: string) =>

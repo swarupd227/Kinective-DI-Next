@@ -269,6 +269,15 @@ Compliance, Onboarding and Data Logs share one agent in `moduleAgent.ts`. A modu
 - **Campaigns:** results by loan dollars, and saving an audience with suppression applied in code and its counts shown. Export isn't built.
 - **SEG (credit unions):** performance, a meeting brief, logging interactions and moving stages, with a note needed from board stages on.
 
+## Module pages (Slice 22)
+
+Campaign Success, Onboarding Manager, Compliance, Predictive Analytics, Data Quality, Integrations and Classes now have pages, like the other apps: DI's view, the figures, the records, and the questions to ask. They read the same services as their agents.
+
+- **Reports** has the report types of today's DI: Periodic, Table Summary (pick a table, measure and grouping; DI answers from the governed definitions), Detail (curated tables in the grid), On-Demand (the module views) and Schedules.
+- **Tasks and My Time:** one list of everything open for you, with its source: your own tasks, referrals assigned to you and onboarding touch points. "Create a task for Ana Ruiz to call the Jacksons" is medium risk; your own task, completing it and "Log 2 hours to the Q4 board pack project" are low. My Time is on for the credit union only.
+- **Integrations and Classes** are read only: sources and their last load, and each class's capabilities and holders.
+- **Evaluation:** `npm run eval` runs the golden, refusal, permission and red-team sets through the Concierge offline, at no cost, and checks the release gates of spec 27.4. `npm run eval -- --live` runs them on Claude and costs money. Reports go to `.data/evals/`.
+
 ## Indirect Lending and Prospecting (Slice 21)
 
 - **Indirect Lending:** "How did Smith Ford do this quarter compared with last?", "Which dealers had the biggest drop in funded loans this month?", "Plan visits for my top five dealers near Westport" (visit order with miles and a directions link) and "Log a visit to Smith Ford: met the finance manager", which adds a visit and sets Date Last Visited. Changing a dealer's rep is medium risk. "How many indirect borrowers became direct members this year?" needs its own permission. Funded counts and dollars are the warehouse's own indirect loans, one dealer per loan; received, decisions and FICO are demo values.

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { opensBeside, viewLabel } from '../src/shell/paneViews.ts';
 
@@ -12,5 +13,16 @@ describe('views beside a task', () => {
     expect(viewLabel('/m/lap?id=2689', apps)).toBe('Loan Pipeline');
     expect(viewLabel('/workflows/referrals/inbox?id=3', apps)).toBe('Referrals');
     expect(viewLabel('/somewhere', apps)).toBe('View');
+  });
+});
+
+describe('the pane knows every view', () => {
+  // A module not built yet shows its placeholder as a page, so `m/:module` is left out.
+  it('has a route for each view in the app router that opens beside a task', () => {
+    const read = (f: string) => readFileSync(new URL(f, import.meta.url), 'utf-8');
+    const pane = new Set([...read('../src/shell/PagePane.tsx').matchAll(/<Route path="\/([^"*]+?)\/?\*?"/g)].map((m) => m[1]!.replace(/\/$/, '')));
+    const views = [...read('../src/router.tsx').matchAll(/path: '([^']+)'/g)].map((m) => m[1]!.replace(/\/?\*$/, '')).filter((p) => opensBeside(`/${p}`) && !p.includes(':'));
+    expect(views.length).toBeGreaterThan(10);
+    expect(views.filter((v) => !pane.has(v))).toEqual([]);
   });
 });

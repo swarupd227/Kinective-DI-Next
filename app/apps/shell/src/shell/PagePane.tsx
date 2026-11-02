@@ -103,6 +103,10 @@ function Inside({ label, threadId, leave }: { label: string; threadId?: string; 
               <Route path="/files/*" element={guard('files', <AppViewPage app="files" />)} />
               <Route path="/datalogs/*" element={guard('datalogs', <AppViewPage app="datalogs" />)} />
               <Route path="/queries/*" element={guard('queries', <QueriesPage />)} />
+              <Route path="/tasks/*" element={guard('tasks', <AppViewPage app="tasks" />)} />
+              <Route path="/dq/*" element={guard('dq', <AppViewPage app="dq" />)} />
+              <Route path="/integrations/*" element={guard('integrations', <AppViewPage app="integrations" />)} />
+              <Route path="/admin/classes/*" element={guard('classes', <AppViewPage app="classes" />)} />
               <Route path="/admin/users/*" element={guard('users', <AppViewPage app="users" />)} />
               <Route path="/admin/*" element={guard('admin', <AppViewPage app="admin" />)} />
               <Route path="/members" element={guard('rm', <MembersPage />)} />
@@ -111,6 +115,12 @@ function Inside({ label, threadId, leave }: { label: string; threadId?: string; 
               <Route path="/customers/:ref" element={guard('rm', <MemberPage />)} />
               <Route path="/m/lap/*" element={guard('lap', <PipelinePage />)} />
               <Route path="/m/gi/*" element={guard('gi', <GoalsPage />)} />
+              <Route path="/m/campaigns/*" element={guard('campaigns', <AppViewPage app="campaigns" />)} />
+              <Route path="/m/onboarding/*" element={guard('onboarding', <AppViewPage app="onboarding" />)} />
+              <Route path="/m/compliance/*" element={guard('compliance', <AppViewPage app="compliance" />)} />
+              <Route path="/m/predictive/*" element={guard('predictive', <AppViewPage app="predictive" />)} />
+              <Route path="/m/indirect/*" element={guard('indirect', <AppViewPage app="indirect" />)} />
+              <Route path="/m/prospecting/*" element={guard('prospecting', <AppViewPage app="prospecting" />)} />
               <Route path="/m/seg/*" element={guard('seg', <AppViewPage app="seg" />)} />
               <Route path="/m/callreport/*" element={guard('callreport', <AppViewPage app="callreport" />)} />
               <Route path="*" element={<Leave to={leave} />} />

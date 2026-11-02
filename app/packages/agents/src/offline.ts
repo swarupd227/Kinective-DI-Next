@@ -8,7 +8,8 @@ export const OFFLINE_AGENT = 'Analytics Q&A (offline)';
 
 /** Picks a metric, at most one dimension and a time window from the words in the question. */
 export function planOffline(question: string, catalog: CatalogResult, svc: SemanticService): SemanticQueryInput | null {
-  if (!catalog.matched) return null;
+  // A word the catalog doesn't know may change the meaning ("flurbo ratio"), so nothing is guessed.
+  if (!catalog.matched || catalog.unknownTerms.length) return null;
   const metric = svc.model.metrics[catalog.metrics[0]!.name]!;
   const q = question.toLowerCase();
   const quarters = /\bq[1-4]\b|quarter/.test(q);

@@ -100,7 +100,7 @@ function Blocks({ view }: { view: AppView }) {
   );
 }
 
-const PATHS: Partial<Record<AppViewId, string>> = { files: '/files', datalogs: '/datalogs', users: '/admin/users', admin: '/admin', workflows: '/workflows', seg: '/m/seg', callreport: '/m/callreport', indirect: '/m/indirect', prospecting: '/m/prospecting' };
+const PATHS: Partial<Record<AppViewId, string>> = { files: '/files', datalogs: '/datalogs', users: '/admin/users', admin: '/admin', workflows: '/workflows', seg: '/m/seg', callreport: '/m/callreport', indirect: '/m/indirect', prospecting: '/m/prospecting', campaigns: '/m/campaigns', onboarding: '/m/onboarding', compliance: '/m/compliance', predictive: '/m/predictive', dq: '/dq', tasks: '/tasks', integrations: '/integrations', classes: '/admin/classes' };
 
 export function AppViewPage({ app }: { app: AppViewId }) {
   const q = useView(app, PATHS[app] ?? `/${app}`);

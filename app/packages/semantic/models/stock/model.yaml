@@ -226,7 +226,7 @@ metrics:
     format: percent_2
     description: Balance of open loans 60 or more days past due, divided by the balance of all open loans.
     regulatory_basis: NCUA 5300 basis - loans 60 or more days delinquent divided by total loans and leases, at period end. Charged-off loans are excluded.
-    synonyms: [delinquency, delinquency rate, dq, past due, 60+, late loans, delinquent loans, loans that are behind]
+    synonyms: [delinquency, delinquency rate, dq, past due, 60+, late loans, delinquent loans, loans that are behind, behind on payments, behind]
     owner: Finance data team
     dimensions_allowed: [branch, region, loan_category, origination_channel]
   delinquent_loan_balance:

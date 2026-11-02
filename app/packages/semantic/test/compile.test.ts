@@ -148,7 +148,7 @@ describe('catalog search (spec 23.5.3)', () => {
   });
 
   it('still matches everyday questions in full', () => {
-    for (const q of ['How many members joined last quarter?', 'Total loans by region', 'Show me the loan-to-share ratio', 'Auto loan originations by month this year', 'What is our weighted average loan rate by loan type?']) {
+    for (const q of ['How many members joined last quarter?', 'Total loans by region', 'Show me the loan-to-share ratio', 'Auto loan originations by month this year', 'What is our weighted average loan rate by loan type?', 'How many members do we have?', 'What deposits have we got right now?', 'How much do we have in auto loans?']) {
       expect(searchCatalog(cu, q, env.dimensionValues).matched, q).toBe(true);
     }
   });
