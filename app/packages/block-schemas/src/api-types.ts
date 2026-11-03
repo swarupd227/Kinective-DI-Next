@@ -170,6 +170,8 @@ export interface AppTile {
   value: string;
   detail?: string;
   tone?: 'neutral' | 'warning' | 'danger';
+  /** What to ask DI about this figure; the tile then starts that task when clicked. */
+  ask?: string;
 }
 
 export interface AppEvent {

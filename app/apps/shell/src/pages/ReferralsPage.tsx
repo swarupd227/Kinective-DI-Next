@@ -11,6 +11,7 @@ import type { ContextRef, ReferralAction, ReferralDetail, ReferralStageName, Ref
 import { ApiError } from '@dinext/stream-client';
 import { useSession } from '../session/SessionProvider.tsx';
 import { DiTake } from '../shell/DiTake.tsx';
+import { KpiTiles } from '../shell/KpiTiles.tsx';
 import { useUi } from '../shell/uiStore.ts';
 import page from './Page.module.css';
 import styles from './ReferralsPage.module.css';
@@ -40,7 +41,7 @@ export function ReferralsPage() {
   }, []);
 
   return (
-    <div className={clsx(page.page, styles.page)}>
+    <div className={page.page}>
       <header className={page.header}>
         <h1 className={page.title}>Referrals</h1>
         <p className={page.lede}>{data ? (data.counts.overdue ? `${data.counts.overdue} overdue. Oldest first, so nothing waits too long.` : 'Oldest first, so nothing waits too long.') : `Work on your ${terms.person}s’ referrals, or ask DI what’s on your plate.`}</p>
@@ -70,6 +71,17 @@ export function ReferralsPage() {
 
       {data && (
         <div className={clsx(styles.columns, selected && styles.withDetail)}>
+      {data && active !== 'sent' && (
+        <KpiTiles
+          tiles={[
+            ...(q.data?.hasOwnQueue === false ? [] : [{ label: 'Waiting for you', value: String(data.counts.mine) }]),
+            { label: 'Open for the team', value: String(data.counts.team) },
+            { label: 'Overdue', value: String(data.counts.overdue), tone: data.counts.overdue ? ('danger' as const) : ('neutral' as const), ask: data.counts.overdue ? q.data?.take.action?.ask : undefined },
+            { label: 'Oldest open', value: data.items.length ? age(Math.max(...data.items.map((r) => r.ageDays))).replace(' old', '') : '—' },
+          ]}
+        />
+      )}
+
           {data.items.length === 0 ? (
             <p className={styles.message}>{active === 'sent' ? 'You haven’t sent any referrals yet.' : active === 'mine' ? 'Nothing is waiting for you.' : 'Nothing is open for your team.'}</p>
           ) : (

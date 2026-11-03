@@ -2,7 +2,7 @@
 // and records to check. They read the same DI Core services the agents use, under the same purview,
 // so a page and an answer always agree. Changes happen in a task, behind an approval card.
 import type { AppTile, AppView, AppViewId, Block, TableBlock } from '@dinext/block-schemas';
-import { WorkflowDefService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
+import { memberNumber, WorkflowDefService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 import { TableService } from '@dinext/di-core';
 
@@ -31,6 +31,10 @@ const text = (field: string, headerName: string): ColumnSpec => ({ field, header
 export function createAppViews(deps: ViewDeps) {
   const { pool, blockId, ctx } = deps;
   const table = (title: string, operation: string, columns: ColumnSpec[], rows: Record<string, string | number>[]): Block => ({ id: blockId(), type: 'table', version: '1.0.0', title, provenance: { agent: 'DI', operations: [operation], sources: [] }, freshness: { kind: 'workflow_event' }, data: { columns, rows, rowCount: rows.length } });
+  /** A bar chart for a page's main breakdown, so each page opens on a picture as well as figures. */
+  const bar = (title: string, operation: string, rows: [string, number][], unit: 'count' | 'currency', valueName: string, subtitle?: string): Block => ({ id: blockId(), type: 'chart', version: '2.0.0', title, ...(subtitle ? { subtitle } : {}), provenance: { agent: 'DI', operations: [operation], sources: [] }, freshness: { kind: 'workflow_event' }, data: { chartType: 'bar', dataset: { dimensions: [{ name: 'label', displayName: title, type: 'ordinal' }, { name: 'value', displayName: valueName, type: 'number' }], source: rows }, series: [{ name: valueName, encode: { x: 'label', y: 'value' } }], axes: { y: [{ unit }] }, legend: false } } as Block);
+  /** Counts of items by a field, largest first. */
+  const countBy = <T,>(items: T[], key: (t: T) => string): [string, number][] => [...items.reduce((m, t) => m.set(key(t), (m.get(key(t)) ?? 0) + 1), new Map<string, number>())].sort((a, b) => b[1] - a[1]);
   const operations = new OperationsService(pool);
   const issues = new IssueService(pool);
   const onboarding = new OnboardingService(pool);
@@ -55,7 +59,7 @@ export function createAppViews(deps: ViewDeps) {
         title: 'Calendar',
         lede: `Your events, and dated work from your modules as of the last build on ${day(today)}. Ask DI to add, move or cancel an event.`,
         take: { headline: overdue.length ? `${count(overdue.length, 'item')} overdue. Start with ${next?.title}.` : next ? `Next up: ${next.title}, on ${day(next.date)}.` : 'Nothing is scheduled in the next few weeks.', action: { label: 'What’s due this week?', ask: 'What’s due this week?' } },
-        tiles: [{ label: 'Overdue', value: String(overdue.length), tone: overdue.length ? 'danger' : 'neutral' }, { label: 'Today', value: String(items.filter((e) => e.date === today).length) }, { label: 'Next 7 days', value: String(week.length) }],
+        tiles: [{ label: 'Overdue', value: String(overdue.length), tone: overdue.length ? 'danger' : 'neutral', ask: 'What’s due this week?' }, { label: 'Today', value: String(items.filter((e) => e.date === today).length) }, { label: 'Next 7 days', value: String(week.length) }],
         prompts: ['What’s due this week?', 'Show the calendar for the next two weeks', 'Schedule a follow-up with Suzanne Jackson next Tuesday at 2 pm about the HELOC referral'],
         notice: 'Events live in DI only. Syncing with Outlook or Google Calendar isn’t built.',
         events: items.map(({ date, kind, title, detail, late, ask }) => ({ date, kind, title, detail, late, ask })),
@@ -198,7 +202,7 @@ export function createAppViews(deps: ViewDeps) {
         tiles: open.slice(0, 4).map((w) => ({ label: w.name, value: w.count.toLocaleString('en-US') })),
         prompts: ['What’s in my referrals inbox?', 'What should I do today?'],
         links: [{ label: 'Open Referrals', to: '/workflows/referrals/inbox' }],
-        blocks: [table('Open work', 'workflow.summary', [text('name', 'Workflow'), { field: 'count', headerName: 'Open', type: 'count' }], open.map(({ name, count: n }) => ({ name, count: n })))],
+        blocks: [bar('Open work by workflow', 'workflow.summary', open.map((o) => [o.name, o.count]), 'count', 'Open'), table('Open work', 'workflow.summary', [text('name', 'Workflow'), { field: 'count', headerName: 'Open', type: 'count' }], open.map(({ name, count: n }) => ({ name, count: n })))],
       };
     },
     async indirect() {
@@ -214,7 +218,7 @@ export function createAppViews(deps: ViewDeps) {
         tiles: [{ label: 'Dealers', value: String(p.dealers.length) }, { label: 'Received', value: sum('received').toLocaleString('en-US') }, { label: 'Funded', value: sum('funded').toLocaleString('en-US') }, { label: 'Funded $', value: usd(sum('fundedAmount')) }],
         prompts: ['Which dealers had the biggest drop in funded loans this month?', 'How did Smith Ford do this quarter compared with last?', ...(deps.modules.includes('indirect-direct') ? ['How many indirect borrowers became direct members this year?'] : [])],
         notice: 'Dealer locations are shown as a visit list with miles between stops. A map isn’t built yet.',
-        blocks: [table(`Dealers, ${p.label}`, 'indirect.dealer.performance', [text('name', 'Dealer'), text('branch', 'Branch'), { field: 'received', headerName: 'Received', type: 'count' }, { field: 'approved', headerName: 'Approved', type: 'count' }, { field: 'funded', headerName: 'Funded', type: 'count' }, { field: 'amount', headerName: 'Funded $', type: 'currency' }, { field: 'fico', headerName: 'Avg FICO', type: 'number' }, text('rep', 'Rep'), text('status', 'Status')], p.dealers.map((d) => ({ name: d.name, branch: d.branch, received: d.received, approved: d.approved, funded: d.funded, amount: d.fundedAmount, fico: d.avgFico, rep: d.rep, status: d.status })))],
+        blocks: [bar(`Funded dollars by dealer, ${p.label}`, 'indirect.dealer.performance', p.dealers.map((d) => [d.name, d.fundedAmount]), 'currency', 'Funded $'), table(`Dealers, ${p.label}`, 'indirect.dealer.performance', [text('name', 'Dealer'), text('branch', 'Branch'), { field: 'received', headerName: 'Received', type: 'count' }, { field: 'approved', headerName: 'Approved', type: 'count' }, { field: 'funded', headerName: 'Funded', type: 'count' }, { field: 'amount', headerName: 'Funded $', type: 'currency' }, { field: 'fico', headerName: 'Avg FICO', type: 'number' }, text('rep', 'Rep'), text('status', 'Status')], p.dealers.map((d) => ({ name: d.name, branch: d.branch, received: d.received, approved: d.approved, funded: d.funded, amount: d.fundedAmount, fico: d.avgFico, rep: d.rep, status: d.status })))],
       };
     },
     async prospecting() {
@@ -229,7 +233,7 @@ export function createAppViews(deps: ViewDeps) {
         tiles: funnel.map((f) => ({ label: f.stage, value: String(f.count) })),
         prompts: ['Show my prospects in Qualified with assets over $5 million', 'What’s our conversion from Prospect to Application this quarter?'],
         notice: 'Routes are shown as a list with miles and a directions link. A map isn’t built yet.',
-        blocks: [table('Prospects', 'prospect.list', [text('company', 'Company'), text('stage', 'Stage'), text('grade', 'Grade'), { field: 'assets', headerName: 'Assets', type: 'currency' }, text('disposition', 'Disposition'), text('owner', 'Owner'), text('next', 'Next follow-up'), text('branch', 'Branch')], list.map((p) => ({ company: p.company, stage: p.stage, grade: p.grade, assets: p.assets, disposition: p.disposition, owner: p.owner, next: p.nextFollowUp ?? '—', branch: p.branch })))],
+        blocks: [bar('Prospects by stage', 'prospect.list', countBy(list, (p) => p.stage), 'count', 'Prospects'), table('Prospects', 'prospect.list', [text('company', 'Company'), text('stage', 'Stage'), text('grade', 'Grade'), { field: 'assets', headerName: 'Assets', type: 'currency' }, text('disposition', 'Disposition'), text('owner', 'Owner'), text('next', 'Next follow-up'), text('branch', 'Branch')], list.map((p) => ({ company: p.company, stage: p.stage, grade: p.grade, assets: p.assets, disposition: p.disposition, owner: p.owner, next: p.nextFollowUp ?? '—', branch: p.branch })))],
       };
     },
     async campaigns() {
@@ -243,7 +247,7 @@ export function createAppViews(deps: ViewDeps) {
         take: { headline: list[0] ? `${list[0].name} produced the most loan dollars, ${usd(list[0].dollars)}. ${best && best.name !== list[0].name ? `${best.name} had the best response, ${Math.round((best.applications / best.sent) * 1000) / 10}% of those sent applied.` : ''}` : 'No campaigns have run.', action: { label: 'Build an audience', ask: 'Build an audience of members with no auto loan' } },
         tiles: [{ label: 'Campaigns', value: String(list.length) }, { label: 'Sent', value: sum('sent').toLocaleString('en-US') }, { label: 'Applications', value: sum('applications').toLocaleString('en-US') }, { label: 'Loan dollars', value: usd(sum('dollars')) }],
         prompts: ['Which campaigns produced the most loan dollars?', 'Build an audience of members with no auto loan'],
-        blocks: [table('Campaigns', 'campaign.results', [text('name', 'Campaign'), text('channel', 'Channel'), text('product', 'Product'), { field: 'sent', headerName: 'Sent', type: 'count' }, { field: 'applications', headerName: 'Applications', type: 'count' }, text('response', 'Response'), { field: 'dollars', headerName: 'Loan dollars', type: 'currency' }], list.map((c) => ({ name: c.name, channel: c.channel, product: c.product, sent: c.sent, applications: c.applications, response: `${Math.round((c.applications / c.sent) * 1000) / 10}%`, dollars: c.dollars })))],
+        blocks: [bar('Loan dollars by campaign', 'campaign.results', list.map((c) => [c.name, c.dollars]), 'currency', 'Loan dollars'), table('Campaigns', 'campaign.results', [text('name', 'Campaign'), text('channel', 'Channel'), text('product', 'Product'), { field: 'sent', headerName: 'Sent', type: 'count' }, { field: 'applications', headerName: 'Applications', type: 'count' }, text('response', 'Response'), { field: 'dollars', headerName: 'Loan dollars', type: 'currency' }], list.map((c) => ({ name: c.name, channel: c.channel, product: c.product, sent: c.sent, applications: c.applications, response: `${Math.round((c.applications / c.sent) * 1000) / 10}%`, dollars: c.dollars })))],
       };
     },
     async onboarding() {
@@ -253,9 +257,9 @@ export function createAppViews(deps: ViewDeps) {
         title: 'Onboarding Manager',
         lede: `New ${deps.person}s’ touch points, as of the last build on ${day(open.asOf)}. Seven days late counts as missed.`,
         take: { headline: open.overdue ? `${count(open.overdue, 'touch point')} overdue, ${open.missed} missed. Start with ${first?.member}, ${first?.touch.toLowerCase()}.` : 'No touch points are overdue.', action: { label: 'Show what’s overdue', ask: 'Show my overdue onboarding touch points' } },
-        tiles: [{ label: 'Open, next two weeks', value: String(open.count) }, { label: 'Overdue', value: String(open.overdue), tone: open.overdue ? 'danger' : 'neutral' }, { label: 'Missed', value: String(open.missed), tone: open.missed ? 'danger' : 'neutral' }, { label: 'No direct deposit after 30 days', value: String(noDd.items.length), tone: noDd.items.length ? 'warning' : 'neutral' }],
+        tiles: [{ label: 'Open, next two weeks', value: String(open.count) }, { label: 'Overdue', value: String(open.overdue), tone: open.overdue ? 'danger' : 'neutral', ask: 'Show my overdue onboarding touch points' }, { label: 'Missed', value: String(open.missed), tone: open.missed ? 'danger' : 'neutral' }, { label: 'No direct deposit after 30 days', value: String(noDd.items.length), tone: noDd.items.length ? 'warning' : 'neutral' }],
         prompts: ['Show my overdue onboarding touch points', 'Which new members haven’t set up direct deposit after 30 days?'],
-        blocks: [table('Touch points', 'onboarding.task.list', [text('member', 'Member'), text('touch', 'Touch point'), text('due', 'Due'), text('state', 'State'), text('assignee', 'With'), text('branch', 'Branch')], open.items.slice(0, 100).map((t) => ({ member: `${t.member} (…${t.last4})`, touch: t.touch, due: t.due, state: t.state, assignee: t.assignee ?? 'Branch queue', branch: t.branch })))],
+        blocks: [bar('Open touch points by state', 'onboarding.task.list', countBy(open.items, (t) => t.state), 'count', 'Touch points'), table('Touch points', 'onboarding.task.list', [text('member', 'Member'), text('touch', 'Touch point'), text('due', 'Due'), text('state', 'State'), text('assignee', 'With'), text('branch', 'Branch')], open.items.slice(0, 100).map((t) => ({ member: `${t.member} (…${t.last4})`, touch: t.touch, due: t.due, state: t.state, assignee: t.assignee ?? 'Branch queue', branch: t.branch })))],
       };
     },
     async compliance() {
@@ -266,9 +270,9 @@ export function createAppViews(deps: ViewDeps) {
         title: 'Compliance',
         lede: `Open issues and complaints, as of ${day(all.asOf)}. Regulatory issues must be resolved in 15 days, others in 30.`,
         take: { headline: overdue.length ? `${count(overdue.length, 'issue')} past their resolve-by date, ${overdue.filter((i) => i.kind === 'regulatory').length} regulatory. The oldest is ${all.oldestDays} days.` : `${count(all.count, 'issue')} open, none overdue.`, action: { label: 'Show regulatory issues', ask: 'Which regulatory issues are open more than 3 weeks?' } },
-        tiles: [{ label: 'Open', value: String(all.count) }, { label: 'Regulatory', value: String(regulatory.length) }, { label: 'Past due', value: String(overdue.length), tone: overdue.length ? 'danger' : 'neutral' }, { label: 'Oldest', value: `${all.oldestDays} days` }],
+        tiles: [{ label: 'Open', value: String(all.count) }, { label: 'Regulatory', value: String(regulatory.length) }, { label: 'Past due', value: String(overdue.length), tone: overdue.length ? 'danger' : 'neutral', ask: 'Which regulatory issues are open more than 3 weeks?' }, { label: 'Oldest', value: `${all.oldestDays} days` }],
         prompts: ['Which regulatory issues are open more than 3 weeks?', 'Show the past-due compliance issues'],
-        blocks: [table('Open issues', 'cpm.issue.list', [text('id', 'Issue'), text('kind', 'Kind'), text('source', 'Source'), text('category', 'Category'), text('member', 'Member'), { field: 'age', headerName: 'Age (days)', type: 'number' }, text('due', 'Resolve by'), text('owner', 'Owner'), text('branch', 'Branch')], all.items.slice(0, 100).map((i) => ({ id: `#${i.issueId}`, kind: i.kind === 'regulatory' ? 'Regulatory' : 'Customer', source: i.source, category: i.category, member: `${i.member} (…${i.last4})`, age: i.ageDays, due: `${day(i.resolveBy)}${i.overdue ? ', overdue' : ''}`, owner: i.owner ?? 'Unassigned', branch: i.branch })))],
+        blocks: [bar('Open issues by category', 'cpm.issue.list', countBy(all.items, (i) => i.category), 'count', 'Issues'), table('Open issues', 'cpm.issue.list', [text('id', 'Issue'), text('kind', 'Kind'), text('source', 'Source'), text('category', 'Category'), text('member', 'Member'), { field: 'age', headerName: 'Age (days)', type: 'number' }, text('due', 'Resolve by'), text('owner', 'Owner'), text('branch', 'Branch')], all.items.slice(0, 100).map((i) => ({ id: `#${i.issueId}`, kind: i.kind === 'regulatory' ? 'Regulatory' : 'Customer', source: i.source, category: i.category, member: `${i.member} (…${i.last4})`, age: i.ageDays, due: `${day(i.resolveBy)}${i.overdue ? ', overdue' : ''}`, owner: i.owner ?? 'Unassigned', branch: i.branch })))],
       };
     },
     async predictive() {
@@ -280,11 +284,11 @@ export function createAppViews(deps: ViewDeps) {
       const [watch, certificates] = await Promise.all([new CollectionsService(pool).watchlist(ctx), deps.retention ? retention.maturing({ days: 90, atRiskOnly: true }, ctx) : null]);
       return {
         title: 'Predictive Analytics',
-        lede: `Scores from ${model}, run ${run}. A score of 7 or more is high risk of leaving, 4 to 6 medium.`,
+        lede: `Scores from ${model}, run ${day(run)}. A score of 7 or more is high risk of leaving, 4 to 6 medium.`,
         take: { headline: `${by('High').toLocaleString('en-US')} ${deps.person}s are at high risk of leaving and ${by('Medium').toLocaleString('en-US')} at medium risk. ${watch.count.toLocaleString('en-US')} current loans show stress.`, action: { label: 'Who’s at risk of leaving?', ask: `Find ${deps.person}s at risk of leaving and draft follow-ups` } },
-        tiles: [{ label: 'High risk of leaving', value: by('High').toLocaleString('en-US'), tone: 'danger' }, { label: 'Medium risk', value: by('Medium').toLocaleString('en-US'), tone: 'warning' }, { label: 'Loans showing stress', value: watch.count.toLocaleString('en-US') }, ...(certificates ? [{ label: 'Certificates at risk, 90 days', value: usd(certificates.atRisk.dollars), detail: `${certificates.atRisk.count} certificates` } satisfies AppTile] : [])],
+        tiles: [{ label: 'High risk of leaving', value: by('High').toLocaleString('en-US'), tone: 'danger', ask: `Find ${deps.person}s at risk of leaving and draft follow-ups` }, { label: 'Medium risk', value: by('Medium').toLocaleString('en-US'), tone: 'warning' }, { label: 'Loans showing stress', value: watch.count.toLocaleString('en-US') }, ...(certificates ? [{ label: 'Certificates at risk, 90 days', value: usd(certificates.atRisk.dollars), detail: `${certificates.atRisk.count} certificates` } satisfies AppTile] : [])],
         prompts: [`Find ${deps.person}s at risk of leaving and draft follow-ups`, 'Show the early-warning list', ...(deps.retention ? ['Which certificates mature in the next 90 days and are at risk?'] : [])],
-        blocks: [table('Attrition score distribution', 'predictive.scores.distribution', [{ field: 'score', headerName: 'Score', type: 'number' }, text('band', 'Band'), { field: 'members', headerName: deps.person === 'member' ? 'Members' : 'Customers', type: 'count' }], [...bands].sort((a, b) => b.score - a.score).map((b) => ({ score: b.score, band: attritionBand(b.score), members: Number(b.n) }))), table('Loan stress signals', 'collections.watchlist.signals', [text('label', 'Signal'), { field: 'count', headerName: 'Loans', type: 'count' }], watch.signals.map((s) => ({ label: s.label, count: s.count })))],
+        blocks: [bar(`${deps.person === 'member' ? 'Members' : 'Customers'} by attrition score`, 'predictive.scores.distribution', [...bands].sort((a, b) => a.score - b.score).map((b) => [String(b.score), Number(b.n)]), 'count', deps.person === 'member' ? 'Members' : 'Customers', '7 or more is high risk'), table('Attrition score distribution', 'predictive.scores.distribution', [{ field: 'score', headerName: 'Score', type: 'number' }, text('band', 'Band'), { field: 'members', headerName: deps.person === 'member' ? 'Members' : 'Customers', type: 'count' }], [...bands].sort((a, b) => b.score - a.score).map((b) => ({ score: b.score, band: attritionBand(b.score), members: Number(b.n) }))), table('Loan stress signals', 'collections.watchlist.signals', [text('label', 'Signal'), { field: 'count', headerName: 'Loans', type: 'count' }], watch.signals.map((s) => ({ label: s.label, count: s.count })))],
       };
     },
     async dq() {
@@ -355,17 +359,27 @@ export function createAppViews(deps: ViewDeps) {
       };
     },
     async rm() {
-      const scope = ctx.purviewBranches ? ' JOIN cdm_location b ON b.int_id = p.primary_branch_id WHERE b.name IN (?)' : '';
-      const [r] = (await pool.query(`SELECT COUNT(*) AS n FROM cdm_party p${scope}`, ctx.purviewBranches ? [ctx.purviewBranches.length ? ctx.purviewBranches : ['']] : [])) as unknown as [{ n: number }[]];
-      const n = Number(r[0]?.n ?? 0);
+      const scope = ctx.purviewBranches ? ' WHERE b.name IN (?)' : '';
+      const params = ctx.purviewBranches ? [ctx.purviewBranches.length ? ctx.purviewBranches : ['']] : [];
       const who = deps.person === 'member' ? 'member' : 'customer';
+      const Who = who === 'member' ? 'Members' : 'Customers';
+      // The largest relationships first, with how likely each is to leave and what they'd take next.
+      const [[totals], [top]] = (await Promise.all([
+        pool.query(`SELECT COUNT(*) AS n, SUM(s.score >= 7) AS high, SUM(COALESCE(d.dep, 0)) AS deposits, SUM(COALESCE(l.loan, 0)) AS loans FROM cdm_party p JOIN cdm_location b ON b.int_id = p.primary_branch_id LEFT JOIN cdm_attrition_score s ON s.party_id = p.party_id LEFT JOIN (SELECT party_id, SUM(balance) AS dep FROM cdm_deposit_account WHERE close_date IS NULL GROUP BY party_id) d ON d.party_id = p.party_id LEFT JOIN (SELECT party_id, SUM(balance) AS loan FROM cdm_loan WHERE close_date IS NULL GROUP BY party_id) l ON l.party_id = p.party_id${scope}`, params),
+        pool.query(`SELECT p.party_id, p.first_name, p.last_name, b.name AS branch, p.join_date, COALESCE(d.dep, 0) AS deposits, COALESCE(l.loan, 0) AS loans, s.score, (SELECT x.product FROM cdm_suggestion x WHERE x.party_id = p.party_id ORDER BY x.likelihood DESC LIMIT 1) AS next FROM cdm_party p JOIN cdm_location b ON b.int_id = p.primary_branch_id LEFT JOIN cdm_attrition_score s ON s.party_id = p.party_id LEFT JOIN (SELECT party_id, SUM(balance) AS dep FROM cdm_deposit_account WHERE close_date IS NULL GROUP BY party_id) d ON d.party_id = p.party_id LEFT JOIN (SELECT party_id, SUM(balance) AS loan FROM cdm_loan WHERE close_date IS NULL GROUP BY party_id) l ON l.party_id = p.party_id${scope} ORDER BY COALESCE(d.dep, 0) + COALESCE(l.loan, 0) DESC LIMIT 25`, params),
+      ])) as unknown as [[{ n: number; high: number; deposits: number; loans: number }[]], [{ party_id: number; first_name: string; last_name: string; branch: string; join_date: unknown; deposits: number; loans: number; score: number | null; next: string | null }[]]];
+      const t = totals[0] ?? { n: 0, high: 0, deposits: 0, loans: 0 };
+      const n = Number(t.n);
+      const high = top.filter((r) => Number(r.score ?? 0) >= 7);
+      const years = (d: unknown) => Math.round(((Date.now() - new Date(d instanceof Date ? d : String(d)).getTime()) / 31_557_600_000) * 10) / 10;
+      const compact = (v: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 }).format(v);
       return {
         title: 'Relationship Manager',
-        lede: `Find a ${who} to open their record.`,
-        take: { headline: `${count(n, who)} in your purview.`, action: { label: 'Who’s at risk of leaving?', ask: `Find ${who}s at risk of leaving and draft follow-ups` } },
-        tiles: [],
+        lede: `${Who} 360: your largest relationships, how likely each is to leave, and what they'd take next. Search to open anyone's record.`,
+        take: { headline: high.length ? `${count(high.length, who)} among your 25 largest ${high.length === 1 ? 'is' : 'are'} at high risk of leaving. Start with ${high[0]!.first_name} ${high[0]!.last_name}, ${compact(Number(high[0]!.deposits) + Number(high[0]!.loans))} with you.` : `${count(n, who)} in your purview. None of your 25 largest is at high risk of leaving.`, action: { label: 'Who’s at risk of leaving?', ask: `Find ${who}s at risk of leaving and draft follow-ups` } },
+        tiles: [{ label: `${Who} in your purview`, value: n.toLocaleString('en-US') }, { label: 'Deposits', value: compact(Number(t.deposits)) }, { label: 'Loans', value: compact(Number(t.loans)) }, { label: 'High risk of leaving', value: Number(t.high ?? 0).toLocaleString('en-US'), tone: Number(t.high) ? 'danger' : 'neutral', ask: `Find ${who}s at risk of leaving and draft follow-ups` }],
         prompts: [`Find ${who}s at risk of leaving and draft follow-ups`, 'Prepare me for my meeting with Suzanne Jackson'],
-        blocks: [],
+        blocks: [table(`Largest relationships`, 'rm.relationships.top', [text('member', who === 'member' ? 'Member' : 'Customer'), text('branch', 'Branch'), { field: 'tenure', headerName: 'Tenure (yrs)', type: 'number' }, { field: 'deposits', headerName: 'Deposits', type: 'currency' }, { field: 'loans', headerName: 'Loans', type: 'currency' }, { field: 'risk', headerName: 'Attrition risk', type: 'number' }, text('next', 'Next best product')], top.map((r) => ({ member: `${r.first_name} ${r.last_name} (…${memberNumber(r.party_id).slice(-4)})`, branch: r.branch, tenure: years(r.join_date), deposits: Number(r.deposits), loans: Number(r.loans), risk: r.score ?? 0, next: r.next ?? '—' })))],
       };
     },
   };

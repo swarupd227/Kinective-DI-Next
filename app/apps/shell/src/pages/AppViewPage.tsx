@@ -60,15 +60,14 @@ function Frame({ q, children }: { q: ReturnType<typeof useView>; children: (v: A
       )}
       {v && (
         <div className={styles.stack}>
-          <DiTake take={v.take} />
+          <DiTake take={v.take} more={v.prompts} />
           {v.notice && (
             <p className={styles.notice} role="note">
               {v.notice}
             </p>
           )}
-          <KpiTiles tiles={v.tiles.map((t) => ({ label: t.label, value: t.value, detail: t.detail, tone: t.tone === 'danger' || t.tone === 'warning' ? t.tone : 'neutral' }))} />
+          <KpiTiles tiles={v.tiles.map((t) => ({ label: t.label, value: t.value, detail: t.detail, ask: t.ask, tone: t.tone === 'danger' || t.tone === 'warning' ? t.tone : 'neutral' }))} />
           {children(v)}
-          <Prompts prompts={v.prompts} />
           {v.links?.map((l) => (
             <Link key={l.to} to={l.to} className={styles.link}>
               {l.label}
@@ -80,17 +79,17 @@ function Frame({ q, children }: { q: ReturnType<typeof useView>; children: (v: A
   );
 }
 
-/** Charts and short lists sit side by side when there are two or more; tables and the rest take the row. */
-const HALF = new Set(['chart', 'list', 'kpi']);
+/** Charts, short lists and narrow tables sit side by side when there are two or more; wide tables take the row. */
+const half = (b: AppView['blocks'][number]) => b.type === 'chart' || b.type === 'list' || b.type === 'kpi' || (b.type === 'table' && b.data.columns.length <= 4);
 
 export function Blocks({ view }: { view: AppView }) {
   const host = useShellBlockHost({});
-  const halves = view.blocks.filter((b) => HALF.has(b.type)).length;
+  const halves = view.blocks.filter(half).length;
   return (
     <BlockHostProvider value={host}>
       <div className={styles.dashboard}>
         {view.blocks.map((b) => (
-          <div key={b.id} className={halves > 1 && HALF.has(b.type) ? styles.half : styles.full}>
+          <div key={b.id} className={halves > 1 && half(b) ? styles.half : styles.full}>
             <BlockRenderer block={b} />
           </div>
         ))}
@@ -416,5 +415,14 @@ function Finder({ who }: { who: string }) {
 export function MembersPage() {
   const q = useView('rm', '/members');
   const { terms } = useSession();
-  return <Frame q={q}>{() => <Finder who={terms.person ?? 'member'} />}</Frame>;
+  return (
+    <Frame q={q}>
+      {(v) => (
+        <>
+          <Finder who={terms.person ?? 'member'} />
+          <Blocks view={v} />
+        </>
+      )}
+    </Frame>
+  );
 }

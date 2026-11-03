@@ -88,7 +88,8 @@ export function NavRail() {
         to={meta.path}
         className={styles.item}
         aria-label={expanded ? undefined : meta.label}
-        end={a === 'home'}
+        // A parent path (Workflows above Referrals and the Builder) is current only on its own page.
+        end={a === 'home' || apps.some((o) => o !== a && APP_META[o]!.path.startsWith(`${meta.path}/`))}
         onClick={(e) => {
           // During a task an app opens beside it. Ctrl or Cmd-click still opens it on its own.
           if (!inTask || !opensBeside(meta.path) || e.ctrlKey || e.metaKey || e.shiftKey) return;

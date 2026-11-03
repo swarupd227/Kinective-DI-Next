@@ -40,7 +40,7 @@ export function GoalsPage() {
       )}
       {d && (
         <div className={styles.stack}>
-          <DiTake take={d.take} />
+          <DiTake take={d.take} more={d.team ? ['Who on my team is behind on goals?', ...(d.team.some((c) => c.behind) ? ['Tell the people who are behind'] : [])] : ['How am I doing on my goals?']} />
           <KpiTiles tiles={tilesFor(d)} />
           {(d.batches || d.team) && (
             <div className={styles.split}>
@@ -61,13 +61,13 @@ function tilesFor(d: GoalsIndex): KpiTile[] {
   const tiles: KpiTile[] = [];
   if (d.batches) {
     const sum = (k: 'total' | 'waiting' | 'flagged') => d.batches!.reduce((n, b) => n + b[k], 0);
-    tiles.push({ label: 'Payouts to approve', value: whole(sum('total')), detail: `${d.batches.filter((b) => b.waiting).length} branches` });
+    tiles.push({ label: 'Payouts to approve', value: whole(sum('total')), detail: ((n) => `${n} ${n === 1 ? 'branch' : 'branches'}`)(d.batches.filter((b) => b.waiting).length), ask: d.take.action?.ask });
     tiles.push({ label: 'People waiting', value: String(sum('waiting')) });
     if (sum('flagged')) tiles.push({ label: 'Flagged for review', value: String(sum('flagged')), tone: 'warning' });
   }
   if (d.team) {
     const behind = d.team.filter((c) => c.behind).length;
-    tiles.push({ label: 'Behind on goals', value: `${behind} of ${d.team.length}`, tone: behind ? 'danger' : 'neutral' });
+    tiles.push({ label: 'Behind on goals', value: `${behind} of ${d.team.length}`, tone: behind ? 'danger' : 'neutral', ask: behind ? 'Who on my team is behind on goals?' : undefined });
     tiles.push({ label: 'Earned by the team', value: whole(d.team.reduce((n, c) => n + c.total, 0)) });
   }
   if (d.mine) {

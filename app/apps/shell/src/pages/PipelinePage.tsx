@@ -11,6 +11,7 @@ import type { ContextRef, PipelineApplicationRow, PipelineCell, PipelineIndex, P
 import { ApiError } from '@dinext/stream-client';
 import { useSession } from '../session/SessionProvider.tsx';
 import { DiTake } from '../shell/DiTake.tsx';
+import { KpiTiles } from '../shell/KpiTiles.tsx';
 import { useUi } from '../shell/uiStore.ts';
 import page from './Page.module.css';
 import styles from './PipelinePage.module.css';
@@ -81,12 +82,14 @@ export function PipelinePage() {
       {data && (
         <>
           <DiTake take={data.take} />
-          <dl className={styles.tiles}>
-            <Tile label="Open applications" value={String(data.open.count)} />
-            <Tile label="Open dollars" value={money(data.open.dollars)} />
-            <Tile label="Stalled" value={String(data.stalled.count)} tone={data.stalled.count ? 'danger' : undefined} detail={data.stalled.count ? money(data.stalled.dollars) : undefined} />
-            <Tile label="Oldest stall" value={data.stalled.count ? days(data.stalled.oldestDays) : 'None'} />
-          </dl>
+          <KpiTiles
+            tiles={[
+              { label: 'Open applications', value: String(data.open.count) },
+              { label: 'Open dollars', value: money(data.open.dollars) },
+              { label: 'Stalled', value: String(data.stalled.count), tone: data.stalled.count ? 'danger' : 'neutral', detail: data.stalled.count ? money(data.stalled.dollars) : undefined, ask: data.stalled.count ? data.take.action?.ask : undefined },
+              { label: 'Oldest stall', value: data.stalled.count ? days(data.stalled.oldestDays) : 'None', tone: data.stalled.count ? 'warning' : 'neutral' },
+            ]}
+          />
 
           <section className={styles.section} aria-labelledby="lap-funnel">
             <h2 id="lap-funnel" className={styles.heading}>
@@ -115,16 +118,6 @@ export function PipelinePage() {
           </section>
         </>
       )}
-    </div>
-  );
-}
-
-function Tile({ label, value, detail, tone }: { label: string; value: string; detail?: string; tone?: 'danger' }) {
-  return (
-    <div className={styles.tile}>
-      <dt>{label}</dt>
-      <dd className={clsx(styles.tileValue, tone === 'danger' && styles.danger)}>{value}</dd>
-      {detail && <dd className={styles.sub}>{detail}</dd>}
     </div>
   );
 }

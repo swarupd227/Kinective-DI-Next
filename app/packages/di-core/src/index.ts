@@ -28,3 +28,4 @@ export {
   type PartyMatch,
   type Topic,
 } from './relationship.ts';
+export { memberNumber } from './referrals.ts';
