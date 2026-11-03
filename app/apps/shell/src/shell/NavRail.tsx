@@ -1,11 +1,12 @@
 // The sidebar (spec 6.2, FE-EXP-003): new task, search, the user's tasks with their live state, and
 // only the apps the user's class permits and the tenant has licensed. Collapses to icons with
 // tooltips; on tablets and phones it is a menu drawer.
+import { Fragment } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, NavLink, useMatch } from 'react-router';
 import { useStore } from 'zustand';
 import clsx from 'clsx';
-import { ChevronRight, CircleCheck, Hand, Loader2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Plus, Search } from 'lucide-react';
+import { CircleCheck, Hand, Loader2, PanelLeftClose, PanelLeftOpen, Plus, Search } from 'lucide-react';
 import { IconButton, Tooltip } from '@dinext/ui';
 import type { AppId, ThreadSummary } from '@dinext/block-schemas';
 import type { ThreadState } from '@dinext/stream-client';
@@ -18,9 +19,21 @@ import { useUi } from './uiStore.ts';
 import { useBreakpoint } from './useBreakpoint.ts';
 import styles from './NavRail.module.css';
 
-/** Apps people reach for daily stay in view; the rest sit under More. */
-const PRIMARY = new Set(['home', 'referrals', 'lap', 'gi', 'reports', 'tables', 'rm']);
-const RECENT_TASKS = 12;
+/** Apps sit in the groups bank staff know from DI: the workspace, the modules, then administration. */
+const GROUPS: { id: 'core' | 'modules' | 'admin'; label?: string }[] = [{ id: 'core' }, { id: 'modules', label: 'Modules' }, { id: 'admin', label: 'Administration' }];
+const RECENT_TASKS = 5;
+
+/** The Kinective mark: three rising bars and a dot, the shape the DI booklet uses. */
+function Mark() {
+  return (
+    <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden className={styles.markSvg}>
+      <rect x="5" y="11" width="5" height="16" rx="2.5" fill="#1d5f9e" />
+      <rect x="12.5" y="5" width="5" height="22" rx="2.5" fill="#1c8ea2" />
+      <rect x="20" y="9" width="5" height="18" rx="2.5" fill="#4fb3c4" />
+      <circle cx="25.5" cy="23.5" r="4" fill="#66b24a" />
+    </svg>
+  );
+}
 
 type TaskState = 'needs_you' | 'running' | 'done' | 'idle';
 
@@ -64,8 +77,7 @@ export function NavRail() {
   // Banks never see credit-union-only modules, even if a licence record lists them (FE-EXP-003).
   const bank = session.tenant.institutionType === 'bank';
   const apps = session.apps.filter((a): a is AppId => a in APP_META && a !== 'conversations' && !(bank && (a === 'seg' || a === 'callreport')));
-  const primary = apps.filter((a) => PRIMARY.has(a));
-  const rest = apps.filter((a) => !PRIMARY.has(a));
+  const grouped = GROUPS.map((g) => ({ ...g, apps: apps.filter((a) => APP_META[a]!.group === g.id) })).filter((g) => g.apps.length);
 
   const item = (a: AppId) => {
     const meta = APP_META[a]!;
@@ -110,13 +122,11 @@ export function NavRail() {
       <nav className={clsx(styles.rail, expanded && styles.expanded, drawer && styles.drawer)} aria-label="Apps" data-region="nav" tabIndex={-1}>
         <div className={styles.head}>
           <Link to="/home" className={styles.brand} aria-label={`Kinective Data Intelligence, ${session.tenant.name}, Home`}>
-            <span className={styles.mark} aria-hidden>
-              DI
-            </span>
+            <Mark />
             {expanded && (
               <span className={styles.brandText}>
+                <span className={styles.company}>Kinective</span>
                 <span className={styles.product}>Data Intelligence</span>
-                <span className={styles.tenant}>{session.tenant.name}</span>
               </span>
             )}
           </Link>
@@ -130,54 +140,54 @@ export function NavRail() {
             <Plus size={16} aria-hidden />
             {expanded && <span>New task</span>}
           </Link>
-          <button type="button" className={styles.search} onClick={() => setPalette(true)} aria-label="Search" aria-keyshortcuts="Control+K Meta+K">
-            <Search size={15} aria-hidden />
-            {expanded && (
-              <>
-                <span>Search</span>
-                <kbd className={styles.kbd}>Ctrl K</kbd>
-              </>
-            )}
-          </button>
+          {/* On desktop, search lives in the header. */}
+          {drawer && (
+            <button type="button" className={styles.search} onClick={() => setPalette(true)} aria-label="Search" aria-keyshortcuts="Control+K Meta+K">
+              <Search size={15} aria-hidden />
+              <span>Search</span>
+              <kbd className={styles.kbd}>Ctrl K</kbd>
+            </button>
+          )}
         </div>
 
-        <ul className={styles.list}>{primary.map(item)}</ul>
-
-        {rest.length > 0 && expanded && (
-          <details className={styles.more}>
-            <summary className={styles.moreToggle}>
-              <span className={styles.icon}>
-                <MoreHorizontal size={18} aria-hidden />
-              </span>
-              <span className={styles.label}>More</span>
-              <ChevronRight size={14} aria-hidden className={styles.chev} />
-            </summary>
-            <ul className={styles.list}>{rest.map(item)}</ul>
-          </details>
-        )}
-
-        {expanded && (
-          <section className={styles.tasks} aria-label="Your tasks">
-            <h2 className={styles.tasksTitle}>Tasks</h2>
-            {tasks.length === 0 ? (
-              <p className={styles.tasksEmpty}>Tasks you start appear here, so you can leave and come back.</p>
-            ) : (
-              <ul className={styles.taskList}>
-                {tasks.map((t) => (
-                  <TaskRow key={t.threadId} thread={t} live={live[t.threadId]} />
-                ))}
-              </ul>
-            )}
-            <Link to="/c" className={styles.allTasks}>
-              All tasks
-            </Link>
-          </section>
-        )}
-
-        <div className={styles.foot}>
-          {expanded && <UserMenu />}
-          <NotificationsButton />
+        <div className={styles.scroll}>
+          {grouped.map((g, gi) => (
+            <Fragment key={g.id}>
+              <section className={styles.group} aria-label={g.label ?? 'Workspace'}>
+                {g.label && expanded && <h2 className={styles.groupTitle}>{g.label}</h2>}
+                <ul className={styles.list}>{g.apps.map(item)}</ul>
+              </section>
+              {/* Recent tasks sit right under the workspace, so work in progress stays in view. */}
+              {gi === 0 && expanded && (
+                <section className={styles.tasks} aria-label="Your tasks">
+                  <h2 className={styles.groupTitle}>Recent tasks</h2>
+                  {tasks.length === 0 ? (
+                    <p className={styles.tasksEmpty}>Tasks you start appear here, so you can leave and come back.</p>
+                  ) : (
+                    <ul className={styles.taskList}>
+                      {tasks.map((t) => (
+                        <TaskRow key={t.threadId} thread={t} live={live[t.threadId]} />
+                      ))}
+                    </ul>
+                  )}
+                  <Link to="/c" className={styles.allTasks}>
+                    All tasks
+                  </Link>
+                </section>
+              )}
+            </Fragment>
+          ))}
         </div>
+
+        {/* On desktop, notifications and the account menu live in the header. */}
+        {drawer ? (
+          <div className={styles.foot}>
+            <UserMenu />
+            <NotificationsButton />
+          </div>
+        ) : (
+          expanded && <p className={styles.tenantFoot}>{session.tenant.name}</p>
+        )}
       </nav>
     </>
   );

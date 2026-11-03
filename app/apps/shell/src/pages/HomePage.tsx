@@ -72,11 +72,52 @@ export function HomePage() {
   const activeTab = h.tabs.find((t) => t.id === tabId) ?? h.tabs[0];
   const title = (s: HomeSection) => (s.id === 'approvals' ? 'Needs you' : s.id === 'what_changed' ? 'Since yesterday' : s.id === 'look_at' ? 'Worth a look' : s.title);
 
+  const changed = section('what_changed');
+  const kpis = changed?.blocks.filter((b) => b.type === 'kpi_group' || b.type === 'kpi') ?? [];
+  const sectionBlocks = (s: HomeSection) =>
+    s.blocks.map((b) => {
+      const task = b.type === 'approval_card' ? s.tasks?.[b.data.approvalId] : undefined;
+      const card = <BlockRenderer key={b.id} block={{ ...withResolution(b), title: s.id === 'approvals' || s.id === 'look_at' ? b.title : undefined }} />;
+      return task ? (
+        <div key={b.id} className={styles.taskCard}>
+          {card}
+          <Link to={`/c/${task}`} className={styles.taskLink}>
+            Open the task
+          </Link>
+        </div>
+      ) : (
+        card
+      );
+    });
+  const panel = (s: HomeSection) => (
+    <section key={s.id} className={styles.section} aria-labelledby={`h-${s.id}`}>
+      <h2 id={`h-${s.id}`} className={styles.sectionTitle}>
+        {title(s)}
+        {s.id === 'approvals' && <span className={styles.count}>{s.blocks.reduce((n, b) => n + (b.type === 'list' ? b.data.items.length : b.type === 'approval_card' && resolved[b.data.approvalId] ? 0 : 1), 0)}</span>}
+      </h2>
+      <div className={clsx(styles.blocks, s.id === 'approvals' && styles.approvals)}>{sectionBlocks(s)}</div>
+    </section>
+  );
+  // Desktop reads like a briefing: what needs you on the left, what changed and your own work on the right.
+  const main = h.sections.filter((s) => !['what_changed', 'your_work', 'scheduled_reports'].includes(s.id));
+  const side = [yourWork, scheduled].filter((s): s is HomeSection => !!s);
+
   return (
     <BlockHostProvider value={host}>
       <div className={styles.page}>
         <header className={styles.hero}>
-          <h1 className={styles.greeting}>{greetingNow(h.greeting)}</h1>
+          <div className={styles.heroText}>
+            <h1 className={styles.greeting}>{greetingNow(h.greeting)}</h1>
+            <p className={clsx(styles.freshness, !ok && styles.stale)}>
+              {ok ? <CircleCheck size={14} aria-hidden /> : <TriangleAlert size={14} aria-hidden />}
+              {formatAsOf(h.build.asOf)}
+              {!ok && <span> · last night&apos;s build is {h.build.state}</span>}
+              <span className={styles.who}>
+                {' '}
+                · {session.tenant.name}
+              </span>
+            </p>
+          </div>
           <ConversationBar collapsedByDefault={false} hero />
           {h.suggestions.length > 0 && (
             <ul className={styles.prompts} aria-label="Try asking">
@@ -91,57 +132,43 @@ export function HomePage() {
           )}
         </header>
 
-        {h.sections
-          .filter((s) => s.id !== 'your_work' && s.id !== 'scheduled_reports')
-          .map((s) => (
-            <section key={s.id} className={styles.section} aria-labelledby={`h-${s.id}`}>
-              <h2 id={`h-${s.id}`} className={styles.sectionTitle}>
-                {title(s)}
-                {s.id === 'approvals' && <span className={styles.count}>{s.blocks.reduce((n, b) => n + (b.type === 'list' ? b.data.items.length : b.type === 'approval_card' && resolved[b.data.approvalId] ? 0 : 1), 0)}</span>}
-              </h2>
-              {s.id === 'what_changed' && (
-                <>
-                  <p className={clsx(styles.freshness, !ok && styles.stale)}>
-                    {ok ? <CircleCheck size={14} aria-hidden /> : <TriangleAlert size={14} aria-hidden />}
-                    {formatAsOf(h.build.asOf)}
-                    {!ok && <span> · last night&apos;s build is {h.build.state}</span>}
-                  </p>
-                  {h.narrative && <Narrative text={h.narrative} />}
-                </>
-              )}
-              <div className={clsx(styles.blocks, s.id === 'approvals' && styles.approvals)}>
-                {s.blocks.map((b) => {
-                  const task = b.type === 'approval_card' ? s.tasks?.[b.data.approvalId] : undefined;
-                  const card = <BlockRenderer key={b.id} block={{ ...withResolution(b), title: s.id === 'approvals' ? b.title : undefined }} />;
-                  return task ? (
-                    <div key={b.id} className={styles.taskCard}>
-                      {card}
-                      <Link to={`/c/${task}`} className={styles.taskLink}>
-                        Open the task
-                      </Link>
-                    </div>
-                  ) : (
-                    card
-                  );
-                })}
-              </div>
-            </section>
-          ))}
+        {kpis.length > 0 && (
+          <section className={styles.kpis} aria-label="Key figures">
+            {kpis.map((b) => (
+              <BlockRenderer key={b.id} block={{ ...b, title: undefined }} />
+            ))}
+          </section>
+        )}
 
-        {(yourWork || scheduled) && (
-          <div className={styles.twoUp}>
-            {[yourWork, scheduled].filter(Boolean).map((s) => (
-              <section key={s!.id} className={styles.section} aria-labelledby={`h-${s!.id}`}>
-                <h2 id={`h-${s!.id}`} className={styles.sectionTitle}>
-                  {s!.title}
+        <div className={styles.columns}>
+          <div className={styles.mainCol}>{main.map((s) => panel(s))}</div>
+          <div className={styles.sideCol}>
+            {changed &&
+              h.narrative && (
+                <section className={styles.section} aria-labelledby="h-what_changed">
+                  <h2 id="h-what_changed" className={styles.sectionTitle}>
+                    {title(changed)}
+                  </h2>
+                  <div className={styles.card}>
+                    <Narrative text={h.narrative} />
+                  </div>
+                  {changed.blocks.filter((b) => b.type !== 'kpi_group' && b.type !== 'kpi').map((b) => (
+                    <BlockRenderer key={b.id} block={{ ...b, title: undefined }} />
+                  ))}
+                </section>
+              )}
+            {side.map((s) => (
+              <section key={s.id} className={styles.section} aria-labelledby={`h-${s.id}`}>
+                <h2 id={`h-${s.id}`} className={styles.sectionTitle}>
+                  {s.title}
                 </h2>
-                {s!.blocks.map((b) => (
+                {s.blocks.map((b) => (
                   <BlockRenderer key={b.id} block={{ ...b, title: undefined }} />
                 ))}
               </section>
             ))}
           </div>
-        )}
+        </div>
 
         {activeTab && (
           <section className={styles.section} aria-labelledby="h-pinned">
@@ -159,7 +186,7 @@ export function HomePage() {
             </div>
             <div className={styles.pinned}>
               {activeTab.blocks.map((b) => (
-                <div key={b.id} className={clsx(styles.pin, b.type === 'table' && styles.pinWide)}>
+                <div key={b.id} className={clsx(styles.pin, (b.type === 'table' || b.type === 'report_canvas') && styles.pinWide)}>
                   <BlockRenderer block={b} />
                 </div>
               ))}

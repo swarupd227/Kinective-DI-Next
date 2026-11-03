@@ -45,6 +45,10 @@
   min-height: 0;
 }
 
+.withHeader {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
 .canvas {
   min-height: 0;
   overflow-y: auto;

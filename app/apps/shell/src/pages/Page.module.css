@@ -1,15 +1,15 @@
 .page {
   display: grid;
   align-content: start;
-  gap: var(--space-7);
+  gap: var(--space-6);
   width: 100%;
-  max-width: 1120px;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: var(--space-8) var(--space-7) var(--space-10);
+  padding: var(--space-6) var(--space-7) var(--space-10);
 }
 
 .narrow {
-  max-width: 860px;
+  max-width: 960px;
 }
 
 .header {

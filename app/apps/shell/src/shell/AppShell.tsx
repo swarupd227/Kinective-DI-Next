@@ -3,7 +3,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation, useMatch } from 'react-router';
 import clsx from 'clsx';
-import { TopBar } from './TopBar.tsx';
+import { DeskBar, TopBar } from './TopBar.tsx';
 import { NavRail } from './NavRail.tsx';
 import { ConversationBar } from './ConversationBar.tsx';
 import { WorkspacePane } from './WorkspacePane.tsx';
@@ -70,7 +70,8 @@ export function AppShell() {
       {!wide && <TopBar threadId={threadId} />}
       <div className={clsx(styles.body, side && styles.withWorkspace)}>
         <NavRail />
-        <div className={styles.canvasCol}>
+        <div className={clsx(styles.canvasCol, wide && styles.withHeader)}>
+          {wide && <DeskBar threadId={threadId} />}
           <div
             id="canvas"
             ref={canvasRef}

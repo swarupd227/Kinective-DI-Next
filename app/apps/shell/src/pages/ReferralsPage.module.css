@@ -108,7 +108,7 @@
   font-family: var(--font-family-serif);
   font-size: var(--type-h1-size);
   line-height: var(--type-h1-line);
-  font-weight: var(--weight-regular);
+  font-weight: var(--weight-semibold);
 }
 
 .close {
@@ -226,7 +226,7 @@
   font-family: var(--font-family-serif);
   font-size: var(--type-h2-size);
   line-height: var(--type-h2-line);
-  font-weight: var(--weight-regular);
+  font-weight: var(--weight-semibold);
 }
 
 .history {

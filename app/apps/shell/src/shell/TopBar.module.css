@@ -10,6 +10,99 @@
   z-index: var(--z-sticky);
 }
 
+/* Desktop header: orientation on the left, search and identity on the right. */
+.desk {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: 56px;
+  padding: 0 var(--space-5) 0 var(--space-4);
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-surface);
+  outline: none;
+  z-index: var(--z-sticky);
+}
+
+.history {
+  display: flex;
+  gap: var(--space-1);
+  padding-right: var(--space-3);
+  border-right: 1px solid var(--color-border-subtle);
+}
+
+.trail {
+  flex: 1;
+  min-width: 0;
+}
+
+.trail ol {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.trail li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--color-text-secondary);
+}
+
+.trail li:last-child {
+  overflow: hidden;
+}
+
+.trailLink {
+  color: var(--color-text-secondary);
+  text-decoration: none;
+}
+
+.trailLink:hover {
+  color: var(--color-accent-text);
+  text-decoration: underline;
+}
+
+.trailHere,
+.trail [aria-current='page'] {
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+}
+
+.sep {
+  flex: none;
+  color: var(--color-text-muted);
+}
+
+.userText {
+  display: grid;
+  margin: 0 var(--space-1) 0 var(--space-2);
+  text-align: left;
+}
+
+.userName {
+  color: var(--color-text-primary);
+  font-weight: var(--weight-semibold);
+  line-height: var(--type-caption-line);
+}
+
+.userTitle {
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  color: var(--color-text-muted);
+}
+
+.desk .user {
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
+  border-radius: var(--radius-md);
+}
+
 .brand {
   display: flex;
   align-items: center;

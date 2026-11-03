@@ -7,7 +7,7 @@
   margin: 0 0 var(--space-3);
   font-family: var(--font-family-serif);
   font-size: var(--type-h2-size);
-  font-weight: var(--weight-regular);
+  font-weight: var(--weight-semibold);
   line-height: var(--type-h2-line);
 }
 
@@ -97,4 +97,144 @@
   font-weight: var(--weight-regular);
   text-align: left;
   vertical-align: top;
+}
+
+/* Dashboard panels: a header bar, then the figures. Payouts and branch progress sit side by side. */
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  align-items: start;
+  gap: var(--space-5);
+}
+
+.panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  box-shadow: var(--elevation-1);
+}
+
+.panel > :not(.panelHead, .table, .tableWrap) {
+  margin: var(--space-4);
+}
+
+.panelHead {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-subtle);
+  font-size: var(--type-h3-size);
+  line-height: var(--type-h3-line);
+  font-weight: var(--weight-semibold);
+}
+
+.panel .tableWrap {
+  border: 0;
+}
+
+.panel .table thead th {
+  background: var(--color-bg-surface);
+  color: var(--color-text-muted);
+  font-size: var(--type-overline-size);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.panel .table tbody tr:hover {
+  background: var(--color-bg-hover);
+}
+
+.panel .table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.panel .table th,
+.panel .table td {
+  padding: var(--space-3) var(--space-4);
+  vertical-align: middle;
+}
+
+.panel .table tbody th {
+  font-weight: var(--weight-medium);
+}
+
+.num {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.action {
+  width: 1%;
+  text-align: right !important;
+  white-space: nowrap;
+}
+
+.bars {
+  display: grid;
+  gap: var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: minmax(80px, 30%) minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.barLabel {
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barTrack {
+  position: relative;
+  height: 18px;
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+}
+
+.barFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: var(--radius-sm);
+  background: var(--gradient-bar-on-goal);
+}
+
+.barUnder {
+  background: var(--gradient-bar-under-goal);
+}
+
+.barGoal {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  background: var(--color-text-primary);
+  opacity: 0.6;
+}
+
+.barValue {
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+@media (width < 1100px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Beside a conversation the page sits in the narrower work pane. */
+@container (width < 820px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

@@ -11,6 +11,7 @@ import type { AppEvent, AppFile, AppView, AppViewId, QueryRun, SavedQueryView, S
 import { ApiError } from '@dinext/stream-client';
 import { useSession } from '../session/SessionProvider.tsx';
 import { DiTake } from '../shell/DiTake.tsx';
+import { KpiTiles } from '../shell/KpiTiles.tsx';
 import { useShellBlockHost } from '../shell/useShellBlockHost.ts';
 import { useUi } from '../shell/uiStore.ts';
 import page from './Page.module.css';
@@ -65,17 +66,7 @@ function Frame({ q, children }: { q: ReturnType<typeof useView>; children: (v: A
               {v.notice}
             </p>
           )}
-          {v.tiles.length > 0 && (
-            <ul className={styles.tiles}>
-              {v.tiles.map((t) => (
-                <li key={t.label} className={styles.tile}>
-                  <span className={styles.tileLabel}>{t.label}</span>
-                  <span className={t.tone === 'danger' ? styles.danger : t.tone === 'warning' ? styles.warning : styles.value}>{t.value}</span>
-                  {t.detail && <span className={styles.tileLabel}>{t.detail}</span>}
-                </li>
-              ))}
-            </ul>
-          )}
+          <KpiTiles tiles={v.tiles.map((t) => ({ label: t.label, value: t.value, detail: t.detail, tone: t.tone === 'danger' || t.tone === 'warning' ? t.tone : 'neutral' }))} />
           {children(v)}
           <Prompts prompts={v.prompts} />
           {v.links?.map((l) => (
@@ -89,13 +80,21 @@ function Frame({ q, children }: { q: ReturnType<typeof useView>; children: (v: A
   );
 }
 
+/** Charts and short lists sit side by side when there are two or more; tables and the rest take the row. */
+const HALF = new Set(['chart', 'list', 'kpi']);
+
 export function Blocks({ view }: { view: AppView }) {
   const host = useShellBlockHost({});
+  const halves = view.blocks.filter((b) => HALF.has(b.type)).length;
   return (
     <BlockHostProvider value={host}>
-      {view.blocks.map((b) => (
-        <BlockRenderer key={b.id} block={b} />
-      ))}
+      <div className={styles.dashboard}>
+        {view.blocks.map((b) => (
+          <div key={b.id} className={halves > 1 && HALF.has(b.type) ? styles.half : styles.full}>
+            <BlockRenderer block={b} />
+          </div>
+        ))}
+      </div>
     </BlockHostProvider>
   );
 }

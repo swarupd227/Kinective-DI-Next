@@ -24,7 +24,7 @@
   font-family: var(--font-family-serif);
   font-size: var(--type-h2-size);
   line-height: var(--type-h2-line);
-  font-weight: var(--weight-regular);
+  font-weight: var(--weight-semibold);
 }
 
 .subheading {
@@ -32,7 +32,7 @@
   font-family: var(--font-family-serif);
   font-size: var(--type-h3-size);
   line-height: var(--type-h3-line);
-  font-weight: var(--weight-regular);
+  font-weight: var(--weight-semibold);
 }
 
 .tiles {
@@ -268,7 +268,7 @@
   font-family: var(--font-family-serif);
   font-size: var(--type-h1-size);
   line-height: var(--type-h1-line);
-  font-weight: var(--weight-regular);
+  font-weight: var(--weight-semibold);
 }
 
 .close {

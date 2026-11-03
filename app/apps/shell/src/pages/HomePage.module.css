@@ -1,33 +1,104 @@
 .page {
   display: grid;
   align-content: start;
-  gap: var(--space-10);
+  gap: var(--space-7);
   width: 100%;
-  max-width: 860px;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: var(--space-11) var(--space-7) var(--space-8);
+  padding: var(--space-6) var(--space-7) var(--space-8);
 }
 
+/* The branded band: greeting, the ask box and a few prompts on the Kinective gradient. */
 .hero {
+  position: relative;
   display: grid;
-  gap: var(--space-6);
-  padding-bottom: var(--space-4);
+  gap: var(--space-5);
+  padding: var(--space-8) var(--space-8) var(--space-7);
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--gradient-hero);
+  color: var(--color-on-brand);
+  box-shadow: var(--elevation-2);
+}
+
+.hero::after {
+  position: absolute;
+  inset: 0;
+  background-image: var(--gradient-hero-pattern);
+  content: '';
+  pointer-events: none;
+}
+
+.hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.heroText {
+  display: grid;
+  gap: var(--space-2);
 }
 
 .greeting {
-  font-family: var(--font-family-serif);
-  font-size: var(--type-display-size);
-  line-height: var(--type-display-line);
-  font-weight: var(--weight-regular);
-  letter-spacing: -0.015em;
-  text-align: center;
+  font-size: var(--type-greeting-size);
+  line-height: var(--type-greeting-line);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.02em;
+}
+
+.greeting::after {
+  display: block;
+  width: 48px;
+  height: 3px;
+  margin-top: var(--space-3);
+  border-radius: 2px;
+  background: var(--color-brand-lime);
+  content: '';
+}
+
+.hero .freshness,
+.hero .freshness svg {
+  color: var(--color-on-brand-muted);
+}
+
+.who {
+  color: var(--color-on-brand-muted);
+}
+
+.kpis {
+  display: grid;
+  gap: var(--space-4);
+}
+
+/* Two columns from a laptop up: what needs you, then what changed and your own work. */
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  align-items: start;
+  gap: var(--space-6);
+}
+
+.mainCol,
+.sideCol {
+  display: grid;
+  align-content: start;
+  gap: var(--space-7);
+  min-width: 0;
+}
+
+.card {
+  padding: var(--space-5);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-surface);
+  box-shadow: var(--elevation-1);
 }
 
 .narrative {
   max-width: 68ch;
-  font-family: var(--font-family-serif);
-  font-size: var(--type-h2-size);
-  line-height: var(--type-h1-line);
+  font-size: var(--type-lead-size);
+  line-height: var(--type-lead-line);
+  color: var(--color-text-secondary);
 }
 
 .narrative strong {
@@ -63,10 +134,9 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  font-family: var(--font-family-serif);
-  font-size: var(--type-h1-size);
-  line-height: var(--type-h1-line);
-  font-weight: var(--weight-regular);
+  font-size: var(--type-h2-size);
+  line-height: var(--type-h2-line);
+  font-weight: var(--weight-semibold);
 }
 
 .count {
@@ -153,7 +223,7 @@
 .prompts {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   gap: var(--space-3);
   padding: 0;
   margin: 0;
@@ -163,17 +233,16 @@
 .prompt {
   min-height: 32px;
   padding: 0 var(--space-4);
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-on-brand-border);
   border-radius: var(--radius-full);
-  background: transparent;
-  color: var(--color-text-secondary);
+  background: var(--color-on-brand-fill);
+  color: var(--color-on-brand);
   cursor: pointer;
 }
 
 .prompt:hover {
-  border-color: var(--color-accent-default);
-  background: var(--color-bg-agent);
-  color: var(--color-accent-text);
+  border-color: var(--color-on-brand);
+  background: var(--color-on-brand-fill-hover);
 }
 
 .footnote {
@@ -189,6 +258,12 @@
   color: var(--color-status-danger-text);
 }
 
+@media (width < 1200px) {
+  .columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (width < 1024px) {
   .pin {
     grid-column: span 12;
@@ -197,8 +272,17 @@
 
 @media (width < 768px) {
   .page {
-    gap: var(--space-8);
-    padding: var(--space-7) var(--space-4);
+    gap: var(--space-6);
+    padding: var(--space-4);
+  }
+
+  .hero {
+    padding: var(--space-6) var(--space-5);
+  }
+
+  .greeting {
+    font-size: var(--type-h1-size);
+    line-height: var(--type-h1-line);
   }
 
   .approvals {

@@ -1,0 +1,79 @@
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* White on each of these colours is above 4.5:1. */
+.tile {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-height: 104px;
+  padding: var(--space-4) var(--space-5);
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  color: var(--color-on-brand);
+  box-shadow: var(--elevation-1);
+}
+
+.tile::after {
+  position: absolute;
+  right: -24px;
+  bottom: -40px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: var(--color-on-brand-glow);
+  content: '';
+}
+
+.value {
+  font-size: var(--type-kpi-size);
+  line-height: var(--type-kpi-line);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.label {
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  font-weight: var(--weight-medium);
+}
+
+.detail {
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  opacity: 0.9;
+}
+
+.c0 {
+  background: var(--color-tile-steel);
+}
+
+.c1 {
+  background: var(--color-tile-teal);
+}
+
+.c2 {
+  background: var(--color-tile-blue);
+}
+
+/* No green here: green would read as "good" on a neutral figure. */
+.c3 {
+  background: var(--color-tile-indigo);
+}
+
+.warning {
+  background: var(--color-tile-warning);
+}
+
+.danger {
+  background: var(--color-tile-danger);
+}

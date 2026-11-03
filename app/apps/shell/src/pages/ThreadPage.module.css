@@ -28,16 +28,13 @@
   font-family: var(--font-family-serif);
   font-size: var(--type-h2-size);
   line-height: var(--type-h2-line);
-  font-weight: var(--weight-regular);
+  font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
-}
 
-/* The top bar carries the title on tablets and phones. */
-@media (width < 1024px) {
-  .title {
-    visibility: hidden;
-  }
+  /* The header's breadcrumb carries the title at every width; this one keeps the Progress button's
+     place, and screen readers get the title from the log's label. */
+  visibility: hidden;
 }
 
 @media (width < 768px) {

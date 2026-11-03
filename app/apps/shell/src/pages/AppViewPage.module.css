@@ -4,6 +4,35 @@
   min-width: 0;
 }
 
+/* A 12-column dashboard: charts and lists take half, tables the whole row. */
+.dashboard {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--space-5);
+}
+
+.full {
+  grid-column: span 12;
+  min-width: 0;
+}
+
+.half {
+  grid-column: span 6;
+  min-width: 0;
+}
+
+@container (width < 820px) {
+  .half {
+    grid-column: span 12;
+  }
+}
+
+@media (width < 1100px) {
+  .half {
+    grid-column: span 12;
+  }
+}
+
 .message {
   color: var(--color-danger-text);
 }

@@ -8,13 +8,13 @@
   padding: var(--space-4) var(--space-3);
   overflow: hidden;
   border-right: 1px solid var(--color-border-subtle);
-  background: var(--color-bg-sunken);
+  background: var(--color-bg-surface);
   outline: none;
 }
 
 .expanded {
   align-items: stretch;
-  width: 272px;
+  width: 260px;
   padding: var(--space-4);
 }
 
@@ -53,18 +53,17 @@
   text-decoration: none;
 }
 
-.mark {
-  display: inline-grid;
+.markSvg {
   flex-shrink: 0;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-md);
-  background: var(--color-accent-default);
-  color: var(--color-text-on-accent);
-  font-family: var(--font-family-serif);
-  font-size: var(--type-h3-size);
+}
+
+.company {
+  color: var(--color-text-muted);
+  font-size: var(--type-eyebrow-size);
+  line-height: var(--type-eyebrow-line);
   font-weight: var(--weight-semibold);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .brandText {
@@ -73,10 +72,10 @@
 }
 
 .product {
-  font-family: var(--font-family-serif);
-  font-size: var(--type-h3-size);
-  line-height: var(--type-caption-line);
+  font-size: var(--type-brand-size);
+  line-height: var(--type-brand-line);
   font-weight: var(--weight-semibold);
+  letter-spacing: -0.01em;
 }
 
 .tenant {
@@ -150,8 +149,7 @@
   list-style: none;
 }
 
-.item,
-.moreToggle {
+.item {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -163,34 +161,55 @@
   cursor: pointer;
 }
 
-.item:hover,
-.moreToggle:hover {
+.item:hover {
   background: var(--color-bg-hover);
   color: var(--color-text-primary);
 }
 
 .item[aria-current='page'] {
-  background: var(--color-bg-hover);
-  color: var(--color-text-primary);
-  font-weight: var(--weight-medium);
+  background: var(--color-bg-selected);
+  color: var(--color-accent-text);
+  font-weight: var(--weight-semibold);
 }
 
-.moreToggle {
-  list-style: none;
+/* Apps and tasks scroll together under the brand and New task. */
+.scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+  margin: 0 calc(-1 * var(--space-2));
+  padding: var(--space-1) var(--space-2) var(--space-3);
+  overflow: hidden auto;
 }
 
-.moreToggle::-webkit-details-marker {
-  display: none;
+.rail:not(.expanded) .scroll {
+  align-items: center;
 }
 
-.chev {
-  margin-left: auto;
+.group {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.groupTitle {
+  padding: var(--space-1) var(--space-3);
   color: var(--color-text-muted);
-  transition: transform var(--motion-duration-micro) var(--motion-easing-standard);
+  font-size: var(--type-overline-size);
+  line-height: var(--type-overline-line);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.more[open] .chev {
-  transform: rotate(90deg);
+.tenantFoot {
+  margin: 0;
+  padding: var(--space-3) var(--space-3) 0;
+  border-top: 1px solid var(--color-border-subtle);
+  color: var(--color-text-muted);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
 }
 
 .icon {
@@ -209,20 +228,10 @@
 
 .tasks {
   display: flex;
-  flex: 1;
+  flex: none;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-1);
   min-height: 0;
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--color-border-subtle);
-}
-
-.tasksTitle {
-  padding: var(--space-1) var(--space-3);
-  color: var(--color-text-muted);
-  font-size: var(--type-caption-size);
-  line-height: var(--type-caption-line);
-  font-weight: var(--weight-medium);
 }
 
 .tasksEmpty {

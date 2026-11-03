@@ -2,12 +2,13 @@
 // notifications. Wider screens keep all of this in the sidebar.
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router';
-import { Check, ChevronDown, Menu as MenuIcon, Monitor, Moon, Rows3, Rows4, Search, Sun, UserRoundCog } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, Menu as MenuIcon, Monitor, Moon, Rows3, Rows4, Search, Sun, UserRoundCog } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
 import { IconButton, SegmentedControl, usePreferences, type Density, type ThemePreference } from '@dinext/ui';
 import { useSession } from '../session/SessionProvider.tsx';
 import { NotificationsButton } from './NotificationsPanel.tsx';
 import { APP_META } from './apps.tsx';
+import { viewLabel } from './paneViews.ts';
 import { useUi } from './uiStore.ts';
 import { useBreakpoint } from './useBreakpoint.ts';
 import styles from './TopBar.module.css';
@@ -53,7 +54,68 @@ export function TopBar({ threadId }: { threadId?: string }) {
 
 const segmentToApp = (s: string) => (s === 'c' ? 'conversations' : s === 'members' || s === 'customers' ? 'rm' : s);
 
-export function UserMenu() {
+/** Desktop header: where you are (back, forward and a breadcrumb), then search, notifications and
+ *  who you are. The sidebar keeps the brand, the apps and the tasks. */
+export function DeskBar({ threadId }: { threadId?: string }) {
+  const { api } = useSession();
+  const { setPalette } = useUi();
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const thread = useQuery({ queryKey: ['thread', threadId], queryFn: () => api.thread(threadId!), enabled: !!threadId });
+  const page = viewLabel(pathname, Object.values(APP_META));
+  const trail: { label: string; to?: string }[] = pathname.startsWith('/c')
+    ? [{ label: 'Tasks', to: '/c' }, ...(threadId ? [{ label: thread.data?.title ?? 'Task' }] : pathname.startsWith('/c/new') ? [{ label: 'New task' }] : [])]
+    : pathname.startsWith('/home')
+      ? []
+      : [{ label: page === 'View' ? 'Page' : page }];
+
+  return (
+    <header className={styles.desk} data-region="topbar" tabIndex={-1}>
+      <div className={styles.history}>
+        <IconButton label="Back" icon={<ArrowLeft size={16} aria-hidden />} onClick={() => navigate(-1)} />
+        <IconButton label="Forward" icon={<ArrowRight size={16} aria-hidden />} onClick={() => navigate(1)} />
+      </div>
+      <nav aria-label="Breadcrumb" className={styles.trail}>
+        <ol>
+          <li>
+            {trail.length ? (
+              <Link to="/home" className={styles.trailLink}>
+                Home
+              </Link>
+            ) : (
+              <span aria-current="page">Home</span>
+            )}
+          </li>
+          {trail.map((t, i) => (
+            <li key={t.label}>
+              <ChevronRight size={14} aria-hidden className={styles.sep} />
+              {t.to && i < trail.length - 1 ? (
+                <Link to={t.to} className={styles.trailLink}>
+                  {t.label}
+                </Link>
+              ) : (
+                <span aria-current="page" className={styles.trailHere}>
+                  {t.label}
+                </span>
+              )}
+            </li>
+          ))}
+        </ol>
+      </nav>
+      <div className={styles.tools}>
+        <button type="button" className={styles.search} onClick={() => setPalette(true)} aria-keyshortcuts="Control+K Meta+K">
+          <Search size={15} aria-hidden />
+          <span className={styles.searchText}>Search or jump to…</span>
+          <kbd className={styles.kbd}>Ctrl K</kbd>
+        </button>
+        <NotificationsButton />
+        <UserMenu withName />
+      </div>
+    </header>
+  );
+}
+
+export function UserMenu({ withName = false }: { withName?: boolean }) {
   const { session, switchPersona } = useSession();
   const { theme, setTheme, density, setDensity } = usePreferences();
   const { pathname } = useLocation();
@@ -70,6 +132,12 @@ export function UserMenu() {
           <span className={styles.avatar} aria-hidden>
             {session.user.initials}
           </span>
+          {withName && (
+            <span className={styles.userText} aria-hidden>
+              <span className={styles.userName}>{session.user.name}</span>
+              <span className={styles.userTitle}>{session.user.title}</span>
+            </span>
+          )}
           <ChevronDown size={14} aria-hidden />
         </button>
       </Popover.Trigger>
