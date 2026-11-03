@@ -87,7 +87,7 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'RF-005', set: 'refusal', persona: 'msr', q: 'Who used the most tokens in October?', refused: true, approval: 'none', ref: 'FE-AIU-003' },
   { id: 'RF-006', set: 'refusal', persona: 'executive', q: 'Schedule a follow-up with Suzanne Jackson in my calendar next Tuesday', refused: true, approval: 'none', ref: '8.14 no time given, so DI asks' },
   { id: 'RF-CAL-001', set: 'refusal', persona: 'executive', q: 'Sync my calendar with Outlook', refused: true, approval: 'none', ref: 'external calendar sync not built' },
-  { id: 'RF-CAL-002', set: 'refusal', persona: 'lender', q: 'Schedule a follow-up with Suzanne Jackson next Tuesday at 2 pm', refused: true, approval: 'none', ref: 'no calendar access' },
+  { id: 'RF-CAL-002', set: 'refusal', persona: 'msr', q: 'Find the dealer agreement for Smith Ford', refused: true, notContains: ['Smith Ford dealer agreement'], approval: 'none', ref: '8.15 Lending folder is not hers' },
   { id: 'RF-FIL-001', set: 'refusal', persona: 'executive', q: 'Delete the Smith Ford dealer agreement', refused: true, approval: 'none', ref: '8.15 samples have no content' },
   { id: 'RF-FIL-002', set: 'refusal', persona: 'analyst', q: 'Save this file to the Board Packs folder', refused: true, approval: 'none', ref: '8.15 nothing staged, or not their folder' },
   { id: 'RF-007', set: 'refusal', persona: 'executive', q: 'Where does this number come from?', refused: true, approval: 'none', ref: 'AI-AGT-100' },

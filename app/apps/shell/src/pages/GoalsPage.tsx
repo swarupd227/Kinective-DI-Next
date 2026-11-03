@@ -72,6 +72,12 @@ function Mine({ card }: { card: GoalCard }) {
   );
 }
 
+/** Why someone is behind. A missed qualifier is named, since their listed goals can all be over 100%. */
+function behindText(c: GoalCard) {
+  const gate = c.goals.find((g) => g.qualifier && g.actual < g.target);
+  return gate ? `Missed ${gate.name}: ${value(gate, gate.actual)} of ${value(gate, gate.target)}` : 'Behind';
+}
+
 function Team({ cards }: { cards: GoalCard[] }) {
   return (
     <section aria-labelledby="gi-team">
@@ -99,7 +105,7 @@ function Team({ cards }: { cards: GoalCard[] }) {
                   {c.behind && (
                     <span className={styles.flag}>
                       <CircleAlert size={12} aria-hidden />
-                      Behind
+                      {behindText(c)}
                     </span>
                   )}
                 </th>
