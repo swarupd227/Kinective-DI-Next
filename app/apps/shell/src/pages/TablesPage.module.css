@@ -74,3 +74,120 @@
 .fullBody {
   min-height: 0;
 }
+
+.stack {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.notice {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+}
+
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fullBench {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  height: 100%;
+  padding: var(--space-5) var(--space-6) 0;
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-5);
+  padding-bottom: var(--space-4);
+}
+
+.actions,
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.actions button:disabled {
+  border-style: dashed;
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.fullScroll {
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: var(--space-6);
+}
+
+.section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.scroll {
+  overflow-x: auto;
+}
+
+.grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.grid th,
+.grid td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+
+.grid thead th {
+  color: var(--color-text-muted);
+  font-weight: var(--weight-medium);
+}
+
+.grid tbody th {
+  font-weight: var(--weight-medium);
+}
+
+.rows {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+}
+
+@media (width < 768px) {
+  .full,
+  .fullBench {
+    padding: var(--space-4) var(--space-4) 0;
+  }
+}

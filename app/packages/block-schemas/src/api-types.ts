@@ -163,7 +163,7 @@ export interface ReferralsIndex {
 export type ReferralAction = { kind: 'start' } | { kind: 'note'; text: string } | { kind: 'close'; stage: 'Sold' | 'Not Interested' | 'Done'; note?: string } | { kind: 'assign'; employeeId: number };
 
 /** DI's view of a page: one sentence, and the next step it would take. Code writes both. */
-export type AppViewId = 'calendar' | 'files' | 'queries' | 'users' | 'admin' | 'datalogs' | 'seg' | 'callreport' | 'workflows' | 'rm' | 'indirect' | 'prospecting' | 'campaigns' | 'onboarding' | 'compliance' | 'predictive' | 'dq' | 'tasks' | 'integrations' | 'classes' | 'wfbuilder';
+export type AppViewId = 'calendar' | 'files' | 'queries' | 'users' | 'admin' | 'datalogs' | 'seg' | 'callreport' | 'workflows' | 'rm' | 'indirect' | 'prospecting' | 'campaigns' | 'onboarding' | 'compliance' | 'predictive' | 'dq' | 'tasks' | 'integrations' | 'classes' | 'wfbuilder' | 'tables';
 
 export interface AppTile {
   label: string;
@@ -326,6 +326,33 @@ export interface PipelineApplicationDetail extends PipelineApplicationRow {
 }
 
 /** GET /v1/tables/{id}: a workspace grid's rows for small tables (client-side row model). */
+/** A saved view or snapshot in the Tables app, as its pages list it. */
+export interface TableSavedItem {
+  /** Opens at /tables/{id}. */
+  id: string;
+  name: string;
+  kind: 'Saved view' | 'Snapshot';
+  table: string;
+  rows: string;
+  owner: string;
+  shared: string;
+  made: string;
+  mine: boolean;
+}
+
+/** The Tables page around a table's grid: its column stats, the tables it links to, and what's saved from it. */
+export interface TableWorkbench {
+  tableId: string;
+  label: string;
+  stats: { column: string; type: string; filled: string; distinct: number; range: string; average: string; top: string }[];
+  /** Personal columns, left out of the stats and the grid. */
+  personal: string[];
+  relationships: { table: string; tableId: string; key: string; shape: string }[];
+  saved: TableSavedItem[];
+  /** Things to ask DI, as the toolbar's buttons. */
+  actions: { label: string; ask: string | null; why?: string }[];
+}
+
 export interface TableData {
   tableId: string;
   label: string;

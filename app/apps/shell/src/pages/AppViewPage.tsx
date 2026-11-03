@@ -26,7 +26,7 @@ function useView(app: AppViewId, path: string) {
   return q;
 }
 
-function Prompts({ prompts }: { prompts: string[] }) {
+export function Prompts({ prompts }: { prompts: string[] }) {
   const { startThread } = useSession();
   const navigate = useNavigate();
   if (!prompts.length) return null;
@@ -89,7 +89,7 @@ function Frame({ q, children }: { q: ReturnType<typeof useView>; children: (v: A
   );
 }
 
-function Blocks({ view }: { view: AppView }) {
+export function Blocks({ view }: { view: AppView }) {
   const host = useShellBlockHost({});
   return (
     <BlockHostProvider value={host}>

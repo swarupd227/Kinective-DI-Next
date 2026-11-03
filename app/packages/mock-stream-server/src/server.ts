@@ -617,6 +617,12 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         for (const n of ids) readNotices.add(`${me()}:${n}`);
         return json(res, 204);
       }
+      // The Tables page around a grid: column stats, linked tables and saved views (spec 8.11).
+      const workbench = /^\/v1\/tables\/([^/]+)\/workbench$/.exec(path);
+      if (method === 'GET' && workbench) {
+        const data = await live?.tableWorkbench(persona(), decodeURIComponent(workbench[1]!));
+        return data ? json(res, 200, data) : json(res, 404, { code: 'NOT_FOUND' });
+      }
       const table = /^\/v1\/tables\/([^/]+)$/.exec(path);
       if (method === 'GET' && table) {
         const tableId = decodeURIComponent(table[1]!);

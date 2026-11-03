@@ -41,6 +41,28 @@ export const WORKSPACE_DDL = [
 
 export const WORKSPACE_WRITE_TABLES = ['cal_event', 'fil_file'];
 
+// Repeating events: the rule hangs on its cal_event row, whose start is the first date. One date can
+// be cancelled or moved on its own in cal_occurrence; cancelling the whole series cancels the event.
+export const CALENDAR_SERIES_DDL = [
+  `CREATE TABLE cal_series (
+     event_id INT PRIMARY KEY,
+     rule VARCHAR(300) NOT NULL,
+     first_date DATE NOT NULL,
+     approval_id VARCHAR(40) NULL UNIQUE
+   )`,
+  `CREATE TABLE cal_occurrence (
+     event_id INT NOT NULL,
+     occurs_on DATE NOT NULL,
+     status VARCHAR(12) NOT NULL,
+     starts_at DATETIME NULL,
+     ends_at DATETIME NULL,
+     approval_id VARCHAR(40) NULL,
+     PRIMARY KEY (event_id, occurs_on)
+   )`,
+];
+
+export const CALENDAR_SERIES_WRITE_TABLES = ['cal_series', 'cal_occurrence'];
+
 // [owner id, owner name, title, starts, ends, with, with user id, source]
 const EVENTS: [string, string, string, string, string, string | null, string | null, string | null][] = [
   ['user:9229', 'Dana Lee', 'Board pack review', '2026-10-27 14:00', '2026-10-27 15:00', null, null, 'Board Packs'],

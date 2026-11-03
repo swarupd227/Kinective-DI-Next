@@ -7,6 +7,9 @@ import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, 
 import { ApprovalStore, CalendarStore, FileStore, foldersFor, TaskService, WorkflowDefService, IndirectService, ProspectService, QueryService, GovernanceService, LineageService, CallReportService, CampaignService, CollectionsService, CoreError, DataLogService, GoalsService, IssueService, OnboardingService, OperationsService, RetentionService, SegService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type CoreContext, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
 import type { AppNotification, AppView, AppViewId, QueryRun, DiTake, GoalsIndex, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
 import { createAppViews } from './appViews.ts';
+import { columnStatRows, tablesModule } from '@dinext/agents';
+import { TableService, type TableObject } from '@dinext/di-core';
+import type { TableSavedItem, TableWorkbench } from '@dinext/block-schemas';
 import { renderExport } from './exports.ts';
 import type { AppId } from '@dinext/block-schemas';
 import type { ModuleContext } from '@dinext/agents';
@@ -67,6 +70,8 @@ interface Tenant {
   vocabulary: string[];
   /** Uploaded files, once the tenant was seeded with Slice 23 or later. */
   files: FileStore | null;
+  /** Saved views and snapshots, once the tenant has the Tables tables. */
+  tables: TableService | null;
 }
 
 export interface LiveRunResult {
@@ -138,6 +143,8 @@ export interface LiveRuntime {
   /** The tenant's own words for speech recognition (spec 7.8). */
   vocabulary(persona: PersonaId): string[];
   table(persona: PersonaId, tableId: string): Promise<TableData | null>;
+  /** The Tables page around a grid: column stats, linked tables and what's saved from it. Null without the Tables app. */
+  tableWorkbench(persona: PersonaId, tableId: string): Promise<TableWorkbench | null>;
   close(): Promise<void>;
 }
 
@@ -220,7 +227,7 @@ const applicationView = ({ partyId, ...a }: PipelineApplication, rm: Relationshi
 const referralView = ({ partyId, senderUserId: _sender, ...i }: InboxItem, rm: RelationshipService | null): ReferralSummary => ({ ...i, memberRef: rm?.token(partyId) ?? '' });
 
 /** Which app each workspace page belongs to. */
-const APP_ACCESS: Record<AppViewId, AppId> = { calendar: 'calendar', files: 'files', queries: 'queries', users: 'users', admin: 'admin', datalogs: 'datalogs', seg: 'seg', callreport: 'callreport', workflows: 'workflows', rm: 'rm', indirect: 'indirect', prospecting: 'prospecting', campaigns: 'campaigns', onboarding: 'onboarding', compliance: 'compliance', predictive: 'predictive', dq: 'dq', tasks: 'tasks', integrations: 'integrations', classes: 'classes', wfbuilder: 'wfbuilder' };
+const APP_ACCESS: Record<AppViewId, AppId> = { calendar: 'calendar', files: 'files', queries: 'queries', users: 'users', admin: 'admin', datalogs: 'datalogs', seg: 'seg', callreport: 'callreport', workflows: 'workflows', rm: 'rm', indirect: 'indirect', prospecting: 'prospecting', campaigns: 'campaigns', onboarding: 'onboarding', compliance: 'compliance', predictive: 'predictive', dq: 'dq', tasks: 'tasks', integrations: 'integrations', classes: 'classes', wfbuilder: 'wfbuilder', tables: 'tables' };
 
 const viewDeps = (pool: Pool, institutionType: string, who: { purviewBranches?: string[]; employeeId?: number; modules: string[]; leads?: boolean; retention: boolean; user?: { id: string; name: string } }, workspace = false) => ({ pool, blockId, user: who.user ?? { id: '', name: '' }, person: institutionType === 'bank' ? ('customer' as const) : ('member' as const), ctx: { purviewBranches: who.purviewBranches } as CoreContext, employeeId: who.employeeId, leads: Boolean(who.leads), modules: who.modules, retention: who.retention, workspace });
 
@@ -299,8 +306,15 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       const want = name.toLowerCase().split(/\s+/).filter(Boolean);
       return (await new OperationsService(pool).users()).filter((u) => u.status === 'Active' && want.every((w) => u.name.toLowerCase().split(/\s+/).includes(w))).map((u) => ({ userId: u.userId, name: u.name }));
     };
+    // Saved views and snapshots exist once the tenant was seeded with the Tables slice or later.
+    const hasTables = await pool.query('SELECT 1 FROM tbl_object LIMIT 1').then(
+      () => true,
+      () => false,
+    );
+    const tables = hasTables ? new TableService(pool, institutionType === 'bank' ? 'customer' : 'member') : null;
+    const tablesModules = tables ? [tablesModule(tables, today)] : [];
     const growthModules = growth ? [indirectModule(new IndirectService(pool), growth.dealers, today), prospectingModule(new ProspectService(pool), growth.companies, growth.stages, today)] : [];
-    const modules = hasModules ? new ModuleGateway(new ApprovalStore(pool), [...governanceModules, ...growthModulesExtra, calendarModule((ctx) => calendarFor(pool, institutionType, ctx, hasWorkspace), hasWorkspace ? new CalendarStore(pool) : null, colleagues, today), filesModule(files, today), ...growthModules, complianceModule(new IssueService(pool), pool), onboardingModule(new OnboardingService(pool)), dataLogsModule(new DataLogService(pool)), operationsModule(new OperationsService(pool)), callReportModule(new CallReportService(pool)), collectionsModule(new CollectionsService(pool)), campaignModule(new CampaignService(pool)), segModule(new SegService(pool), () => new Date().toISOString().slice(0, 10))]) : null;
+    const modules = hasModules ? new ModuleGateway(new ApprovalStore(pool), [...tablesModules, ...governanceModules, ...growthModulesExtra, calendarModule((ctx) => calendarFor(pool, institutionType, ctx, hasWorkspace), hasWorkspace ? new CalendarStore(pool) : null, colleagues, today), filesModule(files, today), ...growthModules, complianceModule(new IssueService(pool), pool), onboardingModule(new OnboardingService(pool)), dataLogsModule(new DataLogService(pool)), operationsModule(new OperationsService(pool)), callReportModule(new CallReportService(pool)), collectionsModule(new CollectionsService(pool)), campaignModule(new CampaignService(pool)), segModule(new SegService(pool), () => new Date().toISOString().slice(0, 10))]) : null;
     // Goals & Incentives exists once the tenant was seeded with Slice 14 or later.
     const hasGoals = await pool.query('SELECT 1 FROM mod_gi_goal LIMIT 1').then(
       () => true,
@@ -317,7 +331,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     const [staff] = await pool.query('SELECT DISTINCT display_name FROM cdm_employee');
     const dims = semantic.dimensionValues;
     const vocabulary = [...new Set([...(dims.branch ?? []), ...(dims.region ?? []), ...(dims.loan_category ?? []), ...(dims.deposit_category ?? []), ...(staff as { display_name: string }[]).map((s) => s.display_name).filter((s) => !/^\w\. /.test(s))])];
-    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, governance, files, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules } });
+    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, governance, files, tables, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules } });
   }
   if (!tenants.size) return null;
 
@@ -689,6 +703,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
 
     async table(persona, tableId) {
       const tenant = tenantFor(persona);
+      if (tenant && tableId !== 'loan_accounts') return tablesData(tenant, persona, tableId);
       if (!tenant || tableId !== 'loan_accounts') return null;
       const purview = PERSONAS[persona].purview;
       const bank = tenant.runtime.institutionType === 'bank';
@@ -722,8 +737,65 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       };
     },
 
+    async tableWorkbench(persona, tableId) {
+      const tenant = tenantFor(persona);
+      return tenant ? tablesWorkbench(tenant, persona, tableId) : null;
+    },
+
     async close() {
       await Promise.all([...tenants.values()].map((t) => t.pool.end()));
     },
+  };
+}
+
+// ---- Tables: curated tables beyond Loan Accounts, saved views, snapshots and the workbench ----------
+
+const tablesWho = (persona: PersonaId) => {
+  const p = PERSONAS[persona];
+  return p.session.apps.includes('tables') && p.modules?.includes('tables') ? { userId: p.session.user.id, ctx: { purviewBranches: p.purview } } : null;
+};
+
+const savedItem = (t: TableService, o: TableObject, userId: string): TableSavedItem => ({ id: `${o.kind === 'View' ? 'view' : 'snapshot'}-${o.objId}`, name: o.name, kind: o.kind === 'View' ? 'Saved view' : 'Snapshot', table: t.catalog.find((c) => c.id === o.tableId)?.label ?? o.tableId, rows: o.kind === 'View' ? 'Runs when opened' : o.rowCount.toLocaleString('en-US'), owner: o.ownerName, shared: !o.sharedClass ? 'Only you' : o.sharedClass === 'Everyone' ? 'Everyone' : `${o.sharedClass} class`, made: o.createdOn, mine: o.ownerUserId === userId });
+
+/** A curated table other than Loan Accounts, or a saved view or snapshot ("view-12"), under the person's purview. */
+async function tablesData(tenant: Tenant, persona: PersonaId, tableId: string): Promise<TableData | null> {
+  const who = tablesWho(persona);
+  const t = tenant.tables;
+  if (!who || !t) return null;
+  const asOf = tenant.runtime.semantic?.build.completedAt;
+  const freshnessAsOf = asOf ? `${asOf}-04:00` : new Date().toISOString();
+  const saved = /^(view|snapshot)-(\d+)$/.exec(tableId);
+  const data = saved ? await t.objectRows(who.userId, Number(saved[2]), who.ctx) : t.catalog.some((c) => c.id === tableId) ? await t.rows(tableId, who.ctx) : null;
+  if (!data) return null;
+  return { tableId, label: data.label, columns: data.columns, rows: data.rows, rowCount: data.rowCount, freshnessAsOf };
+}
+
+async function tablesWorkbench(tenant: Tenant, persona: PersonaId, tableId: string): Promise<TableWorkbench | null> {
+  const who = tablesWho(persona);
+  const t = tenant.tables;
+  if (!who || !t) return null;
+  const saved = /^(view|snapshot)-(\d+)$/.exec(tableId);
+  const object = saved ? (await t.objects(who.userId)).find((o) => o.objId === Number(saved[2])) : undefined;
+  if (saved && !object) return null;
+  const base = t.catalog.find((c) => c.id === (object?.tableId ?? tableId));
+  if (!base) return null;
+  const st = object ? null : await t.stats(base.id, who.ctx);
+  const items = (await t.objects(who.userId, { tableId: base.id })).map((o) => savedItem(t, o, who.userId));
+  const links = t.relationships(base.id);
+  const mine = items.filter((i) => i.mine);
+  const target = object ? savedItem(t, object, who.userId) : mine[0];
+  return {
+    tableId,
+    label: object?.name ?? base.label,
+    stats: st ? columnStatRows(st.columns) : [],
+    personal: base.personal,
+    relationships: links,
+    saved: items,
+    actions: [
+      { label: 'Column stats', ask: `Profile the ${base.label} table` },
+      { label: 'Snapshot', ask: `Snapshot the ${base.label} table` },
+      links[0] ? { label: 'Merge…', ask: `Merge ${base.label} with ${links[0].table} on ${links[0].key} as a saved view called ${base.label} with ${links[0].table}` } : { label: 'Merge…', ask: null, why: 'No other table links to this one.' },
+      target?.mine ? { label: 'Make public', ask: target.kind === 'Snapshot' ? `Make ${target.name} public` : `Make the ${target.name} view public` } : { label: 'Make public', ask: null, why: 'Save a view or snapshot of your own first.' },
+    ],
   };
 }

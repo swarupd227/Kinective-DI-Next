@@ -5,6 +5,7 @@
 // single SELECT over curated tables, on the read-only account, and every limit is enforced here.
 import type { Pool } from '@dinext/tenant-db';
 import { CoreError } from './referrals.ts';
+import { describeRule, occurrences, parseRule, ruleJson, type Recurrence } from './recurrence.ts';
 
 const rows = async <T>(pool: Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
 
@@ -43,7 +44,7 @@ export class CalendarService {
     const empty = { asOf: '', items: [] };
     const [touch, issues, certificates, meetings] = await Promise.all([input.canUse('onboarding') ? this.sources.onboarding.list({ employeeId: input.employeeId, withinDays: 45 }, ctx) : empty, input.canUse('compliance') ? this.sources.issues.list({}, ctx) : { items: [] }, input.canUse('retention') ? this.sources.retention.maturing({ days: 45 }, ctx) : { items: [] }, input.userId && this.sources.meetings ? this.sources.meetings.forUser(input.userId) : []]);
     const events: CalendarEvent[] = [
-      ...meetings.map((m): CalendarEvent => ({ date: m.startsAt.slice(0, 10), kind: 'Event', title: `${clock(m.startsAt.slice(11))} ${m.title}`, detail: [m.ownerUserId === input.userId ? (m.withWhom ? `With ${m.withWhom}` : 'Your calendar') : `From ${m.ownerName}`, m.source].filter(Boolean).join(' · '), late: false, ask: 'What’s on my calendar this week?' })),
+      ...meetings.map((m): CalendarEvent => ({ date: m.startsAt.slice(0, 10), kind: 'Event', title: `${clock(m.startsAt.slice(11))} ${m.title}`, detail: [m.ownerUserId === input.userId ? (m.withWhom ? `With ${m.withWhom}` : 'Your calendar') : `From ${m.ownerName}`, m.source, m.rule].filter(Boolean).join(' · '), late: false, ask: 'What’s on my calendar this week?' })),
       ...touch.items.map((t): CalendarEvent => ({ date: t.due, kind: 'Touch point', title: `${t.member}: ${t.touch.toLowerCase()}`, detail: `${t.branch}, ${t.assignee ?? 'branch queue'}`, late: t.daysLate > 0, ask: 'Show my overdue onboarding touch points' })),
       ...issues.items.map((i): CalendarEvent => ({ date: i.resolveBy, kind: 'Issue due', title: `Issue #${i.issueId}: ${i.category}`, detail: `${i.member}, ${i.branch}`, late: i.overdue, ask: `Show issue #${i.issueId}` })),
     ];
@@ -71,6 +72,12 @@ export interface Meeting {
   withUserId: string | null;
   source: string | null;
   link: string | null;
+  /** A repeating event: the rule in words, such as "Every Monday". Each date is its own entry. */
+  rule?: string;
+  /** For one date of a series, the day it falls on by the rule, even once it's moved. */
+  occursOn?: string;
+  /** That date was moved off the series' usual time. */
+  moved?: boolean;
 }
 
 /** "14:00" as "2 pm", "09:30" as "9:30 am". */
@@ -81,6 +88,8 @@ export function clock(hhmm: string) {
 
 const MEETING_COLUMNS = "event_id, owner_user_id, owner_name, title, DATE_FORMAT(starts_at, '%Y-%m-%d %H:%i') AS starts_at, DATE_FORMAT(ends_at, '%Y-%m-%d %H:%i') AS ends_at, with_whom, with_user_id, source, link";
 const toMeeting = (r: Record<string, unknown>): Meeting => ({ eventId: r.event_id as number, ownerUserId: r.owner_user_id as string, ownerName: r.owner_name as string, title: r.title as string, startsAt: r.starts_at as string, endsAt: r.ends_at as string, withWhom: (r.with_whom as string | null) ?? null, withUserId: (r.with_user_id as string | null) ?? null, source: (r.source as string | null) ?? null, link: (r.link as string | null) ?? null });
+const msApart = (a: string, b: string) => Date.parse(`${b.replace(' ', 'T')}:00Z`) - Date.parse(`${a.replace(' ', 'T')}:00Z`);
+const laterBy = (startsAt: string, ms: number) => new Date(Date.parse(`${startsAt.replace(' ', 'T')}:00Z`) + ms).toISOString().slice(0, 16).replace('T', ' ');
 const eventWords = (t: string) => t.toLowerCase().replace(/[-–—:]/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !['the', 'and', 'with', 'for', 'about', 'event', 'meeting', 'appointment'].includes(w));
 
 /** Events people put on their calendar. Someone else's reads as not found, unless they're invited to it. */
@@ -89,7 +98,37 @@ export class CalendarStore {
 
   /** What a person sees: their own scheduled events and the ones they're invited to. */
   async forUser(userId: string) {
-    return (await rows<Record<string, unknown>>(this.pool, `SELECT ${MEETING_COLUMNS} FROM cal_event WHERE status = 'Scheduled' AND (owner_user_id = ? OR with_user_id = ?) ORDER BY starts_at`, [userId, userId])).map(toMeeting);
+    const base = (await rows<Record<string, unknown>>(this.pool, `SELECT ${MEETING_COLUMNS} FROM cal_event WHERE status = 'Scheduled' AND (owner_user_id = ? OR with_user_id = ?) ORDER BY starts_at`, [userId, userId])).map(toMeeting);
+    return this.expand(base);
+  }
+
+  /** Each repeating event as its dates, less the ones cancelled, with any moved date at its new time. */
+  private async expand(base: Meeting[]) {
+    if (!base.length) return base;
+    const ids = base.map((m) => m.eventId);
+    // A tenant seeded before repeating events has no series tables; its events are all one-offs.
+    const series = await rows<{ event_id: number; rule: string }>(this.pool, 'SELECT event_id, rule FROM cal_series WHERE event_id IN (?)', [ids]).catch(() => []);
+    if (!series.length) return base;
+    const exceptions = await rows<{ event_id: number; occurs_on: string; status: string; starts_at: string | null; ends_at: string | null }>(this.pool, "SELECT event_id, DATE_FORMAT(occurs_on, '%Y-%m-%d') AS occurs_on, status, DATE_FORMAT(starts_at, '%Y-%m-%d %H:%i') AS starts_at, DATE_FORMAT(ends_at, '%Y-%m-%d %H:%i') AS ends_at FROM cal_occurrence WHERE event_id IN (?)", [series.map((x) => x.event_id)]).catch(() => []);
+    const rules = new Map(series.map((x) => [x.event_id, parseRule(x.rule)]));
+    const out: Meeting[] = [];
+    for (const m of base) {
+      const rule = rules.get(m.eventId);
+      if (!rule) {
+        out.push(m);
+        continue;
+      }
+      const length = msApart(m.startsAt, m.endsAt);
+      const time = m.startsAt.slice(11);
+      for (const d of occurrences(rule, m.startsAt.slice(0, 10))) {
+        const x = exceptions.find((e) => e.event_id === m.eventId && e.occurs_on === d);
+        if (x?.status === 'Cancelled') continue;
+        const startsAt = x?.status === 'Moved' && x.starts_at ? x.starts_at : `${d} ${time}`;
+        const endsAt = x?.status === 'Moved' && x.ends_at ? x.ends_at : laterBy(startsAt, length);
+        out.push({ ...m, startsAt, endsAt, rule: describeRule(rule), occursOn: d, ...(x?.status === 'Moved' ? { moved: true } : {}) });
+      }
+    }
+    return out.sort((a, b) => a.startsAt.localeCompare(b.startsAt) || a.eventId - b.eventId);
   }
 
   /** One of the person's own scheduled events, by words in it and optionally its day or time. */
@@ -103,12 +142,28 @@ export class CalendarStore {
     const upcoming = mine.filter((m) => m.startsAt.slice(0, 10) >= q.today);
     const hits = upcoming.length ? upcoming : mine;
     if (!hits.length) throw new CoreError('NOT_FOUND', `You have no scheduled event matching “${q.text}”.`);
-    if (hits.length > 1) throw new CoreError('INVALID', `${hits.length} of your events match: ${hits.slice(0, 4).map((m) => `${m.title} on ${m.startsAt.slice(0, 10)} at ${clock(m.startsAt.slice(11))}`).join('; ')}. Which one?`);
+    // The dates of one series are one event: the next of them, or the one on the day named.
+    if (new Set(hits.map((m) => m.eventId)).size > 1) throw new CoreError('INVALID', `${hits.length} of your events match: ${hits.slice(0, 4).map((m) => `${m.title} on ${m.startsAt.slice(0, 10)} at ${clock(m.startsAt.slice(11))}`).join('; ')}. Which one?`);
     return hits[0]!;
   }
 
-  async create(p: { owner: { userId: string; name: string }; title: string; startsAt: string; endsAt: string; withWhom: string | null; withUserId: string | null; source: string | null; link: string | null }, meta: { approvalId: string; on: string }) {
+  async create(p: { owner: { userId: string; name: string }; title: string; startsAt: string; endsAt: string; withWhom: string | null; withUserId: string | null; source: string | null; link: string | null; rule?: Recurrence | null }, meta: { approvalId: string; on: string }) {
     await this.pool.query("INSERT IGNORE INTO cal_event (owner_user_id, owner_name, title, starts_at, ends_at, with_whom, with_user_id, source, link, status, created_at, approval_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Scheduled', ?, ?)", [p.owner.userId, p.owner.name, p.title.slice(0, 160), `${p.startsAt}:00`, `${p.endsAt}:00`, p.withWhom, p.withUserId, p.source, p.link, meta.on, meta.approvalId]);
+    if (!p.rule) return;
+    // The series hangs on the event this approval made, so a second apply finds it there already.
+    const [made] = await rows<{ event_id: number }>(this.pool, 'SELECT event_id FROM cal_event WHERE approval_id = ?', [meta.approvalId]);
+    if (made) await this.pool.query('INSERT IGNORE INTO cal_series (event_id, rule, first_date, approval_id) VALUES (?, ?, ?, ?)', [made.event_id, ruleJson(p.rule), p.startsAt.slice(0, 10), meta.approvalId]);
+  }
+
+  /** Cancels one date of a series; the rest go ahead. Applying it again changes nothing. */
+  async cancelOccurrence(p: { eventId: number; occursOn: string }, meta: { approvalId: string }) {
+    await this.pool.query("INSERT INTO cal_occurrence (event_id, occurs_on, status, approval_id) VALUES (?, ?, 'Cancelled', ?) ON DUPLICATE KEY UPDATE status = 'Cancelled', starts_at = NULL, ends_at = NULL", [p.eventId, p.occursOn, meta.approvalId]);
+  }
+
+  /** Moves one date of a series, only from the time the card showed, so a second apply changes nothing. */
+  async moveOccurrence(p: { eventId: number; occursOn: string; from: string; original: boolean; startsAt: string; endsAt: string }, meta: { approvalId: string }) {
+    if (p.original) await this.pool.query("INSERT IGNORE INTO cal_occurrence (event_id, occurs_on, status, starts_at, ends_at, approval_id) VALUES (?, ?, 'Moved', ?, ?, ?)", [p.eventId, p.occursOn, `${p.startsAt}:00`, `${p.endsAt}:00`, meta.approvalId]);
+    else await this.pool.query("UPDATE cal_occurrence SET starts_at = ?, ends_at = ?, approval_id = ? WHERE event_id = ? AND occurs_on = ? AND status = 'Moved' AND starts_at = ?", [`${p.startsAt}:00`, `${p.endsAt}:00`, meta.approvalId, p.eventId, p.occursOn, `${p.from}:00`]);
   }
 
   /** Moves only from the time the card showed, so a second apply changes nothing. */
@@ -224,9 +279,9 @@ export class FileStore {
   constructor(private readonly pool: Pool) {}
 
   /** Saved files in the folders this person can see; My Files only their own. */
-  private visible(userId: string, folders: string[]) {
+  private visible(userId: string, folders: string[], status: 'Saved' | 'Recycle Bin' = 'Saved') {
     const shared = folders.filter((f) => f !== MY_FILES);
-    return { sql: `status = 'Saved' AND ((folder = ? AND owner_user_id = ? AND ?) OR folder IN (?))`, params: [MY_FILES, userId, folders.includes(MY_FILES), shared.length ? shared : ['']] };
+    return { sql: `status = '${status}' AND ((folder = ? AND owner_user_id = ? AND ?) OR folder IN (?))`, params: [MY_FILES, userId, folders.includes(MY_FILES), shared.length ? shared : ['']] };
   }
 
   /** Keeps an upload as Staged. It isn't in any folder until a save is approved. */
@@ -282,6 +337,26 @@ export class FileStore {
   /** To the Recycle Bin, keeping the folder it came from. Nothing is ever hard deleted. */
   async recycle(p: { fileId: number; from: string }) {
     await this.pool.query("UPDATE fil_file SET status = 'Recycle Bin', previous_folder = folder WHERE file_id = ? AND folder = ? AND status = 'Saved'", [p.fileId, p.from]);
+  }
+
+  /** The Recycle Bin: deleted files from the folders this person can see, My Files only their own. */
+  async binned(userId: string, folders: string[]) {
+    const v = this.visible(userId, folders, 'Recycle Bin');
+    return (await rows<Record<string, unknown>>(this.pool, `SELECT ${FILE_COLUMNS} FROM fil_file WHERE ${v.sql} ORDER BY modified DESC, file_id DESC`, v.params)).map(toFile);
+  }
+
+  /** One file in the Recycle Bin this person can see. A file from a folder they can't see reads as not found. */
+  async binnedOne(userId: string, folders: string[], name: string) {
+    const words = searchWords(name.replace(/\.[a-z0-9]+$/i, ''));
+    const hits = (await this.binned(userId, folders)).filter((f) => words.length > 0 && words.every((w) => f.name.toLowerCase().includes(w)));
+    if (hits.length > 1) throw new CoreError('INVALID', `${hits.length} files in the Recycle Bin match: ${hits.slice(0, 4).map((f) => `${f.name} from ${f.folder}`).join('; ')}. Which one?`);
+    if (!hits[0]) throw new CoreError('NOT_FOUND', `There’s no file called “${name}” in your Recycle Bin. Files from folders outside your access don’t show.`);
+    return hits[0];
+  }
+
+  /** Back to the folder it was deleted from. Only from the Recycle Bin, so a second apply changes nothing. */
+  async restore(p: { fileId: number; to: string }, meta: { on: string }) {
+    await this.pool.query("UPDATE fil_file SET status = 'Saved', modified = ? WHERE file_id = ? AND folder = ? AND status = 'Recycle Bin'", [meta.on, p.fileId, p.to]);
   }
 
   /** The bytes of an upload this person can see; null for anything else. */

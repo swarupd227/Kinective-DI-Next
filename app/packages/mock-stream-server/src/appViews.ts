@@ -4,6 +4,7 @@
 import type { AppTile, AppView, AppViewId, Block, TableBlock } from '@dinext/block-schemas';
 import { WorkflowDefService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
+import { TableService } from '@dinext/di-core';
 
 type ColumnSpec = TableBlock['data']['columns'][number];
 
@@ -64,6 +65,8 @@ export function createAppViews(deps: ViewDeps) {
       // Only the folders this person can see; a file anywhere else isn't listed or counted.
       const folders = foldersFor(deps.modules);
       const uploads = deps.workspace ? await new FileStore(pool).list(deps.user.id, folders) : [];
+      // The Recycle Bin: deleted uploads from the same folders, each one restored by asking DI.
+      const bin = deps.workspace ? await new FileStore(pool).binned(deps.user.id, folders) : [];
       const all = [...uploads, ...FILE_LIBRARY.filter((f) => folders.includes(f.folder))].sort((a, b) => b.modified.localeCompare(a.modified));
       const newest = all[0];
       return {
@@ -71,11 +74,32 @@ export function createAppViews(deps: ViewDeps) {
         lede: 'Documents your institution keeps in DI, in the folders you can see.',
         take: { headline: newest ? `${count(all.length, 'file')} in ${count(folders.length, 'folder')}. The newest is ${newest.name}.` : 'There are no files in your folders yet.', action: { label: 'Find a document', ask: 'Find the dealer agreement for Smith Ford' } },
         tiles: [{ label: 'Files', value: String(all.length) }, { label: 'Uploaded', value: String(uploads.length) }, { label: 'Total size', value: `${(all.reduce((n, f) => n + f.sizeKb, 0) / 1024).toFixed(1)} MB` }],
-        prompts: ['Find the dealer agreement for Smith Ford', 'Who can see the Board Packs folder?'],
+        prompts: ['Find the dealer agreement for Smith Ford', 'Who can see the Board Packs folder?', ...bin.slice(0, 3).map((f) => `Restore ${f.name}`)],
         notice: deps.workspace ? 'Uploads aren’t virus scanned: scanning isn’t available yet. Only open files from people you trust. Sample documents are names only, with no content to download.' : 'Uploading isn’t set up in this environment. These are sample documents with no content.',
         files: all.map((f) => ({ name: f.name, folder: f.folder, type: f.type, sizeKb: f.sizeKb, owner: f.owner, modified: f.modified, ...(f.fileId ? { download: `/v1/files/${f.fileId}/content` } : {}) })),
         folders: deps.workspace ? folders : [],
-        blocks: [table('Folders', 'files.folders', [text('folder', 'Folder'), { field: 'files', headerName: 'Files', type: 'count' }, text('access', 'Who can see it')], folders.map((folder) => ({ folder, files: all.filter((f) => f.folder === folder).length, access: FILE_FOLDERS[folder]! })))],
+        blocks: [table('Folders', 'files.folders', [text('folder', 'Folder'), { field: 'files', headerName: 'Files', type: 'count' }, text('access', 'Who can see it')], folders.map((folder) => ({ folder, files: all.filter((f) => f.folder === folder).length, access: FILE_FOLDERS[folder]! }))), ...(bin.length ? [table(`Recycle Bin (${bin.length})`, 'files.bin', [text('name', 'Name'), text('folder', 'Deleted from'), text('owner', 'Owner')], bin.map((f) => ({ name: f.name, folder: f.folder, owner: f.owner })))] : [])],
+      };
+    },
+    async tables() {
+      // Saved views and snapshots this person can open, and their own Recycle Bin. A tenant seeded
+      // before the Tables slice has neither, so both read as empty.
+      const svc = new TableService(pool, deps.person);
+      const [saved, bin] = await Promise.all([svc.objects(deps.user.id).catch(() => []), svc.objects(deps.user.id, { status: 'Recycle Bin' }).catch(() => [])]);
+      const label = (id: string) => svc.catalog.find((c) => c.id === id)?.label ?? id;
+      const shared = (cls: string | null) => (!cls ? 'Only you' : cls === 'Everyone' ? 'Everyone' : `${cls} class`);
+      const row = (o: (typeof saved)[number]) => ({ name: o.name, kind: o.kind === 'View' ? 'Saved view' : 'Snapshot', table: label(o.tableId), rows: o.kind === 'View' ? 'Runs when opened' : o.rowCount.toLocaleString('en-US'), owner: o.ownerName, shared: shared(o.sharedClass), made: o.recycledOn ?? o.createdOn });
+      const columns = [text('name', 'Name'), text('kind', 'Kind'), text('table', 'Table'), text('rows', 'Rows'), text('owner', 'Owner'), text('shared', 'Who can see it')];
+      const views = saved.filter((o) => o.kind === 'View').length;
+      return {
+        title: 'Tables',
+        lede: 'Curated tables from the nightly build, and the saved views and snapshots made from them.',
+        take: { headline: saved.length ? `${count(saved.length, 'saved view or snapshot', 'saved views and snapshots')} you can open${bin.length ? `, and ${count(bin.length, 'item')} in your Recycle Bin` : ''}.` : 'No saved views or snapshots yet. Ask DI to snapshot a table, or merge two into a saved view.', action: { label: 'Profile Loan Accounts', ask: 'Profile the Loan Accounts table' } },
+        tiles: [{ label: 'Curated tables', value: String(svc.catalog.length) }, { label: 'Saved views', value: String(views) }, { label: 'Snapshots', value: String(saved.length - views) }, { label: 'Recycle Bin', value: String(bin.length) }],
+        prompts: ['Which tables link to Loan Accounts?', 'Snapshot the Loan Accounts table', 'Show my saved views and snapshots', ...bin.slice(0, 3).map((o) => (o.kind === 'View' ? `Restore the ${o.name} view` : `Restore ${o.name}`))],
+        notice: 'Rows come from the core system in each nightly build, so they can’t be added or edited here. Records change through workflows and the core system. Comparing two snapshots isn’t built yet.',
+        links: saved.map((o) => ({ label: `Open ${o.name}`, to: `/tables/${o.kind === 'View' ? 'view' : 'snapshot'}-${o.objId}` })),
+        blocks: [...(saved.length ? [table('Saved views and snapshots', 'tables.objects', columns, saved.map(row))] : []), ...(bin.length ? [table(`Recycle Bin (${bin.length})`, 'tables.bin', [...columns.slice(0, 3), text('made', 'Deleted on')], bin.map(row))] : [])],
       };
     },
     async queries() {

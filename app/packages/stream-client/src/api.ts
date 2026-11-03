@@ -22,6 +22,7 @@ import type {
   SendMessageRequest,
   Session,
   TableData,
+  TableWorkbench,
   ThreadSummary,
 } from '@dinext/block-schemas';
 
@@ -136,6 +137,7 @@ export function createApiClient({ baseUrl, token }: ApiClientOptions) {
     },
     feedback: (f: { runId: string; rating: 'up' | 'down'; comment?: string }) => send<void>('POST', '/v1/feedback', f),
     table: (tableId: string) => get<TableData>(`/v1/tables/${encodeURIComponent(tableId)}`),
+    tableWorkbench: (tableId: string) => get<TableWorkbench>(`/v1/tables/${encodeURIComponent(tableId)}/workbench`),
 
     async stepUp(): Promise<string | null> {
       const res = await fetch(`${baseUrl}/v1/auth/step-up`, { method: 'POST', headers: headers() });

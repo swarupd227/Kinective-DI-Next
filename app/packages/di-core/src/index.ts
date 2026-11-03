@@ -3,6 +3,8 @@ export { WorkflowDefService, splitFields, type Definition, type Problem } from '
 export { TaskService, type Person, type TaskItem } from './tasks.ts';
 export { IndirectService, ProspectService, directionsLink, miles, visitOrder, type DealerFigures, type Prospect } from './growth.ts';
 export { CalendarService, CalendarStore, FileStore, FILE_FOLDERS, FILE_LIBRARY, MAX_UPLOAD_BYTES, MY_FILES, QueryService, SAVED_QUERIES, UPLOAD_EXTENSIONS, checkUpload, clock, findFiles, folderNamed, foldersFor, type CalendarEvent, type LibraryFile, type Meeting, type QueryResult, type SavedQuery } from './workspace.ts';
+export { DEFAULT_OCCURRENCES, MAX_OCCURRENCES, dayInMonth, describeEnd, describeRule, firstOccurrence, occurrences, ordinal, spokenDate, type Recurrence } from './recurrence.ts';
+export { SHARE_TARGETS, SNAPSHOT_ROW_CAP, TableService, VIEW_ROW_CAP, keyNamed, shareTargetNamed, tableCatalog, tableNamed, type CatalogTable, type ColumnStat, type MergeDefinition, type TableObject, type TableRelationship, type TableRows } from './tables.ts';
 export { GovernanceService, LineageService, LINEAGE_CATALOG, type CatalogEntry, type LineageModel, type LineageNode, type RunEntry, type UsageGroup } from './governance.ts';
 export { CallReportService, CampaignService, CollectionsService, OperationsService, SegService, CAPABILITIES, SEG_STAGES, USER_CLASSES, type DirectoryUser, type SegCompany, type WatchedLoan } from './modules2.ts';
 export { DataLogService, IssueService, OnboardingService, findPerson, ISSUE_REGULATORS, ISSUE_ROOT_CAUSES, type DataLog, type Issue, type IssueDetail, type IssueFilter, type TouchPoint } from './modules.ts';
