@@ -501,7 +501,7 @@ export function ConversationBar({ threadId, collapsedByDefault, hero = false }: 
           </div>
         )}
         <div className={styles.inputRow}>
-          <IconButton label="Attach a file (coming with file upload)" icon={<Paperclip size={18} aria-hidden />} disabled />
+          <IconButton label="Attach a file (for now, upload from the Files page)" icon={<Paperclip size={18} aria-hidden />} disabled />
           <label htmlFor="conversation-input" className="dn-visually-hidden">
             Ask DI
           </label>

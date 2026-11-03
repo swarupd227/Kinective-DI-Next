@@ -316,7 +316,8 @@ export function buildBlock(spec: BlockSpec, results: Map<string, SemanticResult>
     const rows = select(result, spec.where);
     const value = aggregate(rows, spec.metric, col.format, 'sum');
     let comparison: KpiBlock['data']['comparison'];
-    if (spec.compare_to) {
+    // An empty compare_to has nothing to compare with, so it shows no "0.0% vs" line.
+    if (spec.compare_to && Object.keys(spec.compare_to).length) {
       const before = aggregate(select(result, spec.compare_to), spec.metric, col.format, 'sum');
       const pct = isPercent(col.format);
       const change = pct ? (value - before) * 100 : before ? ((value - before) / Math.abs(before)) * 100 : 0;

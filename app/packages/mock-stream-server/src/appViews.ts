@@ -22,6 +22,8 @@ export interface ViewDeps {
 }
 
 const usd = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+// "26 Oct 2026", the same as the freshness line under every block, never a raw "2026-10-26".
+const day = (iso: string) => (/^\d{4}-\d{2}-\d{2}/.test(iso) ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${iso.slice(0, 10)}T00:00:00Z`)) : iso);
 const count = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
 const text = (field: string, headerName: string): ColumnSpec => ({ field, headerName, type: 'text' });
 
@@ -50,8 +52,8 @@ export function createAppViews(deps: ViewDeps) {
       const next = overdue[0] ?? week[0];
       return {
         title: 'Calendar',
-        lede: `Your events, and dated work from your modules as of the last build on ${today}. Ask DI to add, move or cancel an event.`,
-        take: { headline: overdue.length ? `${count(overdue.length, 'item')} overdue. Start with ${next?.title}.` : next ? `Next up: ${next.title}, on ${next.date}.` : 'Nothing is scheduled in the next few weeks.', action: { label: 'What’s due this week?', ask: 'What’s due this week?' } },
+        lede: `Your events, and dated work from your modules as of the last build on ${day(today)}. Ask DI to add, move or cancel an event.`,
+        take: { headline: overdue.length ? `${count(overdue.length, 'item')} overdue. Start with ${next?.title}.` : next ? `Next up: ${next.title}, on ${day(next.date)}.` : 'Nothing is scheduled in the next few weeks.', action: { label: 'What’s due this week?', ask: 'What’s due this week?' } },
         tiles: [{ label: 'Overdue', value: String(overdue.length), tone: overdue.length ? 'danger' : 'neutral' }, { label: 'Today', value: String(items.filter((e) => e.date === today).length) }, { label: 'Next 7 days', value: String(week.length) }],
         prompts: ['What’s due this week?', 'Show the calendar for the next two weeks', 'Schedule a follow-up with Suzanne Jackson next Tuesday at 2 pm about the HELOC referral'],
         notice: 'Events live in DI only. Syncing with Outlook or Google Calendar isn’t built.',
@@ -111,7 +113,7 @@ export function createAppViews(deps: ViewDeps) {
       const usage = governance && month ? await governance.usage(month, 'agent') : null;
       return {
         title: 'Admin',
-        lede: `Platform health. Data as of ${build.asOf}.`,
+        lede: `Platform health. Data as of ${day(build.asOf)}.`,
         take: { headline: `Last night’s build ${build.state}. ${checks.failed ? `${count(checks.failed, 'check')} failed` : 'All checks passed'}${late.length ? `, and ${late[0]!.source} arrived late` : ''}.`, action: { label: 'Which checks failed?', ask: 'Which checks failed?' } },
         tiles: [{ label: 'Build', value: build.state }, { label: 'Checks failed', value: `${checks.failed} of ${checks.total}`, tone: checks.failed ? 'danger' : 'neutral' }, { label: 'Late uploads', value: String(late.length), tone: late.length ? 'warning' : 'neutral' }, ...(usage ? [{ label: 'AI cost', value: `$${usage.totals.cost.toFixed(2)}`, detail: month! } satisfies AppTile] : [])],
         prompts: ['Which checks failed?', 'Show AI cost by agent for October', 'Show the negative feedback'],
@@ -225,7 +227,7 @@ export function createAppViews(deps: ViewDeps) {
       const first = open.items.find((t) => t.daysLate > 0) ?? open.items[0];
       return {
         title: 'Onboarding Manager',
-        lede: `New ${deps.person}s’ touch points, as of the last build on ${open.asOf}. Seven days late counts as missed.`,
+        lede: `New ${deps.person}s’ touch points, as of the last build on ${day(open.asOf)}. Seven days late counts as missed.`,
         take: { headline: open.overdue ? `${count(open.overdue, 'touch point')} overdue, ${open.missed} missed. Start with ${first?.member}, ${first?.touch.toLowerCase()}.` : 'No touch points are overdue.', action: { label: 'Show what’s overdue', ask: 'Show my overdue onboarding touch points' } },
         tiles: [{ label: 'Open, next two weeks', value: String(open.count) }, { label: 'Overdue', value: String(open.overdue), tone: open.overdue ? 'danger' : 'neutral' }, { label: 'Missed', value: String(open.missed), tone: open.missed ? 'danger' : 'neutral' }, { label: 'No direct deposit after 30 days', value: String(noDd.items.length), tone: noDd.items.length ? 'warning' : 'neutral' }],
         prompts: ['Show my overdue onboarding touch points', 'Which new members haven’t set up direct deposit after 30 days?'],
@@ -238,11 +240,11 @@ export function createAppViews(deps: ViewDeps) {
       const overdue = all.items.filter((i) => i.overdue);
       return {
         title: 'Compliance',
-        lede: `Open issues and complaints, as of ${all.asOf}. Regulatory issues must be resolved in 15 days, others in 30.`,
+        lede: `Open issues and complaints, as of ${day(all.asOf)}. Regulatory issues must be resolved in 15 days, others in 30.`,
         take: { headline: overdue.length ? `${count(overdue.length, 'issue')} past their resolve-by date, ${overdue.filter((i) => i.kind === 'regulatory').length} regulatory. The oldest is ${all.oldestDays} days.` : `${count(all.count, 'issue')} open, none overdue.`, action: { label: 'Show regulatory issues', ask: 'Which regulatory issues are open more than 3 weeks?' } },
         tiles: [{ label: 'Open', value: String(all.count) }, { label: 'Regulatory', value: String(regulatory.length) }, { label: 'Past due', value: String(overdue.length), tone: overdue.length ? 'danger' : 'neutral' }, { label: 'Oldest', value: `${all.oldestDays} days` }],
         prompts: ['Which regulatory issues are open more than 3 weeks?', 'Show the past-due compliance issues'],
-        blocks: [table('Open issues', 'cpm.issue.list', [{ field: 'id', headerName: 'Issue', type: 'number' }, text('kind', 'Kind'), text('source', 'Source'), text('category', 'Category'), text('member', 'Member'), { field: 'age', headerName: 'Age (days)', type: 'number' }, text('due', 'Resolve by'), text('owner', 'Owner'), text('branch', 'Branch')], all.items.slice(0, 100).map((i) => ({ id: i.issueId, kind: i.kind === 'regulatory' ? 'Regulatory' : 'Customer', source: i.source, category: i.category, member: `${i.member} (…${i.last4})`, age: i.ageDays, due: `${i.resolveBy}${i.overdue ? ', overdue' : ''}`, owner: i.owner ?? 'Unassigned', branch: i.branch })))],
+        blocks: [table('Open issues', 'cpm.issue.list', [text('id', 'Issue'), text('kind', 'Kind'), text('source', 'Source'), text('category', 'Category'), text('member', 'Member'), { field: 'age', headerName: 'Age (days)', type: 'number' }, text('due', 'Resolve by'), text('owner', 'Owner'), text('branch', 'Branch')], all.items.slice(0, 100).map((i) => ({ id: `#${i.issueId}`, kind: i.kind === 'regulatory' ? 'Regulatory' : 'Customer', source: i.source, category: i.category, member: `${i.member} (…${i.last4})`, age: i.ageDays, due: `${day(i.resolveBy)}${i.overdue ? ', overdue' : ''}`, owner: i.owner ?? 'Unassigned', branch: i.branch })))],
       };
     },
     async predictive() {
@@ -282,7 +284,7 @@ export function createAppViews(deps: ViewDeps) {
       const first = m.items[0];
       return {
         title: 'Tasks',
-        lede: `Everything open for you, from every source, as of ${m.asOf}.`,
+        lede: `Everything open for you, from every source, as of ${day(m.asOf)}.`,
         take: { headline: m.items.length ? `${count(m.items.length, 'item')} open${m.late ? `, ${m.late} past due` : ''}. ${first ? `First: ${first.title}.` : ''}` : 'You have nothing open.', action: { label: 'Add a task', ask: 'Create a task to ' } },
         tiles: [...m.bySource.map((s) => ({ label: s.source, value: String(s.count) })), { label: 'Past due', value: String(m.late), tone: m.late ? ('danger' as const) : ('neutral' as const) }, ...(time?.month ? [{ label: `Hours, ${new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(new Date(`${time.month}-15T00:00:00Z`))}`, value: String(time.total) } satisfies AppTile] : [])],
         prompts: ['What are my tasks today?', ...(time ? ['Show my hours this month'] : [])],
@@ -294,7 +296,7 @@ export function createAppViews(deps: ViewDeps) {
       const late = build.uploads.filter((u) => u.late);
       return {
         title: 'Integrations',
-        lede: `Where the data comes from, and how last night’s loads went. Data as of ${build.asOf}.`,
+        lede: `Where the data comes from, and how last night’s loads went. Data as of ${day(build.asOf)}.`,
         take: { headline: late.length ? `${count(late.length, 'source')} arrived late: ${late.map((u) => `${u.source}, due ${u.dueBy}, arrived ${u.arrived}`).join('; ')}. The build ${build.state} with what was there.` : `Every source arrived on time, and the build ${build.state}.`, action: { label: 'Which uploaders were late?', ask: 'Which uploaders missed their late-file time?' } },
         tiles: [{ label: 'Sources', value: String(build.uploads.length) }, { label: 'Late', value: String(late.length), tone: late.length ? 'warning' : 'neutral' }, { label: 'Last build', value: build.state }],
         prompts: ['Which uploaders missed their late-file time?', 'Did last night’s build finish?'],
