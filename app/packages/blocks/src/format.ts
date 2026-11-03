@@ -49,12 +49,19 @@ export function formatValue(value: number | null | undefined, unit: ValueUnit | 
   }
 }
 
+/** Decimals that keep a chart's rates distinct: about five ticks across the range, one to three places. */
+export function rateDecimals(values: number[]) {
+  const span = values.length ? Math.max(...values) - Math.min(...values) : 0;
+  return span > 0 ? Math.min(3, Math.max(1, Math.ceil(-Math.log10(span / 5)))) : 1;
+}
+
 /** Axis labels: always compact so ticks stay short. */
-export const formatAxis = (value: number, unit: ValueUnit | undefined) => {
+export const formatAxis = (value: number, unit: ValueUnit | undefined, decimals?: number) => {
   // Balances sit in narrow ranges too ($1.21B-$1.24B), so ticks keep up to two decimals.
   if (unit === 'currency') return new Intl.NumberFormat(locale(), { style: 'currency', currency: 'USD', notation: 'compact', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(value);
-  // Rates sit in narrow ranges (0.39%-0.41%), so ticks keep up to three decimals to stay distinct.
-  if (unit === 'percent') return `${new Intl.NumberFormat(locale(), { maximumFractionDigits: 3 }).format(value)}%`;
+  // Rates sit in narrow ranges (0.39%-0.41%). Given the chart's decimals, every tick shows the same
+  // number of places ("0.70%", not "0.7%" beside "0.72%"); otherwise up to three keep them distinct.
+  if (unit === 'percent') return `${new Intl.NumberFormat(locale(), { minimumFractionDigits: decimals ?? 0, maximumFractionDigits: decimals ?? 3 }).format(value)}%`;
   return unit ? formatValue(value, unit) : String(value);
 };
 

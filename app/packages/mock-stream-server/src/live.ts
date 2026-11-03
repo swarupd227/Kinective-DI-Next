@@ -43,6 +43,8 @@ export interface ReportSummary {
   owner: string;
   updatedAt: string;
   origin?: string;
+  /** On this person's Home: pinned by them or published to their class. */
+  onHome: boolean;
 }
 
 export interface ScheduleSummary {
@@ -99,7 +101,7 @@ export interface LiveRuntime {
    * or refused it; `onDone` fires when any follow-on work (executing the write) has streamed.
    */
   decide(persona: PersonaId, req: { approvalId: string; threadId: string; runId: string; body: ApprovalDecisionRequest }, emit: (e: Emit) => void, onDone: (result: unknown) => void, speed: number): Promise<ApprovalDecisionResult>;
-  home(persona: PersonaId): Promise<{ kpis: KpiGroupBlock; narrative: string; lookAt: ListBlock; scheduled: ListBlock | null; referrals: { open: number; overdue: number } | null } | null>;
+  home(persona: PersonaId): Promise<{ kpis: KpiGroupBlock; narrative: string; lookAt: ListBlock; scheduled: ListBlock | null; pinned: { templateId: string; name: string; audience: string; pinnedBy: string; canvas: ReportCanvasBlock }[]; referrals: { open: number; overdue: number } | null } | null>;
   /**
    * A member's 360 for the workspace or the member page (GET /v1/members/{token}). Null when the
    * relationship data is not loaded; NO_ACCESS for a token outside the purview. Logged as an access.
@@ -108,7 +110,7 @@ export interface LiveRuntime {
   /** Member search for Ctrl+K and the voice picker: masked results within the purview (BE-RM-002). */
   searchMembers(persona: PersonaId, q: string): Promise<SearchResult[] | null>;
   /** The Reports app: templates the user can open and their schedules (spec 8.5–8.9). */
-  reports(persona: PersonaId): Promise<{ take: DiTake; templates: ReportSummary[]; schedules: ScheduleSummary[] } | null>;
+  reports(persona: PersonaId): Promise<{ take: DiTake; templates: ReportSummary[]; schedules: ScheduleSummary[]; bin: { templateId: string; name: string; folder: string; deletedAt: string }[] } | null>;
   /** The Referrals app: a box of referrals with counts for the tabs (FE-REF-001). */
   referrals(persona: PersonaId, box: 'mine' | 'team' | 'sent'): Promise<ReferralsIndex | null>;
   /** For the bell: each of your own overdue referrals, or a count for a branch lead. */
@@ -327,7 +329,9 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       () => true,
       () => false,
     );
-    const reports = hasReports ? { gateway: new ReportGateway({ store: new ReportStore(pool), semantic, approvals: new ApprovalStore(pool) }) } : null;
+    // A report published to a class reaches its active members; the directory says how many.
+    const classSize = async (userClass: string) => (await new OperationsService(pool).users().catch(() => [])).filter((u) => u.userClass === userClass && u.status === 'Active').length;
+    const reports = hasReports ? { gateway: new ReportGateway({ store: new ReportStore(pool), semantic, approvals: new ApprovalStore(pool), classSize }) } : null;
     const [staff] = await pool.query('SELECT DISTINCT display_name FROM cdm_employee');
     const dims = semantic.dimensionValues;
     const vocabulary = [...new Set([...(dims.branch ?? []), ...(dims.region ?? []), ...(dims.loan_category ?? []), ...(dims.deposit_category ?? []), ...(staff as { display_name: string }[]).map((s) => s.display_name).filter((s) => !/^\w\. /.test(s))])];
@@ -459,10 +463,13 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       if (!gw || !s.apps.includes('reports')) return null;
       const templates = await gw.store.list(s.user.id);
       const schedules = (await gw.store.schedules(s.user.id)).map(scheduleSummary);
+      const home = new Set((await gw.store.pins(s.user.id, PERSONAS[persona].userClass).catch(() => [])).map((p) => p.templateId));
+      const bin = await gw.store.bin(s.user.id).catch(() => []);
       return {
         take: reportsTake(templates, schedules),
-        templates: templates.map((t) => ({ templateId: t.templateId, name: t.name, folder: t.folder, status: t.status, periodType: t.definition.settings.periodType, description: t.definition.description, sections: t.definition.widgets.length, owner: t.ownerName, updatedAt: t.updatedAt, origin: t.origin ? `Created by ${t.origin.agent}, approved by ${t.origin.approvedBy}` : undefined })),
+        templates: templates.map((t) => ({ templateId: t.templateId, name: t.name, folder: t.folder, status: t.status, periodType: t.definition.settings.periodType, description: t.definition.description, sections: t.definition.widgets.length, owner: t.ownerName, updatedAt: t.updatedAt, origin: t.origin ? `Created by ${t.origin.agent}, approved by ${t.origin.approvedBy}` : undefined, onHome: home.has(t.templateId) })),
         schedules,
+        bin: bin.map((t) => ({ templateId: t.templateId, name: t.name, folder: t.folder, deletedAt: t.updatedAt })),
       };
     },
 
@@ -698,7 +705,17 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       const who = { userId: PERSONAS[persona].session.user.id, employeeId: PERSONAS[persona].employeeId };
       const wf = tenant.runtime.workflow;
       const open = wf && PERSONAS[persona].session.apps.includes('referrals') ? await wf.referrals.inbox(worksOwnQueue(persona) ? 'mine' : 'team', who, { purviewBranches: purview }) : null;
-      return { kpis, narrative: b.narrative, lookAt, scheduled, referrals: open && { open: open.length, overdue: open.filter((i) => i.overdue).length } };
+      // Reports on Home: the person's own pins and those published to their class, each run under their purview.
+      const pins = gw ? await gw.store.pins(who.userId, PERSONAS[persona].userClass).catch(() => []) : [];
+      const pinned = (
+        await Promise.all(
+          pins.slice(0, 4).map(async (p) => {
+            const r = await gw!.run(p.templateId, {}, { purviewBranches: purview, canViewSql: false, user: { id: who.userId }, runId: `R-home-${p.pinId}` }).catch(() => null);
+            return r && { templateId: p.templateId, name: p.templateName, audience: p.audience, pinnedBy: p.pinnedBy, canvas: r.canvas };
+          }),
+        )
+      ).filter((x) => x !== null);
+      return { kpis, narrative: b.narrative, lookAt, scheduled, pinned, referrals: open && { open: open.length, overdue: open.filter((i) => i.overdue).length } };
     },
 
     async table(persona, tableId) {

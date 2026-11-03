@@ -132,9 +132,9 @@ const naming = (text: string, label: string) => (THE_RECORD.test(text) ? text.re
 /** A thread with an open referral keeps routing there for answers like "by email" (spec 23.3). */
 const REFERRAL_FOLLOW_UP = /\b(change|make it|instead|switch|use|add|set|update|remove|send it|cancel|never ?mind|email|phone|call|text|evening|morning|afternoon|note)\b/i;
 
-const REPORT_WORDS = /\breports?\b|\bpack\b|scorecard|\bschedul|\bexport\b|\bdownload\b|executive summary/;
+const REPORT_WORDS = /\breports?\b|\bpack\b|scorecard|\bschedul|\bexport\b|\bdownload\b|executive summary|\b(pin|publish)\b.*\bhome\b|\boff (my |the )?home\b/;
 /** A thread with a report on screen keeps routing there for "make the chart a donut", "save it" and the like. */
-const REPORT_FOLLOW_UP = /^(make|add|move|remove|delete|drop|save|export|download|schedule|send|change|put|run it|show it|switch)\b/i;
+const REPORT_FOLLOW_UP = /^(make|add|move|remove|delete|drop|save|export|download|schedule|send|change|put|run it|show it|switch|pin|unpin|publish|take|restore)\b/i;
 
 /** About a person rather than the institution: "pull up", "/member", or a pronoun with a member in context. */
 const MEMBER_LOOKUP = /^\/(member|customer)\b|\b(pull up|look up)\b|\bdeclined\b|\bhousehold\b/i;
@@ -864,7 +864,7 @@ export class Concierge {
       later(async () => {
         try {
           const x = await gw.execute(approval, { user: d.user });
-          const ref = x.operation === 'report.template.create' ? `report:${x.template.templateId}` : x.operation === 'report.export' ? `export:${x.exportId}` : x.operation === 'report.share' ? `share:${x.shareId}` : `schedule:${x.schedule.scheduleId}`;
+          const ref = x.operation === 'report.template.create' ? `report:${x.template.templateId}` : x.operation === 'report.export' ? `export:${x.exportId}` : x.operation === 'report.share' ? `share:${x.shareId}` : x.operation === 'report.pin' ? `pin:${x.pinId}` : x.operation === 'report.unpin' || x.operation === 'report.delete' || x.operation === 'report.restore' ? `report:${x.operation === 'report.unpin' ? x.templateName : x.templateId}` : `schedule:${x.schedule.scheduleId}`;
           void this.deps.audit.event({ eventType: 'ai.action.executed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, operation: approval.operation, resultRef: ref });
           const source = [{ kind: 'template' as const, label: 'Reports', ref: 'report:library' }];
           // The saved report replaces the draft as the one on screen, so "schedule it" means it.
@@ -875,7 +875,13 @@ export class Concierge {
           else if (x.operation === 'report.share') {
             closeGoal({ state: 'done', resultSummary: `Sent to ${x.recipientCount} ${x.recipientCount === 1 ? 'person' : 'people'}` });
             await sink.text(`Sent the **${x.templateName}** and your note to ${x.recipientCount} ${x.recipientCount === 1 ? 'person' : 'people'}. Each of them opens it in DI under their own access. Delivery is simulated in this demo.`, GOAL_AGENT, source);
-          } else if (x.operation === 'report.schedule.cancel') await sink.text(`Stopped schedule #${x.schedule.scheduleId} for **${x.schedule.templateName}**. Nothing more will be sent.`, REPORT_AGENT, source);
+          } else if (x.operation === 'report.pin') await sink.text(x.audience === 'me' ? `Pinned **${x.templateName}** to your [Home](/home/pin-${x.templateId}).` : `Published **${x.templateName}** to Home for the ${x.audience} class. Each of them sees it under Pinned, with their own data access.`, REPORT_AGENT, source);
+          else if (x.operation === 'report.unpin') await sink.text(`Took **${x.templateName}** off Home. The report itself is still in Reports.`, REPORT_AGENT, source);
+          else if (x.operation === 'report.delete') {
+            if (rs?.current?.templateId === x.templateId) rs.current = undefined;
+            await sink.text(`Moved **${x.templateName}** to the Recycle Bin and off every Home. Say “restore ${x.templateName}” to bring it back.`, REPORT_AGENT, source);
+          } else if (x.operation === 'report.restore') await sink.text(`Restored **${x.templateName}** to ${x.folder}. [Open it](/reports/${x.templateId}).`, REPORT_AGENT, source);
+          else if (x.operation === 'report.schedule.cancel') await sink.text(`Stopped schedule #${x.schedule.scheduleId} for **${x.schedule.templateName}**. Nothing more will be sent.`, REPORT_AGENT, source);
           else await sink.text(`Your ${x.format === 'xlsx' ? 'Excel' : 'CSV'} export of **${x.templateName}** is ready: [Download it](/v1/exports/${x.exportId}). The download is logged.`, REPORT_AGENT, source);
           sink.done?.(null);
         } catch (err) {

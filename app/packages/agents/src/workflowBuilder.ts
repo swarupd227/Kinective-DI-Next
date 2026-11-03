@@ -20,7 +20,7 @@ export function workflowBuilderModule(wf: WorkflowDefService, today: () => strin
   const need = (ctx: ModuleContext) => {
     if (!ctx.modules.includes('workflow-builder')) throw new CoreError('NO_ACCESS', noAccess);
   };
-  const fieldRows = (s: WfSpec) => [...s.persistent.map((f) => ({ field: f.label, type: f.type, kept: 'Persistent' })), ...s.nonPersistent.map((f) => ({ field: f.label, type: f.type, kept: 'Non-persistent' }))];
+  const fieldRows = (s: WfSpec) => [...s.persistent.map((f) => ({ field: f.label, type: f.type, kept: 'Saved on the record' })), ...s.nonPersistent.map((f) => ({ field: f.label, type: f.type, kept: 'Form only' }))];
   const spec: ModuleSpec = {
     id: 'workflow-builder',
     prefix: 'wfb',
@@ -62,7 +62,7 @@ export function workflowBuilderModule(wf: WorkflowDefService, today: () => strin
           need(ctx);
           const defs = await wf.list();
           const drafts = defs.filter((d) => d.status === 'Draft');
-          return { text: `**${defs.filter((d) => d.status === 'Active').length} live workflows**${drafts.length ? ` and ${drafts.length} ${drafts.length === 1 ? 'draft' : 'drafts'} (${drafts.map((d) => d.name).join(', ')})` : ''}.`, blocks: [moduleTable(spec, 'Workflow definitions', ctx.runId, 'workflow.definition.list', [{ field: 'id', headerName: 'ID', type: 'number' }, { field: 'name', headerName: 'Name', type: 'text' }, { field: 'folder', headerName: 'Folder', type: 'text' }, { field: 'persistent', headerName: 'Persistent fields', type: 'text' }, { field: 'nonPersistent', headerName: 'Non-persistent fields', type: 'text' }, { field: 'stages', headerName: 'Stages', type: 'text' }, { field: 'status', headerName: 'Status', type: 'text' }, { field: 'open', headerName: 'Open items', type: 'count' }], defs.filter((d) => d.status === 'Active' || d.status === 'Draft').map((d) => ({ id: d.defId, name: d.name, folder: d.folder, persistent: d.spec.persistent.map((f) => f.label).join(', '), nonPersistent: d.spec.nonPersistent.map((f) => f.label).join(', ') || '—', stages: stages(d.spec), status: d.status === 'Draft' ? 'Draft' : `Live, v${d.version}`, open: d.openItems })))] };
+          return { text: `**${defs.filter((d) => d.status === 'Active').length} live workflows**${drafts.length ? ` and ${drafts.length} ${drafts.length === 1 ? 'draft' : 'drafts'} (${drafts.map((d) => d.name).join(', ')})` : ''}.`, blocks: [moduleTable(spec, 'Workflow definitions', ctx.runId, 'workflow.definition.list', [{ field: 'id', headerName: 'ID', type: 'number' }, { field: 'name', headerName: 'Name', type: 'text' }, { field: 'status', headerName: 'Status', type: 'text' }, { field: 'open', headerName: 'Open items', type: 'count' }, { field: 'folder', headerName: 'Folder', type: 'text' }, { field: 'persistent', headerName: 'Saved fields', type: 'text' }, { field: 'nonPersistent', headerName: 'Form-only fields', type: 'text' }, { field: 'stages', headerName: 'Stages', type: 'text' }], defs.filter((d) => d.status === 'Active' || d.status === 'Draft').map((d) => ({ id: d.defId, name: d.name, folder: d.folder, persistent: d.spec.persistent.map((f) => f.label).join(', '), nonPersistent: d.spec.nonPersistent.map((f) => f.label).join(', ') || '—', stages: stages(d.spec), status: d.status === 'Draft' ? 'Draft' : `Live, v${d.version}`, open: d.openItems })))] };
         },
       },
       {

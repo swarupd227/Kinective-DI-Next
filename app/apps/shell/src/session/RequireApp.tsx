@@ -14,7 +14,7 @@ export function RequireApp({ app, children }: { app: AppId; children: ReactNode 
         <Lock size={22} />
       </span>
       <h1 className={styles.title}>You do not have access to this view</h1>
-      <p className={styles.lede}>Your user class does not include it. An administrator can change your class if you need it.</p>
+      <p className={styles.lede}>Your role doesn’t include this page. If you need it, ask your DI administrator.</p>
     </div>
   );
 }

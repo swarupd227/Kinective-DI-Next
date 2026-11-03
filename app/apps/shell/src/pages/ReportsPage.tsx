@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarClock, ChevronRight, FileBarChart, ListTree, PlayCircle, Rows3, Search, Sigma, Sparkles } from 'lucide-react';
+import { CalendarClock, ChevronRight, FileBarChart, ListTree, PlayCircle, Rows3, Search, Sigma, Sparkles, Trash2 } from 'lucide-react';
 import { BlockHostProvider, BlockRenderer } from '@dinext/blocks';
 import { Badge, Button, SegmentedControl, Skeleton, TextInput, useToast } from '@dinext/ui';
 import { ApiError, type ReportsIndex } from '@dinext/stream-client';
@@ -15,8 +15,8 @@ import { DetailReports, OnDemandReports, TableSummary } from './ReportTypes.tsx'
 import page from './Page.module.css';
 import styles from './ReportsPage.module.css';
 
-type Tab = 'library' | 'summary' | 'detail' | 'ondemand' | 'schedules';
-const TABS: Tab[] = ['library', 'summary', 'detail', 'ondemand', 'schedules'];
+type Tab = 'library' | 'summary' | 'detail' | 'ondemand' | 'schedules' | 'bin';
+const TABS: Tab[] = ['library', 'summary', 'detail', 'ondemand', 'schedules', 'bin'];
 
 export function ReportsPage() {
   const { api } = useSession();
@@ -59,6 +59,7 @@ export function ReportsPage() {
             { value: 'detail', label: 'Detail', icon: <Rows3 size={14} aria-hidden /> },
             { value: 'ondemand', label: 'On-Demand', icon: <ListTree size={14} aria-hidden /> },
             { value: 'schedules', label: `Schedules${q.data?.schedules.length ? ` (${q.data.schedules.length})` : ''}`, icon: <CalendarClock size={14} aria-hidden /> },
+            { value: 'bin', label: `Recycle Bin${q.data?.bin?.length ? ` (${q.data.bin.length})` : ''}`, icon: <Trash2 size={14} aria-hidden /> },
           ]}
         />
       </header>
@@ -88,6 +89,7 @@ export function ReportsPage() {
                         <span className={styles.label}>
                           {t.name}
                           {t.status === 'draft' && <Badge tone="warning">Draft</Badge>}
+                          {t.onHome && <Badge tone="info">On Home</Badge>}
                         </span>
                         <span className={styles.detail}>{t.description || `${t.sections} sections`}</span>
                         <span className={styles.meta}>
@@ -114,7 +116,32 @@ export function ReportsPage() {
       {tab === 'detail' && <DetailReports />}
       {tab === 'ondemand' && <OnDemandReports />}
       {q.data && tab === 'schedules' && <Schedules schedules={q.data.schedules} />}
+      {q.data && tab === 'bin' && <RecycleBin items={q.data.bin ?? []} />}
     </div>
+  );
+}
+
+/** Reports you deleted. Nothing is erased; restoring is a request to DI, approved on a card. */
+function RecycleBin({ items }: { items: NonNullable<ReportsIndex['bin']> }) {
+  if (!items.length) return <p className={styles.message}>Your Recycle Bin is empty. A report you delete waits here until you restore it.</p>;
+  return (
+    <ul className={styles.list}>
+      {items.map((t) => (
+        <li key={t.templateId}>
+          <Link to={`/c/new?q=${encodeURIComponent(`Restore the ${t.name} report`)}`} className={styles.item}>
+            <Trash2 size={18} aria-hidden className={styles.icon} />
+            <span className={styles.text}>
+              <span className={styles.label}>{t.name}</span>
+              <span className={styles.meta}>
+                From {t.folder} · deleted {new Date(t.deletedAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </span>
+            </span>
+            <span className={styles.meta}>Ask DI to restore</span>
+            <ChevronRight size={16} aria-hidden className={styles.icon} />
+          </Link>
+        </li>
+      ))}
+    </ul>
   );
 }
 

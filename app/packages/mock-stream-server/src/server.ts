@@ -430,6 +430,8 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
             if (s.id === 'look_at' && real.lookAt.data.items.length) s.blocks = [real.lookAt];
             if (s.id === 'scheduled_reports' && real.scheduled) s.blocks = [real.scheduled];
           }
+          // Reports put on Home lead the Pinned tabs, one tab each.
+          if (real.pinned.length) home.tabs = [...real.pinned.map((p) => ({ id: `pin-${p.templateId}`, label: p.name, blocks: [p.canvas] })), ...home.tabs];
         }
         // "Needs you" leads with the work DI ranked, ahead of the approvals waiting.
         const today = await live?.today(persona()).catch((err) => (console.error('[home]', err), null));

@@ -2,7 +2,7 @@
 // ECharts options; everything here is client code, so formatters are safe functions, not strings.
 import type { ChartBlock } from '@dinext/block-schemas';
 import type { EChartsCoreOption } from 'echarts/core';
-import { formatAxis, formatValue } from '../format.ts';
+import { formatAxis, formatValue, rateDecimals } from '../format.ts';
 
 export interface ChartTheme {
   palette: string[];
@@ -41,7 +41,13 @@ export function buildOption(block: ChartBlock, theme: ChartTheme, reducedMotion:
     return theme.palette[idx % theme.palette.length]!;
   };
 
-  const tooltipValue = (v: unknown) => (typeof v === 'number' ? formatValue(v, unit ?? 'number') : String(v ?? '—'));
+  // Rates share one number of decimals across ticks and tooltip, so 0.705% does not read as 0.7%.
+  const plotted = series.flatMap((s) => {
+    const i = dims.indexOf(s.encode.y);
+    return dataset.source.map((row) => row[i]).filter((v): v is number => typeof v === 'number');
+  });
+  const decimals = unit === 'percent' ? rateDecimals(plotted) : undefined;
+  const tooltipValue = (v: unknown) => (typeof v === 'number' ? formatValue(v, unit ?? 'number', { decimals }) : String(v ?? '—'));
 
   const base: EChartsCoreOption = {
     animation: !reducedMotion,
@@ -96,7 +102,7 @@ export function buildOption(block: ChartBlock, theme: ChartTheme, reducedMotion:
       name: y.title,
       nameTextStyle: { color: theme.muted, fontFamily: theme.fontFamily, align: 'left' },
       splitLine: { lineStyle: { color: theme.grid } },
-      axisLabel: { color: theme.muted, fontFamily: theme.fontFamily, formatter: (v: number) => formatAxis(v, y.unit) },
+      axisLabel: { color: theme.muted, fontFamily: theme.fontFamily, formatter: (v: number) => formatAxis(v, y.unit, y.unit === unit ? decimals : undefined) },
       scale: chartType === 'line' || chartType === 'area',
     })),
     series: series.map((s, i) => {

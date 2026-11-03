@@ -84,7 +84,9 @@ export function useShellBlockHost({ threadId, onResolved, approvalDisplay = 'ful
             void ask(String(action.params?.question ?? `Drill into ${String(action.params?.category ?? label)}`), [{ type: 'block', ref: block.id, label }]);
             return;
           case 'pin':
-            toast.show('Pinning to Home arrives in the next slice');
+            // Pinning is an approved write: the request goes to the conversation (spec 8.5).
+            if (block.type === 'report_canvas') void ask(`Pin the ${block.data.name} report to my Home`);
+            else toast.show('Home holds saved reports. Ask DI to build a report from this, then pin it.');
             return;
           case 'export':
             // Report exports are approved writes: the request goes to the conversation (spec 8.5).
