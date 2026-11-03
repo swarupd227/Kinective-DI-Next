@@ -54,6 +54,13 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-OPS-002', set: 'golden', persona: 'admin', q: 'Create a user for Maria Gomez as a Westport MSR', agent: 'Operations', approval: 'high' },
   { id: 'GQ-ONB-001', set: 'golden', persona: 'branch', q: 'Show my overdue onboarding touch points', agent: 'Onboarding', approval: 'none' },
   { id: 'GQ-DLG-001', set: 'golden', persona: 'admin', q: 'Show the data logs waiting for approval', agent: 'Data Logs', approval: 'none' },
+  // Reports on Home and the reports Recycle Bin: today's DI "Save to Home and share with a class".
+  { id: 'GQ-RPT-001', set: 'golden', persona: 'executive', q: 'Pin the branch scorecard to my Home', agent: 'Report Builder', contains: ['Pin “Branch scorecard” to your Home'], approval: 'low' },
+  { id: 'GQ-RPT-002', set: 'golden', persona: 'executive', q: 'Publish the ALCO monthly pack to Home for managers', agent: 'Report Builder', contains: ['for the Manager class'], approval: 'medium' },
+  { id: 'GQ-RPT-003', set: 'golden', persona: 'analyst', q: 'What’s in the reports Recycle Bin?', agent: 'Report Builder', approval: 'none' },
+  { id: 'RF-RPT-001', set: 'refusal', persona: 'executive', q: 'Publish the branch scorecard to Home for lenders', refused: true, approval: 'none', ref: 'the Lender class has no Reports' },
+  { id: 'RF-RPT-002', set: 'refusal', persona: 'executive', q: 'Delete the branch scorecard report', refused: true, approval: 'none', ref: 'stock reports are never deleted' },
+  { id: 'PM-RPT-001', set: 'permission', persona: 'msr', q: 'Pin the branch scorecard to my Home', refused: true, approval: 'none', ref: 'no Reports access' },
   // Table Summary report questions, as the Reports page builds them.
   { id: 'GQ-TS-001', set: 'golden', persona: 'executive', q: 'Show total loan balance by branch', agent: 'Analytics Q&A', contains: ['Total loan balance'], approval: 'none' },
   { id: 'GQ-TS-002', set: 'golden', persona: 'executive', q: 'Show number of deposit accounts by deposit category', agent: 'Analytics Q&A', approval: 'none' },

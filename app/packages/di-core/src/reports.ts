@@ -9,7 +9,7 @@ export interface TemplateRow {
   templateId: string;
   name: string;
   folder: string;
-  status: 'stock' | 'published' | 'draft';
+  status: 'stock' | 'published' | 'draft' | 'binned';
   ownerUserId: string;
   ownerName: string;
   definition: ReportDefinition;
@@ -70,6 +70,20 @@ export interface ShareRow {
   recipientCount: number;
 }
 
+/** A report on Home. `audience` is 'me' or a user class, such as "Manager". */
+export interface PinDraft {
+  templateId: string;
+  audience: string;
+}
+
+export interface PinRow extends PinDraft {
+  pinId: string;
+  templateName: string;
+  pinnedBy: string;
+  pinnedById: string;
+  createdAt: string;
+}
+
 /** Directory of delivery groups (spec 18.9: users, classes or alert groups). Fictional. */
 export const DELIVERY_GROUPS: Record<string, number> = {
   'ALCO group': 7,
@@ -117,7 +131,7 @@ export class ReportStore {
     const [rows] = await this.pool.query('SELECT * FROM esp_report_templates WHERE template_id = ?', [templateId]);
     const r = (rows as Row[])[0];
     // A saved draft has become a report of its own; it is no longer opened by its draft ID.
-    if (!r || r.status === 'saved' || (r.status === 'draft' && r.owner_user_id !== userId)) throw new CoreError('NOT_FOUND', 'That report was not found.');
+    if (!r || r.status === 'saved' || r.status === 'binned' || (r.status === 'draft' && r.owner_user_id !== userId)) throw new CoreError('NOT_FOUND', 'That report was not found.');
     return this.toTemplate(r);
   }
 
@@ -159,6 +173,75 @@ export class ReportStore {
     // The draft has become the report; it no longer shows under Drafts.
     await this.pool.query("UPDATE esp_report_templates SET status = 'saved' WHERE template_id = ? AND status = 'draft' AND owner_user_id = ?", [p.draftId, meta.userId]);
     return { ...(await this.get(templateId, meta.userId)), replayed: false };
+  }
+
+  // ---- Home and the Recycle Bin -----------------------------------------------------------------
+
+  /** Reports on Home for this person: their own pins and those for their user class, newest first. */
+  async pins(userId: string, userClass: string | undefined): Promise<PinRow[]> {
+    const [rows] = await this.pool.query(
+      `SELECT p.*, t.name FROM esp_report_pins p JOIN esp_report_templates t ON t.template_id = p.template_id
+       WHERE p.removed_at IS NULL AND t.status IN ('stock', 'published') AND ((p.audience = 'me' AND p.user_id = ?) OR p.audience = ?)
+       ORDER BY p.created_at DESC`,
+      [userId, userClass ?? '-'],
+    );
+    const seen = new Set<string>();
+    return (rows as Row[])
+      .map((r) => ({ pinId: r.pin_id as string, templateId: r.template_id as string, templateName: r.name as string, audience: r.audience as string, pinnedBy: r.user_name as string, pinnedById: r.user_id as string, createdAt: iso(r.created_at as string) }))
+      .filter((p) => !seen.has(p.templateId) && seen.add(p.templateId));
+  }
+
+  /** Every live pin of one report, whoever made it: what "take it off Home" would remove. */
+  async pinsOf(templateId: string): Promise<PinRow[]> {
+    const [rows] = await this.pool.query("SELECT p.*, t.name FROM esp_report_pins p JOIN esp_report_templates t ON t.template_id = p.template_id WHERE p.template_id = ? AND p.removed_at IS NULL", [templateId]);
+    return (rows as Row[]).map((r) => ({ pinId: r.pin_id as string, templateId: r.template_id as string, templateName: r.name as string, audience: r.audience as string, pinnedBy: r.user_name as string, pinnedById: r.user_id as string, createdAt: iso(r.created_at as string) }));
+  }
+
+  /** report.pin: puts a report on Home. Idempotent on the approval ID; an existing identical pin is kept. */
+  async pin(p: PinDraft, meta: { approvalId: string; userId: string; userName: string }): Promise<{ pinId: string; replayed: boolean }> {
+    const [done] = await this.pool.query('SELECT pin_id FROM esp_report_pins WHERE approval_id = ?', [meta.approvalId]);
+    const prior = (done as Row[])[0];
+    if (prior) return { pinId: prior.pin_id as string, replayed: true };
+    const t = await this.get(p.templateId, meta.userId);
+    if (t.status === 'draft') throw new CoreError('INVALID', 'Save the draft before putting it on Home.');
+    const [same] = await this.pool.query("SELECT pin_id FROM esp_report_pins WHERE template_id = ? AND audience = ? AND removed_at IS NULL AND (audience <> 'me' OR user_id = ?)", [p.templateId, p.audience, meta.userId]);
+    const existing = (same as Row[])[0];
+    if (existing) return { pinId: existing.pin_id as string, replayed: true };
+    const pinId = `pin_${randomBytes(6).toString('hex')}`;
+    await this.pool.query('INSERT INTO esp_report_pins (pin_id, template_id, user_id, user_name, audience, approval_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [pinId, p.templateId, meta.userId, meta.userName, p.audience, meta.approvalId, sqlTime(new Date())]);
+    return { pinId, replayed: false };
+  }
+
+  /** report.unpin: takes the named pins off Home. Removing a removed pin changes nothing. */
+  async unpin(pinIds: string[], meta: { approvalId: string }): Promise<number> {
+    if (!pinIds.length) return 0;
+    const [r] = await this.pool.query('UPDATE esp_report_pins SET removed_at = ?, removed_approval_id = ? WHERE pin_id IN (?) AND removed_at IS NULL', [sqlTime(new Date()), meta.approvalId, pinIds]);
+    return (r as { affectedRows: number }).affectedRows;
+  }
+
+  /** The user's own saved reports in the Recycle Bin. */
+  async bin(userId: string): Promise<TemplateRow[]> {
+    const [rows] = await this.pool.query("SELECT * FROM esp_report_templates WHERE status = 'binned' AND owner_user_id = ? ORDER BY updated_at DESC", [userId]);
+    return (rows as Row[]).map((r) => this.toTemplate(r));
+  }
+
+  /** report.delete: moves the owner's saved report to the Recycle Bin, and off every Home. Never a hard delete. */
+  async toBin(templateId: string, meta: { approvalId: string; userId: string }): Promise<TemplateRow> {
+    const [rows] = await this.pool.query('SELECT * FROM esp_report_templates WHERE template_id = ?', [templateId]);
+    const r = (rows as Row[])[0];
+    if (!r || r.owner_user_id !== meta.userId || !['published', 'binned'].includes(r.status as string)) throw new CoreError('NOT_FOUND', 'That report was not found among your saved reports.');
+    await this.pool.query("UPDATE esp_report_templates SET status = 'binned', updated_at = ? WHERE template_id = ? AND status = 'published'", [sqlTime(new Date()), templateId]);
+    await this.pool.query('UPDATE esp_report_pins SET removed_at = ?, removed_approval_id = ? WHERE template_id = ? AND removed_at IS NULL', [sqlTime(new Date()), meta.approvalId, templateId]);
+    return this.toTemplate({ ...r, status: 'binned' });
+  }
+
+  /** report.restore: brings the owner's report back from the Recycle Bin to its folder. Pins stay removed. */
+  async restore(templateId: string, meta: { userId: string }): Promise<TemplateRow> {
+    const [rows] = await this.pool.query('SELECT * FROM esp_report_templates WHERE template_id = ?', [templateId]);
+    const r = (rows as Row[])[0];
+    if (!r || r.owner_user_id !== meta.userId || !['published', 'binned'].includes(r.status as string)) throw new CoreError('NOT_FOUND', 'That report is not in your Recycle Bin.');
+    await this.pool.query("UPDATE esp_report_templates SET status = 'published', updated_at = ? WHERE template_id = ? AND status = 'binned'", [sqlTime(new Date()), templateId]);
+    return this.toTemplate({ ...r, status: 'published' });
   }
 
   /** report.schedule.create (spec 18.9). Runs only after the nightly build; idempotent on the approval. */

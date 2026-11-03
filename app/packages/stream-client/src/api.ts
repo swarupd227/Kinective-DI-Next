@@ -48,8 +48,10 @@ export type DecisionResponse =
 /** GET /v1/reports: what the Reports app lists (spec 8.5–8.9). */
 export interface ReportsIndex {
   take: DiTake;
-  templates: { templateId: string; name: string; folder: string; status: 'stock' | 'published' | 'draft'; periodType: 'month' | 'quarter'; description: string; sections: number; owner: string; updatedAt: string; origin?: string }[];
+  templates: { templateId: string; name: string; folder: string; status: 'stock' | 'published' | 'draft'; periodType: 'month' | 'quarter'; description: string; sections: number; owner: string; updatedAt: string; origin?: string; onHome?: boolean }[];
   schedules: { scheduleId: number; templateId: string; report: string; when: string; format: string; recipients: number; owner: string; lastRunAt: string | null; lastResult: 'ok' | 'empty' | 'failed' | null; lastDetail: string | null }[];
+  /** The user's own reports in the Recycle Bin. */
+  bin?: { templateId: string; name: string; folder: string; deletedAt: string }[];
 }
 
 let counter = 0;

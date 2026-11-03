@@ -119,9 +119,23 @@ export const REPORT_DDL = [
      created_at DATETIME(3) NOT NULL,
      UNIQUE KEY ux_share_approval (approval_id)
    )`,
+  // A report on Home: for the person who pinned it ('me') or for everyone in a user class.
+  `CREATE TABLE esp_report_pins (
+     pin_id VARCHAR(40) PRIMARY KEY,
+     template_id VARCHAR(60) NOT NULL,
+     user_id VARCHAR(40) NOT NULL,
+     user_name VARCHAR(80) NOT NULL,
+     audience VARCHAR(40) NOT NULL,
+     approval_id VARCHAR(40) NOT NULL,
+     created_at DATETIME(3) NOT NULL,
+     removed_at DATETIME(3) NULL,
+     removed_approval_id VARCHAR(40) NULL,
+     UNIQUE KEY ux_pin_approval (approval_id),
+     KEY ix_pin_template (template_id)
+   )`,
 ];
 
-export const REPORT_WRITE_TABLES = ['esp_report_templates', 'esp_report_schedules', 'esp_report_exports', 'esp_report_shares'];
+export const REPORT_WRITE_TABLES = ['esp_report_templates', 'esp_report_schedules', 'esp_report_exports', 'esp_report_shares', 'esp_report_pins'];
 
 const settings = (periodType: 'month' | 'quarter', controlClasses: string[]): ReportSettings => ({
   app: 'reports',

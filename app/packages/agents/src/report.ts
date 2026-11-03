@@ -4,7 +4,7 @@
 // gateway returns approval_required, and only the approved payload runs, once.
 import { z } from 'zod';
 import type { ApprovalCardBlock, Block, DiTake, ReportCanvasBlock, ReportControl, ReportWidgetView } from '@dinext/block-schemas';
-import { ApprovalStore, CoreError, DELIVERY_GROUPS, SCHEDULE_RECIPIENT_CAP, type ApprovalRecord, type Recipient, type ReportStore, type RiskTier, type ScheduleDraft, type ScheduleRow, type ShareDraft, type TemplateRow } from '@dinext/di-core';
+import { ApprovalStore, CoreError, DELIVERY_GROUPS, SCHEDULE_RECIPIENT_CAP, type ApprovalRecord, type PinDraft, type Recipient, type ReportStore, type RiskTier, type ScheduleDraft, type ScheduleRow, type ShareDraft, type TemplateRow } from '@dinext/di-core';
 import { SemanticError, type SemanticService } from '@dinext/semantic';
 import type { ReportDefinition, ReportWidget, WidgetSize } from '@dinext/tenant-db';
 import { buildBlock, newBlockId, noticeBlock, type BlockSpec } from './answer.ts';
@@ -447,7 +447,15 @@ export const REPORT_TOOLS = [
   { name: 'report_schedule_cancel', operation: 'report.schedule.cancel', description: 'Stop one of the user’s schedules. Returns approval_required.', input: z.object({ schedule_id: z.number().int().positive() }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 1, agents: [] },
   { name: 'report_share', operation: 'report.share', description: 'Send the report on screen once, with a covering note, to delivery groups or "me". Returns approval_required with the note shown in full; nothing is sent until the user approves.', input: z.object({ recipients: z.array(z.string().min(2).max(120)).min(1).max(6), subject: z.string().min(3).max(200), body: z.string().min(10).max(3000) }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: [] },
   { name: 'report_export', operation: 'report.export', description: 'Export the report on screen, as run, to Excel or CSV. Exports are logged and need approval.', input: z.object({ format: z.enum(['xlsx', 'csv']) }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: [] },
+  { name: 'report_pin', operation: 'report.pin', description: 'Put a saved report (the one on screen, or template_id) on Home: for "me", or published to everyone in a user class (Executive, Manager, Analyst, Administrator). Each person sees it with their own data access. Returns approval_required.', input: z.object({ template_id: tpl.optional(), audience: z.string().min(2).max(40).default('me').describe('"me" or a user class name') }).strict(), sideEffect: 'write', riskTier: 'low', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: [] },
+  { name: 'report_unpin', operation: 'report.unpin', description: 'Take a report (the one on screen, or template_id) off Home: the pins this user made, for themselves or for a class. Returns approval_required.', input: z.object({ template_id: tpl.optional() }).strict(), sideEffect: 'write', riskTier: 'low', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 1, agents: [] },
+  { name: 'report_delete', operation: 'report.delete', description: 'Move one of the user’s own saved reports (the one on screen, or template_id) to the Recycle Bin. It leaves every Home and folder and can be restored. Stock reports can’t be deleted. Returns approval_required.', input: z.object({ template_id: tpl.optional() }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 1, agents: [] },
+  { name: 'report_bin_list', operation: 'report.bin.list', description: 'The user’s reports in the Recycle Bin, with template_id.', input: z.object({}).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 20, agents: [] },
+  { name: 'report_restore', operation: 'report.restore', description: 'Bring a report back from the Recycle Bin to its folder. Use a template_id from report_bin_list. Returns approval_required.', input: z.object({ template_id: tpl }).strict(), sideEffect: 'write', riskTier: 'low', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 1, agents: [] },
 ] satisfies ToolDef[];
+
+/** User classes that include Reports, so a report published to them opens for everyone in them. */
+export const REPORT_CLASSES = ['Executive', 'Manager', 'Analyst', 'Administrator'];
 
 export interface SavePayload {
   draftId: string;
@@ -458,6 +466,9 @@ export interface SavePayload {
 export type CancelPayload = { scheduleId: number; templateName: string };
 export type SharePayload = ShareDraft & { templateName: string };
 export type ExportPayload = { templateId: string; format: 'xlsx' | 'csv'; controls: Record<string, string> };
+export type PinPayload = PinDraft & { templateName: string };
+export type UnpinPayload = { templateId: string; templateName: string; pinIds: string[]; audiences: string[] };
+export type BinPayload = { templateId: string; templateName: string; folder: string };
 
 export type ReportResult =
   | { ok: true; content: unknown; canvas?: ReportCanvasBlock; notice?: string; list?: { kind: 'templates'; items: TemplateRow[] } | { kind: 'schedules'; items: ScheduleRow[] }; card?: ApprovalCardBlock; approval?: ApprovalRecord; superseded?: string[] }
@@ -468,7 +479,11 @@ export type ReportExecuted =
   | { operation: 'report.schedule.create'; schedule: ScheduleRow & { replayed: boolean } }
   | { operation: 'report.schedule.cancel'; schedule: ScheduleRow }
   | { operation: 'report.share'; shareId: string; recipientCount: number; templateName: string }
-  | { operation: 'report.export'; exportId: string; format: 'xlsx' | 'csv'; templateName: string };
+  | { operation: 'report.export'; exportId: string; format: 'xlsx' | 'csv'; templateName: string }
+  | { operation: 'report.pin'; pinId: string; templateId: string; templateName: string; audience: string }
+  | { operation: 'report.unpin'; removed: number; templateName: string }
+  | { operation: 'report.delete'; templateId: string; templateName: string }
+  | { operation: 'report.restore'; templateId: string; templateName: string; folder: string };
 
 /** What the model sees of a report: titles and headline values, not every row. */
 function canvasForModel(c: ReportCanvasBlock) {
@@ -492,7 +507,7 @@ function canvasForModel(c: ReportCanvasBlock) {
 
 export class ReportGateway {
   constructor(
-    private readonly deps: { store: ReportStore; semantic: SemanticService; approvals: ApprovalStore; tenantRaise?: Partial<Record<string, RiskTier>> },
+    private readonly deps: { store: ReportStore; semantic: SemanticService; approvals: ApprovalStore; tenantRaise?: Partial<Record<string, RiskTier>>; classSize?: (userClass: string) => Promise<number> },
     private readonly tools: ToolDef[] = REPORT_TOOLS,
   ) {}
 
@@ -754,6 +769,102 @@ export class ReportGateway {
           );
           return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId }, card: c, approval, superseded };
         }
+        case 'report.pin': {
+          const templateId = a.template_id ? String(a.template_id) : current?.templateId;
+          if (!templateId) return needCurrent()!;
+          const t = await store.get(templateId, ctx.user.id);
+          if (t.status === 'draft') return { ok: false, code: 'INVALID', content: { error: 'INVALID', message: 'Save the draft before putting it on Home.' } };
+          const asked = String(a.audience ?? 'me').trim();
+          const me = /^(me|myself|my home|mine)$/i.test(asked);
+          const cls = me ? 'me' : REPORT_CLASSES.find((k) => asked.toLowerCase().replace(/^the /, '').replace(/ (class|team|users?|group)$/, '').replace(/s$/, '') === k.toLowerCase());
+          if (!cls) return { ok: false, code: 'INVALID', content: { error: 'INVALID', message: `I can’t publish it to the ${asked.charAt(0).toUpperCase()}${asked.slice(1).replace(/ class$/i, '')} class: only the ${REPORT_CLASSES.join(', ')} classes include Reports, so only they can open it on Home.` } };
+          const payload: PinPayload = { templateId: t.templateId, templateName: t.name, audience: cls };
+          const people = me ? 1 : ((await this.deps.classSize?.(cls)) ?? 0);
+          const { approval, superseded } = await approve(payload, tierOf(me ? undefined : 'medium'));
+          const c = card(
+            {
+              approval,
+              runId: ctx.runId,
+              user: ctx.user,
+              title: me ? 'Pin to Home' : 'Publish to Home',
+              summary: me ? `Pin “${t.name}” to your Home` : `Publish “${t.name}” to Home for the ${cls} class`,
+              fields: [
+                { label: 'Report', value: t.name },
+                { label: 'Where', value: me ? 'Your Home, under Pinned' : `Home for everyone in the ${cls} class${people ? ` (${people} ${people === 1 ? 'person' : 'people'})` : ''}, under Pinned` },
+                { label: 'Data', value: 'Each person sees the latest period, limited to their own purview' },
+                { label: 'Undo', value: 'Ask DI to take it off Home at any time' },
+              ],
+              records: 1,
+              users: people,
+              external: 0,
+            },
+            def.operation,
+          );
+          return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId, risk_tier: approval.riskTier, audience: cls }, card: c, approval, superseded };
+        }
+        case 'report.unpin': {
+          const templateId = a.template_id ? String(a.template_id) : current?.templateId;
+          if (!templateId) return needCurrent()!;
+          const t = await store.get(templateId, ctx.user.id);
+          const all = await store.pinsOf(t.templateId);
+          // Your own Home first, then the classes, so the card reads the same way every time.
+          const mine = all.filter((p) => p.pinnedById === ctx.user.id).sort((x, y) => (x.audience === 'me' ? -1 : y.audience === 'me' ? 1 : x.audience.localeCompare(y.audience)));
+          if (!mine.length) {
+            // Someone else's own pin is private; only a pin published to a class is theirs to explain.
+            const other = all.find((p) => p.audience !== 'me');
+            return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: other ? `${t.name} is on Home because ${other.pinnedBy} published it to the ${other.audience} class. Only they can take it off.` : `${t.name} isn’t on Home.` } };
+          }
+          const audiences = mine.map((p) => (p.audience === 'me' ? 'your Home' : `the ${p.audience} class`));
+          const payload: UnpinPayload = { templateId: t.templateId, templateName: t.name, pinIds: mine.map((p) => p.pinId), audiences };
+          const shared = mine.some((p) => p.audience !== 'me');
+          const { approval, superseded } = await approve(payload, tierOf(shared ? 'medium' : undefined));
+          const c = card({ approval, runId: ctx.runId, user: ctx.user, title: 'Take off Home', summary: `Take “${t.name}” off ${audiences.join(' and ')}`, fields: [{ label: 'Report', value: t.name }, { label: 'From', value: audiences.join(', ') }, { label: 'The report itself', value: `Stays in ${t.folder}` }], records: mine.length, users: shared ? 0 : 1, external: 0 }, def.operation);
+          return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId, removes: audiences }, card: c, approval, superseded };
+        }
+        case 'report.delete': {
+          const templateId = a.template_id ? String(a.template_id) : current?.templateId;
+          if (!templateId) return needCurrent()!;
+          const t = await store.get(templateId, ctx.user.id);
+          if (t.status === 'stock') return { ok: false, code: 'NO_ACCESS', content: { error: 'NO_ACCESS', message: `${t.name} is a stock report every user starts with, so it can’t be deleted.` } };
+          if (t.status === 'draft') return { ok: false, code: 'INVALID', content: { error: 'INVALID', message: 'Drafts are private and aren’t kept once you leave them, so there’s nothing to delete.' } };
+          if (t.ownerUserId !== ctx.user.id) return { ok: false, code: 'NO_ACCESS', content: { error: 'NO_ACCESS', message: `${t.name} belongs to ${t.ownerName}. Only they can delete it.` } };
+          const pins = await store.pinsOf(t.templateId);
+          const schedules = (await store.schedules(ctx.user.id)).filter((s) => s.templateId === t.templateId);
+          const payload: BinPayload = { templateId: t.templateId, templateName: t.name, folder: t.folder };
+          const { approval, superseded } = await approve(payload, tierOf());
+          const c = card(
+            {
+              approval,
+              runId: ctx.runId,
+              user: ctx.user,
+              title: 'Delete report',
+              summary: `Move “${t.name}” to the Recycle Bin`,
+              fields: [
+                { label: 'Report', value: `${t.name}, in ${t.folder}` },
+                { label: 'Home', value: pins.length ? `Taken off ${pins.length} ${pins.length === 1 ? 'Home pin' : 'Home pins'}` : 'Not on anyone’s Home' },
+                ...(schedules.length ? [{ label: 'Schedules', value: `${schedules.length} active ${schedules.length === 1 ? 'schedule stops' : 'schedules stop'} finding it until it’s restored` }] : []),
+                { label: 'Undo', value: 'Restore it from the Recycle Bin. Nothing is erased.' },
+              ],
+              records: 1,
+              users: 0,
+              external: 0,
+            },
+            def.operation,
+          );
+          return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId }, card: c, approval, superseded };
+        }
+        case 'report.bin.list': {
+          const items = await store.bin(ctx.user.id);
+          return { ok: true, content: { recycle_bin: items.map((t) => ({ template_id: t.templateId, name: t.name, folder: t.folder, deleted: t.updatedAt.slice(0, 10) })) }, list: { kind: 'templates', items } };
+        }
+        case 'report.restore': {
+          const t = (await store.bin(ctx.user.id)).find((x) => x.templateId === String(a.template_id));
+          if (!t) return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: 'That report isn’t in your Recycle Bin.' } };
+          const payload: BinPayload = { templateId: t.templateId, templateName: t.name, folder: t.folder };
+          const { approval, superseded } = await approve(payload, tierOf());
+          const c = card({ approval, runId: ctx.runId, user: ctx.user, title: 'Restore report', summary: `Restore “${t.name}” to ${t.folder}`, fields: [{ label: 'Report', value: t.name }, { label: 'Back to', value: t.folder }, { label: 'Home', value: 'Not pinned again; ask to put it back on Home' }], records: 1, users: 0, external: 0 }, def.operation);
+          return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId }, card: c, approval, superseded };
+        }
       }
       return { ok: false, code: 'UNKNOWN_TOOL', content: { error: 'UNKNOWN_TOOL' } };
     } catch (e) {
@@ -784,6 +895,22 @@ export class ReportGateway {
         const e = await this.deps.store.createExport(p, meta);
         const t = await this.deps.store.get(p.templateId, ctx.user.id);
         out = { operation: 'report.export', exportId: e.exportId, format: p.format, templateName: t.name };
+      } else if (approval.operation === 'report.pin') {
+        const p = approval.payload as PinPayload;
+        const r = await this.deps.store.pin(p, meta);
+        out = { operation: 'report.pin', pinId: r.pinId, templateId: p.templateId, templateName: p.templateName, audience: p.audience };
+      } else if (approval.operation === 'report.unpin') {
+        const p = approval.payload as UnpinPayload;
+        await this.deps.store.unpin(p.pinIds, meta);
+        out = { operation: 'report.unpin', removed: p.pinIds.length, templateName: p.templateName };
+      } else if (approval.operation === 'report.delete') {
+        const p = approval.payload as BinPayload;
+        await this.deps.store.toBin(p.templateId, meta);
+        out = { operation: 'report.delete', templateId: p.templateId, templateName: p.templateName };
+      } else if (approval.operation === 'report.restore') {
+        const p = approval.payload as BinPayload;
+        const t = await this.deps.store.restore(p.templateId, meta);
+        out = { operation: 'report.restore', templateId: t.templateId, templateName: t.name, folder: t.folder };
       } else throw new Error(`No executor for ${approval.operation}`);
       await this.deps.approvals.markExecuted(approval.approvalId, approval.operation);
       return out;
