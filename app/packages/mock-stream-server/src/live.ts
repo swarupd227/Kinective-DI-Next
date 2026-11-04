@@ -20,7 +20,7 @@ import { EmailOutbox, tenantDomain, type EmailKind } from '@dinext/di-core';
 import type { ReportSettingsView } from '@dinext/block-schemas';
 import { tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { PERSONAS, type PersonaId } from './data.ts';
-import { rank } from './search.ts';
+import { matchesAll, rank } from './search.ts';
 
 type Emit = Omit<StreamEvent, 'threadId' | 'seq' | 'ts'>;
 const e = (x: unknown) => x as Emit;
@@ -120,6 +120,8 @@ export interface LiveRuntime {
   searchMembers(persona: PersonaId, q: string): Promise<SearchResult[] | null>;
   /** Saved and stock reports this person can open, by words in the name or folder. */
   searchReports(persona: PersonaId, q: string): Promise<SearchResult[]>;
+  /** Ctrl K: loan applications, employer groups (SEGs) and dealers by name, within the person's access. */
+  searchRecords(persona: PersonaId, q: string): Promise<SearchResult[]>;
   /** The Reports app: templates the user can open and their schedules (spec 8.5–8.9). */
   reports(persona: PersonaId): Promise<{ take: DiTake; templates: ReportSummary[]; schedules: ScheduleSummary[]; bin: { templateId: string; name: string; folder: string; deletedAt: string }[] } | null>;
   /** The Referrals app: a box of referrals with counts for the tabs (FE-REF-001). */
@@ -687,6 +689,27 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       const all = await gw.store.list(s.user.id);
       // Every word starts a word in the name or folder; the route ranks them against everything else.
       return rank(q, [all.filter((t) => t.status !== 'draft').map((t) => ({ kind: 'report' as const, id: t.templateId, label: t.name, detail: `Reports / ${t.folder}`, link: `/reports/${t.templateId}` }))], { limit: 8 });
+    },
+
+    async searchRecords(persona, q) {
+      const tenant = tenantFor(persona);
+      const apps = PERSONAS[persona].session.apps;
+      if (!tenant || q.trim().length < 2) return [];
+      const named = async (sql: string) => ((await tenant.pool.query(sql).catch(() => [[]]))[0] as { id: number; name: string; extra: string | null }[]).filter((r) => matchesAll(q, r.name));
+      const out: SearchResult[] = [];
+      // An open application ranks with the person it's for, so "Nora Moreau" shows her mortgage, not only her namesakes.
+      const lap = lapFor(persona);
+      if (lap) {
+        // The widest view this person has, the same first view the Loan Pipeline page opens on.
+        const view = (await lap.service.views(lap.who, lap.ctx).catch(() => []))[0];
+        const found = view ? await lap.service.find({ view, stalledOnly: false }, lap.who, lap.ctx).catch(() => null) : null;
+        for (const a of (found?.items ?? []).filter((x) => matchesAll(q, x.name)).slice(0, 5)) {
+          out.push({ kind: 'application', id: String(a.applicationId), label: a.name, detail: `${a.product} · $${Math.round(a.amount).toLocaleString('en-US')} · ${a.status}${a.stalled ? ', stalled' : ''}`, link: `/m/lap?id=${a.applicationId}` });
+        }
+      }
+      if (apps.includes('seg')) for (const r of await named('SELECT company_id AS id, name, stage AS extra FROM seg_company')) out.push({ kind: 'organization', id: `seg:${r.id}`, label: r.name, detail: `Employer group (SEG)${r.extra ? ` · ${r.extra}` : ''}`, link: '/m/seg' });
+      if (apps.includes('indirect')) for (const r of await named('SELECT dealer_id AS id, name, NULL AS extra FROM ind_dealer')) out.push({ kind: 'organization', id: `dealer:${r.id}`, label: r.name, detail: 'Dealer, Indirect Lending', link: '/m/indirect' });
+      return out;
     },
 
     async searchMembers(persona, q) {

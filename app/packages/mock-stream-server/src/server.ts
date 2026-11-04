@@ -499,14 +499,16 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         const q = url.searchParams.get('q') ?? '';
         // Real reports win over the static catalog's copy of the same report. With the warehouse up,
         // members come from the Relationship service, which also matches a number, phone or email.
-        const [reports, members] = await Promise.all([
+        const [reports, records, members] = await Promise.all([
           live?.searchReports(persona(), q).catch(() => []) ?? Promise.resolve([]),
+          live?.searchRecords(persona(), q).catch((err) => (console.error('[search]', err), [])) ?? Promise.resolve([]),
           live?.searchMembers(persona(), q).catch((err) => (console.error('[search]', err), null)) ?? Promise.resolve(null),
         ]);
         const catalog = searchFor(persona(), q, visibleThreads().map((t) => t.summary));
         if (members && url.searchParams.get('kind') === 'member') return json(res, 200, { results: members });
         const fromService = new Set((members ?? []).map((m) => m.link));
-        const results = rank(q, [reports, members ?? [], members ? catalog.filter((r) => r.kind !== 'member') : catalog], { trusted: (r) => fromService.has(r.link) });
+        // Applications come before members, so a name with an open application shows it first.
+        const results = rank(q, [reports, records, members ?? [], members ? catalog.filter((r) => r.kind !== 'member') : catalog], { trusted: (r) => fromService.has(r.link) });
         return json(res, 200, { results });
       }
       // ---- loan pipeline (spec 17.5) ----

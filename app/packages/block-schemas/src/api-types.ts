@@ -108,7 +108,7 @@ export interface HomeSection {
   tasks?: Record<string, string>;
 }
 
-export type SearchResultKind = 'report' | 'table' | 'view' | 'member' | 'employee' | 'branch' | 'workflow' | 'thread' | 'dashboard';
+export type SearchResultKind = 'report' | 'table' | 'view' | 'member' | 'employee' | 'branch' | 'workflow' | 'thread' | 'dashboard' | 'application' | 'organization';
 
 /** GET /v1/search: typed results within the user's purview (spec 8.3). */
 export interface SearchResult {

@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Command } from 'cmdk';
-import { FileBarChart, LayoutDashboard, LayoutGrid, MapPin, MessagesSquare, Moon, Rows4, Slash, Sparkles, Sun, Table2, UserRound, Workflow } from 'lucide-react';
+import { Building2, FileBarChart, Landmark, LayoutDashboard, LayoutGrid, MapPin, MessagesSquare, Moon, Rows4, Slash, Sparkles, Sun, Table2, UserRound, Workflow } from 'lucide-react';
 import { usePreferences } from '@dinext/ui';
 import type { SearchResult, SearchResultKind } from '@dinext/block-schemas';
 import { useSession } from '../session/SessionProvider.tsx';
@@ -24,13 +24,34 @@ const kindIcon: Record<SearchResultKind, ReactNode> = {
   workflow: <Workflow size={16} aria-hidden />,
   thread: <MessagesSquare size={16} aria-hidden />,
   dashboard: <LayoutDashboard size={16} aria-hidden />,
+  application: <Landmark size={16} aria-hidden />,
+  organization: <Building2 size={16} aria-hidden />,
+};
+
+/** Words people use for a page that aren't in its name ("payouts" opens Goals & Incentives). */
+const PAGE_WORDS: Partial<Record<string, string>> = {
+  gi: 'payouts incentives goals scorecards',
+  callreport: 'ncua call report 5300',
+  lap: 'pipeline applications loans mortgages',
+  rm: 'members customers member 360',
+  indirect: 'dealers auto dealer',
+  seg: 'employers employer groups seg',
+  compliance: 'complaints issues problems',
+  onboarding: 'new members welcome',
+  campaigns: 'marketing',
+  predictive: 'attrition churn leaving',
+  datalogs: 'adjustments data logs',
+  dq: 'checks data quality',
+  users: 'people staff access',
+  classes: 'roles permissions',
+  integrations: 'uploads files sftp',
 };
 
 /** One order every time, so groups don't jump about as results arrive: places, then records, then people. */
-const KIND_ORDER: SearchResultKind[] = ['report', 'dashboard', 'table', 'view', 'workflow', 'branch', 'member', 'employee', 'thread'];
+const KIND_ORDER: SearchResultKind[] = ['report', 'dashboard', 'table', 'view', 'workflow', 'application', 'organization', 'branch', 'member', 'employee', 'thread'];
 
 const kindLabel = (k: SearchResultKind, person: string) =>
-  ({ report: 'Reports', table: 'Tables', view: 'Saved views', member: `${person[0]!.toUpperCase()}${person.slice(1)}s`, employee: 'Employees', branch: 'Branches', workflow: 'Workflows', thread: 'Conversations', dashboard: 'Dashboards' })[k];
+  ({ report: 'Reports', table: 'Tables', view: 'Saved views', member: `${person[0]!.toUpperCase()}${person.slice(1)}s`, employee: 'Employees', branch: 'Branches', workflow: 'Workflows', thread: 'Conversations', dashboard: 'Dashboards', application: 'Loan applications', organization: 'Employer groups and dealers' })[k];
 
 export function CommandPalette() {
   const { session, api, startThread, terms } = useSession();
@@ -80,12 +101,33 @@ export function CommandPalette() {
   const grouped = KIND_ORDER.map((k) => [k, results.filter((r) => r.kind === k)] as const).filter(([, items]) => items.length > 0);
   const question = looksLikeQuestion(query);
   // Until the person picks, Enter opens the best match, or asks DI when it's a question or nothing matches.
-  const best = grouped[0]?.[1][0];
-  const auto = question || !best ? `ask:${query}` : `${best.kind}:${best.id}`;
-
-  const apps = session.apps.filter((a) => APP_META[a] && match(APP_META[a]!.label));
+  const apps = session.apps.filter((a) => APP_META[a] && match(`${APP_META[a]!.label} ${PAGE_WORDS[a] ?? ''}`));
+  const dashboards = match('all dashboards browse');
+  // Pages come first once something is typed: "5300" opens the Call Report, not a member whose number ends 5300.
+  const best = q && apps[0] ? `app:${apps[0]}` : grouped[0] ? `${grouped[0][1][0]!.kind}:${grouped[0][1][0]!.id}` : q && dashboards ? 'app:dashboards' : null;
+  const auto = question || !best ? `ask:${query}` : best;
   const slash = session.slashCommands.filter((c) => match(`${c} ${SLASH_HELP[c]?.hint ?? ''}`));
   const recent = (threads.data ?? []).filter((t) => match(t.title)).slice(0, q ? 5 : 4);
+
+  const goTo = (apps.length > 0 || dashboards) && (
+    <Command.Group heading="Go to">
+      {apps.map((a) => (
+        <Command.Item key={a} value={`app:${a}`} onSelect={() => go(APP_META[a]!.path)} className={styles.item}>
+          <span className={styles.icon}>{APP_META[a]!.icon}</span>
+          <span className={styles.label}>{APP_META[a]!.label}</span>
+        </Command.Item>
+      ))}
+      {dashboards && (
+        <Command.Item value="app:dashboards" onSelect={() => go('/dashboards')} className={styles.item}>
+          <span className={styles.icon}>
+            <LayoutGrid size={16} aria-hidden />
+          </span>
+          <span className={styles.label}>All dashboards</span>
+          <span className={styles.detail}>Every table, form and report you can open</span>
+        </Command.Item>
+      )}
+    </Command.Group>
+  );
 
   const askItem = q && (
     <Command.Group heading="Ask DI">
@@ -121,6 +163,7 @@ export function CommandPalette() {
           if (['ArrowDown', 'ArrowUp', 'Home', 'End', 'PageDown', 'PageUp'].includes(e.key)) setMoved(true);
         }} placeholder={`Search reports, tables, ${terms.persons}, branches… or ask a question`} className={styles.input} />
       <Command.List className={styles.list} onPointerMove={() => setMoved(true)}>
+        {q && goTo}
         {loading && results.length === 0 && <Command.Loading className={styles.empty}>Searching…</Command.Loading>}
         {grouped.map(([kind, items]) => (
           <Command.Group key={kind} heading={kindLabel(kind, terms.person)}>
@@ -145,25 +188,7 @@ export function CommandPalette() {
             ))}
           </Command.Group>
         )}
-        {(apps.length > 0 || match('all dashboards browse')) && (
-          <Command.Group heading="Go to">
-            {match('all dashboards browse') && (
-              <Command.Item value="app:dashboards" onSelect={() => go('/dashboards')} className={styles.item}>
-                <span className={styles.icon}>
-                  <LayoutGrid size={16} aria-hidden />
-                </span>
-                <span className={styles.label}>All dashboards</span>
-                <span className={styles.detail}>Every table, form and report you can open</span>
-              </Command.Item>
-            )}
-            {apps.map((a) => (
-              <Command.Item key={a} value={`app:${a}`} onSelect={() => go(APP_META[a]!.path)} className={styles.item}>
-                <span className={styles.icon}>{APP_META[a]!.icon}</span>
-                <span className={styles.label}>{APP_META[a]!.label}</span>
-              </Command.Item>
-            ))}
-          </Command.Group>
-        )}
+        {!q && goTo}
         {slash.length > 0 && (
           <Command.Group heading="Commands">
             {slash.map((c) => (

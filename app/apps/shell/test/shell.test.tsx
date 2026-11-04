@@ -232,6 +232,22 @@ describe('command palette (FE-EXP-130, FE-SRCH-003)', () => {
     expect(screen.getAllByRole('option')[0]).toHaveTextContent('Westport growth');
   });
 
+  it('puts a matching page first, above a member whose number matches, and finds pages by other words', async () => {
+    const user = userEvent.setup();
+    const results = [{ kind: 'member', id: 'm1', label: 'Ivan Taylor', detail: '…5300 · Westport', link: '/members/m1' }];
+    const session = makeSession({ apps: [...baseSession.apps, 'callreport', 'gi'] }, { api: { search: vi.fn().mockResolvedValue(results), threads: vi.fn().mockResolvedValue([]), cancelRun: vi.fn() } as unknown as SessionValue['api'] });
+    renderShell(<CommandPalette />, session);
+    useUi.getState().setPalette(true);
+    const input = await screen.findByPlaceholderText(/Search reports/);
+    await user.type(input, '5300');
+    await screen.findByRole('option', { name: /Ivan Taylor/ });
+    expect(screen.getAllByRole('option')[0]).toHaveTextContent('5300 Call Report');
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
+    await user.clear(input);
+    await user.type(input, 'payouts');
+    expect(await screen.findByRole('option', { name: /Goals & Incentives/ })).toBeInTheDocument();
+  });
+
   it('asks DI on Enter when the text is a question, even with a match', async () => {
     const user = userEvent.setup();
     const results = [{ kind: 'table', id: 't1', label: 'Loan Accounts', detail: 'Tables / Curated', link: '/tables/loan_accounts' }];
