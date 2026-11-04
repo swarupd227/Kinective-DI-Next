@@ -11,6 +11,7 @@ import type { ContextRef, ReferralAction, ReferralDetail, ReferralStageName, Ref
 import { ApiError } from '@dinext/stream-client';
 import { useSession } from '../session/SessionProvider.tsx';
 import { DiTake } from '../shell/DiTake.tsx';
+import { KpiTiles } from '../shell/KpiTiles.tsx';
 import { useUi } from '../shell/uiStore.ts';
 import page from './Page.module.css';
 import styles from './ReferralsPage.module.css';
@@ -18,10 +19,12 @@ import styles from './ReferralsPage.module.css';
 type Box = 'mine' | 'team' | 'sent';
 
 const STAGES: ReferralStageName[] = ['New Referral', 'Active', 'Sold', 'Not Interested', 'Done'];
+const CLOSED = ['Sold', 'Not Interested', 'Done'];
 const age = (days: number) => (days === 0 ? 'Today' : days === 1 ? '1 day old' : `${days} days old`);
 const when = (iso: string) => new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
 const due = (iso: string) => new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' }).format(new Date(iso));
-const isOpen = (stage: ReferralStageName) => stage === 'New Referral' || stage === 'Active';
+// Sold, Not Interested and Done close an item; any other stage, such as one the workflow adds, is open.
+const isOpen = (stage: ReferralStageName) => !CLOSED.includes(stage);
 
 export function ReferralsPage() {
   const { api, terms } = useSession();
@@ -40,7 +43,7 @@ export function ReferralsPage() {
   }, []);
 
   return (
-    <div className={clsx(page.page, styles.page)}>
+    <div className={page.page}>
       <header className={page.header}>
         <h1 className={page.title}>Referrals</h1>
         <p className={page.lede}>{data ? (data.counts.overdue ? `${data.counts.overdue} overdue. Oldest first, so nothing waits too long.` : 'Oldest first, so nothing waits too long.') : `Work on your ${terms.person}s’ referrals, or ask DI what’s on your plate.`}</p>
@@ -67,6 +70,17 @@ export function ReferralsPage() {
       )}
 
       {q.data && <DiTake take={q.data.take} />}
+
+      {data && active !== 'sent' && (
+        <KpiTiles
+          tiles={[
+            ...(q.data?.hasOwnQueue === false ? [] : [{ label: 'Waiting for you', value: String(data.counts.mine) }]),
+            { label: 'Open for the team', value: String(data.counts.team) },
+            { label: 'Overdue', value: String(data.counts.overdue), tone: data.counts.overdue ? ('danger' as const) : ('neutral' as const), ask: data.counts.overdue ? q.data?.take.action?.ask : undefined },
+            { label: 'Oldest open', value: data.items.length ? age(Math.max(...data.items.map((r) => r.ageDays))).replace(' old', '') : '—' },
+          ]}
+        />
+      )}
 
       {data && (
         <div className={clsx(styles.columns, selected && styles.withDetail)}>
@@ -175,7 +189,7 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
       </header>
 
       <ol className={styles.stages} aria-label="Stage">
-        {STAGES.filter((s) => s === 'New Referral' || s === 'Active' || closes.includes(s)).map((s) => (
+        {(r.stages ?? STAGES).filter((s) => isOpen(s) || closes.includes(s)).map((s) => (
           <li key={s} className={clsx(styles.stageStep, s === r.stage && styles.stageNow)} aria-current={s === r.stage ? 'step' : undefined}>
             {s}
           </li>

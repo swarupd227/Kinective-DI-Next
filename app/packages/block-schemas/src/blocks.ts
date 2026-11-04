@@ -383,6 +383,25 @@ export const lineageData = z.strictObject({
   lanes: z.array(z.strictObject({ nodes: z.array(lineageNode).max(8) })).max(12),
 });
 
+/** A preview of a workflow form (spec 8.22): tabs of sections, with what a proposed change moves or adds marked. */
+const formField = z.strictObject({
+  id: z.string().max(60),
+  label: z.string().max(80),
+  type: z.enum(['text', 'enum', 'money', 'date', 'person', 'file']),
+  help: z.string().max(200).optional(),
+  mark: z.enum(['added', 'moved', 'changed']).optional(),
+});
+
+export const formData = z.strictObject({
+  workflow: z.string().max(80),
+  state: z.enum(['live', 'draft', 'proposed']),
+  tabs: z
+    .array(z.strictObject({ title: z.string().max(40), sections: z.array(z.strictObject({ title: z.string().max(60), columns: z.union([z.literal(1), z.literal(2)]), fields: z.array(formField).max(30) })).max(10) }))
+    .min(1)
+    .max(6),
+  removed: z.array(z.string().max(80)).max(20).optional(),
+});
+
 export const textBlock = block('text', textData);
 export const kpiBlock = block('kpi', kpiData);
 export const kpiGroupBlock = block('kpi_group', kpiGroupData);
@@ -394,6 +413,7 @@ export const approvalCardBlock = block('approval_card', approvalData);
 export const listBlock = block('list', listData);
 export const definitionCardBlock = block('definition_card', definitionData);
 export const lineageGraphBlock = block('lineage_graph', lineageData);
+export const formBlock = block('form', formData);
 export const memberCardBlock = block('member_card', memberCardData);
 export const member360Block = block('member_360', member360Data);
 
@@ -457,6 +477,7 @@ export const blockSchema = z.discriminatedUnion('type', [
   listBlock,
   definitionCardBlock,
   lineageGraphBlock,
+  formBlock,
 ]);
 
 export type Block = z.infer<typeof blockSchema>;
@@ -474,6 +495,7 @@ export type ApprovalCardBlock = BlockOf<'approval_card'>;
 export type ListBlock = BlockOf<'list'>;
 export type DefinitionCardBlock = BlockOf<'definition_card'>;
 export type LineageGraphBlock = BlockOf<'lineage_graph'>;
+export type FormBlock = BlockOf<'form'>;
 export type MemberCardBlock = BlockOf<'member_card'>;
 export type Member360Block = BlockOf<'member_360'>;
 export type MemberScore = z.infer<typeof memberScore>;
@@ -496,4 +518,5 @@ export const blockSchemasByType = {
   list: listBlock,
   definition_card: definitionCardBlock,
   lineage_graph: lineageGraphBlock,
+  form: formBlock,
 } as const;

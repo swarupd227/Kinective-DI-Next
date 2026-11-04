@@ -1,5 +1,7 @@
 export { ApprovalStore, ApprovalError, APPROVAL_TTL_MS, canonical, payloadHash, type ApprovalRecord, type ApprovalStatus, type RiskTier } from './approvals.ts';
 export { WorkflowDefService, splitFields, type Definition, type Problem } from './workflowDefs.ts';
+export { allFields, applyLayout, layoutOf, previewOf, type LayoutOp } from './formLayout.ts';
+export { WorksheetService, WORKSHEET_CREATORS, WORKSHEET_PRODUCTS, type ReferralTypeSheet } from './worksheet.ts';
 export { TaskService, type Person, type TaskItem } from './tasks.ts';
 export { IndirectService, ProspectService, directionsLink, miles, visitOrder, type DealerFigures, type Prospect } from './growth.ts';
 export { CalendarService, CalendarStore, FileStore, FILE_FOLDERS, FILE_LIBRARY, MAX_UPLOAD_BYTES, MY_FILES, QueryService, SAVED_QUERIES, UPLOAD_EXTENSIONS, checkUpload, clock, findFiles, folderNamed, foldersFor, type CalendarEvent, type LibraryFile, type Meeting, type QueryResult, type SavedQuery } from './workspace.ts';
@@ -11,7 +13,7 @@ export { DataLogService, IssueService, OnboardingService, findPerson, ISSUE_REGU
 export { RetentionService, OFFER_RULES, offerRate, type Certificate, type MaturingCertificates, type OfferCost, type RetentionFilter } from './retention.ts';
 export { GoalsService, furthestBehind, payFor, ruleText, usd, type GoalsWho, type GoalScore, type IncentiveRule, type PayoutBatch, type PayoutLine, type ScoreExplanation, type Scorecard } from './goals.ts';
 export { PipelineService, PIPELINE_VIEWS, SUMMARY_WINDOW_DAYS, type PipelineView, type PipelineWho, type PipelineApplication, type PipelineCell, type PipelineSummary, type PipelineFilter, type PipelineFound, type PipelineStatus } from './pipeline.ts';
-export { ReferralService, CoreError, REFERRAL_STAGES, DUE_DAYS, type CoreContext, type PartyHit, type ReferralDraft, type RouteResult, type DraftCheck, type InboxBox, type InboxItem, type InboxDetail, type ChangeMeta, type ReferralStage } from './referrals.ts';
+export { ReferralService, CoreError, REFERRAL_STAGES, CLOSED_STAGES, DUE_DAYS, type CoreContext, type PartyHit, type ReferralDraft, type RouteResult, type DraftCheck, type InboxBox, type InboxItem, type InboxDetail, type ChangeMeta, type ReferralStage } from './referrals.ts';
 export type { AtRiskMember } from './relationship.ts';
 export { ReportStore, DELIVERY_GROUPS, SCHEDULE_RECIPIENT_CAP, type TemplateRow, type ScheduleDraft, type ScheduleRow, type ExportRow, type Recipient, type ShareDraft, type ShareRow, type PinDraft, type PinRow, type SettingsPayload, type SettingsFields, type SettingsChangeRow, type Viewer, openableBy } from './reports.ts';
 export {
@@ -30,3 +32,4 @@ export {
 } from './relationship.ts';
 // Email notifications: the simulated outbox and each person's preferences.
 export { EmailOutbox, EMAIL_KINDS, SIMULATED, composeEmail, emailAddress, emailKindLabel, scrub, tenantDomain, type EmailDraft, type EmailKind, type EmailPref, type EmailRow } from './notifications.ts';
+export { memberNumber } from './referrals.ts';

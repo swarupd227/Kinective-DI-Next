@@ -9,7 +9,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GOALS_WRITE_TABLES, GROWTH_WRITE_TABLES, MODULES_WRITE_TABLES, PIPELINE_WRITE_TABLES, WORKFLOW_WRITE_TABLES, WORKSPACE_WRITE_TABLES, createPool } from '@dinext/tenant-db';
-import { CALENDAR_SERIES_WRITE_TABLES, TABLES_WRITE_TABLES } from '@dinext/tenant-db';
+import { CALENDAR_SERIES_WRITE_TABLES, TABLES_WRITE_TABLES, WORKFLOW_DEF_WRITE_TABLES } from '@dinext/tenant-db';
 import { NOTIFY_WRITE_TABLES } from '@dinext/tenant-db';
 import { startLiveRuntime } from '../live.ts';
 import { PERSONAS } from '../data.ts';
@@ -20,7 +20,7 @@ const only = process.argv[process.argv.indexOf('--only') + 1];
 const items = EVAL_ITEMS.filter((i) => !process.argv.includes('--only') || i.id.startsWith(only ?? ''));
 const ADMIN = process.env.DI_DB_ADMIN_URL ?? 'mysql://root:dinext_local_root@127.0.0.1:3307';
 const SCHEMAS = ['dinext_t_test_cu', 'dinext_t_test_bank'];
-const WATCHED = [...WORKFLOW_WRITE_TABLES, ...PIPELINE_WRITE_TABLES, ...GOALS_WRITE_TABLES, ...MODULES_WRITE_TABLES, ...GROWTH_WRITE_TABLES, ...WORKSPACE_WRITE_TABLES, ...CALENDAR_SERIES_WRITE_TABLES, ...TABLES_WRITE_TABLES, ...NOTIFY_WRITE_TABLES].filter((t) => t !== 'ai_approvals');
+const WATCHED = [...WORKFLOW_WRITE_TABLES, ...PIPELINE_WRITE_TABLES, ...GOALS_WRITE_TABLES, ...MODULES_WRITE_TABLES, ...GROWTH_WRITE_TABLES, ...WORKSPACE_WRITE_TABLES, ...CALENDAR_SERIES_WRITE_TABLES, ...TABLES_WRITE_TABLES, ...NOTIFY_WRITE_TABLES, ...WORKFLOW_DEF_WRITE_TABLES].filter((t) => t !== 'ai_approvals');
 const REFUSAL = /\b(can[’']t|cannot|isn[’']t (available|part)|not available|don[’']t|won[’']t|needs? (the|its own)|no access|which (number|one|stage|month)|couldn[’']t map|no defined metric|not built|not supported|turned on|only (for|available)|outside your|permission)\b/i;
 
 interface Observed {

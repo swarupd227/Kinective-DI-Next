@@ -120,7 +120,8 @@ export interface AppNotification {
   userId?: string;
 }
 
-export type ReferralStageName = 'New Referral' | 'Active' | 'Sold' | 'Not Interested' | 'Done';
+/** New Referral, Active, Sold, Not Interested, Done, or a stage the published Referral workflow adds. */
+export type ReferralStageName = string;
 
 /** One line of GET /v1/referrals. Members appear by name and masked number, with an opaque token. */
 export interface ReferralSummary {
@@ -149,6 +150,8 @@ export interface ReferralDetail extends ReferralSummary {
   team: { employeeId: number; name: string }[];
   /** Whether this user may change it: being the sender lets you read it, not work it. */
   canWork: boolean;
+  /** The stage bar, from the published Referral workflow. */
+  stages?: string[];
 }
 
 export interface ReferralsIndex {
@@ -170,6 +173,8 @@ export interface AppTile {
   value: string;
   detail?: string;
   tone?: 'neutral' | 'warning' | 'danger';
+  /** What to ask DI about this figure; the tile then starts that task when clicked. */
+  ask?: string;
 }
 
 export interface AppEvent {

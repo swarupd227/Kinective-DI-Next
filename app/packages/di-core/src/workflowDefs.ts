@@ -139,6 +139,14 @@ export class WorkflowDefService {
     await this.pool.query("UPDATE wf_definition SET spec = ?, updated_by = ?, updated_at = ? WHERE def_id = ? AND status = 'Draft'", [JSON.stringify(spec), meta.actor, meta.on, defId]);
   }
 
+  /**
+   * A form change made straight to the live version (spec 8.22): the layout, or a field the Form
+   * Layout agent added. The version goes up once per approval; running it again changes nothing.
+   */
+  async saveLive(defId: number, spec: WfSpec, meta: { approvalId: string; actor: string; on: string }) {
+    await this.pool.query("UPDATE wf_definition SET spec = ?, version = version + 1, updated_by = ?, updated_at = ?, approval_id = ? WHERE def_id = ? AND status = 'Active' AND (approval_id IS NULL OR approval_id <> ?)", [JSON.stringify(spec), meta.actor, meta.on, meta.approvalId, defId, meta.approvalId]);
+  }
+
   /** The draft becomes the live version. A new queue is created with the definition. */
   async publish(draftId: number, meta: { approvalId: string; actor: string; on: string }) {
     const [r] = await rows<Record<string, unknown>>(this.pool, "SELECT * FROM wf_definition WHERE def_id = ? AND status = 'Draft'", [draftId]);

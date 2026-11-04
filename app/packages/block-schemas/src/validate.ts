@@ -14,6 +14,7 @@ export const BLOCK_SUPPORT = {
   list: '1.x',
   definition_card: '1.x',
   lineage_graph: '1.x',
+  form: '1.x',
   member_card: '1.x',
   member_360: '1.x',
   report_canvas: '1.x',
