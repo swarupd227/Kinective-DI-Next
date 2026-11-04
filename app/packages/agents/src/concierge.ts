@@ -135,7 +135,7 @@ const naming = (text: string, label: string) => (THE_RECORD.test(text) ? text.re
 /** A thread with an open referral keeps routing there for answers like "by email" (spec 23.3). */
 const REFERRAL_FOLLOW_UP = /\b(change|make it|instead|switch|use|add|set|update|remove|send it|cancel|never ?mind|email|phone|call|text|evening|morning|afternoon|note)\b/i;
 
-const REPORT_WORDS = /\breports?\b|\bpack\b|scorecard|\bschedul|\bexport\b|\bdownload\b|executive summary|\b(pin|publish)\b.*\bhome\b|\boff (my |the )?home\b/;
+const REPORT_WORDS = /\breports?\b|\bpack\b|scorecard|\bschedul|\bexport\b|\bdownload\b|executive summary|executive dashboard|\b(pin|publish)\b.*\bhome\b|\boff (my |the )?home\b/;
 /** A thread with a report on screen keeps routing there for "make the chart a donut", "save it" and the like. */
 const REPORT_FOLLOW_UP = /^(make|add|move|remove|delete|drop|save|export|download|schedule|send|change|put|run it|show it|switch|pin|unpin|publish|take|restore)\b/i;
 

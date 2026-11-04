@@ -56,6 +56,8 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-DLG-001', set: 'golden', persona: 'admin', q: 'Show the data logs waiting for approval', agent: 'Data Logs', approval: 'none' },
   // Reports on Home and the reports Recycle Bin: today's DI "Save to Home and share with a class".
   { id: 'GQ-RPT-010', set: 'golden', persona: 'executive', q: 'Open the board report', agent: 'Report Builder', contains: ['Board report'], approval: 'none' },
+  { id: 'GQ-RPT-012', set: 'golden', persona: 'executive', q: 'Open the executive dashboard', agent: 'Report Builder', contains: ['Executive dashboard'], approval: 'none' },
+  { id: 'GQ-BI-004', set: 'golden', persona: 'executive', q: 'What are average deposits per member?', agent: 'Analytics Q&A', contains: ['per member'], approval: 'none' },
   { id: 'GQ-RPT-011', set: 'golden', persona: 'branch', q: 'Open the auto loans report for Westport', agent: 'Report Builder', contains: ['Auto loan balance'], onlyBranches: ['Westport'], approval: 'none' },
   { id: 'GQ-RPT-001', set: 'golden', persona: 'executive', q: 'Pin the branch scorecard to my Home', agent: 'Report Builder', contains: ['Pin “Branch scorecard” to your Home'], approval: 'low' },
   { id: 'GQ-RPT-002', set: 'golden', persona: 'executive', q: 'Publish the ALCO monthly pack to Home for managers', agent: 'Report Builder', contains: ['for the Manager class'], approval: 'medium' },

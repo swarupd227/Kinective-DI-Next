@@ -192,8 +192,9 @@ function metricValue(m: Metric, row: ResultRow): number | null {
   const num = row[`__${m.measures[0]}`] as number | null | undefined;
   const den = row[`__${m.measures[1]}`] as number | null | undefined;
   if (num === null || num === undefined || !den) return null;
-  // Ratios are shown in percent; the rate ratio is already in percent points.
-  return m.format === 'rate' ? num / den : (num / den) * 100;
+  // Percent ratios are shown in percent; the rate ratio is already in percent points, and a
+  // currency ratio (loans per member) is dollars.
+  return m.format === 'percent_1' || m.format === 'percent_2' ? (num / den) * 100 : num / den;
 }
 
 function compareValues(a: string | number | null, b: string | number | null) {

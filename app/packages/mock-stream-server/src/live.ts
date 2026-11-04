@@ -753,7 +753,10 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       ).filter((x) => x !== null);
       const referrals = open && { open: open.length, overdue: open.filter((i) => i.overdue).length };
       // Frontline staff (no Reports) see their own figures, not a smaller copy of the branch's.
-      if (!PERSONAS[persona].session.apps.includes('reports')) {
+      // Frontline staff have their own work to show; an administrator without Reports has neither
+      // goals nor referrals, so their Home keeps the institution figures.
+      const ownWork = PERSONAS[persona].session.apps.includes('gi') || PERSONAS[persona].session.apps.includes('referrals');
+      if (!PERSONAS[persona].session.apps.includes('reports') && ownWork) {
         const mine = tenant.goals && PERSONAS[persona].session.apps.includes('gi') && who.employeeId !== undefined ? await tenant.goals.scorecard(undefined, { employeeId: who.employeeId }, { purviewBranches: purview }).catch(() => null) : null;
         const sent = wf && PERSONAS[persona].session.apps.includes('referrals') ? await wf.referrals.inbox('sent', who, { purviewBranches: purview }).catch(() => []) : [];
         const own = personalKpis(kpis, mine, sent, referrals);
@@ -910,8 +913,8 @@ const figureOf = (k: KpiItem | undefined): JumpCard['figure'] =>
 
 /** The report each role opens first: what they are measured on. */
 const ROLE_REPORT: Partial<Record<PersonaId, { id: string; title: string; kpi: number; reason: string }>> = {
-  executive: { id: 'board_report_quarterly', title: 'Board report', kpi: 0, reason: 'The latest complete quarter, ready to walk through.' },
-  bank_cfo: { id: 'board_report_quarterly', title: 'Board report', kpi: 1, reason: 'The latest complete quarter, ready to walk through.' },
+  executive: { id: 'executive_dashboard_monthly', title: 'Executive dashboard', kpi: 0, reason: 'The month for leadership: members, balances, per-member averages and new lending by loan group.' },
+  bank_cfo: { id: 'executive_dashboard_monthly', title: 'Executive dashboard', kpi: 1, reason: 'The month for leadership: customers, balances, per-customer averages and new lending by loan group.' },
   analyst: { id: 'lending_portfolio_monthly', title: 'Lending portfolio', kpi: 0, reason: 'The loan book by category, as of last night’s build.' },
   branch: { id: 'growth_my_branch_monthly', title: 'Growth report – My branch', kpi: 3, reason: 'Your branch’s new relationships and lending this month.' },
 };

@@ -229,6 +229,28 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
         { id: 'c2', title: 'Deposit balance, last 6 quarters', kind: 'chart', chart: 'line', metrics: ['deposit_balance'], trend: 6, size: 'half' },
       ],
     },
+    // Today's DI Executive Dashboard, with a comparison on every figure. Closed members aren't in the
+    // warehouse, so it shows who joined and the member count, and says so rather than guess churn.
+    {
+      templateId: 'executive_dashboard_monthly',
+      name: 'Executive dashboard',
+      description: `The month for leadership: ${persons}, loans and deposits, per-${persons === 'members' ? 'member' : 'customer'} averages, ${persons === 'members' ? 'member' : 'customer'} growth and new loan production by loan group.`,
+      folder: 'Executive',
+      settings: { ...settings('month', ['Executive', 'Finance']), addHierarchyControls: false },
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        { ...kpi('k1', persons === 'members' ? 'Active members' : 'Active customers', 'member_count'), size: 'third' },
+        { ...kpi('k2', 'Total loans', 'loan_balance'), size: 'third' },
+        { ...kpi('k3', 'Total deposits', 'deposit_balance'), size: 'third' },
+        { ...kpi('k4', `Average loans per ${persons === 'members' ? 'member' : 'customer'}`, 'loans_per_member'), size: 'half' },
+        { ...kpi('k5', `Average deposits per ${persons === 'members' ? 'member' : 'customer'}`, 'deposits_per_member'), size: 'half' },
+        { id: 'c1', title: `New ${persons}, last 12 months`, kind: 'chart', chart: 'bar', metrics: ['new_members'], trend: 12, size: 'half' },
+        { id: 'c2', title: `Total ${persons}, last 12 months`, kind: 'chart', chart: 'line', metrics: ['member_count'], trend: 12, size: 'half' },
+        { id: 'n1', title: 'About growth', kind: 'text', metrics: [], text: `Closed ${persons === 'members' ? 'memberships' : 'relationships'} aren’t in DI’s data yet, so this shows who joined and the ${persons === 'members' ? 'member' : 'customer'} count, not net growth.`, size: 'full' },
+        { id: 't1', title: 'New loan production by loan group', kind: 'table', metrics: ['new_loan_count', 'new_loan_amount', 'loan_balance'], by: 'loan_category', size: 'full' },
+      ],
+    },
     // The named reports today's DI shows on its Dashboards home.
     {
       templateId: 'checking_growth_monthly',

@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApiClient, createStreamStore, StreamConnection, type ThreadState } from '@dinext/stream-client';
 import { createPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
-import type { VoiceServerMessage } from '@dinext/block-schemas';
+import { validateBlock, type VoiceServerMessage } from '@dinext/block-schemas';
+import { PERSONAS } from '../src/data.ts';
 import { FakeSpeechProvider, VoiceGateway } from '@dinext/voice';
 import { WebSocket } from 'ws';
 
@@ -147,6 +148,15 @@ describe.skipIf(!available)('a referral end to end through an approval card', ()
     expect(sofia).toContain('My goal attainment');
     expect(sofia).not.toMatch(/Total loan balance|Total deposit balance/);
     expect(sofia).toContain('"title":"Your month"');
+  });
+
+  it('sends every persona a Home whose blocks all pass validation', async () => {
+    for (const p of Object.keys(PERSONAS)) {
+      await persona(p);
+      const home = (await (await fetch(`${base}/v1/home`)).json()) as { sections: { id: string; blocks: unknown[] }[] };
+      const broken = home.sections.flatMap((s) => s.blocks.map((b) => validateBlock(b)).flatMap((v) => (v.ok ? [] : [`${p} / ${s.id}: ${v.issues.join('; ')}`])));
+      expect(broken).toEqual([]);
+    }
   });
 
   it('does not find members outside the purview, and says so the same way as for nobody', async () => {

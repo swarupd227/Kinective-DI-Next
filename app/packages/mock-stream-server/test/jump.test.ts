@@ -46,7 +46,7 @@ describe('Jump back in', () => {
     const cards = jumpCards('executive', { kpis, lookAt: [flag] }, [], { open: 9, overdue: 3 });
     expect(cards[0]).toMatchObject({ title: 'Loan delinquency', reason: flag.title, change: { text: '↑ 5 bp vs September month-end', good: false }, action: { label: 'Ask why', ask: flag.question }, link: '/reports/loan_delinquency_monthly' });
     // Referrals are in Your work, so they aren't repeated here.
-    expect(cards.map((c) => c.title)).toEqual(['Loan delinquency', 'Board report']);
+    expect(cards.map((c) => c.title)).toEqual(['Loan delinquency', 'Executive dashboard']);
     expect(cards[0]!.figure!.label).toBe('60+ days across the institution');
     expect(cards.length).toBeLessThanOrEqual(4);
   });

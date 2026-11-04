@@ -299,6 +299,28 @@ metrics:
     synonyms: [loan to share, loan to deposit, ltd, lts, liquidity]
     owner: Finance data team
     dimensions_allowed: []
+  loans_per_member:
+    label: Average loans per member
+    labels_by_type: { bank: Average loans per customer }
+    type: ratio
+    numerator: loan_balance_sum
+    denominator: member_count
+    format: currency
+    description: Total loan balance divided by the number of members. Institution level only, because members and loans are counted at different branches.
+    synonyms: [loans per member, average loans per member, loans per customer, average loan per member]
+    owner: Finance data team
+    dimensions_allowed: []
+  deposits_per_member:
+    label: Average deposits per member
+    labels_by_type: { credit_union: Average shares per member, bank: Average deposits per customer }
+    type: ratio
+    numerator: deposit_balance_sum
+    denominator: member_count
+    format: currency
+    description: Total deposit balance divided by the number of members. Institution level only, because members and deposits are counted at different branches.
+    synonyms: [deposits per member, average deposits per member, shares per member, deposits per customer, average deposit per member]
+    owner: Finance data team
+    dimensions_allowed: []
   member_count:
     label: Members
     labels_by_type: { bank: Customers }

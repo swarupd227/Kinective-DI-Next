@@ -8,7 +8,7 @@ import { runReport } from '../src/index.ts';
 
 describe('the named reports', () => {
   it('include the ones today’s DI shows on its Dashboards home', () => {
-    expect(stockReports('credit_union').map((r) => r.name)).toEqual(expect.arrayContaining(['Checking growth', 'Lending – Auto loans', 'Lending – Loan delinquency', 'Loan app reports', 'Growth report – My branch', 'Lending portfolio', 'Board report']));
+    expect(stockReports('credit_union').map((r) => r.name)).toEqual(expect.arrayContaining(['Checking growth', 'Lending – Auto loans', 'Lending – Loan delinquency', 'Loan app reports', 'Growth report – My branch', 'Lending portfolio', 'Board report', 'Executive dashboard']));
   });
 });
 
