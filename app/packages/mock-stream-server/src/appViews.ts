@@ -104,17 +104,17 @@ export function createAppViews(deps: ViewDeps) {
       const [saved, bin] = await Promise.all([svc.objects(deps.user.id).catch(() => []), svc.objects(deps.user.id, { status: 'Recycle Bin' }).catch(() => [])]);
       const label = (id: string) => svc.catalog.find((c) => c.id === id)?.label ?? id;
       const shared = (cls: string | null) => (!cls ? 'Only you' : cls === 'Everyone' ? 'Everyone' : `${cls} class`);
-      const row = (o: (typeof saved)[number]) => ({ name: o.name, kind: o.kind === 'View' ? 'Saved view' : 'Snapshot', table: label(o.tableId), rows: o.kind === 'View' ? 'Runs when opened' : o.rowCount.toLocaleString('en-US'), owner: o.ownerName, shared: shared(o.sharedClass), made: o.recycledOn ?? o.createdOn });
+      const row = (o: (typeof saved)[number]) => ({ name: o.name, kind: o.kind === 'View' ? 'Saved view' : o.kind === 'Upload' ? 'Uploaded table' : 'Snapshot', table: o.kind === 'Upload' ? 'From a file' : label(o.tableId), rows: o.kind === 'View' ? 'Runs when opened' : o.rowCount.toLocaleString('en-US'), owner: o.ownerName, shared: shared(o.sharedClass), made: o.recycledOn ?? o.createdOn });
       const columns = [text('name', 'Name'), text('kind', 'Kind'), text('table', 'Table'), text('rows', 'Rows'), text('owner', 'Owner'), text('shared', 'Who can see it')];
       const views = saved.filter((o) => o.kind === 'View').length;
       return {
         title: 'Tables',
         lede: 'Curated tables from the nightly build, and the saved views and snapshots made from them.',
-        take: { headline: saved.length ? `${count(saved.length, 'saved view or snapshot', 'saved views and snapshots')} you can open${bin.length ? `, and ${count(bin.length, 'item')} in your Recycle Bin` : ''}.` : 'No saved views or snapshots yet. Ask DI to snapshot a table, or merge two into a saved view.', action: { label: 'Profile Loan Accounts', ask: 'Profile the Loan Accounts table' } },
-        tiles: [{ label: 'Curated tables', value: String(svc.catalog.length) }, { label: 'Saved views', value: String(views) }, { label: 'Snapshots', value: String(saved.length - views) }, { label: 'Recycle Bin', value: String(bin.length) }],
+        take: { headline: saved.length ? `${count(saved.length, 'saved view, snapshot or uploaded table', 'saved views, snapshots and uploaded tables')} you can open${bin.length ? `, and ${count(bin.length, 'item')} in your Recycle Bin` : ''}.` : 'No saved views, snapshots or uploaded tables yet. Ask DI to snapshot a table, merge two into a saved view, or load a file on Integrations.', action: { label: 'Profile Loan Accounts', ask: 'Profile the Loan Accounts table' } },
+        tiles: [{ label: 'Curated tables', value: String(svc.catalog.length) }, { label: 'Saved views', value: String(views) }, { label: 'Snapshots', value: String(saved.filter((o) => o.kind === 'Snapshot').length) }, ...(saved.some((o) => o.kind === 'Upload') ? [{ label: 'Uploaded tables', value: String(saved.filter((o) => o.kind === 'Upload').length) }] : []), { label: 'Recycle Bin', value: String(bin.length) }],
         prompts: ['Which tables link to Loan Accounts?', 'Snapshot the Loan Accounts table', 'Show my saved views and snapshots', ...bin.slice(0, 3).map((o) => (o.kind === 'View' ? `Restore the ${o.name} view` : `Restore ${o.name}`))],
-        notice: 'Rows come from the core system in each nightly build, so they can’t be added or edited here. Records change through workflows and the core system. Comparing two snapshots isn’t built yet.',
-        links: saved.map((o) => ({ label: `Open ${o.name}`, to: `/tables/${o.kind === 'View' ? 'view' : 'snapshot'}-${o.objId}` })),
+        notice: 'Curated tables come from the core system in each nightly build, so their rows can’t be added or edited here. Uploaded tables are your own data, loaded from a file on Integrations. Comparing two snapshots isn’t built yet.',
+        links: saved.map((o) => ({ label: `Open ${o.name}`, to: `/tables/${o.kind === 'View' ? 'view' : o.kind === 'Upload' ? 'upload' : 'snapshot'}-${o.objId}` })),
         blocks: [...(saved.length ? [table('Saved views and snapshots', 'tables.objects', columns, saved.map(row))] : []), ...(bin.length ? [table(`Recycle Bin (${bin.length})`, 'tables.bin', [...columns.slice(0, 3), text('made', 'Deleted on')], bin.map(row))] : [])],
       };
     },
@@ -362,7 +362,7 @@ export function createAppViews(deps: ViewDeps) {
         take: { headline: (build.stale ? `No new build for ${build.ageDays} days; the latest finished ${day(build.finishedOn)}, with data as of ${day(build.asOf)}. ` : '') + (late.length ? `${count(late.length, 'source')} arrived late: ${late.map((u) => `${u.source}, due ${u.dueBy}, arrived ${u.arrived}`).join('; ')}. The build ${build.state} with what was there.` : `Every source arrived on time, and the build ${build.state}.`), action: { label: 'Which uploaders were late?', ask: 'Which uploaders missed their late-file time?' } },
         tiles: [{ label: 'Sources', value: String(build.uploads.length) }, { label: 'Late', value: String(late.length), tone: late.length ? 'warning' : 'neutral' }, build.stale ? { label: 'Since the last build', value: `${build.ageDays} days`, detail: `Finished ${day(build.finishedOn)}`, tone: 'danger' as const } : { label: 'Last build', value: title(build.state), detail: day(build.asOf) }],
         prompts: ['Which uploaders missed their late-file time?', build.stale ? 'Why hasn’t a new build run?' : 'Did last night’s build finish?'],
-        notice: 'Read only. Adding a source, connections and credentials are set up by Kinective and aren’t built here yet.',
+        notice: 'Load a CSV or Excel file below: DI checks it and loads it into a table of your own once you approve. SFTP connections, scheduled uploaders and new core sources are still set up by Kinective.',
         blocks: [table('Data sources', 'ingestion.sources', [text('source', 'Source'), text('method', 'How it arrives'), text('dueBy', 'Due by'), text('arrived', 'Arrived'), text('state', 'Last load')], build.uploads.map((u) => ({ source: u.source, method: u.method, dueBy: u.dueBy, arrived: u.arrived, state: u.late ? 'Late' : 'On time' })))],
       };
     },

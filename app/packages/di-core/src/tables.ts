@@ -166,7 +166,8 @@ export interface MergeDefinition {
 
 export interface TableObject {
   objId: number;
-  kind: 'View' | 'Snapshot';
+  /** An Upload is a table loaded from a person's file (ingest.ts); it opens like a snapshot. */
+  kind: 'View' | 'Snapshot' | 'Upload';
   name: string;
   tableId: string;
   rowCount: number;
@@ -352,7 +353,8 @@ export class TableService {
     const [r] = await rows<{ content: string }>(this.pool, 'SELECT content FROM tbl_object WHERE obj_id = ?', [objId]);
     const content = JSON.parse(r?.content ?? '{"columns":[],"rows":[]}') as { columns: TableRows['columns']; rows: (string | number | null)[][] };
     const bi = content.columns.findIndex((c) => c.field === 'branch');
-    const kept = content.rows.filter((x) => !ctx.purviewBranches || (bi >= 0 && ctx.purviewBranches.includes(String(x[bi]))));
+    // A snapshot shows only the rows in the person's purview. An upload is the uploader's own data, shown whole.
+    const kept = o.kind === 'Upload' ? content.rows : content.rows.filter((x) => !ctx.purviewBranches || (bi >= 0 && ctx.purviewBranches.includes(String(x[bi]))));
     return { label: o.name, columns: content.columns, rows: kept.slice(0, VIEW_ROW_CAP).map((x) => Object.fromEntries(content.columns.map((c, i) => [c.field, x[i] ?? null]))), rowCount: kept.length, object: o };
   }
 

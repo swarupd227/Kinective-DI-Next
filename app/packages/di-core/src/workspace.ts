@@ -300,6 +300,14 @@ export class FileStore {
     return { fileId: hit.file_id as number, name: hit.name as string, type: hit.type as string, sizeKb: hit.size_kb as number };
   }
 
+  /** A staged upload's bytes, for loading a data file. Only the uploader's own. */
+  async stagedContent(userId: string, name?: string) {
+    const f = await this.staged(userId, name);
+    const [r] = await rows<{ content: Buffer }>(this.pool, "SELECT content FROM fil_file WHERE file_id = ? AND owner_user_id = ? AND status = 'Staged'", [f.fileId, userId]);
+    if (!r?.content) throw new CoreError('NOT_FOUND', 'That upload has no content I can read.');
+    return { ...f, body: Buffer.isBuffer(r.content) ? r.content : Buffer.from(r.content) };
+  }
+
   /** Files a save once: a second apply finds nothing Staged. */
   async save(p: { fileId: number; folder: string }, meta: { approvalId: string; on: string }) {
     await this.pool.query("UPDATE fil_file SET status = 'Saved', folder = ?, modified = ?, approval_id = ? WHERE file_id = ? AND status = 'Staged'", [p.folder, meta.on, meta.approvalId, p.fileId]);

@@ -7,8 +7,9 @@ import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, 
 import { ApprovalStore, WorksheetService, CalendarStore, FileStore, foldersFor, TaskService, WorkflowDefService, IndirectService, ProspectService, QueryService, GovernanceService, LineageService, CallReportService, CampaignService, CollectionsService, CoreError, DataLogService, GoalsService, IssueService, OnboardingService, OperationsService, RetentionService, SegService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type CoreContext, type InboxItem, type Scorecard, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
 import type { JumpCard, AppNotification, AppView, AppViewId, QueryRun, DiTake, GoalsIndex, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
 import { createAppViews } from './appViews.ts';
-import { columnStatRows, tablesModule } from '@dinext/agents';
-import { TableService, type TableObject } from '@dinext/di-core';
+import { columnStatRows, dataLoadModule, tablesModule } from '@dinext/agents';
+import { IngestService, TableService, type TableObject } from '@dinext/di-core';
+import { readWorkbook } from './spreadsheet.ts';
 import type { TableSavedItem, TableWorkbench } from '@dinext/block-schemas';
 import { renderExport } from './exports.ts';
 import type { AppId } from '@dinext/block-schemas';
@@ -330,7 +331,8 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       () => false,
     );
     const tables = hasTables ? new TableService(pool, institutionType === 'bank' ? 'customer' : 'member') : null;
-    const tablesModules = tables ? [tablesModule(tables, today)] : [];
+    // Data files load into the Tables store; the module goes first so "load x.csv into a table" is never read as Tables or Files.
+    const tablesModules = tables ? [dataLoadModule(files, new IngestService(pool, readWorkbook), today), tablesModule(tables, today)] : [];
     // Email notifications exist once the tenant has the outbox tables; the module goes first so its
     // narrow phrases ("stop emailing me …") are never read as another module's request.
     const hasOutbox = await pool.query('SELECT 1 FROM ntf_pref LIMIT 1').then(
@@ -862,7 +864,7 @@ const tablesWho = (persona: PersonaId) => {
   return p.session.apps.includes('tables') && p.modules?.includes('tables') ? { userId: p.session.user.id, ctx: { purviewBranches: p.purview } } : null;
 };
 
-const savedItem = (t: TableService, o: TableObject, userId: string): TableSavedItem => ({ id: `${o.kind === 'View' ? 'view' : 'snapshot'}-${o.objId}`, name: o.name, kind: o.kind === 'View' ? 'Saved view' : 'Snapshot', table: t.catalog.find((c) => c.id === o.tableId)?.label ?? o.tableId, rows: o.kind === 'View' ? 'Runs when opened' : o.rowCount.toLocaleString('en-US'), owner: o.ownerName, shared: !o.sharedClass ? 'Only you' : o.sharedClass === 'Everyone' ? 'Everyone' : `${o.sharedClass} class`, made: o.createdOn, mine: o.ownerUserId === userId });
+const savedItem = (t: TableService, o: TableObject, userId: string): TableSavedItem => ({ id: `${o.kind === 'View' ? 'view' : o.kind === 'Upload' ? 'upload' : 'snapshot'}-${o.objId}`, name: o.name, kind: o.kind === 'View' ? 'Saved view' : o.kind === 'Upload' ? 'Uploaded table' : 'Snapshot', table: o.kind === 'Upload' ? 'From a file' : (t.catalog.find((c) => c.id === o.tableId)?.label ?? o.tableId), rows: o.kind === 'View' ? 'Runs when opened' : o.rowCount.toLocaleString('en-US'), owner: o.ownerName, shared: !o.sharedClass ? 'Only you' : o.sharedClass === 'Everyone' ? 'Everyone' : `${o.sharedClass} class`, made: o.createdOn, mine: o.ownerUserId === userId });
 
 /** A curated table other than Loan Accounts, or a saved view or snapshot ("view-12"), under the person's purview. */
 async function tablesData(tenant: Tenant, persona: PersonaId, tableId: string): Promise<TableData | null> {
@@ -871,7 +873,7 @@ async function tablesData(tenant: Tenant, persona: PersonaId, tableId: string): 
   if (!who || !t) return null;
   const asOf = tenant.runtime.semantic?.build.completedAt;
   const freshnessAsOf = asOf ? `${asOf}-04:00` : new Date().toISOString();
-  const saved = /^(view|snapshot)-(\d+)$/.exec(tableId);
+  const saved = /^(view|snapshot|upload)-(\d+)$/.exec(tableId);
   const data = saved ? await t.objectRows(who.userId, Number(saved[2]), who.ctx) : t.catalog.some((c) => c.id === tableId) ? await t.rows(tableId, who.ctx) : null;
   if (!data) return null;
   return { tableId, label: data.label, columns: data.columns, rows: data.rows, rowCount: data.rowCount, freshnessAsOf };
@@ -881,9 +883,14 @@ async function tablesWorkbench(tenant: Tenant, persona: PersonaId, tableId: stri
   const who = tablesWho(persona);
   const t = tenant.tables;
   if (!who || !t) return null;
-  const saved = /^(view|snapshot)-(\d+)$/.exec(tableId);
+  const saved = /^(view|snapshot|upload)-(\d+)$/.exec(tableId);
   const object = saved ? (await t.objects(who.userId)).find((o) => o.objId === Number(saved[2])) : undefined;
   if (saved && !object) return null;
+  // An uploaded table has no curated table behind it: its rows, and the asks that fit a file's data.
+  if (object?.kind === 'Upload') {
+    const item = savedItem(t, object, who.userId);
+    return { tableId, label: object.name, stats: [], personal: [], relationships: [], saved: [item], actions: [{ label: 'Add rows from a file', ask: null, why: 'Upload the file on Integrations, then ask DI to add it to this table.' }, item.mine ? { label: 'Make public', ask: `Make ${object.name} public` } : { label: 'Make public', ask: null, why: `${object.ownerName} owns this table.` }] };
+  }
   const base = t.catalog.find((c) => c.id === (object?.tableId ?? tableId));
   if (!base) return null;
   const st = object ? null : await t.stats(base.id, who.ctx);
@@ -902,7 +909,7 @@ async function tablesWorkbench(tenant: Tenant, persona: PersonaId, tableId: stri
       { label: 'Column stats', ask: `Profile the ${base.label} table` },
       { label: 'Snapshot', ask: `Snapshot the ${base.label} table` },
       links[0] ? { label: 'Merge…', ask: `Merge ${base.label} with ${links[0].table} on ${links[0].key} as a saved view called ${base.label} with ${links[0].table}` } : { label: 'Merge…', ask: null, why: 'No other table links to this one.' },
-      target?.mine ? { label: 'Make public', ask: target.kind === 'Snapshot' ? `Make ${target.name} public` : `Make the ${target.name} view public` } : { label: 'Make public', ask: null, why: 'Save a view or snapshot of your own first.' },
+      target?.mine ? { label: 'Make public', ask: target.kind !== 'Saved view' ? `Make ${target.name} public` : `Make the ${target.name} view public` } : { label: 'Make public', ask: null, why: 'Save a view or snapshot of your own first.' },
     ],
   };
 }

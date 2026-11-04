@@ -170,10 +170,10 @@ function Saved({ bench }: { bench: TableWorkbench }) {
           </span>
           {s.mine && (
             <span className={styles.rowActions}>
-              <button type="button" className={page.prompt} onClick={() => ask(s.kind === 'Snapshot' ? `Make ${s.name} public` : `Make the ${s.name} view public`)}>
+              <button type="button" className={page.prompt} onClick={() => ask(s.kind !== 'Saved view' ? `Make ${s.name} public` : `Make the ${s.name} view public`)}>
                 Make public
               </button>
-              <button type="button" className={page.prompt} onClick={() => ask(s.kind === 'Snapshot' ? `Delete ${s.name}` : `Delete the ${s.name} view`)}>
+              <button type="button" className={page.prompt} onClick={() => ask(s.kind !== 'Saved view' ? `Delete ${s.name}` : `Delete the ${s.name} view`)}>
                 Delete
               </button>
             </span>

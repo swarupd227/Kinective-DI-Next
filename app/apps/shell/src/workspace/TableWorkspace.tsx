@@ -15,6 +15,8 @@ const DataGrid = lazy(() => import('@dinext/blocks/grid'));
 export function TableWorkspace({ tableId, full = false }: { tableId: string; full?: boolean }) {
   const { api } = useSession();
   const [filter, setFilter] = useState('');
+  // A table loaded from someone's file isn't from the nightly build, and isn't cut to a purview.
+  const uploaded = tableId.startsWith('upload-');
   const q = useQuery({ queryKey: ['table', tableId], queryFn: () => api.table(tableId) });
 
   if (q.isPending) return <Skeleton height="320px" radius="md" />;
@@ -41,7 +43,7 @@ export function TableWorkspace({ tableId, full = false }: { tableId: string; ful
         />
         <span className={styles.meta}>
           <Database size={12} aria-hidden />
-          {formatAsOf(t.freshnessAsOf)}
+          {uploaded ? 'Loaded from a file' : formatAsOf(t.freshnessAsOf)}
         </span>
         {!full && (
           <Link to={`/tables/${tableId}`} className={styles.fullLink}>
@@ -55,7 +57,7 @@ export function TableWorkspace({ tableId, full = false }: { tableId: string; ful
         </Suspense>
       </div>
       <p className={styles.count}>
-        {t.rowCount.toLocaleString()} rows · limited to your purview
+        {t.rowCount.toLocaleString()} rows · {uploaded ? 'your own data, not from the nightly build' : 'limited to your purview'}
       </p>
     </div>
   );

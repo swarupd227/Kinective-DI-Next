@@ -102,7 +102,73 @@ const PATHS: Partial<Record<AppViewId, string>> = { files: '/files', datalogs: '
 
 export function AppViewPage({ app }: { app: AppViewId }) {
   const q = useView(app, PATHS[app] ?? `/${app}`);
-  return <Frame q={q}>{(v) => <Blocks view={v} />}</Frame>;
+  return (
+    <Frame q={q}>
+      {(v) => (
+        <>
+          {app === 'integrations' && <DataUpload />}
+          <Blocks view={v} />
+        </>
+      )}
+    </Frame>
+  );
+}
+
+const DATA_ACCEPT = '.csv,.txt,.xlsx';
+
+/**
+ * Upload a data file (Integrations > Files): the file is staged, then DI reads it, matches it to a
+ * table and prepares a card that says exactly what will load. Nothing loads until it's approved.
+ */
+function DataUpload() {
+  const { api, startThread } = useSession();
+  const navigate = useNavigate();
+  const [file, setFile] = useState<File | null>(null);
+  const [into, setInto] = useState('');
+  const load = useMutation<void, Error, { file: File; into: string }>({
+    mutationFn: async (u) => {
+      if (u.file.size > MAX_BYTES) throw new Error(`That file is ${(u.file.size / 1024 / 1024).toFixed(1)} MB. Data files can be up to 5 MB.`);
+      const staged = await api.stageFile({ name: u.file.name, data: await base64(u.file) });
+      const table = u.into.trim();
+      const id = await startThread(table ? `Load “${staged.name}” into the ${table} table` : `Load “${staged.name}”`);
+      navigate(`/c/${id}`);
+    },
+  });
+  return (
+    <section className={styles.query} aria-labelledby="data-upload">
+      <h2 id="data-upload" className={styles.heading}>
+        Upload a data file
+      </h2>
+      <div className={styles.uploadRow}>
+        <label className={styles.field}>
+          <span className={styles.tileLabel}>CSV or Excel file</span>
+          <input
+            type="file"
+            accept={DATA_ACCEPT}
+            onChange={(e) => {
+              setFile(e.target.files?.[0] ?? null);
+              load.reset();
+            }}
+          />
+        </label>
+        <label className={styles.field}>
+          <span className={styles.tileLabel}>Into (optional)</span>
+          <input className={styles.select} value={into} onChange={(e) => setInto(e.target.value)} placeholder="New table" />
+        </label>
+      </div>
+      <p className={styles.tileLabel}>DI reads every row, says what each column holds and what won’t load, and prepares a card. Nothing is loaded until you approve. Up to 5 MB and 5,000 rows, with a header row.</p>
+      <div>
+        <Button variant="primary" disabled={!file || load.isPending} onClick={() => file && load.mutate({ file, into })}>
+          {load.isPending ? 'Uploading…' : 'Upload and ask DI to load it'}
+        </Button>
+      </div>
+      {load.isError && (
+        <p className={styles.message} role="alert">
+          {load.error.message}
+        </p>
+      )}
+    </section>
+  );
 }
 
 // ---- email notifications ------------------------------------------------------------------------

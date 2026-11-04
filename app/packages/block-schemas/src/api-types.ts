@@ -350,7 +350,7 @@ export interface TableSavedItem {
   /** Opens at /tables/{id}. */
   id: string;
   name: string;
-  kind: 'Saved view' | 'Snapshot';
+  kind: 'Saved view' | 'Snapshot' | 'Uploaded table';
   table: string;
   rows: string;
   owner: string;

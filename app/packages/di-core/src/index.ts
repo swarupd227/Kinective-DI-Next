@@ -33,3 +33,4 @@ export {
 // Email notifications: the simulated outbox and each person's preferences.
 export { EmailOutbox, EMAIL_KINDS, SIMULATED, composeEmail, emailAddress, emailKindLabel, scrub, tenantDomain, type EmailDraft, type EmailKind, type EmailPref, type EmailRow } from './notifications.ts';
 export { memberNumber } from './referrals.ts';
+export { IngestService, LOADABLE, convert, fieldFor, looksFixedWidth, parseDelimited, profile, tableNameFrom, type Cell, type ColumnProfile, type FileProfile, type Sheet, type SpreadsheetReader, type UploadedTable, type ValueKind } from './ingest.ts';

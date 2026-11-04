@@ -12,6 +12,7 @@ export { onboardingModule, talkingPoint } from './onboarding.ts';
 export { dataLogsModule } from './dataLogs.ts';
 export { governanceModule, lineageModule } from './governance.ts';
 export { calendarModule, filesModule, parseWhen, spokenWhen, type When } from './workspace.ts';
+export { dataLoadModule, loadTarget } from './dataLoad.ts';
 export { indirectModule, prospectingModule } from './growth.ts';
 export { tasksModule } from './tasks.ts';
 export { workflowBuilderModule, parseWorksheetRequest, referralFields } from './workflowBuilder.ts';
