@@ -10,6 +10,7 @@ import type { SearchResult, SearchResultKind } from '@dinext/block-schemas';
 import { useSession } from '../session/SessionProvider.tsx';
 import { APP_META } from './apps.tsx';
 import { SLASH_HELP } from './commands.ts';
+import { looksLikeQuestion, startsWords } from './searchMatch.ts';
 import { useUi } from './uiStore.ts';
 import styles from './CommandPalette.module.css';
 
@@ -25,6 +26,9 @@ const kindIcon: Record<SearchResultKind, ReactNode> = {
   dashboard: <LayoutDashboard size={16} aria-hidden />,
 };
 
+/** One order every time, so groups don't jump about as results arrive: places, then records, then people. */
+const KIND_ORDER: SearchResultKind[] = ['report', 'dashboard', 'table', 'view', 'workflow', 'branch', 'member', 'employee', 'thread'];
+
 const kindLabel = (k: SearchResultKind, person: string) =>
   ({ report: 'Reports', table: 'Tables', view: 'Saved views', member: `${person[0]!.toUpperCase()}${person.slice(1)}s`, employee: 'Employees', branch: 'Branches', workflow: 'Workflows', thread: 'Conversations', dashboard: 'Dashboards' })[k];
 
@@ -36,6 +40,9 @@ export function CommandPalette() {
   const [query, setQuery] = useState('');
   // Results are kept with the query they answer, so stale replies never show under newer text.
   const [found, setFound] = useState<{ q: string; results: SearchResult[] }>({ q: '', results: [] });
+  // Once the person moves through the list (keys or pointer), Enter opens what they picked.
+  const [moved, setMoved] = useState(false);
+  const [picked, setPicked] = useState('');
   const threads = useQuery({ queryKey: ['threads', ''], queryFn: () => api.threads(), enabled: paletteOpen });
 
   // Debounced so results arrive within the 300 ms budget of the last keystroke (FE-SRCH-001).
@@ -66,10 +73,16 @@ export function CommandPalette() {
   };
 
   const q = query.trim().toLowerCase();
-  const results = found.q === query.trim() ? found.results : [];
-  const match = (s: string) => !q || s.toLowerCase().includes(q);
-  const exact = results.some((r) => r.label.toLowerCase() === q);
-  const grouped = [...results.reduce((m, r) => m.set(r.kind, [...(m.get(r.kind) ?? []), r]), new Map<SearchResultKind, SearchResult[]>()).entries()];
+  const loading = Boolean(q) && found.q !== query.trim();
+  // While the next answer is on its way, earlier results that still match stay put instead of vanishing.
+  const results = found.q === query.trim() ? found.results : found.results.filter((r) => startsWords(q, `${r.label} ${r.detail ?? ''}`));
+  const match = (s: string) => !q || startsWords(q, s);
+  const grouped = KIND_ORDER.map((k) => [k, results.filter((r) => r.kind === k)] as const).filter(([, items]) => items.length > 0);
+  const question = looksLikeQuestion(query);
+  // Until the person picks, Enter opens the best match, or asks DI when it's a question or nothing matches.
+  const best = grouped[0]?.[1][0];
+  const auto = question || !best ? `ask:${query}` : `${best.kind}:${best.id}`;
+
   const apps = session.apps.filter((a) => APP_META[a] && match(APP_META[a]!.label));
   const slash = session.slashCommands.filter((c) => match(`${c} ${SLASH_HELP[c]?.hint ?? ''}`));
   const recent = (threads.data ?? []).filter((t) => match(t.title)).slice(0, q ? 5 : 4);
@@ -81,7 +94,7 @@ export function CommandPalette() {
         <span className={styles.label}>
           Ask DI: <strong>{query.trim()}</strong>
         </span>
-        <span className={styles.hint}>Enter</span>
+        {(question || results.length === 0) && <span className={styles.hint}>Enter</span>}
       </Command.Item>
     </Command.Group>
   );
@@ -92,14 +105,23 @@ export function CommandPalette() {
       onOpenChange={setOpen}
       label="Search or ask DI"
       shouldFilter={false}
+      value={moved ? picked : q ? auto : undefined}
+      onValueChange={setPicked}
       loop
       overlayClassName={styles.overlay}
       contentClassName={styles.dialog}
     >
-      <Command.Input value={query} onValueChange={setQuery} placeholder={`Search reports, tables, ${terms.persons}, branches… or ask a question`} className={styles.input} />
-      <Command.List className={styles.list}>
-        <Command.Empty className={styles.empty}>No matches. Press Enter to ask DI.</Command.Empty>
-        {!exact && askItem}
+      <Command.Input
+        value={query}
+        onValueChange={(v) => {
+          setQuery(v);
+          setMoved(false);
+        }}
+        onKeyDown={(e) => {
+          if (['ArrowDown', 'ArrowUp', 'Home', 'End', 'PageDown', 'PageUp'].includes(e.key)) setMoved(true);
+        }} placeholder={`Search reports, tables, ${terms.persons}, branches… or ask a question`} className={styles.input} />
+      <Command.List className={styles.list} onPointerMove={() => setMoved(true)}>
+        {loading && results.length === 0 && <Command.Loading className={styles.empty}>Searching…</Command.Loading>}
         {grouped.map(([kind, items]) => (
           <Command.Group key={kind} heading={kindLabel(kind, terms.person)}>
             {items.map((r) => (
@@ -111,7 +133,6 @@ export function CommandPalette() {
             ))}
           </Command.Group>
         ))}
-        {exact && askItem}
         {recent.length > 0 && (
           <Command.Group heading="Recent tasks">
             {recent.map((t) => (
@@ -178,6 +199,8 @@ export function CommandPalette() {
             </Command.Item>
           </Command.Group>
         )}
+        {/* Always last, so it's in the same place every time. */}
+        {askItem}
       </Command.List>
       <footer className={styles.footer}>
         <span>

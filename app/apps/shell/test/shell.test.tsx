@@ -212,4 +212,43 @@ describe('command palette (FE-EXP-130, FE-SRCH-003)', () => {
     expect(screen.queryByRole('option', { name: 'Queries' })).toBeNull();
     expect(screen.getByRole('option', { name: /\/refer/ })).toBeInTheDocument();
   });
+
+  it('keeps groups in one order with Ask DI last, and Enter opens the best match', async () => {
+    const user = userEvent.setup();
+    const results = [
+      { kind: 'employee', id: 'e1', label: 'J. Ortiz', detail: 'MSR · Westport', link: '/m/gi/scorecard/e1' },
+      { kind: 'branch', id: 'b1', label: 'Westport', detail: 'Branch', link: '/c/new?q=Brief' },
+      { kind: 'report', id: 'r1', label: 'Westport growth', detail: 'Reports / Retail', link: '/reports/r1' },
+    ];
+    const session = makeSession({}, { api: { search: vi.fn().mockResolvedValue(results), threads: vi.fn().mockResolvedValue([]), cancelRun: vi.fn() } as unknown as SessionValue['api'] });
+    renderShell(<CommandPalette />, session);
+    useUi.getState().setPalette(true);
+    await user.type(await screen.findByPlaceholderText(/Search reports/), 'westport');
+    await screen.findByRole('option', { name: /Westport growth/ });
+    const headings = [...document.querySelectorAll('[cmdk-group-heading]')].map((h) => h.textContent);
+    expect(headings.slice(0, 4)).toEqual(['Reports', 'Branches', 'Employees', 'Ask DI']);
+    expect(headings.at(-1)).toBe('Ask DI');
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getAllByRole('option')[0]).toHaveTextContent('Westport growth');
+  });
+
+  it('asks DI on Enter when the text is a question, even with a match', async () => {
+    const user = userEvent.setup();
+    const results = [{ kind: 'table', id: 't1', label: 'Loan Accounts', detail: 'Tables / Curated', link: '/tables/loan_accounts' }];
+    const session = makeSession({}, { api: { search: vi.fn().mockResolvedValue(results), threads: vi.fn().mockResolvedValue([]), cancelRun: vi.fn() } as unknown as SessionValue['api'] });
+    renderShell(<CommandPalette />, session);
+    useUi.getState().setPalette(true);
+    await user.type(await screen.findByPlaceholderText(/Search reports/), 'why did loans drop');
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(session.startThread).toHaveBeenCalledWith('why did loans drop'));
+  });
+
+  it('shows that it is searching before the first answer arrives', async () => {
+    const user = userEvent.setup();
+    const session = makeSession({}, { api: { search: vi.fn(() => new Promise(() => {})), threads: vi.fn().mockResolvedValue([]), cancelRun: vi.fn() } as unknown as SessionValue['api'] });
+    renderShell(<CommandPalette />, session);
+    useUi.getState().setPalette(true);
+    await user.type(await screen.findByPlaceholderText(/Search reports/), 'zzq');
+    expect(await screen.findByText('Searching…')).toBeInTheDocument();
+  });
 });

@@ -17,6 +17,7 @@ import type {
   ThreadSummary,
 } from '@dinext/block-schemas';
 import { pickScenario, scriptForAgent, type Script, type ScriptContext } from './scenarios.ts';
+import { rank } from './search.ts';
 import { PERSONAS, homeApprovals, homeFor, isPersona, searchFor, sessionFor, tableFor, usersToTell, type PersonaId } from './data.ts';
 import type { LiveRuntime, Notice } from './live.ts';
 import { createSpeechTap } from './speech.ts';
@@ -496,14 +497,17 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       }
       if (method === 'GET' && path === '/v1/search') {
         const q = url.searchParams.get('q') ?? '';
-        // Real reports first, then the static catalog without the ones they repeat.
-        const reports = (await live?.searchReports(persona(), q).catch(() => [])) ?? [];
-        const results = [...reports, ...searchFor(persona(), q, visibleThreads().map((t) => t.summary)).filter((r) => !reports.some((x) => x.link === r.link))];
-        // With the warehouse up, members come from the Relationship service: name, number, phone or email.
-        const members = await live?.searchMembers(persona(), q).catch((err) => (console.error('[search]', err), null));
-        if (!members) return json(res, 200, { results });
-        const kind = url.searchParams.get('kind');
-        return json(res, 200, { results: kind === 'member' ? members : [...members, ...results.filter((r) => r.kind !== 'member')].slice(0, 20) });
+        // Real reports win over the static catalog's copy of the same report. With the warehouse up,
+        // members come from the Relationship service, which also matches a number, phone or email.
+        const [reports, members] = await Promise.all([
+          live?.searchReports(persona(), q).catch(() => []) ?? Promise.resolve([]),
+          live?.searchMembers(persona(), q).catch((err) => (console.error('[search]', err), null)) ?? Promise.resolve(null),
+        ]);
+        const catalog = searchFor(persona(), q, visibleThreads().map((t) => t.summary));
+        if (members && url.searchParams.get('kind') === 'member') return json(res, 200, { results: members });
+        const fromService = new Set((members ?? []).map((m) => m.link));
+        const results = rank(q, [reports, members ?? [], members ? catalog.filter((r) => r.kind !== 'member') : catalog], { trusted: (r) => fromService.has(r.link) });
+        return json(res, 200, { results });
       }
       // ---- loan pipeline (spec 17.5) ----
       if (path.startsWith('/v1/lap/') && live) {

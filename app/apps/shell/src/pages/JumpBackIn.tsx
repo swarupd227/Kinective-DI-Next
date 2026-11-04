@@ -1,6 +1,6 @@
 // "Jump back in" on Home: a few places worth opening today, each with a live figure, DI's reason and
 // one action. Today's DI lists every dashboard and leaves the choosing to you; here DI chooses, says
-// why, and the full catalog is one keystroke away (Ctrl K) or on All dashboards.
+// why, and the full catalog is on All dashboards or in Ctrl K from the top bar.
 import { Link, useNavigate } from 'react-router';
 import clsx from 'clsx';
 import { ArrowRight, Clock, FileBarChart, LayoutGrid, Pin, Sparkles, Workflow } from 'lucide-react';
@@ -19,7 +19,6 @@ export function JumpBackIn({ cards, ask }: { cards: JumpCard[]; ask: (text: stri
     .filter((r) => r.kind === 'view' && r.path !== '/home' && !cards.some((c) => c.link === r.path))
     .slice(0, Math.max(0, MAX - cards.length));
   if (!cards.length && !recent.length) return null;
-  const openPalette = () => useUi.getState().setPalette(true);
 
   return (
     <section className={styles.jump} aria-labelledby="h-jump">
@@ -28,9 +27,6 @@ export function JumpBackIn({ cards, ask }: { cards: JumpCard[]; ask: (text: stri
           Jump back in
         </h2>
         <span className={styles.find}>
-          <button type="button" className={styles.linkButton} onClick={openPalette}>
-            Find anything <kbd>Ctrl K</kbd>
-          </button>
           <Link to="/dashboards" className={styles.all}>
             <LayoutGrid size={14} aria-hidden /> All dashboards
           </Link>

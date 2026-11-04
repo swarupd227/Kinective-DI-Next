@@ -20,6 +20,7 @@ import { EmailOutbox, tenantDomain, type EmailKind } from '@dinext/di-core';
 import type { ReportSettingsView } from '@dinext/block-schemas';
 import { tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { PERSONAS, type PersonaId } from './data.ts';
+import { rank } from './search.ts';
 
 type Emit = Omit<StreamEvent, 'threadId' | 'seq' | 'ts'>;
 const e = (x: unknown) => x as Emit;
@@ -682,13 +683,10 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     async searchReports(persona, q) {
       const gw = tenantFor(persona)?.runtime.reports?.gateway;
       const s = PERSONAS[persona].session;
-      const words = q.trim().toLowerCase().split(/\s+/).filter((w) => w.length > 1);
-      if (!gw || !s.apps.includes('reports') || !words.length) return [];
+      if (!gw || !s.apps.includes('reports') || q.trim().length < 2) return [];
       const all = await gw.store.list(s.user.id);
-      return all
-        .filter((t) => t.status !== 'draft' && words.every((w) => `${t.name} ${t.folder}`.toLowerCase().split(/[^a-z0-9]+/).some((x) => x.startsWith(w))))
-        .slice(0, 8)
-        .map((t) => ({ kind: 'report' as const, id: t.templateId, label: t.name, detail: `Reports / ${t.folder}`, link: `/reports/${t.templateId}` }));
+      // Every word starts a word in the name or folder; the route ranks them against everything else.
+      return rank(q, [all.filter((t) => t.status !== 'draft').map((t) => ({ kind: 'report' as const, id: t.templateId, label: t.name, detail: `Reports / ${t.folder}`, link: `/reports/${t.templateId}` }))], { limit: 8 });
     },
 
     async searchMembers(persona, q) {

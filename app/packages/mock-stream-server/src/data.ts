@@ -12,6 +12,7 @@ import type {
   TableData,
 } from '@dinext/block-schemas';
 import { chartFixture, kpiGroupFixture, lineChartFixture, nightly, tableFixture } from '@dinext/block-schemas/fixtures';
+import { matchesAll } from './search.ts';
 
 export type PersonaId = 'executive' | 'analyst' | 'branch' | 'lender' | 'msr' | 'bank_cfo' | 'admin';
 
@@ -366,10 +367,9 @@ export function searchFor(id: PersonaId, q: string, threads: { threadId: string;
     { kind: 'employee', id: 'emp_ruiz', label: 'Ana Ruiz', detail: 'Loan officer · Westport', link: '/m/gi/scorecard/emp_ruiz', branch: 'Westport', app: 'gi' },
     ...ALL_BRANCHES.map((b) => ({ kind: 'branch' as const, id: `loc:${b.toLowerCase()}`, label: b, detail: 'Branch', link: `/c/new?q=${encodeURIComponent(`Brief me on ${b}`)}`, branch: b })),
   ];
-  const needle = q.trim().toLowerCase();
-  if (!needle) return [];
-  const words = needle.split(/\s+/);
-  const matches = (s: string) => words.every((w) => s.toLowerCase().includes(w));
+  if (!q.trim()) return [];
+  // Each word matches the start of a word, so "board" doesn't find Onboarding.
+  const matches = (s: string) => matchesAll(q, s);
   return [
     ...catalog.filter((r) => (!r.app || apps.has(r.app)) && (!r.branch || purview.includes(r.branch)) && matches(`${r.label} ${r.detail ?? ''}`)),
     ...threads.filter((t) => matches(t.title)).map((t) => ({ kind: 'thread' as const, id: t.threadId, label: t.title, detail: 'Conversation', link: `/c/${t.threadId}` })),

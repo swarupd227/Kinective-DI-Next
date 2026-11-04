@@ -1,12 +1,11 @@
 // The Dashboards launcher (today's DI home): every table, form and report this person can open, in
-// one searchable grid with Tables / Forms / Reports chips. It lists what the person's access
+// one grid with Tables / Forms / Reports chips (finding one by name is Ctrl K's job). It lists what the person's access
 // already allows; opening a card goes to that page, and DI can be asked about any of them there.
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { FileBarChart, LayoutGrid, Search, SquarePen, Table2 } from 'lucide-react';
-import { TextInput } from '@dinext/ui';
+import { FileBarChart, LayoutGrid, SquarePen, Table2 } from 'lucide-react';
 import { useSession } from '../session/SessionProvider.tsx';
 import { APP_META } from '../shell/apps.tsx';
 import styles from './HomeLauncher.module.css';
@@ -46,7 +45,6 @@ export function HomeLauncher() {
   const apps = session.apps as string[];
   const reports = useQuery({ queryKey: ['reports'], queryFn: () => api.reports(), enabled: apps.includes('reports') });
   const tables = useQuery({ queryKey: ['search', 'tables'], queryFn: () => api.search('tables'), enabled: apps.includes('tables') });
-  const [q, setQ] = useState('');
   const [only, setOnly] = useState<Kind | null>(null);
   const [all, setAll] = useState(false);
 
@@ -65,12 +63,10 @@ export function HomeLauncher() {
     return out.filter((c) => !seen.has(c.link) && seen.add(c.link));
   }, [apps, reports.data, tables.data, session.tenant.institutionType]);
 
-  // Each word matches the start of a word, so "board" finds Board report, not every Dashboard.
-  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-  const startsWord = (text: string, w: string) => text.split(/[^a-z0-9$%]+/).some((t) => t.startsWith(w));
-  const shown = cards.filter((c) => (!only || c.kinds.includes(only)) && words.every((w) => startsWord(`${c.label} ${c.detail ?? ''} ${c.kinds.join(' ')}`.toLowerCase(), w)));
+  // One search box per job: Ctrl K finds things, so this page narrows by kind only.
+  const shown = cards.filter((c) => !only || c.kinds.includes(only));
   const count = (k: Kind) => cards.filter((c) => c.kinds.includes(k)).length;
-  const filtering = Boolean(words.length || only);
+  const filtering = Boolean(only);
   const visible = all || filtering ? shown : shown.slice(0, FIRST);
 
   if (!cards.length) return null;
@@ -80,7 +76,6 @@ export function HomeLauncher() {
         <h2 id="h-dashboards" className={styles.title}>
           <LayoutGrid size={16} aria-hidden /> Browse
         </h2>
-        <TextInput label="Search dashboards" hideLabel placeholder="Search dashboards" leading={<Search size={14} aria-hidden />} value={q} onChange={(e) => setQ(e.target.value)} className={styles.search} />
         <div className={styles.chips} role="group" aria-label="Show only">
           {(['Table', 'Form', 'Report'] as Kind[]).map((k) => (
             <button key={k} type="button" aria-pressed={only === k} className={clsx(styles.chip, only === k && styles.chipOn)} onClick={() => setOnly(only === k ? null : k)}>
@@ -90,7 +85,7 @@ export function HomeLauncher() {
         </div>
       </div>
       {shown.length === 0 ? (
-        <p className={styles.empty}>Nothing matches. Try other words, or ask DI to find it.</p>
+        <p className={styles.empty}>Nothing of this kind. Ask DI to find it.</p>
       ) : (
         <ul className={styles.grid}>
           {visible.map((c) => {

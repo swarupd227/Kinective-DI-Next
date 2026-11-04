@@ -8,7 +8,7 @@ export function DashboardsPage() {
     <div className={page.page}>
       <header className={page.header}>
         <h1 className={page.title}>All dashboards</h1>
-        <p className={page.lede}>Every table, form and report you can open. Search, or ask DI to open one for you.</p>
+        <p className={page.lede}>Every table, form and report you can open. Press Ctrl K to find one by name, or ask DI to open it for you.</p>
       </header>
       <HomeLauncher />
     </div>
