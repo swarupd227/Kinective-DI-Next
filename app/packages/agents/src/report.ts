@@ -125,7 +125,7 @@ export function resolveControls(def: ReportDefinition, input: ReportControls, sv
 /** One widget's block. A failure becomes a notice in its place; the rest of the report still runs. */
 async function widgetBlock(w: ReportWidget, def: ReportDefinition, c: { period: string; node: string }, svc: SemanticService, ctx: RunContext, runId: string): Promise<{ block: Block; sql?: string[] }> {
   const type = def.settings.periodType;
-  const filters = c.node !== 'all' ? [{ dimension: 'branch', op: 'in' as const, values: [c.node] }] : [];
+  const filters = [...(c.node !== 'all' ? [{ dimension: 'branch', op: 'in' as const, values: [c.node] }] : []), ...(w.where ? [{ dimension: w.where.dimension, op: 'in' as const, values: w.where.values }] : [])];
   const scope = c.node === 'all' ? '' : ` · ${c.node}`;
   try {
     if (w.kind === 'text') {

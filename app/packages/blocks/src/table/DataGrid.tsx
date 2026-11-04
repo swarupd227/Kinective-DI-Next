@@ -47,6 +47,8 @@ const WRAP_MAX_ROWS = 100;
 /** Rough width of one character of grid text, and a cell's side padding, to size columns. */
 const CHAR_PX = 8;
 const CELL_PADDING_PX = 34;
+/** Text this short stays on one line; longer text wraps at word breaks. */
+const SHORT_TEXT = 28;
 
 export interface DataGridProps {
   columns: GridColumn[];
@@ -71,8 +73,10 @@ export default function DataGrid({ columns, rows, sort, layout = 'auto', filters
         const sample = rows.slice(0, WRAP_MAX_ROWS);
         const longest = isNum ? 0 : Math.max(0, ...sample.map((r) => String(r[c.field] ?? '').length));
         const format = (v: unknown) => formatValue(v as number | null, type, { decimals: type === 'percent' ? 2 : undefined });
-        // The widest thing that can't break: a whole number, or the longest single word.
-        const unbroken = Math.max(0, ...sample.map((r) => (isNum ? format(r[c.field]).length : Math.max(0, ...String(r[c.field] ?? '').split(/\s+/).map((w) => w.length)))));
+        // The widest thing that shouldn't break: a whole number, a short value such as a name or a date
+        // ("Paul Lindqvist (…9364)"), or the longest single word of longer text.
+        const keepWhole = (s: string) => (s.length <= SHORT_TEXT ? s.length : Math.max(0, ...s.split(/\s+/).map((w) => w.length)));
+        const unbroken = Math.max(0, ...sample.map((r) => (isNum ? format(r[c.field]).length : keepWhole(String(r[c.field] ?? '')))));
         return {
           field: c.field,
           headerName: c.headerName,
@@ -82,7 +86,7 @@ export default function DataGrid({ columns, rows, sort, layout = 'auto', filters
           flex: c.width ? undefined : Math.min(3, Math.max(1, Math.round(longest / 16))),
           // A column narrows only as far as its widest number or word, so values are never cut to "…";
           // a crowded grid scrolls sideways instead.
-          minWidth: Math.min(200, Math.max(64, Math.round(unbroken * CHAR_PX) + CELL_PADDING_PX)),
+          minWidth: Math.min(isNum ? 200 : 260, Math.max(64, Math.round(unbroken * CHAR_PX) + CELL_PADDING_PX)),
           sort: sort?.find((s) => s.field === c.field)?.dir,
           type: isNum ? 'rightAligned' : undefined,
           // A column's own cellClass replaces the one from its type, so the alignment is repeated here.

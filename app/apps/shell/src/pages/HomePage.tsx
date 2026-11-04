@@ -12,6 +12,7 @@ import { useSession } from '../session/SessionProvider.tsx';
 import { ConversationBar } from '../shell/ConversationBar.tsx';
 import { useShellBlockHost } from '../shell/useShellBlockHost.ts';
 import { useUi } from '../shell/uiStore.ts';
+import { HomeLauncher } from './HomeLauncher.tsx';
 import styles from './HomePage.module.css';
 
 type Resolution = NonNullable<ApprovalCardBlock['data']['resolution']>;
@@ -131,6 +132,8 @@ export function HomePage() {
             </ul>
           )}
         </header>
+
+        <HomeLauncher />
 
         {kpis.length > 0 && (
           <section className={styles.kpis} aria-label="Key figures">

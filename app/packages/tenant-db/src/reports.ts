@@ -17,6 +17,8 @@ export interface ReportWidget {
   trend?: number;
   /** KPIs: compare with the prior period. */
   compare?: boolean;
+  /** Only these values of a dimension, such as Auto loans: "Lending – Auto loans" is the loan figures where loan_category is Auto. */
+  where?: { dimension: string; values: string[] };
   text?: string;
   size: WidgetSize;
 }
@@ -173,6 +175,8 @@ const kpi = (id: string, title: string, metric: string): ReportWidget => ({ id, 
 /** Stock periodic reports every tenant starts with (spec 8.5). Metric names come from the semantic model. */
 export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDefinition[] {
   const persons = institutionType === 'bank' ? 'customers' : 'members';
+  const checking = { dimension: 'deposit_category', values: ['Checking'] };
+  const auto = { dimension: 'loan_category', values: ['Auto'] };
   return [
     {
       templateId: 'branch_scorecard_monthly',
@@ -223,6 +227,124 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
         kpi('k4', `New ${persons}`, 'new_members'),
         { id: 'c1', title: 'New loan dollars by branch', kind: 'chart', chart: 'bar', metrics: ['new_loan_amount'], by: 'branch', size: 'half' },
         { id: 'c2', title: 'Deposit balance, last 6 quarters', kind: 'chart', chart: 'line', metrics: ['deposit_balance'], trend: 6, size: 'half' },
+      ],
+    },
+    // The named reports today's DI shows on its Dashboards home.
+    {
+      templateId: 'checking_growth_monthly',
+      name: 'Checking growth',
+      description: 'Checking balances and accounts, how they have grown, and where.',
+      folder: 'Deposits',
+      settings: settings('month', ['Executive', 'Branch Manager', 'Finance']),
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        { ...kpi('k1', 'Checking balance', 'deposit_balance'), where: checking, size: 'half' },
+        { ...kpi('k2', 'Checking accounts', 'deposit_account_count'), where: checking, size: 'half' },
+        { id: 'c1', title: 'Checking balance, last 13 months', kind: 'chart', chart: 'line', metrics: ['deposit_balance'], where: checking, trend: 13, size: 'full' },
+        { id: 't1', title: 'Checking by branch', kind: 'table', metrics: ['deposit_balance', 'deposit_account_count'], by: 'branch', where: checking, size: 'full' },
+      ],
+    },
+    {
+      templateId: 'lending_auto_loans_monthly',
+      name: 'Lending – Auto loans',
+      description: 'Auto loan balances, new auto lending, delinquency and the split between direct and dealer loans.',
+      folder: 'Lending',
+      settings: settings('month', ['Executive', 'Branch Manager', 'Lending']),
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        { ...kpi('k1', 'Auto loan balance', 'loan_balance'), where: auto },
+        { ...kpi('k2', 'Auto loans', 'loan_count'), where: auto },
+        { ...kpi('k3', 'New auto loan dollars', 'new_loan_amount'), where: auto },
+        { ...kpi('k4', 'Auto delinquency 60+', 'delinquency_ratio_60_plus'), where: auto },
+        { id: 'c1', title: 'New auto loan dollars, last 13 months', kind: 'chart', chart: 'bar', metrics: ['new_loan_amount'], where: auto, trend: 13, size: 'full' },
+        { id: 'c2', title: 'Auto balance by channel', kind: 'chart', chart: 'donut', metrics: ['loan_balance'], by: 'origination_channel', where: auto, size: 'half' },
+        { id: 't1', title: 'Auto loans by branch', kind: 'table', metrics: ['loan_balance', 'loan_count', 'new_loan_amount', 'delinquency_ratio_60_plus'], by: 'branch', where: auto, size: 'half' },
+      ],
+    },
+    {
+      templateId: 'loan_delinquency_monthly',
+      name: 'Lending – Loan delinquency',
+      description: 'Loans 60 or more days past due: the ratio, the dollars, the trend, and by category and branch.',
+      folder: 'Lending',
+      settings: settings('month', ['Executive', 'Branch Manager', 'Lending', 'Finance']),
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        { ...kpi('k1', 'Delinquency 60+', 'delinquency_ratio_60_plus'), size: 'half' },
+        { ...kpi('k2', 'Delinquent balance', 'delinquent_loan_balance'), size: 'half' },
+        { id: 'c1', title: 'Delinquency 60+, last 13 months', kind: 'chart', chart: 'line', metrics: ['delinquency_ratio_60_plus'], trend: 13, size: 'full' },
+        { id: 'c2', title: 'Delinquent balance by loan category', kind: 'chart', chart: 'bar', metrics: ['delinquent_loan_balance'], by: 'loan_category', size: 'half' },
+        { id: 't1', title: 'By branch', kind: 'table', metrics: ['delinquency_ratio_60_plus', 'delinquent_loan_balance', 'loan_balance'], by: 'branch', size: 'half' },
+      ],
+    },
+    {
+      templateId: 'loan_app_monthly',
+      name: 'Loan app reports',
+      description: 'New loan applications and how many are approved, by category and branch.',
+      folder: 'Lending',
+      settings: settings('month', ['Executive', 'Branch Manager', 'Lending']),
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        { ...kpi('k1', 'New applications', 'new_loan_applications'), size: 'half' },
+        { ...kpi('k2', 'Approval rate', 'approval_rate'), size: 'half' },
+        { id: 'c1', title: 'New applications, last 13 months', kind: 'chart', chart: 'bar', metrics: ['new_loan_applications'], trend: 13, size: 'full' },
+        { id: 't1', title: 'By branch', kind: 'table', metrics: ['new_loan_applications', 'approval_rate'], by: 'branch', size: 'half' },
+        { id: 't2', title: 'By loan category', kind: 'table', metrics: ['new_loan_applications', 'approval_rate'], by: 'loan_category', size: 'half' },
+      ],
+    },
+    {
+      templateId: 'growth_my_branch_monthly',
+      name: 'Growth report – My branch',
+      description: `New ${persons}, new lending and balances for your branch, with the trend.`,
+      folder: 'Branch',
+      settings: settings('month', ['Executive', 'Branch Manager']),
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        kpi('k1', `New ${persons}`, 'new_members'),
+        kpi('k2', 'New loan dollars', 'new_loan_amount'),
+        kpi('k3', 'Total loans', 'loan_balance'),
+        kpi('k4', 'Total deposits', 'deposit_balance'),
+        { id: 'c1', title: `New ${persons}, last 13 months`, kind: 'chart', chart: 'bar', metrics: ['new_members'], trend: 13, size: 'half' },
+        { id: 'c2', title: 'Deposits, last 13 months', kind: 'chart', chart: 'line', metrics: ['deposit_balance'], trend: 13, size: 'half' },
+      ],
+    },
+    {
+      templateId: 'lending_portfolio_monthly',
+      name: 'Lending portfolio',
+      description: 'The loan book by category: balances, counts, the average rate and delinquency.',
+      folder: 'Lending',
+      settings: settings('month', ['Executive', 'Lending', 'Finance']),
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        { ...kpi('k1', 'Total loans', 'loan_balance'), size: 'third' },
+        { ...kpi('k2', 'Open loans', 'loan_count'), size: 'third' },
+        { ...kpi('k3', 'Average loan rate', 'average_loan_rate'), size: 'third' },
+        { id: 'c1', title: 'Loan balance by category', kind: 'chart', chart: 'donut', metrics: ['loan_balance'], by: 'loan_category', size: 'half' },
+        { id: 't1', title: 'By category', kind: 'table', metrics: ['loan_balance', 'loan_count', 'delinquent_loan_balance', 'delinquency_ratio_60_plus'], by: 'loan_category', size: 'half' },
+        { id: 'c2', title: 'Loan balance by category, last 13 months', kind: 'chart', chart: 'stacked_bar', metrics: ['loan_balance'], by: 'loan_category', trend: 13, size: 'full' },
+      ],
+    },
+    {
+      templateId: 'board_report_quarterly',
+      name: 'Board report',
+      description: `The quarter for the board: ${persons}, balances, loan-to-share and delinquency, with six quarters of trend.`,
+      folder: 'Board',
+      settings: { ...settings('quarter', ['Executive']), addHierarchyControls: false },
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        kpi('k1', persons === 'members' ? 'Members' : 'Customers', 'member_count'),
+        kpi('k2', 'Total loans', 'loan_balance'),
+        kpi('k3', 'Total deposits', 'deposit_balance'),
+        kpi('k4', 'Loan-to-share', 'loan_to_share_ratio'),
+        { id: 'c1', title: 'Loans and deposits, last 6 quarters', kind: 'chart', chart: 'line', metrics: ['loan_balance'], trend: 6, size: 'half' },
+        { id: 'c2', title: 'Delinquency 60+, last 6 quarters', kind: 'chart', chart: 'line', metrics: ['delinquency_ratio_60_plus'], trend: 6, size: 'half' },
+        { id: 't1', title: 'By region', kind: 'table', metrics: ['loan_balance', 'deposit_balance', 'new_loan_amount', 'delinquency_ratio_60_plus'], by: 'region', size: 'full' },
       ],
     },
   ];
