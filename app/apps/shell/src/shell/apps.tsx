@@ -44,7 +44,7 @@ const i = (Icon: typeof Home) => <Icon size={18} aria-hidden />;
 
 export const APP_META: Record<string, AppMeta> = {
   home: { label: 'Home', icon: i(Home), path: '/home', group: 'core' },
-  conversations: { label: 'Conversations', icon: i(MessagesSquare), path: '/c', group: 'core' },
+  conversations: { label: 'All tasks', icon: i(MessagesSquare), path: '/c', group: 'core' },
   reports: { label: 'Reports', icon: i(FileBarChart), path: '/reports', group: 'core', phase: 'Phase 1, report builder slice' },
   tables: { label: 'Tables', icon: i(Table2), path: '/tables', group: 'core' },
   workflows: { label: 'Workflows', icon: i(Workflow), path: '/workflows', group: 'core', phase: 'Phase 1, referrals slice' },

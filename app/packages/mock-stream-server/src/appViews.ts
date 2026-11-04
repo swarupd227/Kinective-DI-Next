@@ -25,7 +25,16 @@ export interface ViewDeps {
 
 const usd = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
 // "26 Oct 2026", the same as the freshness line under every block, never a raw "2026-10-26".
-const day = (iso: string) => (/^\d{4}-\d{2}-\d{2}/.test(iso) ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${iso.slice(0, 10)}T00:00:00Z`)) : iso);
+// Built by hand: en-GB writes "Sept".
+const day = (iso: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}/.test(iso)) return iso;
+  const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+  return `${d.getUTCDate()} ${new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' }).format(d)} ${d.getUTCFullYear()}`;
+};
+// "November 2026" from "2026-11".
+const monthName = (ym: string) => (/^\d{4}-\d{2}$/.test(ym) ? new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${ym}-15T00:00:00Z`)) : ym);
+// A state word as a figure: "Completed", not "completed".
+const title = (w: string) => w.charAt(0).toUpperCase() + w.slice(1);
 const count = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
 const text = (field: string, headerName: string): ColumnSpec => ({ field, headerName, type: 'text' });
 
@@ -60,7 +69,7 @@ export function createAppViews(deps: ViewDeps) {
         title: 'Calendar',
         lede: `Your events, and dated work from your modules as of the last build on ${day(today)}. Ask DI to add, move or cancel an event.`,
         take: { headline: overdue.length ? `${count(overdue.length, 'item')} overdue. Start with ${next?.title}.` : next ? `Next up: ${next.title}, on ${day(next.date)}.` : 'Nothing is scheduled in the next few weeks.', action: { label: 'What’s due this week?', ask: 'What’s due this week?' } },
-        tiles: [{ label: 'Overdue', value: String(overdue.length), tone: overdue.length ? 'danger' : 'neutral', ask: 'What’s due this week?' }, { label: 'Today', value: String(items.filter((e) => e.date === today).length) }, { label: 'Next 7 days', value: String(week.length) }],
+        tiles: [{ label: 'Overdue', value: String(overdue.length), tone: overdue.length ? 'danger' : 'neutral', ...(overdue.length ? { ask: 'What’s due this week?' } : {}) }, { label: 'Today', value: String(items.filter((e) => e.date === today).length) }, { label: 'Next 7 days', value: String(week.length) }],
         prompts: ['What’s due this week?', 'Show the calendar for the next two weeks', 'Schedule a follow-up with Suzanne Jackson next Tuesday at 2 pm about the HELOC referral'],
         notice: 'Events live in DI only. Syncing with Outlook or Google Calendar isn’t built.',
         events: items.map(({ date, kind, title, detail, late, ask }) => ({ date, kind, title, detail, late, ask })),
@@ -167,10 +176,10 @@ export function createAppViews(deps: ViewDeps) {
       return {
         title: 'Admin',
         lede: `Platform health. Data as of ${day(build.asOf)}.`,
-        take: { headline: `Last night’s build ${build.state}. ${checks.failed ? `${count(checks.failed, 'check')} failed` : 'All checks passed'}${late.length ? `, and ${late[0]!.source} arrived late` : ''}.`, action: { label: 'Which checks failed?', ask: 'Which checks failed?' } },
-        tiles: [{ label: 'Build', value: build.state }, { label: 'Checks failed', value: `${checks.failed} of ${checks.total}`, tone: checks.failed ? 'danger' : 'neutral' }, { label: 'Late uploads', value: String(late.length), tone: late.length ? 'warning' : 'neutral' }, ...(usage ? [{ label: 'AI cost', value: `$${usage.totals.cost.toFixed(2)}`, detail: month! } satisfies AppTile] : [])],
+        take: { headline: `The ${day(build.asOf)} build ${build.state}. ${checks.failed ? `${count(checks.failed, 'check')} failed` : 'All checks passed'}${late.length ? `, and ${late[0]!.source} arrived late` : ''}.`, action: { label: 'Which checks failed?', ask: 'Which checks failed?' } },
+        tiles: [{ label: 'Build', value: title(build.state), detail: day(build.asOf) }, { label: 'Checks failed', value: `${checks.failed} of ${checks.total}`, tone: checks.failed ? 'danger' : 'neutral' }, { label: 'Late uploads', value: String(late.length), tone: late.length ? 'warning' : 'neutral' }, ...(usage ? [{ label: 'AI cost', value: `$${usage.totals.cost.toFixed(2)}`, detail: monthName(month!) } satisfies AppTile] : [])],
         prompts: ['Which checks failed?', 'Show AI cost by agent for October', 'Show the negative feedback'],
-        blocks: [table('Uploads', 'build.state.get', [text('source', 'Source'), text('dueBy', 'Due by'), text('arrived', 'Arrived'), text('state', 'State')], build.uploads.map((u) => ({ source: u.source, dueBy: u.dueBy, arrived: u.arrived, state: u.late ? 'Late' : 'On time' }))), table('Data quality checks', 'dq.status_report', [text('domain', 'Domain'), text('dimension', 'Dimension'), text('name', 'Check'), text('result', 'Result')], checks.items.map((c) => ({ domain: c.domain, dimension: c.dimension, name: c.name, result: c.passed ? 'Passed' : `Failed, ${c.rowsFailed} rows` })))],
+        blocks: [table('Uploads', 'build.state.get', [text('source', 'Source'), text('dueBy', 'Due by'), text('arrived', 'Arrived'), text('state', 'State')], build.uploads.map((u) => ({ source: u.source, dueBy: u.dueBy, arrived: u.arrived, state: u.late ? 'Late' : 'On time' }))), table('Data quality checks', 'dq.status_report', [text('name', 'Check'), text('result', 'Result'), text('domain', 'Domain'), text('dimension', 'Dimension')], checks.items.map((c) => ({ domain: c.domain, dimension: c.dimension, name: c.name, result: c.passed ? 'Passed' : `Failed, ${c.rowsFailed} rows` })))],
       };
     },
     async datalogs() {
@@ -185,7 +194,7 @@ export function createAppViews(deps: ViewDeps) {
         take: { headline: waiting ? `${count(waiting, 'log')} waiting for approval.` : 'No logs are waiting for approval.', action: { label: 'Show what’s waiting', ask: 'Show the data logs waiting for approval' } },
         tiles: [...byStatus].slice(0, 4).map(([label, n]) => ({ label, value: String(n) })),
         prompts: ['Show the data logs waiting for approval', 'Show my returned data logs'],
-        blocks: [table('Data logs', 'datalog.list', [{ field: 'id', headerName: 'Log', type: 'number' }, text('type', 'Type'), text('title', 'Title'), { field: 'amount', headerName: 'Amount', type: 'currency' }, text('branch', 'Branch'), text('status', 'Status'), text('by', 'Created by')], (open.length ? open : items).slice(0, 100).map((l) => ({ id: l.logId, type: l.type, title: l.title, amount: l.amount ?? 0, branch: l.branch, status: l.status, by: l.createdName })))],
+        blocks: [table('Data logs', 'datalog.list', [text('id', 'Log'), text('type', 'Type'), text('title', 'Title'), { field: 'amount', headerName: 'Amount', type: 'currency' }, text('branch', 'Branch'), text('status', 'Status'), text('by', 'Created by')], (open.length ? open : items).slice(0, 100).map((l) => ({ id: `#${l.logId}`, type: l.type, title: l.title, amount: l.amount ?? 0, branch: l.branch, status: l.status, by: l.createdName })))],
       };
     },
     async seg() {
@@ -323,11 +332,11 @@ export function createAppViews(deps: ViewDeps) {
       const passed = (list: typeof checks.items) => `${list.filter((c) => c.passed).length} of ${list.length}`;
       return {
         title: 'Data Quality',
-        lede: 'Last night’s checks across six dimensions, by data domain.',
+        lede: 'Checks from the latest build, across six dimensions and by data domain.',
         take: { headline: checks.failed ? `${count(checks.failed, 'check')} failed of ${checks.total}: ${checks.items.filter((c) => !c.passed).map((c) => `${c.name} (${c.rowsFailed.toLocaleString('en-US')} rows)`).join(', ')}.` : `All ${checks.total} checks passed.`, action: { label: 'Where does a failure matter?', ask: 'Where does 60+ delinquency come from?' } },
-        tiles: dims.map((d) => { const own = checks.items.filter((c) => c.dimension === d); return { label: d, value: passed(own), tone: own.some((c) => !c.passed) ? ('danger' as const) : ('neutral' as const) }; }),
+        tiles: dims.map((d) => { const own = checks.items.filter((c) => c.dimension === d); return { label: `${d} checks passed`, value: passed(own), tone: own.some((c) => !c.passed) ? ('danger' as const) : ('neutral' as const) }; }),
         prompts: ['Which checks failed?', 'Where does 60+ delinquency come from?'],
-        blocks: [table('By domain', 'dq.status_report', [text('domain', 'Domain'), text('passed', 'Passed'), { field: 'rows', headerName: 'Rows failing', type: 'count' }], domains.map((d) => { const own = checks.items.filter((c) => c.domain === d); return { domain: d, passed: passed(own), rows: own.reduce((n, c) => n + c.rowsFailed, 0) }; })), table('Checks', 'dq.status_report', [text('domain', 'Domain'), text('dimension', 'Dimension'), text('name', 'Check'), text('result', 'Result')], checks.items.map((c) => ({ domain: c.domain, dimension: c.dimension, name: c.name, result: c.passed ? 'Passed' : `Failed, ${c.rowsFailed} rows` })))],
+        blocks: [table('By domain', 'dq.status_report', [text('domain', 'Domain'), text('passed', 'Passed'), { field: 'rows', headerName: 'Rows failing', type: 'count' }], domains.map((d) => { const own = checks.items.filter((c) => c.domain === d); return { domain: d, passed: passed(own), rows: own.reduce((n, c) => n + c.rowsFailed, 0) }; })), table('Checks', 'dq.status_report', [text('name', 'Check'), text('result', 'Result'), text('domain', 'Domain'), text('dimension', 'Dimension')], checks.items.map((c) => ({ domain: c.domain, dimension: c.dimension, name: c.name, result: c.passed ? 'Passed' : `Failed, ${c.rowsFailed} rows` })))],
       };
     },
     async tasks() {
@@ -341,7 +350,7 @@ export function createAppViews(deps: ViewDeps) {
         take: { headline: m.items.length ? `${count(m.items.length, 'item')} open${m.late ? `, ${m.late} past due` : ''}. ${first ? `First: ${first.title}.` : ''}` : 'You have nothing open.', action: { label: 'Add a task', ask: 'Create a task to ' } },
         tiles: [...m.bySource.map((s) => ({ label: s.source, value: String(s.count) })), { label: 'Past due', value: String(m.late), tone: m.late ? ('danger' as const) : ('neutral' as const) }, ...(time?.month ? [{ label: `Hours, ${new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(new Date(`${time.month}-15T00:00:00Z`))}`, value: String(time.total) } satisfies AppTile] : [])],
         prompts: ['What are my tasks today?', ...(time ? ['Show my hours this month'] : [])],
-        blocks: [table('Open', 'task.list', [text('title', 'Task'), text('source', 'Source'), text('due', 'Due'), text('status', 'Status')], m.items.map((i) => ({ title: i.title, source: i.source, due: i.due ?? '—', status: i.due && i.due < m.asOf ? 'Past due' : i.status }))), ...(time?.month ? [table(`My hours, ${time.month}`, 'time.summary', [text('project', 'Project'), { field: 'hours', headerName: 'Hours', type: 'number' }], time.byProject)] : [])],
+        blocks: [table('Open', 'task.list', [text('title', 'Task'), text('source', 'Source'), text('due', 'Due'), text('status', 'Status')], m.items.map((i) => ({ title: i.title, source: i.source, due: i.due ? day(i.due) : '—', status: i.due && i.due < m.asOf ? 'Past due' : i.status }))), ...(time?.month ? [table(`My hours, ${monthName(time.month)}`, 'time.summary', [text('project', 'Project'), { field: 'hours', headerName: 'Hours', type: 'number' }], time.byProject)] : [])],
       };
     },
     async integrations() {
@@ -349,9 +358,9 @@ export function createAppViews(deps: ViewDeps) {
       const late = build.uploads.filter((u) => u.late);
       return {
         title: 'Integrations',
-        lede: `Where the data comes from, and how last night’s loads went. Data as of ${day(build.asOf)}.`,
+        lede: `Where the data comes from, and how the latest loads went. Data as of ${day(build.asOf)}.`,
         take: { headline: late.length ? `${count(late.length, 'source')} arrived late: ${late.map((u) => `${u.source}, due ${u.dueBy}, arrived ${u.arrived}`).join('; ')}. The build ${build.state} with what was there.` : `Every source arrived on time, and the build ${build.state}.`, action: { label: 'Which uploaders were late?', ask: 'Which uploaders missed their late-file time?' } },
-        tiles: [{ label: 'Sources', value: String(build.uploads.length) }, { label: 'Late', value: String(late.length), tone: late.length ? 'warning' : 'neutral' }, { label: 'Last build', value: build.state }],
+        tiles: [{ label: 'Sources', value: String(build.uploads.length) }, { label: 'Late', value: String(late.length), tone: late.length ? 'warning' : 'neutral' }, { label: 'Last build', value: title(build.state), detail: day(build.asOf) }],
         prompts: ['Which uploaders missed their late-file time?', 'Did last night’s build finish?'],
         notice: 'Read only. Adding a source, connections and credentials are set up by Kinective and aren’t built here yet.',
         blocks: [table('Data sources', 'ingestion.sources', [text('source', 'Source'), text('method', 'How it arrives'), text('dueBy', 'Due by'), text('arrived', 'Arrived'), text('state', 'Last load')], build.uploads.map((u) => ({ source: u.source, method: u.method, dueBy: u.dueBy, arrived: u.arrived, state: u.late ? 'Late' : 'On time' })))],

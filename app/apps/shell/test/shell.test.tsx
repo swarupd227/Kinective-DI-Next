@@ -129,7 +129,7 @@ describe('deep links never grant access (FE-ARCH-010)', () => {
       </RequireApp>,
       makeSession(),
     );
-    expect(screen.getByRole('heading', { name: 'You do not have access to this view' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'You don’t have access to this page' })).toBeInTheDocument();
     expect(screen.queryByText('secret grid')).toBeNull();
   });
 });

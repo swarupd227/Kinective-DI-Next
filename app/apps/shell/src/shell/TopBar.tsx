@@ -8,6 +8,7 @@ import { IconButton, SegmentedControl, usePreferences, type Density, type ThemeP
 import { useSession } from '../session/SessionProvider.tsx';
 import { NotificationsButton } from './NotificationsPanel.tsx';
 import { APP_META } from './apps.tsx';
+import { BrandMark } from './BrandMark.tsx';
 import { viewLabel } from './paneViews.ts';
 import { useUi } from './uiStore.ts';
 import { useBreakpoint } from './useBreakpoint.ts';
@@ -23,15 +24,14 @@ export function TopBar({ threadId }: { threadId?: string }) {
   // The breadcrumb is the thread title in a conversation and the app name elsewhere (spec 6.2).
   const [, first, second] = location.pathname.split('/');
   const segment = (first === 'm' ? second : first) ?? 'home';
-  const crumb = threadId ? (thread.data?.title ?? 'Conversation') : (APP_META[segmentToApp(segment)]?.label ?? 'Home');
+  const page = viewLabel(location.pathname, Object.values(APP_META));
+  const crumb = threadId ? (thread.data?.title ?? 'Task') : isTasks(location.pathname) ? 'All tasks' : page === 'View' ? (APP_META[segmentToApp(segment)]?.label ?? 'Home') : page;
 
   return (
     <header className={styles.bar} data-region="topbar" tabIndex={-1}>
       <IconButton label="Menu" icon={<MenuIcon size={18} aria-hidden />} onClick={() => setMobileNav(!mobileNavOpen)} aria-expanded={mobileNavOpen} />
       <Link to="/home" className={styles.brand} aria-label={`Kinective Data Intelligence, ${session.tenant.name}, Home`}>
-        <span className={styles.mark} aria-hidden>
-          DI
-        </span>
+        <BrandMark size={28} />
         {bp !== 'phone' && (
           <span className={styles.brandText}>
             <span className={styles.product}>Data Intelligence</span>
@@ -52,6 +52,9 @@ export function TopBar({ threadId }: { threadId?: string }) {
   );
 }
 
+/** A task's own pages: "/c", "/c/new" and "/c/<id>", but not "/calendar". */
+const isTasks = (path: string) => /^\/c(\/|$)/.test(path);
+
 const segmentToApp = (s: string) => (s === 'c' ? 'conversations' : s === 'members' || s === 'customers' ? 'rm' : s);
 
 /** Desktop header: where you are (back, forward and a breadcrumb), then search, notifications and
@@ -63,8 +66,8 @@ export function DeskBar({ threadId }: { threadId?: string }) {
   const navigate = useNavigate();
   const thread = useQuery({ queryKey: ['thread', threadId], queryFn: () => api.thread(threadId!), enabled: !!threadId });
   const page = viewLabel(pathname, Object.values(APP_META));
-  const trail: { label: string; to?: string }[] = pathname.startsWith('/c')
-    ? [{ label: 'Tasks', to: '/c' }, ...(threadId ? [{ label: thread.data?.title ?? 'Task' }] : pathname.startsWith('/c/new') ? [{ label: 'New task' }] : [])]
+  const trail: { label: string; to?: string }[] = isTasks(pathname)
+    ? [{ label: 'All tasks', to: '/c' }, ...(threadId ? [{ label: thread.data?.title ?? 'Task' }] : pathname.startsWith('/c/new') ? [{ label: 'New task' }] : [])]
     : pathname.startsWith('/home')
       ? []
       : [{ label: page === 'View' ? 'Page' : page }];

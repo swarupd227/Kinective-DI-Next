@@ -35,7 +35,7 @@ export function KpiTile({ data, loading, onExplain }: KpiTileProps) {
   const Arrow = c?.direction === 'up' ? ArrowUpRight : c?.direction === 'down' ? ArrowDownRight : ArrowRight;
   const delta = c ? formatValue(c.value, c.unit ?? data.unit, { signed: c.direction !== 'flat', decimals: c.unit === 'percent' ? 1 : undefined }) : '';
   const spoken = c
-    ? `${c.direction === 'flat' ? '' : c.direction === 'up' ? 'Up ' : 'Down '}${delta.replace(/^[+−-]/, '')} ${c.label}${tone === 'neutral' ? '' : tone === 'good' ? ', favourable' : ', unfavourable'}`
+    ? `${c.direction === 'flat' ? '' : c.direction === 'up' ? 'Up ' : 'Down '}${delta.replace(/^[+−-]/, '')} ${c.label}${tone === 'neutral' ? '' : tone === 'good' ? ', favorable' : ', unfavorable'}`
     : '';
 
   return (

@@ -136,8 +136,8 @@ describe('validation and safety (spec 9.1, FE-GEN-010)', () => {
 describe('kpi', () => {
   it('describes the change in words for screen readers, not colour alone', () => {
     renderBlock(<BlockRenderer block={{ ...kpiGroupFixture }} />);
-    expect(screen.getByText(/Up 4 bp vs prior build, unfavourable/)).toBeInTheDocument();
-    expect(screen.getByText(/Down 0.1% vs prior build, unfavourable/)).toBeInTheDocument();
+    expect(screen.getByText(/Up 4 bp vs prior build, unfavorable/)).toBeInTheDocument();
+    expect(screen.getByText(/Down 0.1% vs prior build, unfavorable/)).toBeInTheDocument();
   });
 });
 

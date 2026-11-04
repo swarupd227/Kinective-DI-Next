@@ -44,13 +44,13 @@ export function ConversationsPage() {
     <div className={`${page.page} ${page.narrow}`}>
       <header className={page.header}>
         <div className={page.headerRow}>
-          <h1 className={page.title}>Conversations</h1>
+          <h1 className={page.title}>All tasks</h1>
           <Link to="/c/new" className={styles.newLink}>
-            New conversation
+            New task
           </Link>
         </div>
         <div className={styles.filters}>
-          <TextInput label="Search conversations" hideLabel placeholder="Search by title" leading={<Search size={14} aria-hidden />} value={q} onChange={(e) => setQ(e.target.value)} className={styles.search} />
+          <TextInput label="Search tasks" hideLabel placeholder="Search by title" leading={<Search size={14} aria-hidden />} value={q} onChange={(e) => setQ(e.target.value)} className={styles.search} />
           <SegmentedControl
             label="Show"
             value={view}
@@ -119,9 +119,9 @@ export function ConversationsPage() {
           ))}
         </ul>
       ) : (
-        <p className={styles.empty}>{q ? 'No conversations match that search.' : view === 'archived' ? 'No archived conversations.' : 'No conversations yet. Ask DI something from Home or the bar below.'}</p>
+        <p className={styles.empty}>{q ? 'No tasks match that search.' : view === 'archived' ? 'No archived tasks.' : 'No tasks yet. Give DI one from Home or the bar below.'}</p>
       )}
-      <p className={styles.note}>Deleting a conversation removes it from this list. The audit record of what was asked, what the AI did and who approved it is kept, as your institution requires.</p>
+      <p className={styles.note}>Deleting a task removes it from this list. The audit record of what was asked, what the AI did and who approved it is kept, as your institution requires.</p>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { Fragment } from 'react';
 import { ArrowRight, CircleCheck, CircleHelp, CircleX, Database, FileText, Layers, Server, Table2, Workflow } from 'lucide-react';
 import type { LineageGraphBlock } from '@dinext/block-schemas';
 import styles from './LineageGraphView.module.css';
+import { formatDay } from '../format.ts';
 
 type Node = LineageGraphBlock['data']['lanes'][number]['nodes'][number];
 
@@ -55,5 +56,5 @@ export function LineageGraphView({ block }: { block: LineageGraphBlock }) {
 
 const formatLoad = (at: string) => {
   const [date, time] = at.split(' ');
-  return `${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`))} at ${time}`;
+  return `${formatDay(new Date(`${date}T12:00:00Z`))} at ${time}`;
 };

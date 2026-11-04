@@ -60,7 +60,10 @@ export function operationsModule(ops: OperationsService): ModuleSpec {
           need(ctx);
           const b = await ops.build();
           const late = b.uploads.filter((u) => u.late);
-          return { text: `Last night’s build **${b.state}**, with data as of ${b.asOf}. ${late.length ? `**${late.length}** ${late.length === 1 ? 'uploader' : 'uploaders'} missed the late-file time: ${late.map((u) => `${u.source} (due ${u.dueBy}, arrived ${u.arrived})`).join(', ')}.` : 'Every uploader arrived on time.'}`, blocks: [moduleTable(spec, 'Uploads', ctx.runId, 'build.state.get', [{ field: 'source', headerName: 'Source', type: 'text' }, { field: 'dueBy', headerName: 'Due by', type: 'text' }, { field: 'arrived', headerName: 'Arrived', type: 'text' }, { field: 'state', headerName: 'State', type: 'text' }], b.uploads.map((u) => ({ source: u.source, dueBy: u.dueBy, arrived: u.arrived, state: u.late ? 'Late' : 'On time' })))] };
+          // The build is named by its date: data can be days old, and "last night's" would hide that.
+          const d = new Date(`${b.asOf.slice(0, 10)}T00:00:00Z`);
+          const built = /^\d{4}-\d{2}-\d{2}/.test(b.asOf) ? `${d.getUTCDate()} ${new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' }).format(d)} ${d.getUTCFullYear()}` : b.asOf;
+          return { text: `The latest build, with data as of ${built}, **${b.state}**. ${late.length ? `**${late.length}** ${late.length === 1 ? 'uploader' : 'uploaders'} missed the late-file time: ${late.map((u) => `${u.source} (due ${u.dueBy}, arrived ${u.arrived})`).join(', ')}.` : 'Every uploader arrived on time.'}`, blocks: [moduleTable(spec, 'Uploads', ctx.runId, 'build.state.get', [{ field: 'source', headerName: 'Source', type: 'text' }, { field: 'dueBy', headerName: 'Due by', type: 'text' }, { field: 'arrived', headerName: 'Arrived', type: 'text' }, { field: 'state', headerName: 'State', type: 'text' }], b.uploads.map((u) => ({ source: u.source, dueBy: u.dueBy, arrived: u.arrived, state: u.late ? 'Late' : 'On time' })))] };
         },
       },
       {

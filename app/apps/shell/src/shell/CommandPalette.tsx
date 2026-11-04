@@ -113,7 +113,7 @@ export function CommandPalette() {
         ))}
         {exact && askItem}
         {recent.length > 0 && (
-          <Command.Group heading="Recent conversations">
+          <Command.Group heading="Recent tasks">
             {recent.map((t) => (
               <Command.Item key={t.threadId} value={`thread:${t.threadId}`} onSelect={() => go(`/c/${t.threadId}`)} className={styles.item}>
                 <span className={styles.icon}>

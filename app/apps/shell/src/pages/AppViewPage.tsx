@@ -5,7 +5,7 @@ import { Link, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
-import { BlockHostProvider, BlockRenderer } from '@dinext/blocks';
+import { BlockHostProvider, BlockRenderer, formatDay } from '@dinext/blocks';
 import { Button, Skeleton } from '@dinext/ui';
 import type { AppEvent, AppFile, AppView, AppViewId, QueryRun, SavedQueryView, SearchResult } from '@dinext/block-schemas';
 import { ApiError } from '@dinext/stream-client';
@@ -132,6 +132,10 @@ export function EmailsPage() {
 
 // ---- calendar -----------------------------------------------------------------------------------
 
+/** "25 Oct 2026", as dates read everywhere else in DI; anything that isn't an ISO date shows as it is. */
+const longDay = (iso: string) => (/^\d{4}-\d{2}-\d{2}/.test(iso) ? formatDay(new Date(`${iso.slice(0, 10)}T00:00:00Z`)) : iso);
+/** 1 KB, 212 KB, 4.1 MB. */
+const fileSize = (kb: number) => (kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb.toLocaleString('en-US')} KB`);
 const monthName = (y: number, m: number) => new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(Date.UTC(y, m, 1));
 const WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const iso = (y: number, m: number, d: number) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -184,7 +188,7 @@ function Month({ events, today }: { events: AppEvent[]; today: string }) {
           );
         })}
       </div>
-      <h2 className={styles.heading}>{day}</h2>
+      <h2 className={styles.heading}>{longDay(day)}</h2>
       {chosen.length ? (
         <ul className={styles.agenda}>
           {chosen.map((e) => (
@@ -292,11 +296,11 @@ function FileList({ files }: { files: AppFile[] }) {
           {files.map((f) => (
             <li key={`${f.folder}/${f.name}/${f.download ?? ''}`} className={styles.file}>
               <span className={styles.tileLabel}>
-                {f.folder} · {f.type} · {f.sizeKb.toLocaleString()} KB
+                {f.folder} · {f.type} · {fileSize(f.sizeKb)}
               </span>
               <strong>{f.name}</strong>
               <span className={styles.tileLabel}>
-                {f.owner}, {f.modified}
+                {f.owner}, {longDay(f.modified)}
               </span>
               {f.download ? (
                 <a className={styles.link} href={f.download} download={f.name}>

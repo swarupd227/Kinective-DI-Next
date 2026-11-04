@@ -65,19 +65,26 @@ export const formatAxis = (value: number, unit: ValueUnit | undefined, decimals?
   return unit ? formatValue(value, unit) : String(value);
 };
 
+/** "24 Sep 2026": day, short month, year. Built by hand, because en-GB writes "Sept". */
+export function formatDay(d: Date, utc = true): string {
+  const month = new Intl.DateTimeFormat('en-US', { month: 'short', ...(utc ? { timeZone: 'UTC' } : {}) }).format(d);
+  return utc ? `${d.getUTCDate()} ${month} ${d.getUTCFullYear()}` : `${d.getDate()} ${month} ${d.getFullYear()}`;
+}
+
 /** "Data as of nightly build 26 Oct 2026 04:10" (spec Part B freshness wording; never "live"). */
 export function formatAsOf(iso: string | undefined): string {
   if (!iso) return 'Data as of nightly build';
   const d = new Date(iso);
   // A feed that only knows its date has no time to show; a converted midnight would be made up.
-  if (iso.endsWith('T00:00:00Z')) return `Data as of ${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(d)}`;
-  const date = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(d);
+  if (iso.endsWith('T00:00:00Z')) return `Data as of ${formatDay(d)}`;
+  const date = formatDay(d, false);
   const time = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
   return `Data as of nightly build ${date} ${time}`;
 }
 
 export function formatShortDate(iso: string): string {
-  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(new Date(iso));
+  const d = new Date(iso);
+  return `${d.getDate()} ${new Intl.DateTimeFormat('en-US', { month: 'short' }).format(d)}`;
 }
 
 export function formatClock(iso: string): string {

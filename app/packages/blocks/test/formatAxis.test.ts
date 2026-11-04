@@ -1,6 +1,6 @@
 // Axis ticks in a narrow range must stay distinct, or a chart reads "$1B, $1B, $1B".
 import { describe, expect, it } from 'vitest';
-import { formatAxis, rateDecimals } from '../src/format.ts';
+import { formatAxis, formatDay, rateDecimals } from '../src/format.ts';
 
 describe('axis labels', () => {
   it('keeps balances in a narrow range apart', () => {
@@ -20,5 +20,12 @@ describe('axis labels', () => {
     expect(rateDecimals([0.39, 0.395, 0.405])).toBe(3);
     expect(rateDecimals([4, 9.5])).toBe(1);
     expect(rateDecimals([0.5])).toBe(1);
+  });
+});
+
+describe('dates', () => {
+  it('writes a day as "24 Sep 2026", never "Sept"', () => {
+    expect(formatDay(new Date('2026-09-24T00:00:00Z'))).toBe('24 Sep 2026');
+    expect(formatDay(new Date('2026-10-05T00:00:00Z'))).toBe('5 Oct 2026');
   });
 });

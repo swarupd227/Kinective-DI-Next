@@ -53,10 +53,6 @@
   text-decoration: none;
 }
 
-.markSvg {
-  flex-shrink: 0;
-}
-
 .company {
   color: var(--color-text-muted);
   font-size: var(--type-eyebrow-size);

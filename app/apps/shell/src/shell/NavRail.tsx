@@ -12,6 +12,7 @@ import type { AppId, ThreadSummary } from '@dinext/block-schemas';
 import type { ThreadState } from '@dinext/stream-client';
 import { useSession } from '../session/SessionProvider.tsx';
 import { APP_META } from './apps.tsx';
+import { BrandMark } from './BrandMark.tsx';
 import { NotificationsButton } from './NotificationsPanel.tsx';
 import { UserMenu } from './TopBar.tsx';
 import { opensBeside } from './paneViews.ts';
@@ -22,18 +23,6 @@ import styles from './NavRail.module.css';
 /** Apps sit in the groups bank staff know from DI: the workspace, the modules, then administration. */
 const GROUPS: { id: 'core' | 'modules' | 'admin'; label?: string }[] = [{ id: 'core' }, { id: 'modules', label: 'Modules' }, { id: 'admin', label: 'Administration' }];
 const RECENT_TASKS = 5;
-
-/** The Kinective mark: three rising bars and a dot, the shape the DI booklet uses. */
-function Mark() {
-  return (
-    <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden className={styles.markSvg}>
-      <rect x="5" y="11" width="5" height="16" rx="2.5" fill="#1d5f9e" />
-      <rect x="12.5" y="5" width="5" height="22" rx="2.5" fill="#1c8ea2" />
-      <rect x="20" y="9" width="5" height="18" rx="2.5" fill="#4fb3c4" />
-      <circle cx="25.5" cy="23.5" r="4" fill="#66b24a" />
-    </svg>
-  );
-}
 
 type TaskState = 'needs_you' | 'running' | 'done' | 'idle';
 
@@ -123,7 +112,7 @@ export function NavRail() {
       <nav className={clsx(styles.rail, expanded && styles.expanded, drawer && styles.drawer)} aria-label="Apps" data-region="nav" tabIndex={-1}>
         <div className={styles.head}>
           <Link to="/home" className={styles.brand} aria-label={`Kinective Data Intelligence, ${session.tenant.name}, Home`}>
-            <Mark />
+            <BrandMark />
             {expanded && (
               <span className={styles.brandText}>
                 <span className={styles.company}>Kinective</span>
