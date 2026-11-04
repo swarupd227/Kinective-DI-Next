@@ -436,6 +436,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
             if (s.id === 'look_at' && real.lookAt.data.items.length) s.blocks = [real.lookAt];
             if (s.id === 'scheduled_reports' && real.scheduled) s.blocks = [real.scheduled];
           }
+          home.jump = real.jump;
           // Reports put on Home lead the Pinned tabs, one tab each.
           if (real.pinned.length) home.tabs = [...real.pinned.map((p) => ({ id: `pin-${p.templateId}`, label: p.name, blocks: [p.canvas] })), ...home.tabs];
         }
@@ -450,7 +451,9 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       }
       if (method === 'GET' && path === '/v1/search') {
         const q = url.searchParams.get('q') ?? '';
-        const results = searchFor(persona(), q, visibleThreads().map((t) => t.summary));
+        // Real reports first, then the static catalog without the ones they repeat.
+        const reports = (await live?.searchReports(persona(), q).catch(() => [])) ?? [];
+        const results = [...reports, ...searchFor(persona(), q, visibleThreads().map((t) => t.summary)).filter((r) => !reports.some((x) => x.link === r.link))];
         // With the warehouse up, members come from the Relationship service: name, number, phone or email.
         const members = await live?.searchMembers(persona(), q).catch((err) => (console.error('[search]', err), null));
         if (!members) return json(res, 200, { results });

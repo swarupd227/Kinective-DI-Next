@@ -15,6 +15,7 @@ const ConversationsPage = lazy(() => import('./pages/ConversationsPage.tsx').the
 const TablesPage = lazy(() => import('./pages/TablesPage.tsx').then((m) => ({ default: m.TablesPage })));
 const TablePage = lazy(() => import('./pages/TablesPage.tsx').then((m) => ({ default: m.TablePage })));
 const AppPlaceholder = lazy(() => import('./pages/AppPlaceholder.tsx').then((m) => ({ default: m.AppPlaceholder })));
+const DashboardsPage = lazy(() => import('./pages/DashboardsPage.tsx').then((m) => ({ default: m.DashboardsPage })));
 const AppViewPage = lazy(() => import('./pages/AppViewPage.tsx').then((m) => ({ default: m.AppViewPage })));
 const CalendarPage = lazy(() => import('./pages/AppViewPage.tsx').then((m) => ({ default: m.CalendarPage })));
 const FilesPage = lazy(() => import('./pages/AppViewPage.tsx').then((m) => ({ default: m.FilesPage })));
@@ -42,6 +43,7 @@ export const router = createBrowserRouter([
           { index: true, element: <Navigate to="/home" replace /> },
           { path: 'home', element: <HomePage /> },
           { path: 'home/:tabId', element: <HomePage /> },
+          { path: 'dashboards', element: page(<DashboardsPage />) },
           { path: 'c', element: page(<ConversationsPage />) },
           { path: 'c/new', element: page(<NewThreadPage />) },
           { path: 'c/:threadId', element: page(<ThreadPage />) },

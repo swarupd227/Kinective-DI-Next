@@ -65,8 +65,10 @@ export function HomeLauncher() {
     return out.filter((c) => !seen.has(c.link) && seen.add(c.link));
   }, [apps, reports.data, tables.data, session.tenant.institutionType]);
 
+  // Each word matches the start of a word, so "board" finds Board report, not every Dashboard.
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-  const shown = cards.filter((c) => (!only || c.kinds.includes(only)) && words.every((w) => `${c.label} ${c.detail ?? ''} ${c.kinds.join(' ')}`.toLowerCase().includes(w)));
+  const startsWord = (text: string, w: string) => text.split(/[^a-z0-9$%]+/).some((t) => t.startsWith(w));
+  const shown = cards.filter((c) => (!only || c.kinds.includes(only)) && words.every((w) => startsWord(`${c.label} ${c.detail ?? ''} ${c.kinds.join(' ')}`.toLowerCase(), w)));
   const count = (k: Kind) => cards.filter((c) => c.kinds.includes(k)).length;
   const filtering = Boolean(words.length || only);
   const visible = all || filtering ? shown : shown.slice(0, FIRST);
@@ -76,7 +78,7 @@ export function HomeLauncher() {
     <section className={styles.launcher} aria-labelledby="h-dashboards">
       <div className={styles.head}>
         <h2 id="h-dashboards" className={styles.title}>
-          <LayoutGrid size={16} aria-hidden /> Dashboards
+          <LayoutGrid size={16} aria-hidden /> Browse
         </h2>
         <TextInput label="Search dashboards" hideLabel placeholder="Search dashboards" leading={<Search size={14} aria-hidden />} value={q} onChange={(e) => setQ(e.target.value)} className={styles.search} />
         <div className={styles.chips} role="group" aria-label="Show only">

@@ -229,7 +229,11 @@ export function workflowBuilderModule(wf: WorkflowDefService, today: () => strin
             return { text: `**${all.length} referral types.** Ask for one worksheet, such as “Show the worksheet for HELOC”.`, blocks: [moduleTable(spec, 'Referral types', ctx.runId, 'referral.worksheet.list', [{ field: 'type', headerName: 'Referral type', type: 'text' }, { field: 'products', headerName: 'What is referred', type: 'text' }, { field: 'creators', headerName: 'Who creates it', type: 'text' }, { field: 'receives', headerName: 'Who receives it', type: 'text' }, { field: 'credit', headerName: 'Credit', type: 'text' }], all.map((t) => ({ type: t.label, products: t.worksheet.products.join(', '), creators: t.worksheet.creators.join(', '), receives: t.receives, credit: t.worksheet.credit })))] };
           }
           const t = await sheets.find(a.type);
-          return { text: `**${t.label} referral worksheet**\n\n${sheetLines(t).join('\n')}`, suggestions: [`Let call center create ${t.label} referrals`] };
+          return { text: `**${t.label} referral worksheet**\n\n${sheetLines(t).join('\n')}`, suggestions: (() => {
+            // Suggest the next useful change: a creator it doesn't have yet, or turning credit on.
+            const next = WORKSHEET_CREATORS.find((c) => !t.worksheet.creators.includes(c));
+            return next ? [`Let ${next.toLowerCase()} create ${t.label} referrals`] : t.worksheet.credit !== 'Yes' ? [`Turn on credit for ${t.label} referrals`] : [];
+          })() };
         },
       },
       {

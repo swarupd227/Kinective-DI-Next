@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Command } from 'cmdk';
-import { FileBarChart, LayoutDashboard, MapPin, MessagesSquare, Moon, Rows4, Slash, Sparkles, Sun, Table2, UserRound, Workflow } from 'lucide-react';
+import { FileBarChart, LayoutDashboard, LayoutGrid, MapPin, MessagesSquare, Moon, Rows4, Slash, Sparkles, Sun, Table2, UserRound, Workflow } from 'lucide-react';
 import { usePreferences } from '@dinext/ui';
 import type { SearchResult, SearchResultKind } from '@dinext/block-schemas';
 import { useSession } from '../session/SessionProvider.tsx';
@@ -124,8 +124,17 @@ export function CommandPalette() {
             ))}
           </Command.Group>
         )}
-        {apps.length > 0 && (
+        {(apps.length > 0 || match('all dashboards browse')) && (
           <Command.Group heading="Go to">
+            {match('all dashboards browse') && (
+              <Command.Item value="app:dashboards" onSelect={() => go('/dashboards')} className={styles.item}>
+                <span className={styles.icon}>
+                  <LayoutGrid size={16} aria-hidden />
+                </span>
+                <span className={styles.label}>All dashboards</span>
+                <span className={styles.detail}>Every table, form and report you can open</span>
+              </Command.Item>
+            )}
             {apps.map((a) => (
               <Command.Item key={a} value={`app:${a}`} onSelect={() => go(APP_META[a]!.path)} className={styles.item}>
                 <span className={styles.icon}>{APP_META[a]!.icon}</span>

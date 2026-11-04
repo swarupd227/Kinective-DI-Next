@@ -82,6 +82,20 @@ export interface HomeBriefing {
   sections: HomeSection[];
   tabs: { id: string; label: string; blocks: Block[] }[];
   suggestions: string[];
+  /** "Jump back in": a few places worth opening today, each with a live figure, DI's reason and one action. */
+  jump?: JumpCard[];
+}
+
+/** One live card on Home. Code writes every figure and reason; the card opens the page or asks DI. */
+export interface JumpCard {
+  id: string;
+  title: string;
+  kind: 'report' | 'work' | 'pinned';
+  figure?: { label: string; value: number; unit: 'currency' | 'percent' | 'count'; decimals?: number; compact?: boolean };
+  change?: { text: string; good: boolean | null };
+  reason: string;
+  link: string;
+  action?: { label: string; ask: string };
 }
 
 export type HomeSectionId = 'build_notice' | 'approvals' | 'what_changed' | 'look_at' | 'your_work' | 'scheduled_reports';

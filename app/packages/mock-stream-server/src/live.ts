@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto';
 import type { ApprovalCardBlock, ApprovalDecisionRequest, Block, KpiGroupBlock, ListBlock, Member360Block, SearchResult, StreamEvent, StreamingEnvelope, TableData } from '@dinext/block-schemas';
 import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, tasksModule, formLayoutModule, workflowBuilderModule, indirectModule, prospectingModule, calendarModule, callReportModule, filesModule, governanceModule, lineageModule, campaignModule, collectionsModule, complianceModule, dataLogsModule, goalsTake, ModuleGateway, onboardingModule, operationsModule, pipelineTake, segModule, referralTake, reportsTake, todayList, describeSchedule, hasClaudeCredentials, member360, memberTake, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
 import { ApprovalStore, WorksheetService, CalendarStore, FileStore, foldersFor, TaskService, WorkflowDefService, IndirectService, ProspectService, QueryService, GovernanceService, LineageService, CallReportService, CampaignService, CollectionsService, CoreError, DataLogService, GoalsService, IssueService, OnboardingService, OperationsService, RetentionService, SegService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type CoreContext, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
-import type { AppNotification, AppView, AppViewId, QueryRun, DiTake, GoalsIndex, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
+import type { JumpCard, AppNotification, AppView, AppViewId, QueryRun, DiTake, GoalsIndex, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
 import { createAppViews } from './appViews.ts';
 import { columnStatRows, tablesModule } from '@dinext/agents';
 import { TableService, type TableObject } from '@dinext/di-core';
@@ -106,7 +106,7 @@ export interface LiveRuntime {
    * or refused it; `onDone` fires when any follow-on work (executing the write) has streamed.
    */
   decide(persona: PersonaId, req: { approvalId: string; threadId: string; runId: string; body: ApprovalDecisionRequest }, emit: (e: Emit) => void, onDone: (result: unknown) => void, speed: number): Promise<ApprovalDecisionResult>;
-  home(persona: PersonaId): Promise<{ kpis: KpiGroupBlock; narrative: string; lookAt: ListBlock; scheduled: ListBlock | null; pinned: { templateId: string; name: string; audience: string; pinnedBy: string; canvas: ReportCanvasBlock }[]; referrals: { open: number; overdue: number } | null } | null>;
+  home(persona: PersonaId): Promise<{ kpis: KpiGroupBlock; narrative: string; lookAt: ListBlock; scheduled: ListBlock | null; jump: JumpCard[]; pinned: { templateId: string; name: string; audience: string; pinnedBy: string; canvas: ReportCanvasBlock }[]; referrals: { open: number; overdue: number } | null } | null>;
   /**
    * A member's 360 for the workspace or the member page (GET /v1/members/{token}). Null when the
    * relationship data is not loaded; NO_ACCESS for a token outside the purview. Logged as an access.
@@ -114,6 +114,8 @@ export interface LiveRuntime {
   member(persona: PersonaId, token: string): Promise<Member360Block | null>;
   /** Member search for Ctrl+K and the voice picker: masked results within the purview (BE-RM-002). */
   searchMembers(persona: PersonaId, q: string): Promise<SearchResult[] | null>;
+  /** Saved and stock reports this person can open, by words in the name or folder. */
+  searchReports(persona: PersonaId, q: string): Promise<SearchResult[]>;
   /** The Reports app: templates the user can open and their schedules (spec 8.5–8.9). */
   reports(persona: PersonaId): Promise<{ take: DiTake; templates: ReportSummary[]; schedules: ScheduleSummary[]; bin: { templateId: string; name: string; folder: string; deletedAt: string }[] } | null>;
   /** The Referrals app: a box of referrals with counts for the tabs (FE-REF-001). */
@@ -666,6 +668,18 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       return (await gw.store.schedules(s.user.id)).map(scheduleSummary);
     },
 
+    async searchReports(persona, q) {
+      const gw = tenantFor(persona)?.runtime.reports?.gateway;
+      const s = PERSONAS[persona].session;
+      const words = q.trim().toLowerCase().split(/\s+/).filter((w) => w.length > 1);
+      if (!gw || !s.apps.includes('reports') || !words.length) return [];
+      const all = await gw.store.list(s.user.id);
+      return all
+        .filter((t) => t.status !== 'draft' && words.every((w) => `${t.name} ${t.folder}`.toLowerCase().split(/[^a-z0-9]+/).some((x) => x.startsWith(w))))
+        .slice(0, 8)
+        .map((t) => ({ kind: 'report' as const, id: t.templateId, label: t.name, detail: `Reports / ${t.folder}`, link: `/reports/${t.templateId}` }));
+    },
+
     async searchMembers(persona, q) {
       const rm = tenantFor(persona)?.runtime.workflow?.relationship;
       const s = PERSONAS[persona].session;
@@ -737,7 +751,8 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
           }),
         )
       ).filter((x) => x !== null);
-      return { kpis, narrative: b.narrative, lookAt, scheduled, pinned, referrals: open && { open: open.length, overdue: open.filter((i) => i.overdue).length } };
+      const referrals = open && { open: open.length, overdue: open.filter((i) => i.overdue).length };
+      return { kpis, narrative: b.narrative, lookAt, scheduled, pinned, referrals, jump: jumpCards(persona, b, pinned, referrals) };
     },
 
     async table(persona, tableId) {
@@ -870,4 +885,54 @@ async function tablesWorkbench(tenant: Tenant, persona: PersonaId, tableId: stri
       target?.mine ? { label: 'Make public', ask: target.kind === 'Snapshot' ? `Make ${target.name} public` : `Make the ${target.name} view public` } : { label: 'Make public', ask: null, why: 'Save a view or snapshot of your own first.' },
     ],
   };
+}
+
+// ---- Home: Jump back in --------------------------------------------------------------------------
+
+type KpiItem = KpiGroupBlock['data']['items'][number];
+const changeOf = (k: KpiItem | undefined): JumpCard['change'] => {
+  const c = k?.comparison;
+  if (!c || c.direction === 'flat') return undefined;
+  const v = Math.abs(c.value);
+  const text = `${c.direction === 'up' ? '↑' : '↓'} ${c.unit === 'bp' ? `${v} bp` : c.unit === 'percent' ? `${v}%` : v.toLocaleString('en-US')} ${c.label}`;
+  return { text, good: c.direction === c.goodWhen };
+};
+const figureOf = (k: KpiItem | undefined): JumpCard['figure'] =>
+  k && typeof k.value === 'number' && (k.unit === 'currency' || k.unit === 'percent' || k.unit === 'count') ? { label: k.label, value: k.value, unit: k.unit, decimals: k.format?.decimals, compact: k.format?.compact } : undefined;
+
+/** The report each role opens first: what they are measured on. */
+const ROLE_REPORT: Partial<Record<PersonaId, { id: string; title: string; kpi: number; reason: string }>> = {
+  executive: { id: 'board_report_quarterly', title: 'Board report', kpi: 0, reason: 'The latest complete quarter, ready to walk through.' },
+  bank_cfo: { id: 'board_report_quarterly', title: 'Board report', kpi: 1, reason: 'The latest complete quarter, ready to walk through.' },
+  analyst: { id: 'lending_portfolio_monthly', title: 'Lending portfolio', kpi: 0, reason: 'The loan book by category, as of last night’s build.' },
+  branch: { id: 'growth_my_branch_monthly', title: 'Growth report – My branch', kpi: 3, reason: 'Your branch’s new relationships and lending this month.' },
+};
+
+/**
+ * A few places worth opening today (today's DI lists every dashboard; DI Next says which ones matter
+ * and why). Each card carries a figure from the build, DI's reason, and one action. At most four.
+ */
+export function jumpCards(persona: PersonaId, b: { kpis: KpiGroupBlock; lookAt: { title: string; subtitle: string; question: string }[] }, pinned: { templateId: string; name: string; audience: string; pinnedBy: string; canvas: ReportCanvasBlock }[], referrals: { open: number; overdue: number } | null): JumpCard[] {
+  const apps = PERSONAS[persona].session.apps;
+  const items = b.kpis.data.items;
+  const cards: JumpCard[] = [];
+  const flag = b.lookAt.find((l) => /delinquen/i.test(l.title));
+  if (apps.includes('reports')) {
+    const dq = items.find((k) => /delinquen/i.test(k.label));
+    cards.push({ id: 'dq', title: 'Loan delinquency', kind: 'report', figure: figureOf(dq), change: changeOf(dq), reason: flag ? flag.title : 'Loans 60+ days past due, across your branches.', link: '/reports/loan_delinquency_monthly', action: { label: 'Ask why', ask: flag?.question ?? 'Where does delinquency come from?' } });
+  }
+  if (referrals && apps.includes('referrals')) {
+    cards.push({ id: 'ref', title: 'Referrals', kind: 'work', figure: { label: 'Open', value: referrals.open, unit: 'count' }, change: referrals.overdue ? { text: `${referrals.overdue} overdue`, good: false } : { text: 'None overdue', good: true }, reason: referrals.overdue ? 'Overdue ones first: members are waiting to hear back.' : 'Everything is within its due date.', link: '/workflows/referrals/inbox', action: referrals.overdue ? { label: 'Review overdue', ask: 'Show my overdue referrals' } : { label: 'What’s new?', ask: 'Show my referrals' } });
+  }
+  for (const p of pinned.slice(0, 2)) {
+    const first = p.canvas.data.widgets.find((w) => w.view.type === 'kpi')?.view;
+    const k = first?.type === 'kpi' ? (first.data as unknown as KpiItem) : undefined;
+    cards.push({ id: `pin-${p.templateId}`, title: p.name, kind: 'pinned', figure: figureOf(k), change: changeOf(k), reason: p.audience === 'me' ? 'Pinned to your Home.' : `Published to the ${p.audience} class by ${p.pinnedBy}.`, link: `/home/pin-${p.templateId}`, action: { label: 'Brief me', ask: `Brief me on the ${p.name} report` } });
+  }
+  const role = ROLE_REPORT[persona];
+  if (role && apps.includes('reports') && !cards.some((c) => c.link.endsWith(role.id))) {
+    const k = items[role.kpi];
+    cards.push({ id: 'role', title: role.title, kind: 'report', figure: figureOf(k), change: changeOf(k), reason: role.reason, link: `/reports/${role.id}`, action: { label: 'Send it to me monthly', ask: `Send me the ${role.title} every month` } });
+  }
+  return cards.slice(0, 4);
 }
