@@ -21,6 +21,7 @@ import { newReferralThread, REFERRAL_AGENT, runReferral, runReferralOffline, typ
 import { newRelationshipThread, runRelationship, runRelationshipOffline, type RelationshipOutcome, type RelationshipThread } from './relationship.ts';
 import { describeSchedule, newReportThread, REPORT_AGENT, type ReportGateway, type ReportThread } from './report.ts';
 import { runReportAgent, runReportOffline, type ReportOutcome } from './reportAgent.ts';
+import { SETTINGS_FOLLOW_UP } from './reportSettings.ts';
 import type { RunSink, StepUpdate } from './sink.ts';
 import { runToday, TODAY_REQUEST, type TodayOutcome } from './today.ts';
 import { RETENTION_AGENT, RETENTION_REQUEST, runRetention, runRetentionOffline, type RetentionInput, type RetentionOutcome } from './retention.ts';
@@ -86,6 +87,8 @@ export interface ConciergeTurn {
   retention?: boolean;
   /** Modules this person's class can use. */
   modules?: string[];
+  /** The person's user class, such as "Manager": who a report limited to some classes opens for. */
+  userClass?: string;
 }
 
 /**
@@ -301,8 +304,12 @@ export class Concierge {
         });
       }
 
+      // A report chip (from a report's Settings view) makes that report the one on screen, so "make it
+      // quarterly" means it. The gateway still checks the person can open it.
+      const reportChip = turn.context.findLast((c) => c.type === 'report' && /^report:[a-z0-9_]{3,60}$/.test(c.ref));
+      if (reportChip && !this.reportThreads.get(turn.threadId)?.current) this.reportThreads.set(turn.threadId, { ...(this.reportThreads.get(turn.threadId) ?? newReportThread()), current: { templateId: reportChip.ref.slice(7), controls: {} } });
       const report = this.reportThreads.get(turn.threadId);
-      if (report?.current && turn.apps.includes('reports') && turn.tenant.reports && REPORT_FOLLOW_UP.test(screened.text)) {
+      if (report?.current && turn.apps.includes('reports') && turn.tenant.reports && (REPORT_FOLLOW_UP.test(screened.text) || SETTINGS_FOLLOW_UP.test(screened.text))) {
         classification = { intent: 'report_request', agent: 'report_builder', confidence: 1, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' };
         return await this.report(turn, screened.text, sink, usage, (r) => {
           toolCalls = r.toolCalls;
@@ -749,7 +756,7 @@ export class Concierge {
     const gateway = turn.tenant.reports!.gateway;
     const state = this.reportThreads.get(turn.threadId) ?? newReportThread();
     this.reportThreads.set(turn.threadId, state);
-    const input = { runId: turn.runId, threadId: turn.threadId, text, user: { id: turn.user.id, name: turn.user.name, title: turn.user.title }, tenant: { name: turn.tenant.name, institutionType: turn.tenant.institutionType }, apps: turn.apps, purviewBranches: turn.purviewBranches, canViewSql: turn.canViewSql };
+    const input = { runId: turn.runId, threadId: turn.threadId, text, user: { id: turn.user.id, name: turn.user.name, title: turn.user.title }, tenant: { name: turn.tenant.name, institutionType: turn.tenant.institutionType }, apps: turn.apps, purviewBranches: turn.purviewBranches, canViewSql: turn.canViewSql, userClass: turn.userClass };
     const r = this.deps.model ? await runReportAgent(input, { model: this.deps.model, gateway }, state, sink) : await runReportOffline(input, { gateway }, state, sink);
     usage.push(...r.usage);
     report(r);
@@ -864,7 +871,7 @@ export class Concierge {
       later(async () => {
         try {
           const x = await gw.execute(approval, { user: d.user });
-          const ref = x.operation === 'report.template.create' ? `report:${x.template.templateId}` : x.operation === 'report.export' ? `export:${x.exportId}` : x.operation === 'report.share' ? `share:${x.shareId}` : x.operation === 'report.pin' ? `pin:${x.pinId}` : x.operation === 'report.unpin' || x.operation === 'report.delete' || x.operation === 'report.restore' ? `report:${x.operation === 'report.unpin' ? x.templateName : x.templateId}` : `schedule:${x.schedule.scheduleId}`;
+          const ref = x.operation === 'report.template.create' ? `report:${x.template.templateId}` : x.operation === 'report.export' ? `export:${x.exportId}` : x.operation === 'report.share' ? `share:${x.shareId}` : x.operation === 'report.pin' ? `pin:${x.pinId}` : x.operation === 'report.unpin' || x.operation === 'report.delete' || x.operation === 'report.restore' || x.operation === 'report.settings.update' ? `report:${x.operation === 'report.unpin' ? x.templateName : x.templateId}` : `schedule:${x.schedule.scheduleId}`;
           void this.deps.audit.event({ eventType: 'ai.action.executed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, operation: approval.operation, resultRef: ref });
           const source = [{ kind: 'template' as const, label: 'Reports', ref: 'report:library' }];
           // The saved report replaces the draft as the one on screen, so "schedule it" means it.
@@ -881,6 +888,7 @@ export class Concierge {
             if (rs?.current?.templateId === x.templateId) rs.current = undefined;
             await sink.text(`Moved **${x.templateName}** to the Recycle Bin and off every Home. Say “restore ${x.templateName}” to bring it back.`, REPORT_AGENT, source);
           } else if (x.operation === 'report.restore') await sink.text(`Restored **${x.templateName}** to ${x.folder}. [Open it](/reports/${x.templateId}).`, REPORT_AGENT, source);
+          else if (x.operation === 'report.settings.update') await sink.text(`Changed the settings of **${x.templateName}**: ${x.changes.map((ch) => `${ch.label.toLowerCase()} is now ${ch.after.charAt(0).toLowerCase()}${ch.after.slice(1)}`).join('; ')}.${x.turnedOff ? ' Others no longer see it, and its schedules skip it until you turn it back on.' : ''} [See its settings](/reports/${x.templateId}?view=settings).`, REPORT_AGENT, source);
           else if (x.operation === 'report.schedule.cancel') await sink.text(`Stopped schedule #${x.schedule.scheduleId} for **${x.schedule.templateName}**. Nothing more will be sent.`, REPORT_AGENT, source);
           else await sink.text(`Your ${x.format === 'xlsx' ? 'Excel' : 'CSV'} export of **${x.templateName}** is ready: [Download it](/v1/exports/${x.exportId}). The download is logged.`, REPORT_AGENT, source);
           sink.done?.(null);

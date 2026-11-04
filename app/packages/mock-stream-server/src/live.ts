@@ -14,6 +14,9 @@ import { renderExport } from './exports.ts';
 import type { AppId } from '@dinext/block-schemas';
 import type { ModuleContext } from '@dinext/agents';
 import { SemanticService } from '@dinext/semantic';
+import { notificationsModule } from '@dinext/agents';
+import { EmailOutbox, tenantDomain, type EmailKind } from '@dinext/di-core';
+import type { ReportSettingsView } from '@dinext/block-schemas';
 import { tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { PERSONAS, type PersonaId } from './data.ts';
 
@@ -74,6 +77,8 @@ interface Tenant {
   files: FileStore | null;
   /** Saved views and snapshots, once the tenant has the Tables tables. */
   tables: TableService | null;
+  /** The simulated email outbox, once the tenant has the notification tables. */
+  outbox: EmailOutbox | null;
 }
 
 export interface LiveRunResult {
@@ -147,6 +152,12 @@ export interface LiveRuntime {
   table(persona: PersonaId, tableId: string): Promise<TableData | null>;
   /** The Tables page around a grid: column stats, linked tables and what's saved from it. Null without the Tables app. */
   tableWorkbench(persona: PersonaId, tableId: string): Promise<TableWorkbench | null>;
+  /** A report's settings, read-only (today's DI Build Reports form). Null without Reports. */
+  reportSettings?(persona: PersonaId, templateId: string): Promise<ReportSettingsView | null>;
+  /** Writes an email to the simulated outbox for a user, if they want that kind. Never throws. */
+  email?(userId: string, n: { kind: EmailKind; title: string; detail?: string; link: string; sourceRef: string }): Promise<void>;
+  /** This morning's follow-up reminders and digests for everyone in the person's tenant (local stand-in for the morning job). */
+  morningEmails?(persona: PersonaId): Promise<{ emails: number } | null>;
   close(): Promise<void>;
 }
 
@@ -173,7 +184,7 @@ const giAccess = (p: PersonaId) => ({ leads: PERSONAS[p].leadsBranch, approves: 
 
 const personaContext = (p: PersonaId) => {
   const s = PERSONAS[p].session;
-  return { purviewBranches: PERSONAS[p].purview, canViewSql: s.permissions.queryBrowser, employeeId: PERSONAS[p].employeeId, lap: lapAccess(p), gi: giAccess(p), retention: PERSONAS[p].retention, modules: PERSONAS[p].modules ?? [] };
+  return { purviewBranches: PERSONAS[p].purview, canViewSql: s.permissions.queryBrowser, employeeId: PERSONAS[p].employeeId, lap: lapAccess(p), gi: giAccess(p), retention: PERSONAS[p].retention, modules: PERSONAS[p].modules ?? [], userClass: PERSONAS[p].userClass };
 };
 
 /** Maps a run's sink calls to stream events (spec 12.4). Text is verified before it streams. */
@@ -229,7 +240,7 @@ const applicationView = ({ partyId, ...a }: PipelineApplication, rm: Relationshi
 const referralView = ({ partyId, senderUserId: _sender, ...i }: InboxItem, rm: RelationshipService | null): ReferralSummary => ({ ...i, memberRef: rm?.token(partyId) ?? '' });
 
 /** Which app each workspace page belongs to. */
-const APP_ACCESS: Record<AppViewId, AppId> = { calendar: 'calendar', files: 'files', queries: 'queries', users: 'users', admin: 'admin', datalogs: 'datalogs', seg: 'seg', callreport: 'callreport', workflows: 'workflows', rm: 'rm', indirect: 'indirect', prospecting: 'prospecting', campaigns: 'campaigns', onboarding: 'onboarding', compliance: 'compliance', predictive: 'predictive', dq: 'dq', tasks: 'tasks', integrations: 'integrations', classes: 'classes', wfbuilder: 'wfbuilder', tables: 'tables' };
+const APP_ACCESS: Record<AppViewId, AppId> = { calendar: 'calendar', files: 'files', queries: 'queries', users: 'users', admin: 'admin', datalogs: 'datalogs', seg: 'seg', callreport: 'callreport', workflows: 'workflows', rm: 'rm', indirect: 'indirect', prospecting: 'prospecting', campaigns: 'campaigns', onboarding: 'onboarding', compliance: 'compliance', predictive: 'predictive', dq: 'dq', tasks: 'tasks', integrations: 'integrations', classes: 'classes', wfbuilder: 'wfbuilder', tables: 'tables', emails: 'home' };
 
 const viewDeps = (pool: Pool, institutionType: string, who: { purviewBranches?: string[]; employeeId?: number; modules: string[]; leads?: boolean; retention: boolean; user?: { id: string; name: string } }, workspace = false) => ({ pool, blockId, user: who.user ?? { id: '', name: '' }, person: institutionType === 'bank' ? ('customer' as const) : ('member' as const), ctx: { purviewBranches: who.purviewBranches } as CoreContext, employeeId: who.employeeId, leads: Boolean(who.leads), modules: who.modules, retention: who.retention, workspace });
 
@@ -315,6 +326,14 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     );
     const tables = hasTables ? new TableService(pool, institutionType === 'bank' ? 'customer' : 'member') : null;
     const tablesModules = tables ? [tablesModule(tables, today)] : [];
+    // Email notifications exist once the tenant has the outbox tables; the module goes first so its
+    // narrow phrases ("stop emailing me …") are never read as another module's request.
+    const hasOutbox = await pool.query('SELECT 1 FROM ntf_pref LIMIT 1').then(
+      () => true,
+      () => false,
+    );
+    const outbox = hasOutbox ? new EmailOutbox(pool, tenantDomain(name)) : null;
+    if (outbox) tablesModules.unshift(notificationsModule(outbox, today));
     const growthModules = growth ? [indirectModule(new IndirectService(pool), growth.dealers, today), prospectingModule(new ProspectService(pool), growth.companies, growth.stages, today)] : [];
     const modules = hasModules ? new ModuleGateway(new ApprovalStore(pool), [...tablesModules, ...governanceModules, ...growthModulesExtra, calendarModule((ctx) => calendarFor(pool, institutionType, ctx, hasWorkspace), hasWorkspace ? new CalendarStore(pool) : null, colleagues, today), filesModule(files, today), ...growthModules, complianceModule(new IssueService(pool), pool), onboardingModule(new OnboardingService(pool)), dataLogsModule(new DataLogService(pool)), operationsModule(new OperationsService(pool)), callReportModule(new CallReportService(pool)), collectionsModule(new CollectionsService(pool)), campaignModule(new CampaignService(pool)), segModule(new SegService(pool), () => new Date().toISOString().slice(0, 10))]) : null;
     // Goals & Incentives exists once the tenant was seeded with Slice 14 or later.
@@ -335,7 +354,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     const [staff] = await pool.query('SELECT DISTINCT display_name FROM cdm_employee');
     const dims = semantic.dimensionValues;
     const vocabulary = [...new Set([...(dims.branch ?? []), ...(dims.region ?? []), ...(dims.loan_category ?? []), ...(dims.deposit_category ?? []), ...(staff as { display_name: string }[]).map((s) => s.display_name).filter((s) => !/^\w\. /.test(s))])];
-    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, governance, files, tables, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules } });
+    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, governance, files, tables, outbox, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules } });
   }
   if (!tenants.size) return null;
 
@@ -357,7 +376,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     return { ...referralView(d, wf.relationship ?? null), history: d.history, team: d.team, canWork: !purview || purview.includes(d.branch) };
   };
 
-  return {
+  const rt: LiveRuntime = {
     concierge,
     mode: model ? 'live' : 'offline',
     async appView(persona, id) {
@@ -637,6 +656,8 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
           if (failed.length) await gw.store.recordRun(sch.scheduleId, 'failed', `${failed.map((w) => w.title).join(', ')}: ${(failed[0]!.view as { data: { detail?: string; message: string } }).data.detail ?? (failed[0]!.view as { data: { message: string } }).data.message}`);
           else if (empty) await gw.store.recordRun(sch.scheduleId, sch.sendIfEmpty ? 'ok' : 'empty', sch.sendIfEmpty ? 'Sent with no data, as asked.' : 'No data for the period, so nothing was sent.');
           else await gw.store.recordRun(sch.scheduleId, 'ok', `Ran for ${canvas.data.periodLabel} after build ${gw.semantic.build.buildId}; ${canvas.data.widgets.length} sections, ${sch.format.toUpperCase()} to ${sch.recipientCount} ${sch.recipientCount === 1 ? 'recipient' : 'recipients'} (delivery simulated locally).`);
+          // The owner's copy lands in their outbox, once per schedule and build: a name and a link only.
+          if (!failed.length && (!empty || sch.sendIfEmpty)) await tenantFor(persona)?.outbox?.queue({ userId: sch.ownerUserId, toName: owner.session.user.name, kind: 'report_schedule', title: `${sch.templateName} for ${canvas.data.periodLabel} is ready`, detail: `Schedule #${sch.scheduleId}, ${describeSchedule(sch).toLowerCase()}.`, link: `/reports/${sch.templateId}`, sourceRef: `schedule:${sch.scheduleId}:${gw.semantic.build.buildId}` }).catch(() => null);
         } catch (err) {
           await gw.store.recordRun(sch.scheduleId, 'failed', err instanceof Error ? err.message : String(err));
         }
@@ -759,10 +780,43 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       return tenant ? tablesWorkbench(tenant, persona, tableId) : null;
     },
 
+    async reportSettings(persona, templateId) {
+      const gw = tenantFor(persona)?.runtime.reports?.gateway;
+      const s = PERSONAS[persona].session;
+      if (!gw || !s.apps.includes('reports')) return null;
+      return gw.settings(templateId, { user: { id: s.user.id }, canViewSql: s.permissions.queryBrowser, userClass: PERSONAS[persona].userClass });
+    },
+
+    async email(userId, n) {
+      const entry = Object.entries(PERSONAS).find(([, p]) => p.session.user.id === userId);
+      if (!entry) return;
+      const outbox = tenantFor(entry[0] as PersonaId)?.outbox;
+      await outbox?.queue({ userId, toName: entry[1].session.user.name, ...n }).catch((err: unknown) => console.error('[email]', err));
+    },
+
+    async morningEmails(persona) {
+      const tenant = tenantFor(persona);
+      if (!tenant?.outbox) return null;
+      const day = new Date().toISOString().slice(0, 10);
+      let emails = 0;
+      // Everyone in this tenant: each person's overdue referrals as reminders, and their open work as one digest.
+      for (const [id, p] of Object.entries(PERSONAS) as [PersonaId, (typeof PERSONAS)[PersonaId]][]) {
+        if (tenantFor(id) !== tenant) continue;
+        const who = { userId: p.session.user.id, toName: p.session.user.name };
+        const overdue = await rt.overdueReferrals(id).catch(() => []);
+        for (const o of overdue) if (await tenant.outbox.queue({ ...who, kind: 'follow_up', title: o.title, detail: o.detail, link: o.link ?? '/workflows/referrals/inbox', sourceRef: `followup:${o.id}:${day}` })) emails++;
+        const plan = await rt.today(id).catch(() => null);
+        const items = plan?.data.items ?? [];
+        if (items.length && (await tenant.outbox.queue({ ...who, kind: 'digest', title: `${items.length} ${items.length === 1 ? 'thing needs' : 'things need'} you today`, detail: items.slice(0, 5).map((i) => i.title).join(' · '), link: '/home', sourceRef: `digest:${day}` }))) emails++;
+      }
+      return { emails };
+    },
+
     async close() {
       await Promise.all([...tenants.values()].map((t) => t.pool.end()));
     },
   };
+  return rt;
 }
 
 // ---- Tables: curated tables beyond Loan Accounts, saved views, snapshots and the workbench ----------

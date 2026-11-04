@@ -156,6 +156,9 @@ export const PERSONAS: Record<PersonaId, Persona> = {
   },
 };
 
+// Email notifications: everyone can ask DI about the emails it sends them and change which they get.
+for (const p of Object.values(PERSONAS)) p.modules = [...(p.modules ?? []), 'notifications'];
+
 /** Slash commands and the app each needs (spec 6.15, FE-EXP-131). */
 const SLASH: [string, AppId | null][] = [
   ['/ask', null],

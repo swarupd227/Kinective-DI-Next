@@ -14,3 +14,5 @@ export { GOVERNANCE_APPEND_TABLES, GOVERNANCE_DDL, generateGovernance } from './
 export { GOALS_DDL, GOALS_WRITE_TABLES, GI_GOALS, GI_INCENTIVES, GI_TIERS, GI_PERIOD, GI_PRIOR, generateGoals } from './goals.ts';
 export { PIPELINE_DDL, PIPELINE_WRITE_TABLES, LAP_HOLDS, LAP_STATUSES, generatePipeline, markDuplicates } from './pipeline.ts';
 export { WORKFLOW_DDL, WORKFLOW_WRITE_TABLES, REFERRAL_TYPES, workflowSeed, referralSeed, type ReferralType, type FormField, type RouteRule } from './workflow.ts';
+// Email notifications: the simulated outbox and each person's preferences.
+export { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';

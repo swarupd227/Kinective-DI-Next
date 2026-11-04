@@ -163,7 +163,7 @@ export interface ReferralsIndex {
 export type ReferralAction = { kind: 'start' } | { kind: 'note'; text: string } | { kind: 'close'; stage: 'Sold' | 'Not Interested' | 'Done'; note?: string } | { kind: 'assign'; employeeId: number };
 
 /** DI's view of a page: one sentence, and the next step it would take. Code writes both. */
-export type AppViewId = 'calendar' | 'files' | 'queries' | 'users' | 'admin' | 'datalogs' | 'seg' | 'callreport' | 'workflows' | 'rm' | 'indirect' | 'prospecting' | 'campaigns' | 'onboarding' | 'compliance' | 'predictive' | 'dq' | 'tasks' | 'integrations' | 'classes' | 'wfbuilder' | 'tables';
+export type AppViewId = 'calendar' | 'files' | 'queries' | 'users' | 'admin' | 'datalogs' | 'seg' | 'callreport' | 'workflows' | 'rm' | 'indirect' | 'prospecting' | 'campaigns' | 'onboarding' | 'compliance' | 'predictive' | 'dq' | 'tasks' | 'integrations' | 'classes' | 'wfbuilder' | 'tables' | 'emails';
 
 export interface AppTile {
   label: string;
@@ -360,4 +360,21 @@ export interface TableData {
   rows: Record<string, string | number | null>[];
   rowCount: number;
   freshnessAsOf: string;
+}
+
+// ---- Report settings and email notifications ----------------------------------------------------
+
+/** GET /v1/reports/{id}/settings: today's DI Build Reports form, read-only. Changes are asked of DI. */
+export interface ReportSettingsView {
+  templateId: string;
+  name: string;
+  status: 'stock' | 'published' | 'draft';
+  owner: string;
+  /** Whether this person may ask DI to change it, and if not, why. */
+  canChange: boolean;
+  changeNote: string;
+  tiles: AppTile[];
+  groups: { id: string; title: string; fields: { label: string; value: string; used: boolean }[] }[];
+  prompts: string[];
+  lastChange?: string;
 }

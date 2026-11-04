@@ -84,6 +84,52 @@ export interface PinRow extends PinDraft {
   createdAt: string;
 }
 
+/** Who is looking: their user class decides whether a report limited to some classes opens for them. */
+export interface Viewer {
+  userClass?: string;
+}
+
+/** The settings a saved report's owner can change by asking DI (today's DI Build Reports form). */
+export interface SettingsPayload {
+  templateId: string;
+  templateName: string;
+  /** Only the fields that change, as they were and as they become. */
+  before: SettingsFields;
+  after: SettingsFields;
+}
+
+export interface SettingsFields {
+  name?: string;
+  description?: string;
+  periodType?: 'month' | 'quarter';
+  usePeriod?: 'current' | 'previous';
+  addHierarchyControls?: boolean;
+  addHistoryControls?: boolean;
+  controlClasses?: string[];
+  enabled?: boolean;
+  showQueries?: boolean;
+}
+
+export interface SettingsChangeRow {
+  changeId: number;
+  templateId: string;
+  userName: string;
+  createdAt: string;
+  after: SettingsFields;
+}
+
+/**
+ * Whether someone other than the owner may see a saved report: it must be turned on, and if it is
+ * limited to some user classes, theirs must be one. Anything else reads as not found. Stock reports
+ * keep DI's class list for reference only, so every Report Viewer opens them.
+ */
+export function openableBy(t: Pick<TemplateRow, 'status' | 'ownerUserId' | 'definition'>, userId: string, viewer: Viewer = {}) {
+  if (t.status !== 'published' || t.ownerUserId === userId) return true;
+  const s = t.definition.settings;
+  if (s.enabled === false) return false;
+  return !s.controlClasses?.length || (viewer.userClass !== undefined && s.controlClasses.includes(viewer.userClass));
+}
+
 /** Directory of delivery groups (spec 18.9: users, classes or alert groups). Fictional. */
 export const DELIVERY_GROUPS: Record<string, number> = {
   'ALCO group': 7,
@@ -121,18 +167,46 @@ export class ReportStore {
   }
 
   /** report.template.list: stock and published reports, and the user's own drafts. */
-  async list(userId: string): Promise<TemplateRow[]> {
+  async list(userId: string, viewer: Viewer = {}): Promise<TemplateRow[]> {
     const [rows] = await this.pool.query("SELECT * FROM esp_report_templates WHERE status IN ('stock', 'published') OR (status = 'draft' AND owner_user_id = ?) ORDER BY folder, name", [userId]);
-    return (rows as Row[]).map((r) => this.toTemplate(r));
+    // A report turned off, or limited to classes the viewer isn't in, isn't listed for them.
+    return (rows as Row[]).map((r) => this.toTemplate(r)).filter((t) => openableBy(t, userId, viewer));
   }
 
   /** report.template.get. A draft is visible only to its owner, and reads the same as a missing one. */
-  async get(templateId: string, userId: string): Promise<TemplateRow> {
+  async get(templateId: string, userId: string, viewer: Viewer = {}): Promise<TemplateRow> {
     const [rows] = await this.pool.query('SELECT * FROM esp_report_templates WHERE template_id = ?', [templateId]);
     const r = (rows as Row[])[0];
     // A saved draft has become a report of its own; it is no longer opened by its draft ID.
     if (!r || r.status === 'saved' || r.status === 'binned' || (r.status === 'draft' && r.owner_user_id !== userId)) throw new CoreError('NOT_FOUND', 'That report was not found.');
-    return this.toTemplate(r);
+    const t = this.toTemplate(r);
+    if (!openableBy(t, userId, viewer)) throw new CoreError('NOT_FOUND', 'That report was not found.');
+    return t;
+  }
+
+  /**
+   * report.settings.update: the owner's approved change to a saved report's settings. Only the fields
+   * in the approval change; idempotent on the approval ID, so a retry changes nothing more.
+   */
+  async updateSettings(p: SettingsPayload, meta: { approvalId: string; userId: string; userName: string }): Promise<TemplateRow & { replayed: boolean }> {
+    const [done] = await this.pool.query('SELECT change_id FROM esp_report_setting_changes WHERE approval_id = ?', [meta.approvalId]);
+    if ((done as Row[]).length) return { ...(await this.get(p.templateId, meta.userId)), replayed: true };
+    const t = await this.get(p.templateId, meta.userId);
+    if (t.status !== 'published' || t.ownerUserId !== meta.userId) throw new CoreError('NO_ACCESS', 'Only the owner of a saved report can change its settings.');
+    const { name, description, ...settings } = p.after;
+    const definition: ReportDefinition = { ...t.definition, name: name ?? t.definition.name, description: description ?? t.definition.description, settings: { ...t.definition.settings, ...settings } };
+    const now = sqlTime(new Date());
+    // The change row goes first: its unique approval ID stops a second apply racing this one.
+    await this.pool.query('INSERT INTO esp_report_setting_changes (template_id, user_id, user_name, before_settings, after_settings, approval_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [t.templateId, meta.userId, meta.userName, JSON.stringify(p.before), JSON.stringify(p.after), meta.approvalId, now]);
+    await this.pool.query("UPDATE esp_report_templates SET name = ?, definition = ?, version = version + 1, updated_at = ? WHERE template_id = ? AND status = 'published'", [definition.name, JSON.stringify(definition), now, t.templateId]);
+    return { ...(await this.get(t.templateId, meta.userId)), replayed: false };
+  }
+
+  /** The latest approved settings change to a report, for its Settings view. */
+  async lastSettingsChange(templateId: string): Promise<SettingsChangeRow | null> {
+    const [rows] = await this.pool.query('SELECT * FROM esp_report_setting_changes WHERE template_id = ? ORDER BY change_id DESC LIMIT 1', [templateId]).catch(() => [[]]);
+    const r = (rows as Row[])[0];
+    return r ? { changeId: r.change_id as number, templateId: r.template_id as string, userName: r.user_name as string, createdAt: iso(r.created_at as string), after: parse<SettingsFields>(r.after_settings) } : null;
   }
 
   /** Autosaves a private draft (spec 8.9: draft edits are not writes). Returns the draft's ID. */
@@ -180,13 +254,15 @@ export class ReportStore {
   /** Reports on Home for this person: their own pins and those for their user class, newest first. */
   async pins(userId: string, userClass: string | undefined): Promise<PinRow[]> {
     const [rows] = await this.pool.query(
-      `SELECT p.*, t.name FROM esp_report_pins p JOIN esp_report_templates t ON t.template_id = p.template_id
+      `SELECT p.*, t.name, t.status AS t_status, t.owner_user_id AS t_owner, t.definition AS t_definition FROM esp_report_pins p JOIN esp_report_templates t ON t.template_id = p.template_id
        WHERE p.removed_at IS NULL AND t.status IN ('stock', 'published') AND ((p.audience = 'me' AND p.user_id = ?) OR p.audience = ?)
        ORDER BY p.created_at DESC`,
       [userId, userClass ?? '-'],
     );
     const seen = new Set<string>();
     return (rows as Row[])
+      // A report turned off, or limited to other classes, leaves this person's Home with it.
+      .filter((r) => openableBy({ status: r.t_status as TemplateRow['status'], ownerUserId: r.t_owner as string, definition: parse<ReportDefinition>(r.t_definition) }, userId, { userClass }))
       .map((r) => ({ pinId: r.pin_id as string, templateId: r.template_id as string, templateName: r.name as string, audience: r.audience as string, pinnedBy: r.user_name as string, pinnedById: r.user_id as string, createdAt: iso(r.created_at as string) }))
       .filter((p) => !seen.has(p.templateId) && seen.add(p.templateId));
   }

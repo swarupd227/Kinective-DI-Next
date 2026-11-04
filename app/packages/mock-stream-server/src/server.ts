@@ -187,7 +187,12 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
   const tell = (notices: Notice[]) => {
     for (const n of notices) {
       for (const userId of new Set([...(n.userId ? [n.userId] : []), ...usersToTell(n.employeeId, n.branch)])) {
-        if (userId !== me()) notify(userId, { group: 'workflow', title: n.title, detail: n.detail, link: n.link ?? `/workflows/referrals/inbox?id=${n.comId}` });
+        if (userId !== me()) {
+          const link = n.link ?? `/workflows/referrals/inbox?id=${n.comId}`;
+          notify(userId, { group: 'workflow', title: n.title, detail: n.detail, link });
+          // The same notice by email, if they want it (simulated outbox).
+          void live?.email?.(userId, { kind: /^New |assigned/.test(n.title) ? 'new_work' : 'updates', title: n.title, detail: n.detail, link, sourceRef: `${n.comId ?? link}:${n.title}` });
+        }
       }
     }
   };
@@ -260,6 +265,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         approvals.set(approvalId, entry);
         emit(threadId, { type: 'approval.requested', runId, approvalId, blockId: card.id, riskTier: card.data.riskTier, expiresAt: card.data.expiresAt } as Emit);
         entry.noticeId = notify(thread(threadId).owner, { group: 'approvals', title: 'Approval needed', detail: card.data.summary, link: `/c/${threadId}` }).id;
+        void live?.email?.(thread(threadId).owner, { kind: 'approvals', title: 'An approval is waiting for you', detail: card.data.summary, link: `/c/${threadId}`, sourceRef: `approval:${approvalId}` });
         return;
       }
       completeRun(runId, threadId);
@@ -528,6 +534,22 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
           if (err instanceof CoreError) return json(res, err.code === 'NO_ACCESS' ? 403 : 404, { code: err.code, message: err.message });
           throw err;
         }
+      }
+      // ---- report settings and email notifications ----
+      const reportSettings = /^\/v1\/reports\/([^/]+)\/settings$/.exec(path);
+      if (method === 'GET' && reportSettings) {
+        try {
+          const r = await live?.reportSettings?.(persona(), decodeURIComponent(reportSettings[1]!));
+          return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });
+        } catch (err) {
+          // Outside the person's access and not found give the same answer.
+          if (err instanceof CoreError) return json(res, 404, { code: 'NOT_FOUND', message: 'This report was not found, or it is outside your access.' });
+          throw err;
+        }
+      }
+      if (method === 'POST' && path === '/v1/emails/morning/run') {
+        const r = await live?.morningEmails?.(persona());
+        return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });
       }
       if (method === 'POST' && path === '/v1/reports/schedules/run') {
         const r = await live?.runSchedules(persona());

@@ -15,6 +15,7 @@ import { generateGoals, GI_GOALS, GI_INCENTIVES, GI_TIERS, GOALS_DDL, GOALS_WRIT
 import { generatePipeline, LAP_APPLICATION_COLUMNS, LAP_HOLDS, LAP_STATUSES, PIPELINE_DDL, PIPELINE_WRITE_TABLES } from './pipeline.ts';
 import { generateRelationship, RELATIONSHIP_DDL } from './relationship.ts';
 import { reportSeed } from './reports.ts';
+import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
 import { referralSeed, WORKFLOW_DDL, WORKFLOW_WRITE_TABLES, workflowSeed } from './workflow.ts';
 
@@ -108,6 +109,9 @@ async function main() {
     for (const ddl of CALENDAR_SERIES_DDL) await admin.query(ddl);
     for (const ddl of TABLES_DDL) await admin.query(ddl);
     await seedTables(admin);
+    // Email notifications: the simulated outbox and preferences start empty.
+    for (const ddl of NOTIFY_DDL) await admin.query(ddl);
+    for (const table of NOTIFY_WRITE_TABLES) await admin.query(`GRANT INSERT, UPDATE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     const usage = generateGovernance();
     await insert(admin, 'ai_run', ['run_id', 'at', 'user_id', 'thread_id', 'agent', 'intent', 'mode', 'question', 'outcome', 'model', 'input_tokens', 'output_tokens', 'cache_read_tokens', 'cost_usd', 'tool_calls', 'source'], usage.runs);
     await insert(admin, 'ai_approvals', ['approval_id', 'operation', 'payload', 'payload_hash', 'risk_tier', 'requested_by', 'run_id', 'thread_id', 'status', 'created_at', 'expires_at', 'decided_by', 'decided_at', 'channel'], usage.approvals);

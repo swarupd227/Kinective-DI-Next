@@ -5,6 +5,7 @@ import type { AppTile, AppView, AppViewId, Block, TableBlock } from '@dinext/blo
 import { WorkflowDefService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 import { TableService } from '@dinext/di-core';
+import { EmailOutbox } from '@dinext/di-core';
 
 type ColumnSpec = TableBlock['data']['columns'][number];
 
@@ -102,6 +103,30 @@ export function createAppViews(deps: ViewDeps) {
         notice: 'Rows come from the core system in each nightly build, so they can’t be added or edited here. Records change through workflows and the core system. Comparing two snapshots isn’t built yet.',
         links: saved.map((o) => ({ label: `Open ${o.name}`, to: `/tables/${o.kind === 'View' ? 'view' : 'snapshot'}-${o.objId}` })),
         blocks: [...(saved.length ? [table('Saved views and snapshots', 'tables.objects', columns, saved.map(row))] : []), ...(bin.length ? [table(`Recycle Bin (${bin.length})`, 'tables.bin', [...columns.slice(0, 3), text('made', 'Deleted on')], bin.map(row))] : [])],
+      };
+    },
+    // ---- Email notifications: my simulated outbox and preferences; counts across people for admins.
+    async emails() {
+      const outbox = new EmailOutbox(pool);
+      const [mine, prefs] = await Promise.all([outbox.recent(deps.user.id, { limit: 50 }).catch(() => []), outbox.prefs(deps.user.id).catch(() => [])]);
+      const admin = deps.modules.includes('admin');
+      const counts = admin ? await outbox.deliveryCounts().catch(() => []) : [];
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const today = mine.filter((e) => e.createdAt.slice(0, 10) === todayIso).length;
+      const on = prefs.filter((p) => p.on);
+      const when = (s: string) => new Date(s).toLocaleString('en-US', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
+      return {
+        title: 'Email notifications',
+        lede: 'The emails DI sends you about your own work, and which kinds you get. Ask DI to change them.',
+        take: { headline: mine.length ? `DI sent you ${count(mine.length, 'email')} lately${today ? `, ${today} today` : ''}. The latest: ${mine[0]!.subject.replace(/^DI: /, '')}.` : `DI hasn’t emailed you yet. You get ${on.length} of ${prefs.length} kinds.`, action: { label: 'What did DI send me today?', ask: 'What emails did DI send me today?' } },
+        tiles: [{ label: 'Today', value: String(today) }, { label: 'In your outbox', value: String(mine.length), detail: 'Latest 50' }, { label: 'Kinds on', value: `${on.length} of ${prefs.length}` }, ...(admin ? [{ label: 'All emails', value: String(counts.reduce((n, c) => n + c.emails, 0)), detail: 'Everyone, counts only' }] : [])],
+        prompts: ['What emails did DI send me today?', on.some((p) => p.kind === 'follow_up') ? 'Stop emailing me follow-up reminders' : 'Email me follow-up reminders', prefs.find((p) => p.kind === 'digest')?.on ? 'Stop the morning digest' : 'Send me a morning digest', ...(admin ? ['How many emails went out by kind?'] : [])],
+        notice: 'Delivery is simulated in this demo: nothing leaves DI, and addresses are fictional. Emails carry a name and a link, never account numbers. DI never emails other people on your behalf.',
+        blocks: [
+          table('My email notifications', 'ntf.prefs', [text('kind', 'Email'), text('on', 'On?'), text('set', 'Set by')], prefs.map((p) => ({ kind: p.label, on: p.on ? 'On' : 'Off', set: p.changed ? 'You' : 'Default' }))),
+          ...(mine.length ? [table('My outbox, latest 50', 'ntf.outbox', [text('when', 'When'), text('kind', 'Kind'), text('subject', 'Subject'), text('to', 'To'), text('status', 'Status')], mine.map((e) => ({ when: when(e.createdAt), kind: prefs.find((p) => p.kind === e.kind)?.label ?? e.kind, subject: e.subject, to: e.toAddress, status: e.status })))] : []),
+          ...(admin ? [table('Delivery by kind, everyone', 'ntf.delivery', [text('kind', 'Kind'), { field: 'emails', headerName: 'Emails', type: 'count' }, { field: 'people', headerName: 'People', type: 'count' }, text('latest', 'Latest')], counts.map((c) => ({ kind: c.label, emails: c.emails, people: c.people, latest: c.latest ? when(c.latest) : '—' })))] : []),
+        ],
       };
     },
     async queries() {

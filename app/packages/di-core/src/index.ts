@@ -13,7 +13,7 @@ export { GoalsService, furthestBehind, payFor, ruleText, usd, type GoalsWho, typ
 export { PipelineService, PIPELINE_VIEWS, SUMMARY_WINDOW_DAYS, type PipelineView, type PipelineWho, type PipelineApplication, type PipelineCell, type PipelineSummary, type PipelineFilter, type PipelineFound, type PipelineStatus } from './pipeline.ts';
 export { ReferralService, CoreError, REFERRAL_STAGES, DUE_DAYS, type CoreContext, type PartyHit, type ReferralDraft, type RouteResult, type DraftCheck, type InboxBox, type InboxItem, type InboxDetail, type ChangeMeta, type ReferralStage } from './referrals.ts';
 export type { AtRiskMember } from './relationship.ts';
-export { ReportStore, DELIVERY_GROUPS, SCHEDULE_RECIPIENT_CAP, type TemplateRow, type ScheduleDraft, type ScheduleRow, type ExportRow, type Recipient, type ShareDraft, type ShareRow, type PinDraft, type PinRow } from './reports.ts';
+export { ReportStore, DELIVERY_GROUPS, SCHEDULE_RECIPIENT_CAP, type TemplateRow, type ScheduleDraft, type ScheduleRow, type ExportRow, type Recipient, type ShareDraft, type ShareRow, type PinDraft, type PinRow, type SettingsPayload, type SettingsFields, type SettingsChangeRow, type Viewer, openableBy } from './reports.ts';
 export {
   RelationshipService,
   memberToken,
@@ -28,3 +28,5 @@ export {
   type PartyMatch,
   type Topic,
 } from './relationship.ts';
+// Email notifications: the simulated outbox and each person's preferences.
+export { EmailOutbox, EMAIL_KINDS, SIMULATED, composeEmail, emailAddress, emailKindLabel, scrub, tenantDomain, type EmailDraft, type EmailKind, type EmailPref, type EmailRow } from './notifications.ts';

@@ -4,11 +4,12 @@
 // gateway returns approval_required, and only the approved payload runs, once.
 import { z } from 'zod';
 import type { ApprovalCardBlock, Block, DiTake, ReportCanvasBlock, ReportControl, ReportWidgetView } from '@dinext/block-schemas';
-import { ApprovalStore, CoreError, DELIVERY_GROUPS, SCHEDULE_RECIPIENT_CAP, type ApprovalRecord, type PinDraft, type Recipient, type ReportStore, type RiskTier, type ScheduleDraft, type ScheduleRow, type ShareDraft, type TemplateRow } from '@dinext/di-core';
+import { ApprovalStore, CoreError, DELIVERY_GROUPS, SCHEDULE_RECIPIENT_CAP, type ApprovalRecord, type PinDraft, type Recipient, type ReportStore, type RiskTier, type ScheduleDraft, type ScheduleRow, type SettingsPayload, type ShareDraft, type TemplateRow } from '@dinext/di-core';
 import { SemanticError, type SemanticService } from '@dinext/semantic';
 import type { ReportDefinition, ReportWidget, WidgetSize } from '@dinext/tenant-db';
 import { buildBlock, newBlockId, noticeBlock, type BlockSpec } from './answer.ts';
 import { effectiveTier, reservedKeys, type ToolDef } from './gateway.ts';
+import { applySettings, fieldsFrom, settingsDiff, settingsView, type SettingsInput } from './reportSettings.ts';
 
 export const REPORT_AGENT = 'Report Builder';
 
@@ -74,6 +75,8 @@ export interface ReportControls {
 export interface RunContext {
   purviewBranches?: string[];
   canViewSql: boolean;
+  /** The person's user class: a saved report limited to some classes opens only for them. */
+  userClass?: string;
 }
 
 const SIZE_W: Record<WidgetSize, number> = { quarter: 3, third: 4, half: 6, full: 12 };
@@ -220,7 +223,8 @@ export async function runReport(def: ReportDefinition, input: ReportControls, sv
     view: built[i]!.block as ReportWidgetView['view'],
     ...(editOf.has(w.id) ? { editId: editOf.get(w.id) } : {}),
   }));
-  const showSql = Boolean(meta.test && ctx.canViewSql);
+  // Generated queries show in a test run, or when the report's Show queries setting is on, and only to Query Browser users.
+  const showSql = Boolean((meta.test || def.settings.showQueries) && ctx.canViewSql);
   const canvas: ReportCanvasBlock = {
     id: newBlockId('rpt'),
     type: 'report_canvas',
@@ -452,6 +456,34 @@ export const REPORT_TOOLS = [
   { name: 'report_delete', operation: 'report.delete', description: 'Move one of the user’s own saved reports (the one on screen, or template_id) to the Recycle Bin. It leaves every Home and folder and can be restored. Stock reports can’t be deleted. Returns approval_required.', input: z.object({ template_id: tpl.optional() }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 1, agents: [] },
   { name: 'report_bin_list', operation: 'report.bin.list', description: 'The user’s reports in the Recycle Bin, with template_id.', input: z.object({}).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 20, agents: [] },
   { name: 'report_restore', operation: 'report.restore', description: 'Bring a report back from the Recycle Bin to its folder. Use a template_id from report_bin_list. Returns approval_required.', input: z.object({ template_id: tpl }).strict(), sideEffect: 'write', riskTier: 'low', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 1, agents: [] },
+  // Settings: today's DI Build Reports form (Basics, Configuration, Report Controls, Period and Hierarchy Info, Test/Preview).
+  { name: 'report_settings_show', operation: 'report.settings.get', description: 'The settings of the report on screen (or template_id): period type, default period, branch control, who can open it, whether it is on, and whether queries show.', input: z.object({ template_id: tpl.optional() }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 30, agents: [] },
+  {
+    name: 'report_settings_update',
+    operation: 'report.settings.update',
+    description: 'Change settings of the draft on screen, or of a saved report the user owns (template_id, or the one on screen). Give only what changes. On a draft it changes at once; on a saved report it returns approval_required. Stock reports can’t be changed: suggest report_copy.',
+    input: z
+      .object({
+        template_id: tpl.optional(),
+        name: z.string().min(3).max(120).optional(),
+        description: z.string().max(300).optional(),
+        period_type: z.enum(['month', 'quarter']).optional().describe('"Make it quarterly"'),
+        use_period: z.enum(['current', 'previous']).optional().describe('Which period it opens on: the latest complete one, or the one before'),
+        branch_control: z.boolean().optional().describe('The branch picker on the report'),
+        history_controls: z.boolean().optional(),
+        who_can_open: z.array(z.string().min(2).max(40)).max(4).optional().describe('User classes that may open it, such as ["Manager", "Executive"], or ["everyone"]'),
+        enabled: z.boolean().optional().describe('false turns the report off: it stops running and others stop seeing it'),
+        show_queries: z.boolean().optional().describe('Show generated queries under the report, to Query Browser users only'),
+      })
+      .strict(),
+    sideEffect: 'write',
+    riskTier: 'medium',
+    requiredApp: 'reports',
+    purviewScope: 'none',
+    maxResultRowsToModel: 24,
+    agents: [],
+  },
+  { name: 'report_copy', operation: 'report.draft.save', description: 'Make a private draft copy of a report the user can open (the one on screen, or template_id), so its settings and sections can be changed. Not shared until saved with report_save.', input: z.object({ template_id: tpl.optional(), name: z.string().min(3).max(120).optional() }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 24, agents: [] },
 ] satisfies ToolDef[];
 
 /** User classes that include Reports, so a report published to them opens for everyone in them. */
@@ -471,7 +503,7 @@ export type UnpinPayload = { templateId: string; templateName: string; pinIds: s
 export type BinPayload = { templateId: string; templateName: string; folder: string };
 
 export type ReportResult =
-  | { ok: true; content: unknown; canvas?: ReportCanvasBlock; notice?: string; list?: { kind: 'templates'; items: TemplateRow[] } | { kind: 'schedules'; items: ScheduleRow[] }; card?: ApprovalCardBlock; approval?: ApprovalRecord; superseded?: string[] }
+  | { ok: true; content: unknown; canvas?: ReportCanvasBlock; notice?: string; list?: { kind: 'templates'; items: TemplateRow[] } | { kind: 'schedules'; items: ScheduleRow[] }; card?: ApprovalCardBlock; approval?: ApprovalRecord; superseded?: string[]; blocks?: Block[]; said?: string }
   | { ok: false; code: 'UNKNOWN_TOOL' | 'INVALID_INPUT' | 'RESERVED_KEY' | 'NOT_FOUND' | 'NO_ACCESS' | 'INVALID' | 'NO_REPORT'; content: unknown };
 
 export type ReportExecuted =
@@ -483,7 +515,8 @@ export type ReportExecuted =
   | { operation: 'report.pin'; pinId: string; templateId: string; templateName: string; audience: string }
   | { operation: 'report.unpin'; removed: number; templateName: string }
   | { operation: 'report.delete'; templateId: string; templateName: string }
-  | { operation: 'report.restore'; templateId: string; templateName: string; folder: string };
+  | { operation: 'report.restore'; templateId: string; templateName: string; folder: string }
+  | { operation: 'report.settings.update'; templateId: string; templateName: string; changes: { label: string; before: string; after: string }[]; turnedOff: boolean; replayed: boolean };
 
 /** What the model sees of a report: titles and headline values, not every row. */
 function canvasForModel(c: ReportCanvasBlock) {
@@ -525,8 +558,17 @@ export class ReportGateway {
 
   /** Runs a template the user can see; used by the agent and by control changes on the canvas. */
   async run(templateId: string, controls: ReportControls, ctx: RunContext & { user: { id: string }; runId: string; test?: boolean }) {
-    const t = await this.deps.store.get(templateId, ctx.user.id);
+    const t = await this.deps.store.get(templateId, ctx.user.id, { userClass: ctx.userClass });
+    // Only the owner reaches a report that is turned off; it still doesn't run.
+    if (t.definition.settings.enabled === false) throw new CoreError('INVALID', `${t.name} is turned off, so it doesn’t run. Ask DI to turn it back on.`);
     return runReport(t.definition, controls, this.deps.semantic, ctx, { runId: ctx.runId, mode: t.status === 'draft' ? 'edit' : 'read', status: t.status === 'draft' ? 'draft' : t.status === 'stock' ? 'stock' : 'published', version: t.definition.layoutVersion, origin: originText(t), test: ctx.test });
+  }
+
+  /** A report's settings, read-only, for its Settings view and for report_settings_show. */
+  async settings(templateId: string, ctx: { user: { id: string }; canViewSql: boolean; userClass?: string }) {
+    const t = await this.deps.store.get(templateId, ctx.user.id, { userClass: ctx.userClass });
+    const [pins, schedules, lastChange] = await Promise.all([this.deps.store.pinsOf(t.templateId).catch(() => []), this.deps.store.activeSchedules().catch(() => []), this.deps.store.lastSettingsChange(t.templateId)]);
+    return settingsView(t, { userId: ctx.user.id, canViewSql: ctx.canViewSql }, { pins: pins.length, schedules: schedules.filter((s) => s.templateId === t.templateId).length, lastChange });
   }
 
   /** Accept or revert one highlighted change, or move or resize a widget, from the canvas itself. */
@@ -559,6 +601,7 @@ export class ReportGateway {
     const a = parsed.data as Record<string, unknown>;
     const { store, semantic } = this.deps;
     const current = ctx.state.current;
+    const viewer = { userClass: ctx.userClass };
     const needCurrent = (): ReportResult | null => (current ? null : { ok: false, code: 'NO_REPORT', content: { error: 'NO_REPORT', message: 'No report is open in this conversation. Run or create one first.' } });
     const approve = async (payload: unknown, tier: RiskTier) => {
       const approval = await this.deps.approvals.request({ operation: def.operation, payload, riskTier: tier, requestedBy: ctx.user.id, runId: ctx.runId, threadId: ctx.threadId });
@@ -576,11 +619,11 @@ export class ReportGateway {
         case 'report.template.list': {
           const q = String(a.query ?? '').toLowerCase();
           const words = q.split(/\s+/).filter((w) => w.length > 2 && !['report', 'reports', 'the', 'for', 'pack'].includes(w));
-          const items = (await store.list(ctx.user.id)).filter((t) => !words.length || words.some((w) => `${t.name} ${t.folder}`.toLowerCase().includes(w)));
+          const items = (await store.list(ctx.user.id, viewer)).filter((t) => !words.length || words.some((w) => `${t.name} ${t.folder}`.toLowerCase().includes(w)));
           return { ok: true, content: { reports: items.map((t) => ({ template_id: t.templateId, name: t.name, folder: t.folder, period_type: t.definition.settings.periodType, status: t.status })) }, list: { kind: 'templates', items } };
         }
         case 'report.run': {
-          const t = await store.get(String(a.template_id), ctx.user.id);
+          const t = await store.get(String(a.template_id), ctx.user.id, viewer);
           const period = a.period ? String(a.period) : undefined;
           const { canvas, notice } = await this.run(t.templateId, { period, node: a.branch ? String(a.branch) : undefined }, ctx);
           ctx.state.current = { templateId: t.templateId, controls: Object.fromEntries(canvas.data.controls.map((c) => [c.id, c.value])) };
@@ -590,7 +633,74 @@ export class ReportGateway {
           const r = semantic.search(String(a.query));
           return { ok: true, content: { metrics: r.metrics.slice(0, 8).map((m) => ({ name: m.name, label: m.label, description: m.description.slice(0, 160), group_by: m.dimensionsAllowed, trendable: m.trendable })), dimensions: r.dimensions.slice(0, 6).map((d) => ({ name: d.name, label: d.label })), unknown_terms: r.unknownTerms } };
         }
+        case 'report.settings.get': {
+          const templateId = a.template_id ? String(a.template_id) : current?.templateId;
+          if (!templateId) return needCurrent()!;
+          const v = await this.settings(templateId, ctx);
+          const rows = v.groups.flatMap((g) => g.fields.filter((f) => f.used).map((f) => ({ group: g.title, setting: f.label, value: f.value })));
+          const block: Block = { id: newBlockId('rst'), type: 'table', version: '1.0.0', title: `${v.name}: settings`, provenance: { agent: REPORT_AGENT, runId: ctx.runId, operations: ['report.settings.get'], sources: [{ kind: 'template', label: v.name, ref: `report:${v.templateId}` }] }, freshness: { kind: 'none' }, data: { columns: [{ field: 'group', headerName: 'Group', type: 'text' }, { field: 'setting', headerName: 'Setting', type: 'text' }, { field: 'value', headerName: 'Value', type: 'text' }], rows, rowCount: rows.length } };
+          const said = `**${v.name}**: ${v.tiles.map((x) => `${x.label.toLowerCase()} ${x.value.toLowerCase()}`).slice(0, 3).join(', ')}. ${v.changeNote} [Open its settings](/reports/${v.templateId}?view=settings).`;
+          return { ok: true, content: { template_id: v.templateId, name: v.name, status: v.status, can_change: v.canChange, note: v.changeNote, settings: rows.map((r) => `${r.setting}: ${r.value}`) }, blocks: [block], said };
+        }
+        case 'report.settings.update': {
+          const templateId = a.template_id ? String(a.template_id) : current?.templateId;
+          if (!templateId) return needCurrent()!;
+          const t = await store.get(templateId, ctx.user.id, viewer);
+          const { fields, unknown } = fieldsFrom(a as SettingsInput, REPORT_CLASSES);
+          const refuse = (message: string, code: 'NO_ACCESS' | 'INVALID' = 'NO_ACCESS'): ReportResult => ({ ok: false, code, content: { error: code, message } });
+          // Checked in code, whatever the model asks: generated SQL is for Query Browser users only.
+          if (fields.showQueries === true && !ctx.canViewSql) return refuse('Showing the generated queries needs the Query Browser permission, which isn’t part of your access, so I can’t turn it on.');
+          if (t.status === 'stock') return refuse(`${t.name} is a stock report every user starts with, so its settings can’t be changed. Say “make a copy of the ${t.name}” and change the copy.`);
+          if (t.status !== 'draft' && t.ownerUserId !== ctx.user.id) return refuse(`${t.name} belongs to ${t.ownerName}. Only they can change its settings.`);
+          if (unknown.length) return refuse(`I can’t limit it to ${unknown.join(', ')}: only the ${REPORT_CLASSES.join(', ')} classes include Reports.`, 'INVALID');
+          if (t.status === 'draft' && fields.enabled === false) return refuse('A draft is private and never runs on a schedule, so there’s nothing to turn off.', 'INVALID');
+          const diff = settingsDiff(t.definition, fields);
+          if (!diff.changes.length) return refuse(Object.keys(fields).length ? `${t.name} is already set that way, so nothing changes.` : 'Say which setting to change, for example “make it quarterly”.', 'INVALID');
+          if (t.status === 'draft') {
+            // A draft is private, so a settings change is an ordinary autosave (spec 8.9).
+            await store.saveDraft(applySettings(t.definition, diff.after), ctx.user, ctx.threadId);
+            const { canvas } = await this.run(t.templateId, current?.templateId === t.templateId ? current.controls : {}, ctx);
+            ctx.state.current = { templateId: t.templateId, controls: Object.fromEntries(canvas.data.controls.map((c) => [c.id, c.value])) };
+            return { ok: true, content: { draft: canvasForModel(canvas), changed: diff.changes }, canvas, said: `Done on your draft: ${diff.changes.map((c) => `${c.label.toLowerCase()} ${c.after.charAt(0).toLowerCase()}${c.after.slice(1)}`).join('; ')}.` };
+          }
+          const pins = await store.pinsOf(t.templateId);
+          const schedules = (await store.activeSchedules()).filter((s) => s.templateId === t.templateId);
+          const uses = `${pins.length === 1 ? '1 Home pin' : `${pins.length} Home pins`}, ${schedules.length === 1 ? '1 active schedule' : `${schedules.length} active schedules`}`;
+          const impact = [
+            ...(diff.after.enabled === false ? [{ label: 'What it affects', before: uses, after: 'Others stop seeing it in Reports and on Home; scheduled runs skip it until it’s turned back on' }] : []),
+            ...(diff.after.controlClasses?.length ? [{ label: 'What it affects', before: uses, after: `Only the ${diff.after.controlClasses.join(', ')} ${diff.after.controlClasses.length === 1 ? 'class sees' : 'classes see'} it in Reports and on Home, and you` }] : []),
+          ].slice(0, 1);
+          const payload: SettingsPayload = { templateId: t.templateId, templateName: t.name, before: diff.before, after: diff.after };
+          const { approval, superseded } = await approve(payload, tierOf());
+          const c = card(
+            {
+              approval,
+              runId: ctx.runId,
+              user: ctx.user,
+              title: 'Change report settings',
+              summary: `Change “${t.name}”: ${diff.changes.map((x) => x.label.toLowerCase()).join(', ')}`,
+              fields: [],
+              preview: { kind: 'diff', changes: [...diff.changes, ...impact] },
+              records: 1,
+              users: pins.length,
+              external: 0,
+            },
+            def.operation,
+          );
+          return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId, risk_tier: approval.riskTier, changes: diff.changes, affects: uses, note: 'Nothing has changed. The user approves on screen.' }, card: c, approval, superseded };
+        }
         case 'report.draft.save': {
+          if (name === 'report_copy') {
+            const templateId = a.template_id ? String(a.template_id) : current?.templateId;
+            if (!templateId) return needCurrent()!;
+            const t = await store.get(templateId, ctx.user.id, viewer);
+            // The copy is yours alone, open to everyone with Reports once saved, and turned on.
+            const copy: ReportDefinition = { ...structuredClone(t.definition), templateId: 'new', name: String(a.name ?? `${t.name} (copy)`), folder: 'Drafts', settings: { ...t.definition.settings, controlClasses: [], enabled: true }, pendingEdits: [], layoutVersion: 1 };
+            const saved = await store.saveDraft(copy, ctx.user, ctx.threadId);
+            const { canvas } = await this.run(saved.templateId, {}, ctx);
+            ctx.state.current = { templateId: saved.templateId, controls: Object.fromEntries(canvas.data.controls.map((x) => [x.id, x.value])) };
+            return { ok: true, content: { draft: canvasForModel(canvas), note: 'A private draft copy. Change its settings or sections, then report_save.' }, canvas, said: `Here’s **${copy.name}**, a private draft copy of ${t.name}. Change its settings or sections, then ask me to save it.` };
+          }
           if (name === 'report_draft_create') {
             const widgets = (a.widgets as z.infer<typeof WidgetInput>[]).map((w, i) => ({ id: `${w.kind[0]}${i + 1}`, ...w, size: w.size ?? 'half' })) as ReportWidget[];
             const problems = widgets.flatMap((w) => checkWidget(w, semantic).map((p) => `${w.title}: ${p}`));
@@ -613,7 +723,7 @@ export class ReportGateway {
           }
           const none = needCurrent();
           if (none) return none;
-          const t = await store.get(current!.templateId, ctx.user.id);
+          const t = await store.get(current!.templateId, ctx.user.id, viewer);
           if (t.status !== 'draft') return { ok: false, code: 'NO_ACCESS', content: { error: 'NO_ACCESS', message: 'The report on screen is saved, not a draft. Create a draft to build a new one.' } };
           const changes = a.changes as EditInput[];
           for (const ch of changes) {
@@ -629,7 +739,7 @@ export class ReportGateway {
         case 'report.template.create': {
           const none = needCurrent();
           if (none) return none;
-          const t = await store.get(current!.templateId, ctx.user.id);
+          const t = await store.get(current!.templateId, ctx.user.id, viewer);
           if (t.status !== 'draft') return { ok: false, code: 'INVALID', content: { error: 'INVALID', message: 'Only a draft can be saved this way.' } };
           // Saving keeps what is on screen: pending highlights are accepted as shown.
           const payload: SavePayload = { draftId: t.templateId, name: String(a.name ?? t.name), folder: String(a.folder), definition: { ...t.definition, pendingEdits: [] } };
@@ -660,7 +770,7 @@ export class ReportGateway {
         case 'report.schedule.create': {
           const templateId = a.template_id ? String(a.template_id) : current?.templateId;
           if (!templateId) return needCurrent()!;
-          const t = await store.get(templateId, ctx.user.id);
+          const t = await store.get(templateId, ctx.user.id, viewer);
           if (t.status === 'draft') return { ok: false, code: 'INVALID', content: { error: 'INVALID', message: 'Save the draft before scheduling it.' } };
           const recipients = resolveRecipients(a.recipients as string[], ctx.user);
           const count = recipients.reduce((s, r) => s + r.count, 0);
@@ -712,7 +822,7 @@ export class ReportGateway {
         case 'report.share': {
           const none = needCurrent();
           if (none) return none;
-          const t = await store.get(current!.templateId, ctx.user.id);
+          const t = await store.get(current!.templateId, ctx.user.id, viewer);
           if (t.status === 'draft') return { ok: false, code: 'INVALID', content: { error: 'INVALID', message: 'Save the draft before sending it.' } };
           const recipients = resolveRecipients(a.recipients as string[], ctx.user);
           const count = recipients.reduce((s, r) => s + r.count, 0);
@@ -743,7 +853,7 @@ export class ReportGateway {
         case 'report.export': {
           const none = needCurrent();
           if (none) return none;
-          const t = await store.get(current!.templateId, ctx.user.id);
+          const t = await store.get(current!.templateId, ctx.user.id, viewer);
           const payload: ExportPayload = { templateId: t.templateId, format: a.format as 'xlsx' | 'csv', controls: current!.controls as Record<string, string> };
           const { approval, superseded } = await approve(payload, tierOf());
           const period = resolveControls(t.definition, current!.controls, semantic, ctx).periodLabel;
@@ -772,7 +882,7 @@ export class ReportGateway {
         case 'report.pin': {
           const templateId = a.template_id ? String(a.template_id) : current?.templateId;
           if (!templateId) return needCurrent()!;
-          const t = await store.get(templateId, ctx.user.id);
+          const t = await store.get(templateId, ctx.user.id, viewer);
           if (t.status === 'draft') return { ok: false, code: 'INVALID', content: { error: 'INVALID', message: 'Save the draft before putting it on Home.' } };
           const asked = String(a.audience ?? 'me').trim();
           const me = /^(me|myself|my home|mine)$/i.test(asked);
@@ -805,7 +915,7 @@ export class ReportGateway {
         case 'report.unpin': {
           const templateId = a.template_id ? String(a.template_id) : current?.templateId;
           if (!templateId) return needCurrent()!;
-          const t = await store.get(templateId, ctx.user.id);
+          const t = await store.get(templateId, ctx.user.id, viewer);
           const all = await store.pinsOf(t.templateId);
           // Your own Home first, then the classes, so the card reads the same way every time.
           const mine = all.filter((p) => p.pinnedById === ctx.user.id).sort((x, y) => (x.audience === 'me' ? -1 : y.audience === 'me' ? 1 : x.audience.localeCompare(y.audience)));
@@ -824,7 +934,7 @@ export class ReportGateway {
         case 'report.delete': {
           const templateId = a.template_id ? String(a.template_id) : current?.templateId;
           if (!templateId) return needCurrent()!;
-          const t = await store.get(templateId, ctx.user.id);
+          const t = await store.get(templateId, ctx.user.id, viewer);
           if (t.status === 'stock') return { ok: false, code: 'NO_ACCESS', content: { error: 'NO_ACCESS', message: `${t.name} is a stock report every user starts with, so it can’t be deleted.` } };
           if (t.status === 'draft') return { ok: false, code: 'INVALID', content: { error: 'INVALID', message: 'Drafts are private and aren’t kept once you leave them, so there’s nothing to delete.' } };
           if (t.ownerUserId !== ctx.user.id) return { ok: false, code: 'NO_ACCESS', content: { error: 'NO_ACCESS', message: `${t.name} belongs to ${t.ownerName}. Only they can delete it.` } };
@@ -911,6 +1021,12 @@ export class ReportGateway {
         const p = approval.payload as BinPayload;
         const t = await this.deps.store.restore(p.templateId, meta);
         out = { operation: 'report.restore', templateId: t.templateId, templateName: t.name, folder: t.folder };
+      } else if (approval.operation === 'report.settings.update') {
+        const p = approval.payload as SettingsPayload;
+        const t = await this.deps.store.updateSettings(p, meta);
+        // The card's before and after, read again from the stored payload.
+        const changes = settingsDiff(applySettings(t.definition, p.before), p.after).changes;
+        out = { operation: 'report.settings.update', templateId: t.templateId, templateName: t.name, changes, turnedOff: p.after.enabled === false, replayed: t.replayed };
       } else throw new Error(`No executor for ${approval.operation}`);
       await this.deps.approvals.markExecuted(approval.approvalId, approval.operation);
       return out;

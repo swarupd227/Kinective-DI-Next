@@ -24,7 +24,12 @@ export interface ReportWidget {
 export interface ReportSettings {
   /** Configuration tab (spec 18.2). */
   app: string;
+  /**
+   * User classes that may open a saved report; empty means everyone with Reports. The owner always
+   * can. Stock reports keep DI's list for reference only: every Report Viewer opens them.
+   */
   controlClasses: string[];
+  /** A saved report that is turned off doesn't run, and others can't see it. */
   enabled: boolean;
   /** Period and Hierarchy Info tab. */
   periodType: 'month' | 'quarter';
@@ -133,9 +138,23 @@ export const REPORT_DDL = [
      UNIQUE KEY ux_pin_approval (approval_id),
      KEY ix_pin_template (template_id)
    )`,
+  // Settings changes to a saved report (today's DI Build Reports form), one row per approved change:
+  // what it was and what it became. The approval ID keeps a retried apply from running twice.
+  `CREATE TABLE esp_report_setting_changes (
+     change_id INT AUTO_INCREMENT PRIMARY KEY,
+     template_id VARCHAR(60) NOT NULL,
+     user_id VARCHAR(40) NOT NULL,
+     user_name VARCHAR(80) NOT NULL,
+     before_settings JSON NOT NULL,
+     after_settings JSON NOT NULL,
+     approval_id VARCHAR(40) NOT NULL,
+     created_at DATETIME(3) NOT NULL,
+     UNIQUE KEY ux_setting_approval (approval_id),
+     KEY ix_setting_template (template_id)
+   )`,
 ];
 
-export const REPORT_WRITE_TABLES = ['esp_report_templates', 'esp_report_schedules', 'esp_report_exports', 'esp_report_shares', 'esp_report_pins'];
+export const REPORT_WRITE_TABLES = ['esp_report_templates', 'esp_report_schedules', 'esp_report_exports', 'esp_report_shares', 'esp_report_pins', 'esp_report_setting_changes'];
 
 const settings = (periodType: 'month' | 'quarter', controlClasses: string[]): ReportSettings => ({
   app: 'reports',

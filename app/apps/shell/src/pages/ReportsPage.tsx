@@ -2,9 +2,10 @@
 // and a report page that runs a template with its controls. Building and changing reports happens
 // in the conversation with the Report Builder; this view opens, runs and reviews them.
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarClock, ChevronRight, FileBarChart, ListTree, PlayCircle, Rows3, Search, Sigma, Sparkles, Trash2 } from 'lucide-react';
+import { CalendarClock, ChevronRight, FileBarChart, ListTree, PlayCircle, Rows3, Search, Settings2, Sigma, Sparkles, Trash2 } from 'lucide-react';
+import { KpiTiles } from '../shell/KpiTiles.tsx';
 import { BlockHostProvider, BlockRenderer } from '@dinext/blocks';
 import { Badge, Button, SegmentedControl, Skeleton, TextInput, useToast } from '@dinext/ui';
 import { ApiError, type ReportsIndex } from '@dinext/stream-client';
@@ -206,11 +207,61 @@ function Schedules({ schedules }: { schedules: ReportsIndex['schedules'] }) {
   );
 }
 
+/** Today's DI Build Reports form, read-only: each setting, and plainly which ones DI Next doesn't use. */
+function ReportSettings({ templateId }: { templateId: string }) {
+  const { api, startThread } = useSession();
+  const navigate = useNavigate();
+  const q = useQuery({ queryKey: ['report-settings', templateId], queryFn: () => api.reportSettings(templateId), retry: (n, e) => !(e instanceof ApiError && e.status === 404) && n < 1 });
+  if (q.isPending) return <Skeleton height="320px" radius="md" />;
+  if (q.isError) return <p className={styles.message} role="alert">{q.error instanceof ApiError && q.error.status === 404 ? 'This report was not found, or it is outside your access.' : 'The settings could not be loaded. Try again in a moment.'}</p>;
+  const v = q.data;
+  return (
+    <section className={styles.summary} aria-label={`${v.name} settings`}>
+      <KpiTiles label="Settings at a glance" tiles={v.tiles.map((t) => ({ label: t.label, value: t.value, detail: t.detail, tone: t.tone === 'warning' || t.tone === 'danger' ? t.tone : 'neutral' }))} />
+      <p className={styles.message}>
+        {v.changeNote}
+        {v.lastChange ? ` ${v.lastChange}.` : ''}
+      </p>
+      {v.prompts.length > 0 && (
+        <ul className={page.prompts} aria-label="Ask DI">
+          {v.prompts.map((p) => (
+            <li key={p}>
+              <button type="button" className={page.prompt} onClick={() => void startThread(p, [{ type: 'report', ref: `report:${v.templateId}`, label: v.name }]).then((id) => navigate(`/c/${id}`))}>
+                {p}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className={styles.settingsGrid}>
+        {v.groups.map((g) => (
+          <section key={g.id} className={styles.settingsGroup} aria-labelledby={`set-${g.id}`}>
+            <h2 id={`set-${g.id}`} className={styles.folderTitle}>
+              {g.title}
+            </h2>
+            <dl className={styles.settingsList}>
+              {g.fields.map((f) => (
+                <div key={f.label}>
+                  <dt>{f.label}</dt>
+                  <dd className={f.used ? undefined : styles.notUsed}>{f.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ))}
+      </div>
+      <p className={styles.hint}>The classic Start Building Report, Reset, Review, Add Field and Edit Form Layout buttons aren’t needed: ask DI, and approve the change on its card.</p>
+    </section>
+  );
+}
+
 export function ReportPage() {
   const { templateId = '' } = useParams();
   const { api } = useSession();
   const host = useShellBlockHost();
-  const q = useQuery({ queryKey: ['report', templateId], queryFn: () => api.runReport(templateId), retry: (n, e) => !(e instanceof ApiError && e.status === 404) && n < 1 });
+  const [params, setParams] = useSearchParams();
+  const view = params.get('view') === 'settings' ? 'settings' : 'report';
+  const q = useQuery({ queryKey: ['report', templateId], queryFn: () => api.runReport(templateId), retry: (n, e) => !(e instanceof ApiError && e.status === 404) && n < 1, enabled: view === 'report' });
   const name = q.data?.data.name;
   useEffect(() => {
     if (name) useUi.getState().visit({ kind: 'view', path: `/reports/${templateId}`, label: name });
@@ -222,13 +273,23 @@ export function ReportPage() {
         <ChevronRight size={14} aria-hidden />
         <span aria-current="page">{name ?? 'Report'}</span>
       </nav>
-      {q.isPending && <Skeleton height="420px" radius="md" />}
-      {q.isError && (
+      <SegmentedControl
+        label="Report view"
+        value={view}
+        onChange={(v) => setParams(v === 'report' ? {} : { view: v })}
+        options={[
+          { value: 'report', label: 'Report', icon: <FileBarChart size={14} aria-hidden /> },
+          { value: 'settings', label: 'Settings', icon: <Settings2 size={14} aria-hidden /> },
+        ]}
+      />
+      {view === 'settings' && <ReportSettings templateId={templateId} />}
+      {view === 'report' && q.isPending && <Skeleton height="420px" radius="md" />}
+      {view === 'report' && q.isError && (
         <p className={styles.message} role="alert">
-          {q.error instanceof ApiError && q.error.status === 404 ? 'This report was not found, or it is outside your access.' : 'The report could not be run. Try again in a moment.'}
+          {q.error instanceof ApiError && q.error.status === 404 ? 'This report was not found, it is outside your access, or it is turned off. Its owner can check Settings.' : 'The report could not be run. Try again in a moment.'}
         </p>
       )}
-      {q.data && (
+      {view === 'report' && q.data && (
         <BlockHostProvider value={host}>
           <BlockRenderer block={q.data} />
         </BlockHostProvider>

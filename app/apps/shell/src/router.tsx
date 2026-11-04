@@ -19,6 +19,7 @@ const AppViewPage = lazy(() => import('./pages/AppViewPage.tsx').then((m) => ({ 
 const CalendarPage = lazy(() => import('./pages/AppViewPage.tsx').then((m) => ({ default: m.CalendarPage })));
 const FilesPage = lazy(() => import('./pages/AppViewPage.tsx').then((m) => ({ default: m.FilesPage })));
 const QueriesPage = lazy(() => import('./pages/AppViewPage.tsx').then((m) => ({ default: m.QueriesPage })));
+const EmailsPage = lazy(() => import('./pages/AppViewPage.tsx').then((m) => ({ default: m.EmailsPage })));
 const MembersPage = lazy(() => import('./pages/AppViewPage.tsx').then((m) => ({ default: m.MembersPage })));
 const NotFound = lazy(() => import('./pages/NotFound.tsx').then((m) => ({ default: m.NotFound })));
 const MemberPage = lazy(() => import('./pages/MemberPage.tsx').then((m) => ({ default: m.MemberPage })));
@@ -62,6 +63,8 @@ export const router = createBrowserRouter([
           { path: 'integrations/*', element: guarded('integrations', <AppViewPage app="integrations" />) },
           { path: 'admin/users/*', element: guarded('users', <AppViewPage app="users" />) },
           { path: 'admin/*', element: guarded('admin', <AppViewPage app="admin" />) },
+          // Everyone has email notifications: the person's own outbox and preferences.
+          { path: 'settings/email', element: page(<EmailsPage />) },
           { path: 'members', element: guarded('rm', <MembersPage />) },
           { path: 'customers', element: guarded('rm', <MembersPage />) },
           { path: 'members/:ref', element: guarded('rm', <MemberPage />) },

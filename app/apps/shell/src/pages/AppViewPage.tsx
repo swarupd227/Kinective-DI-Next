@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { BlockHostProvider, BlockRenderer } from '@dinext/blocks';
 import { Button, Skeleton } from '@dinext/ui';
@@ -104,6 +104,31 @@ const PATHS: Partial<Record<AppViewId, string>> = { files: '/files', datalogs: '
 export function AppViewPage({ app }: { app: AppViewId }) {
   const q = useView(app, PATHS[app] ?? `/${app}`);
   return <Frame q={q}>{(v) => <Blocks view={v} />}</Frame>;
+}
+
+// ---- email notifications ------------------------------------------------------------------------
+
+/** My simulated outbox and preferences. Changes are asked of DI; the button runs this morning's job locally. */
+export function EmailsPage() {
+  const q = useView('emails', '/settings/email');
+  const { api } = useSession();
+  const client = useQueryClient();
+  const morning = useMutation<{ emails: number }, Error, void>({ mutationFn: () => api.runMorningEmails(), onSuccess: () => void client.invalidateQueries({ queryKey: ['app', 'emails'] }) });
+  return (
+    <Frame q={q}>
+      {(v) => (
+        <>
+          <Blocks view={v} />
+          <p className={styles.tileLabel} role="status">
+            <Button size="sm" variant="ghost" busy={morning.isPending} onClick={() => morning.mutate()}>
+              Run this morning’s emails now (local test)
+            </Button>{' '}
+            {morning.data ? `${morning.data.emails} new ${morning.data.emails === 1 ? 'email' : 'emails'} across your institution: follow-up reminders and digests, for those who want them.` : 'Follow-up reminders and digests go out once each morning.'}
+          </p>
+        </>
+      )}
+    </Frame>
+  );
 }
 
 // ---- calendar -----------------------------------------------------------------------------------

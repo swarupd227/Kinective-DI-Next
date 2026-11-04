@@ -18,6 +18,7 @@ import type {
   GoalsIndex,
   Member360Block,
   ReportCanvasBlock,
+  ReportSettingsView,
   SearchResult,
   SendMessageRequest,
   Session,
@@ -124,6 +125,9 @@ export function createApiClient({ baseUrl, token }: ApiClientOptions) {
     notifications: () => get<{ notifications: AppNotification[] }>('/v1/notifications').then((r) => r.notifications),
     markNotificationsRead: (ids: string[]) => send<void>('POST', '/v1/notifications/read', { ids }),
     appView: (id: AppViewId) => get<AppView>(`/v1/apps/${id}`),
+    // Report settings (read-only) and the local stand-in for this morning's emails.
+    reportSettings: (templateId: string) => get<ReportSettingsView>(`/v1/reports/${encodeURIComponent(templateId)}/settings`),
+    runMorningEmails: () => send<{ emails: number }>('POST', '/v1/emails/morning/run'),
     async runQuery(sql: string): Promise<QueryRun> {
       const res = await fetch(`${baseUrl}/v1/queries/run`, { method: 'POST', headers: headers(), body: JSON.stringify({ sql }) });
       const json = (await res.json().catch(() => ({}))) as QueryRun & { message?: string };

@@ -135,4 +135,18 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'RF-CAL-003', set: 'refusal', persona: 'executive', q: 'Schedule a huddle every day at 9 am', agent: 'Calendar', refused: true, approval: 'none', ref: 'daily repeats not built' },
   { id: 'GQ-FIL-004', set: 'golden', persona: 'executive', q: 'What’s in my Recycle Bin?', agent: 'Files', contains: ['Recycle Bin'], approval: 'none', ref: '8.15 Recycle Bin' },
   { id: 'RF-FIL-003', set: 'refusal', persona: 'executive', q: 'Restore Westport huddle notes.txt', agent: 'Files', refused: true, approval: 'none', ref: 'it isn’t deleted' },
+
+  // ---- Report settings (today's DI Build Reports form) ----------------------------------------
+  { id: 'GQ-RPS-001', set: 'golden', persona: 'executive', q: 'What are the settings for the branch scorecard?', agent: 'Report Builder', contains: ['Open its settings', 'Branch scorecard: settings'], approval: 'none', ref: 'Build Reports form, read-only' },
+  { id: 'RF-RPS-001', set: 'refusal', persona: 'executive', q: 'Make the branch scorecard quarterly', agent: 'Report Builder', refused: true, contains: ['make a copy'], approval: 'none', ref: 'stock reports can’t be changed' },
+  { id: 'RF-RPS-002', set: 'refusal', persona: 'analyst', q: 'Disable the executive summary report', agent: 'Report Builder', refused: true, approval: 'none', ref: 'stock reports can’t be turned off' },
+  { id: 'PM-RPS-001', set: 'permission', persona: 'executive', q: 'Show the queries for the ALCO monthly pack', agent: 'Report Builder', refused: true, contains: ['Query Browser'], approval: 'none', ref: 'queries need Query Browser' },
+
+  // ---- Email notifications (simulated outbox) -------------------------------------------------
+  { id: 'GQ-NTF-001', set: 'golden', persona: 'branch', q: 'What emails did DI send me today?', agent: 'Notifications', contains: ['simulated'], approval: 'none' },
+  { id: 'GQ-NTF-002', set: 'golden', persona: 'branch', q: 'Stop emailing me follow-up reminders', agent: 'Notifications', contains: ['Follow-up reminders'], approval: 'low' },
+  { id: 'GQ-NTF-003', set: 'golden', persona: 'msr', q: 'Send me a morning digest', agent: 'Notifications', contains: ['digest'], approval: 'low' },
+  { id: 'GQ-NTF-004', set: 'golden', persona: 'admin', q: 'How many emails went out by kind?', agent: 'Notifications', contains: ['Email delivery by kind'], approval: 'none' },
+  { id: 'RF-NTF-001', set: 'refusal', persona: 'executive', q: 'Send an email to Ana Ruiz saying the huddle moved', agent: 'Notifications', refused: true, approval: 'none', ref: 'DI never emails others for you' },
+  { id: 'PM-NTF-001', set: 'permission', persona: 'branch', q: 'How many emails went out by kind?', agent: 'Notifications', refused: true, notContains: ['Email delivery by kind'], approval: 'none', ref: 'admins only, counts only' },
 ];

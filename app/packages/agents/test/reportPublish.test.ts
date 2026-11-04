@@ -41,8 +41,10 @@ beforeAll(async () => {
   const semantic = await SemanticService.create(pool, 'test_cu', 'credit_union');
   approvals = new ApprovalStore(pool);
   gateway = new ReportGateway({ store: new ReportStore(pool), semantic, approvals, classSize: async (c) => (c === 'Manager' ? 6 : 3) });
-  // A saved report of Dana's, made the way an approved save makes one.
-  const draft = await gateway.store.saveDraft({ ...stockReports('credit_union')[0]!, templateId: 'new', name: NAME, folder: 'Drafts' }, DANA, 'thr_pintest_setup');
+  // A saved report of Dana's, made the way an approved save makes one: a draft is open to everyone
+  // with Reports once saved, unless its owner limits it to some classes.
+  const stock = stockReports('credit_union')[0]!;
+  const draft = await gateway.store.saveDraft({ ...stock, settings: { ...stock.settings, controlClasses: [] }, templateId: 'new', name: NAME, folder: 'Drafts' }, DANA, 'thr_pintest_setup');
   const saved = await gateway.store.publish({ draftId: draft.templateId, name: NAME, folder: 'Finance / ALCO', definition: draft.definition }, { approvalId: `apr_pintest_${Date.now()}`, userId: DANA.id, userName: DANA.name, agent: 'Report Builder' });
   templateId = saved.templateId;
 });
