@@ -66,11 +66,18 @@ export function DeskBar({ threadId }: { threadId?: string }) {
   const navigate = useNavigate();
   const thread = useQuery({ queryKey: ['thread', threadId], queryFn: () => api.thread(threadId!), enabled: !!threadId });
   const page = viewLabel(pathname, Object.values(APP_META));
+  // A report names itself once, here: Home > Reports > Board report (the page has no second trail).
+  const reportId = /^\/reports\/([^/?]+)$/.exec(pathname)?.[1];
+  const report = useQuery({ queryKey: ['report', reportId], queryFn: () => api.runReport(reportId!), enabled: false });
+  const [, first, second] = pathname.split('/');
+  const appLabel = APP_META[segmentToApp((first === 'm' ? second : first) ?? 'home')]?.label;
   const trail: { label: string; to?: string }[] = isTasks(pathname)
     ? [{ label: 'All tasks', to: '/c' }, ...(threadId ? [{ label: thread.data?.title ?? 'Task' }] : pathname.startsWith('/c/new') ? [{ label: 'New task' }] : [])]
     : pathname.startsWith('/home')
       ? []
-      : [{ label: page === 'View' ? 'Page' : page }];
+      : reportId && reportId !== 'summary'
+        ? [{ label: 'Reports', to: '/reports' }, { label: report.data?.data.name ?? 'Report' }]
+        : [{ label: page === 'View' ? (appLabel ?? 'Page') : page }];
 
   return (
     <header className={styles.desk} data-region="topbar" tabIndex={-1}>

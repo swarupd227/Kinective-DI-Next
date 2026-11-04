@@ -55,7 +55,7 @@ export function HomeLauncher() {
       const meta = APP_META[app];
       if (!meta || !apps.includes(app)) continue;
       const label = app === 'rm' ? (bank ? 'Customers' : 'Members') : app === 'compliance' ? 'Compliance issues' : meta.label;
-      out.push({ key: `app:${app}`, label, kinds, link: meta.path, detail: kinds.includes('Report') && !kinds.includes('Form') ? 'Dashboard' : undefined });
+      out.push({ key: `app:${app}`, label, kinds, link: meta.path, detail: 'Module' });
     }
     for (const t of reports.data?.templates ?? []) if (t.status !== 'draft') out.push({ key: `rpt:${t.templateId}`, label: t.name, kinds: ['Report'], link: `/reports/${t.templateId}`, detail: t.folder });
     for (const t of tables.data ?? []) if (t.kind === 'table' || t.kind === 'view') out.push({ key: `tbl:${t.id}`, label: t.label, kinds: ['Table'], link: t.link, detail: t.detail });
@@ -74,8 +74,9 @@ export function HomeLauncher() {
     <section className={styles.launcher} aria-labelledby="h-dashboards">
       <div className={styles.head}>
         <h2 id="h-dashboards" className={styles.title}>
-          <LayoutGrid size={16} aria-hidden /> Browse
+          <LayoutGrid size={16} aria-hidden /> Browse <span className={styles.chipCount}>{cards.length}</span>
         </h2>
+        {/* Counts can add up to more than the total: a workflow is a table you can also submit a form to. */}
         <div className={styles.chips} role="group" aria-label="Show only">
           {(['Table', 'Form', 'Report'] as Kind[]).map((k) => (
             <button key={k} type="button" aria-pressed={only === k} className={clsx(styles.chip, only === k && styles.chipOn)} onClick={() => setOnly(only === k ? null : k)}>

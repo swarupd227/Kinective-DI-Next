@@ -12,6 +12,7 @@ import { ApiError, type ReportsIndex } from '@dinext/stream-client';
 import { useSession } from '../session/SessionProvider.tsx';
 import { useShellBlockHost } from '../shell/useShellBlockHost.ts';
 import { useUi } from '../shell/uiStore.ts';
+import { useBreakpoint } from '../shell/useBreakpoint.ts';
 import { DetailReports, OnDemandReports, TableSummary } from './ReportTypes.tsx';
 import page from './Page.module.css';
 import styles from './ReportsPage.module.css';
@@ -207,7 +208,7 @@ function Schedules({ schedules }: { schedules: ReportsIndex['schedules'] }) {
   );
 }
 
-/** Today's DI Build Reports form, read-only: each setting, and plainly which ones DI Next doesn't use. */
+/** Report settings, read-only: what's in use, with today's DI Build Reports fields DI Next doesn't use folded away. */
 function ReportSettings({ templateId }: { templateId: string }) {
   const { api, startThread } = useSession();
   const navigate = useNavigate();
@@ -215,6 +216,11 @@ function ReportSettings({ templateId }: { templateId: string }) {
   if (q.isPending) return <Skeleton height="320px" radius="md" />;
   if (q.isError) return <p className={styles.message} role="alert">{q.error instanceof ApiError && q.error.status === 404 ? 'This report was not found, or it is outside your access.' : 'The settings could not be loaded. Try again in a moment.'}</p>;
   const v = q.data;
+  // What matters comes first; today's DI fields that DI Next doesn't use fold away, and a field that
+  // appears in two groups (Report ID) is shown once.
+  const seen = new Set<string>();
+  const inUse = v.groups.map((g) => ({ ...g, fields: g.fields.filter((f) => f.used && !seen.has(f.label) && seen.add(f.label)) })).filter((g) => g.fields.length > 0);
+  const classic = v.groups.flatMap((g) => g.fields.filter((f) => !f.used && !seen.has(f.label) && seen.add(f.label)).map((f) => ({ ...f, group: g.title })));
   return (
     <section className={styles.summary} aria-label={`${v.name} settings`}>
       <KpiTiles label="Settings at a glance" tiles={v.tiles.map((t) => ({ label: t.label, value: t.value, detail: t.detail, tone: t.tone === 'warning' || t.tone === 'danger' ? t.tone : 'neutral' }))} />
@@ -234,7 +240,7 @@ function ReportSettings({ templateId }: { templateId: string }) {
         </ul>
       )}
       <div className={styles.settingsGrid}>
-        {v.groups.map((g) => (
+        {inUse.map((g) => (
           <section key={g.id} className={styles.settingsGroup} aria-labelledby={`set-${g.id}`}>
             <h2 id={`set-${g.id}`} className={styles.folderTitle}>
               {g.title}
@@ -243,13 +249,29 @@ function ReportSettings({ templateId }: { templateId: string }) {
               {g.fields.map((f) => (
                 <div key={f.label}>
                   <dt>{f.label}</dt>
-                  <dd className={f.used ? undefined : styles.notUsed}>{f.value}</dd>
+                  <dd>{f.value}</dd>
                 </div>
               ))}
             </dl>
           </section>
         ))}
       </div>
+      {classic.length > 0 && (
+        <details className={styles.settingsGroup}>
+          <summary className={styles.folderTitle}>Classic DI fields ({classic.length})</summary>
+          <p className={styles.hint}>Today’s DI form has these too. DI Next doesn’t use them, so they’re kept here for comparison only.</p>
+          <dl className={styles.settingsList}>
+            {classic.map((f) => (
+              <div key={`${f.group}:${f.label}`}>
+                <dt>
+                  {f.label} <span className={styles.detail}>{f.group}</span>
+                </dt>
+                <dd className={styles.notUsed}>{f.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      )}
       <p className={styles.hint}>The classic Start Building Report, Reset, Review, Add Field and Edit Form Layout buttons aren’t needed: ask DI, and approve the change on its card.</p>
     </section>
   );
@@ -263,16 +285,21 @@ export function ReportPage() {
   const view = params.get('view') === 'settings' ? 'settings' : 'report';
   const q = useQuery({ queryKey: ['report', templateId], queryFn: () => api.runReport(templateId), retry: (n, e) => !(e instanceof ApiError && e.status === 404) && n < 1, enabled: view === 'report' });
   const name = q.data?.data.name;
+  const bp = useBreakpoint();
+  const wide = bp === 'desktop' || bp === 'laptop';
   useEffect(() => {
     if (name) useUi.getState().visit({ kind: 'view', path: `/reports/${templateId}`, label: name });
   }, [name, templateId]);
   return (
     <div className={page.page}>
-      <nav className={styles.crumbs} aria-label="Breadcrumb">
-        <Link to="/reports">Reports</Link>
-        <ChevronRight size={14} aria-hidden />
-        <span aria-current="page">{name ?? 'Report'}</span>
-      </nav>
+      {/* On wider screens the top bar carries the trail; smaller ones only show the page name there. */}
+      {!wide && (
+        <nav className={styles.crumbs} aria-label="Breadcrumb">
+          <Link to="/reports">Reports</Link>
+          <ChevronRight size={14} aria-hidden />
+          <span aria-current="page">{name ?? 'Report'}</span>
+        </nav>
+      )}
       <SegmentedControl
         label="Report view"
         value={view}

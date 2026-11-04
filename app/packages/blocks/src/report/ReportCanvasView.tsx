@@ -7,7 +7,7 @@ import { ArrowDown, ArrowUp, CalendarClock, Check, Download, Maximize2, Minimize
 import type { BlockAction, ReportCanvasBlock, ReportWidgetView } from '@dinext/block-schemas';
 import { Badge, Button, IconButton, Menu } from '@dinext/ui';
 import { BlockRenderer } from '../BlockRenderer.tsx';
-import { useBlockHost, type ReportEditOp } from '../context.tsx';
+import { BlockHostProvider, useBlockHost, type ReportEditOp } from '../context.tsx';
 import { DiTakeView } from '../take/DiTakeView.tsx';
 import styles from './ReportCanvasView.module.css';
 
@@ -147,11 +147,14 @@ export function ReportCanvasView({ block }: { block: ReportCanvasBlock }) {
         </section>
       )}
 
-      <div className={styles.grid}>
-        {d.widgets.map((w, i) => (
-          <Widget key={`${w.id}-${w.view.id}`} w={w} index={i} count={d.widgets.length} editing={editing} busy={busy} onEdit={edit} />
-        ))}
-      </div>
+      {/* The report says once, at its foot, which build it's from; widgets from that build don't repeat it. */}
+      <BlockHostProvider value={{ ...host, pageBuildId: current.freshness.buildId }}>
+        <div className={styles.grid}>
+          {d.widgets.map((w, i) => (
+            <Widget key={`${w.id}-${w.view.id}`} w={w} index={i} count={d.widgets.length} editing={editing} busy={busy} onEdit={edit} />
+          ))}
+        </div>
+      </BlockHostProvider>
 
       {d.queries && d.queries.length > 0 && (
         <details className={styles.queries}>
@@ -182,7 +185,10 @@ function Widget({ w, index, count, editing, busy, onEdit }: { w: ReportWidgetVie
           <IconButton size="sm" label={`Remove ${w.title}`} icon={<Trash2 size={14} aria-hidden />} disabled={busy} onClick={() => onEdit({ kind: 'remove', widgetId: w.id })} />
         </div>
       )}
-      <BlockRenderer block={w.view} />
+      <BlockRenderer block={single(w)} />
     </div>
   );
 }
+
+/** A single-figure widget says its name once: the widget's title becomes the tile's label. */
+const single = (w: ReportWidgetView): ReportWidgetView['view'] => (w.view.type === 'kpi' && w.view.title ? { ...w.view, title: undefined, data: { ...w.view.data, label: w.view.title } } : w.view);

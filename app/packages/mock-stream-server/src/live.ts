@@ -962,7 +962,7 @@ export function jumpCards(persona: PersonaId, b: { kpis: KpiGroupBlock; lookAt: 
   }
   const role = ROLE_REPORT[persona];
   if (role && apps.includes('reports') && !cards.some((c) => c.link.endsWith(role.id))) {
-    cards.push({ id: 'role', title: role.title, kind: 'report', reason: role.reason, link: `/reports/${role.id}`, action: { label: 'Send it to me monthly', ask: `Send me the ${role.title} every month` } });
+    cards.push({ id: 'role', title: role.title, kind: 'report', reason: role.reason, link: `/reports/${role.id}`, action: { label: 'Brief me', ask: `Brief me on the ${role.title} report` } });
   }
   return cards.slice(0, 4);
 }

@@ -132,7 +132,9 @@ export function buildOption(block: ChartBlock, theme: ChartTheme, reducedMotion:
                 symbol: 'none',
                 silent: true,
                 lineStyle: { color: theme.danger, type: 'dashed', width: 1 },
-                label: { formatter: '{b}', color: theme.danger, fontFamily: theme.fontFamily, position: 'insideEndTop' },
+                // At the start of the line, on the chart's own background: the latest points sit at the
+                // end, often near the watch level, and would run through the label there.
+                label: { formatter: '{b}', color: theme.danger, fontFamily: theme.fontFamily, position: 'insideStartTop', backgroundColor: theme.surface, padding: [2, 4], borderRadius: 3 },
                 data: markLines.map((m) => ({ yAxis: m.value, name: m.label })),
               }
             : undefined,

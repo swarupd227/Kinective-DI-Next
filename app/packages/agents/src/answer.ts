@@ -288,6 +288,9 @@ export function buildBlock(spec: BlockSpec, results: Map<string, SemanticResult>
   const metricCols = result.columns.filter((c) => c.kind === 'metric');
 
   if (spec.type === 'table') {
+    // One period across every row says nothing per row: the title and the report's period say it.
+    const onePeriod = (result.periods?.length ?? 0) === 1 && result.columns.some((c) => c.kind === 'dimension');
+    const shown = result.columns.filter((c) => !(onePeriod && c.kind === 'period'));
     const block: TableBlock = {
       id: newBlockId('tbl'),
       type: 'table',
@@ -297,7 +300,7 @@ export function buildBlock(spec: BlockSpec, results: Map<string, SemanticResult>
       freshness: freshness(result),
       actions: blockActions(prov.sources),
       data: {
-        columns: result.columns.map((c, i) => ({
+        columns: shown.map((c, i) => ({
           field: c.key,
           headerName: c.label,
           type: c.kind === 'metric' ? (c.format === 'currency' ? 'currency' : c.format === 'count' ? 'count' : 'percent') : 'text',
