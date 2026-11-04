@@ -483,6 +483,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
           const at = home.sections.findIndex((s) => s.id === 'approvals');
           home.sections.splice(at + 1, 0, { id: 'platform', title: 'Platform health', blocks: [platform] });
           home.narrative = undefined;
+          if (platform.data.items.some((i) => i.badge?.label === 'Stale')) home.suggestions = home.suggestions.map((s) => (/last night['’]s build/i.test(s) ? 'Why hasn’t a new build run?' : s));
         }
         // "Needs you" leads with the work DI ranked, ahead of the approvals waiting.
         const today = await live?.today(persona()).catch((err) => (console.error('[home]', err), null));

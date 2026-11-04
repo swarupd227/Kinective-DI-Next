@@ -37,11 +37,14 @@ export class OperationsService {
   async build() {
     const [b] = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM meta_build ORDER BY as_of_date DESC LIMIT 1');
     const uploads = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM ops_upload ORDER BY source');
-    // How old the newest build's data is, in whole days. A nightly build older than two days is stale.
+    // asOf is the date of the data; finishedOn is when the build finished, the moment Home's header
+    // names. The build's age counts from when it finished, and two days without a new one is stale.
     const asOf = day(b?.as_of_date);
-    const ageDays = /^\d{4}-\d{2}-\d{2}$/.test(asOf) ? Math.max(0, Math.floor((Date.now() - Date.parse(`${asOf}T00:00:00Z`)) / 86_400_000)) : 0;
+    const completedAt = b?.completed_at instanceof Date ? b.completed_at.toISOString() : String(b?.completed_at ?? '');
+    const finishedOn = /^\d{4}-\d{2}-\d{2}/.test(completedAt) ? completedAt.slice(0, 10) : asOf;
+    const ageDays = /^\d{4}-\d{2}-\d{2}$/.test(finishedOn) ? Math.max(0, Math.floor((Date.now() - Date.parse(`${finishedOn}T00:00:00Z`)) / 86_400_000)) : 0;
     // How each source arrives. Demo values, like the sources themselves.
-    return { buildId: b?.build_id as string, asOf, ageDays, stale: ageDays >= 2, state: b?.state as string, completedAt: String(b?.completed_at ?? ''), uploads: uploads.map((u) => ({ source: u.source as string, method: SOURCE_METHODS[u.source as string] ?? 'File upload', dueBy: u.due_by as string, arrived: u.arrived as string, late: u.late === 1 })) };
+    return { buildId: b?.build_id as string, asOf, finishedOn, ageDays, stale: ageDays >= 2, state: b?.state as string, completedAt, uploads: uploads.map((u) => ({ source: u.source as string, method: SOURCE_METHODS[u.source as string] ?? 'File upload', dueBy: u.due_by as string, arrived: u.arrived as string, late: u.late === 1 })) };
   }
 
   async checks(onlyFailed: boolean) {
