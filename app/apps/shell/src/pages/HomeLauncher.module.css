@@ -136,6 +136,19 @@
   white-space: nowrap;
 }
 
+.status {
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusBad {
+  color: var(--color-status-danger-text);
+  font-weight: 600;
+}
+
 .tags {
   display: flex;
   flex-wrap: wrap;

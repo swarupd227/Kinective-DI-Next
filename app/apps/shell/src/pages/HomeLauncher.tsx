@@ -17,6 +17,8 @@ interface Card {
   kinds: Kind[];
   link: string;
   detail?: string;
+  /** Where it stands for this person: on Home, sent on a schedule, or a schedule that failed. */
+  status?: { text: string; bad?: boolean };
 }
 
 /** Module pages as today's DI lists them: a workflow is a table you can also submit a form to. */
@@ -57,7 +59,14 @@ export function HomeLauncher() {
       const label = app === 'rm' ? (bank ? 'Customers' : 'Members') : app === 'compliance' ? 'Compliance issues' : meta.label;
       out.push({ key: `app:${app}`, label, kinds, link: meta.path, detail: 'Module' });
     }
-    for (const t of reports.data?.templates ?? []) if (t.status !== 'draft') out.push({ key: `rpt:${t.templateId}`, label: t.name, kinds: ['Report'], link: `/reports/${t.templateId}`, detail: t.folder });
+    const schedules = reports.data?.schedules ?? [];
+    for (const t of reports.data?.templates ?? []) {
+      if (t.status === 'draft') continue;
+      const mine = schedules.filter((x) => x.templateId === t.templateId);
+      const failed = mine.find((x) => x.lastResult === 'failed');
+      const status = failed ? { text: 'Last scheduled run failed', bad: true } : mine[0] ? { text: `Sent ${mine[0].when.charAt(0).toLowerCase()}${mine[0].when.slice(1)}` } : t.onHome ? { text: 'On your Home' } : undefined;
+      out.push({ key: `rpt:${t.templateId}`, label: t.name, kinds: ['Report'], link: `/reports/${t.templateId}`, detail: t.folder, status });
+    }
     for (const t of tables.data ?? []) if (t.kind === 'table' || t.kind === 'view') out.push({ key: `tbl:${t.id}`, label: t.label, kinds: ['Table'], link: t.link, detail: t.detail });
     const seen = new Set<string>();
     return out.filter((c) => !seen.has(c.link) && seen.add(c.link));
@@ -99,6 +108,7 @@ export function HomeLauncher() {
                   </span>
                   <span className={styles.label}>{c.label}</span>
                   {c.detail && <span className={styles.detail}>{c.detail}</span>}
+                  {c.status && <span className={clsx(styles.status, c.status.bad && styles.statusBad)}>{c.status.text}</span>}
                   <span className={styles.tags}>
                     {c.kinds.map((k) => (
                       <span key={k} className={styles.tag}>
