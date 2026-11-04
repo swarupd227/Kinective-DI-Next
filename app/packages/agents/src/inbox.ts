@@ -134,7 +134,7 @@ function systemPrompt(input: InboxInput) {
 How you work:
 - "What's on my plate?": referral_inbox_list with box "mine". "My team": box "team". "What did I send?": box "sent". Then finish with outcome "list".
 - To change a referral, use its number. If they name a person instead, list first and find the number. If two match, ask which.
-- Stages: New Referral, Active, Sold, Not Interested. Every change returns approval_required: finish with outcome "approval" and never say it is done.
+- Stages: New Referral, Active, Sold, Not Interested, plus any stage the published Referral workflow adds (referral_get lists them). Every change returns approval_required: finish with outcome "approval" and never say it is done.
 - Finish every turn with finish_turn, exactly once.
 
 Rules:
@@ -244,7 +244,7 @@ async function show(kind: z.infer<typeof InboxFinish>['outcome'], message: strin
 
 // ---- offline planner (spec 23.6.4) ------------------------------------------------------------
 
-export type InboxIntent = { intent: 'list'; box: InboxBox; olderThan?: number; overdue: boolean } | { intent: 'stage'; ref: string; stage: 'Active' | 'Sold' | 'Not Interested'; note?: string } | { intent: 'note'; ref: string; note: string } | { intent: 'reassign'; ref: string; to: string };
+export type InboxIntent = { intent: 'list'; box: InboxBox; olderThan?: number; overdue: boolean } | { intent: 'stage'; ref: string; stage: string; note?: string } | { intent: 'note'; ref: string; note: string } | { intent: 'reassign'; ref: string; to: string };
 
 /** Reads plain requests. A ref is a referral number or a word from a name. Exported for tests. */
 export function parseInboxRequest(text: string): InboxIntent {
@@ -252,6 +252,9 @@ export function parseInboxRequest(text: string): InboxIntent {
   const ref = (s: string) => s.replace(/^(referral |the |#)+/i, '').replace(/ referral$/i, '').trim();
   const mark = /\bmark (.+?) (?:as )?(sold|not interested|active)\b/i.exec(t);
   if (mark) return { intent: 'stage', ref: ref(mark[1]!), stage: mark[2]!.toLowerCase() === 'sold' ? 'Sold' : mark[2]!.toLowerCase() === 'active' ? 'Active' : 'Not Interested' };
+  // A stage from the published workflow: "Move referral #123 to Waiting on member". The gateway checks it exists.
+  const move = /\bmove (.+?) to (?:the )?["']?(.+?)["']?(?: stage)?$/i.exec(t);
+  if (move && /\breferral\b|#\d+/i.test(move[1]!)) return { intent: 'stage', ref: ref(move[1]!), stage: move[2]!.trim() };
   const give = /\breassign (.+?) to (.+)$/i.exec(t);
   if (give) return { intent: 'reassign', ref: ref(give[1]!), to: give[2]!.trim() };
   const note = /\b(?:add a )?note (?:to|on) (.+?)[:,]\s*(.+)$/i.exec(t);

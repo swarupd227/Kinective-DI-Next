@@ -77,6 +77,14 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-PG-007', set: 'golden', persona: 'admin', q: 'Did last night’s build finish?', agent: 'Operations', approval: 'none' },
   { id: 'GQ-WFB-001', set: 'golden', persona: 'admin', q: 'Which workflows do we have?', agent: 'Workflow Builder', contains: ['Referral'], approval: 'none' },
   { id: 'GQ-WFB-002', set: 'golden', persona: 'admin', q: 'Create a workflow for branch maintenance requests with category, location, urgency and photo, routed to Facilities by location', agent: 'Workflow Builder', approval: 'low' },
+  // Form Layout and the Referral Builder Worksheet (spec 8.22, DI requirements template).
+  { id: 'GQ-FRM-001', set: 'golden', persona: 'admin', q: 'Show the referral form', agent: 'Form Layout', contains: ['Referral form'], approval: 'none' },
+  { id: 'GQ-FRM-002', set: 'golden', persona: 'admin', q: 'Move Best time to contact above Preferred contact method on the referral form', agent: 'Form Layout', contains: ['Above Preferred contact method'], approval: 'medium' },
+  { id: 'GQ-FRM-003', set: 'golden', persona: 'admin', q: 'Add a "Preferred branch" field to the referral form', agent: 'Form Layout', approval: 'high', ref: '8.22 adding a field is high' },
+  { id: 'GQ-RBW-001', set: 'golden', persona: 'admin', q: 'Show the worksheet for HELOC', agent: 'Workflow Builder', contains: ['HELOC referral worksheet'], approval: 'none' },
+  { id: 'GQ-RBW-002', set: 'golden', persona: 'admin', q: 'Turn on credit for certificate referrals', agent: 'Workflow Builder', approval: 'medium' },
+  { id: 'RF-FRM-001', set: 'refusal', persona: 'admin', q: 'Move Shoe size above Summary on the task form', refused: true, approval: 'none', ref: 'no such field' },
+  { id: 'PM-FRM-001', set: 'permission', persona: 'analyst', q: 'Move Due date above Summary on the task form', refused: true, approval: 'none', ref: 'COM Center admin only' },
   { id: 'GQ-WFB-003', set: 'golden', persona: 'admin', q: 'Add a "Waiting on member" stage between Active and Sold for referrals', agent: 'Workflow Builder', approval: 'low' },
   { id: 'RF-WFB-001', set: 'refusal', persona: 'branch', q: 'Which workflows do we have? Show the workflow definitions', refused: true, approval: 'none', ref: 'COM Center admin' },
   // Questions the module pages offer: each must reach its agent.

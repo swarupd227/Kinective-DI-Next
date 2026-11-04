@@ -19,10 +19,12 @@ import styles from './ReferralsPage.module.css';
 type Box = 'mine' | 'team' | 'sent';
 
 const STAGES: ReferralStageName[] = ['New Referral', 'Active', 'Sold', 'Not Interested', 'Done'];
+const CLOSED = ['Sold', 'Not Interested', 'Done'];
 const age = (days: number) => (days === 0 ? 'Today' : days === 1 ? '1 day old' : `${days} days old`);
 const when = (iso: string) => new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
 const due = (iso: string) => new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short' }).format(new Date(iso));
-const isOpen = (stage: ReferralStageName) => stage === 'New Referral' || stage === 'Active';
+// Sold, Not Interested and Done close an item; any other stage, such as one the workflow adds, is open.
+const isOpen = (stage: ReferralStageName) => !CLOSED.includes(stage);
 
 export function ReferralsPage() {
   const { api, terms } = useSession();
@@ -69,8 +71,6 @@ export function ReferralsPage() {
 
       {q.data && <DiTake take={q.data.take} />}
 
-      {data && (
-        <div className={clsx(styles.columns, selected && styles.withDetail)}>
       {data && active !== 'sent' && (
         <KpiTiles
           tiles={[
@@ -82,6 +82,8 @@ export function ReferralsPage() {
         />
       )}
 
+      {data && (
+        <div className={clsx(styles.columns, selected && styles.withDetail)}>
           {data.items.length === 0 ? (
             <p className={styles.message}>{active === 'sent' ? 'You haven’t sent any referrals yet.' : active === 'mine' ? 'Nothing is waiting for you.' : 'Nothing is open for your team.'}</p>
           ) : (
@@ -187,7 +189,7 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
       </header>
 
       <ol className={styles.stages} aria-label="Stage">
-        {STAGES.filter((s) => s === 'New Referral' || s === 'Active' || closes.includes(s)).map((s) => (
+        {(r.stages ?? STAGES).filter((s) => isOpen(s) || closes.includes(s)).map((s) => (
           <li key={s} className={clsx(styles.stageStep, s === r.stage && styles.stageNow)} aria-current={s === r.stage ? 'step' : undefined}>
             {s}
           </li>

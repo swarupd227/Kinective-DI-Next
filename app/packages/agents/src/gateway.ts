@@ -4,7 +4,7 @@
 // payload is executed, once, with the approval ID as its idempotency key.
 import { z } from 'zod';
 import type { SemanticService } from '@dinext/semantic';
-import { ApprovalStore, CoreError, PIPELINE_VIEWS, usd, OFFER_RULES, type MaturingCertificates, type OfferCost, type RetentionService, type GoalsService, type GoalsWho, type PayoutBatch, type ScoreExplanation, type Scorecard, type ApprovalRecord, type AtRiskMember, type ChangeMeta, type InboxBox, type InboxDetail, type InboxItem, type MemberProfile, type ReferralStage, type PartyHit, type PipelineApplication, type PipelineFound, type PipelineService, type PipelineStatus, type PipelineSummary, type PipelineView, type PipelineWho, type ReferralService, type RelationshipService, type RiskTier, type RouteResult, type Topic } from '@dinext/di-core';
+import { ApprovalStore, CLOSED_STAGES, CoreError, PIPELINE_VIEWS, usd, OFFER_RULES, type MaturingCertificates, type OfferCost, type RetentionService, type GoalsService, type GoalsWho, type PayoutBatch, type ScoreExplanation, type Scorecard, type ApprovalRecord, type AtRiskMember, type ChangeMeta, type InboxBox, type InboxDetail, type InboxItem, type MemberProfile, type ReferralStage, type PartyHit, type PipelineApplication, type PipelineFound, type PipelineService, type PipelineStatus, type PipelineSummary, type PipelineView, type PipelineWho, type ReferralService, type RelationshipService, type RiskTier, type RouteResult, type Topic } from '@dinext/di-core';
 
 export type AgentId = 'referral' | 'relationship' | 'goal' | 'inbox' | 'pipeline' | 'incentives' | 'retention';
 
@@ -97,7 +97,7 @@ const referralId = z.number().int().positive().describe('The number of the refer
 export const INBOX_TOOLS = [
   { name: 'referral_inbox_list', operation: 'referral.inbox.list', description: 'List referrals. mine: open work assigned to the user. team: open work in their purview. sent: what they created. Overdue first.', input: z.object({ box: z.enum(['mine', 'team', 'sent']).default('mine'), older_than_days: z.number().int().min(0).max(365).optional(), overdue_only: z.boolean().default(false) }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'referrals', purviewScope: 'com', maxResultRowsToModel: 25, agents: ['inbox'] },
   { name: 'referral_get', operation: 'referral.get', description: 'One referral with its history and the people who can take it.', input: z.object({ referral_id: referralId }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'referrals', purviewScope: 'com', maxResultRowsToModel: 1, agents: ['inbox'] },
-  { name: 'referral_stage_update', operation: 'referral.stage.update', description: 'Move a referral to Active, Sold or Not Interested. Sold can drive incentives. Returns approval_required.', input: z.object({ referral_id: referralId, stage: z.enum(['Active', 'Sold', 'Not Interested']), note: z.string().max(300).optional() }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'referrals', purviewScope: 'com', maxResultRowsToModel: 1, agents: ['inbox'] },
+  { name: 'referral_stage_update', operation: 'referral.stage.update', description: 'Move a referral to Active, Sold, Not Interested, or another stage of the published Referral workflow (from referral_get). Sold can drive incentives. Returns approval_required.', input: z.object({ referral_id: referralId, stage: z.string().min(2).max(40), note: z.string().max(300).optional() }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'referrals', purviewScope: 'com', maxResultRowsToModel: 1, agents: ['inbox'] },
   { name: 'referral_note_add', operation: 'referral.note.add', description: 'Add a note to a referral, such as "left voicemail". Returns approval_required.', input: z.object({ referral_id: referralId, note: z.string().min(2).max(300) }).strict(), sideEffect: 'write', riskTier: 'low', requiredApp: 'referrals', purviewScope: 'com', maxResultRowsToModel: 1, agents: ['inbox'] },
   { name: 'referral_reassign', operation: 'referral.reassign', description: 'Give a referral to someone else in its queue. Returns approval_required.', input: z.object({ referral_id: referralId, to: z.string().min(2).max(80).describe('The person\u2019s name, from referral_get') }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'referrals', purviewScope: 'com', maxResultRowsToModel: 1, agents: ['inbox'] },
 ] satisfies ToolDef[];
@@ -661,9 +661,11 @@ export class ToolGateway {
           if (ctx.purviewBranches && !ctx.purviewBranches.includes(item.branch)) return { ok: false, code: 'NO_ACCESS', content: { error: 'NO_ACCESS', message: `Referral #${item.comId} is outside your purview.` } };
           const payload: ChangePayload = { comId: item.comId };
           if (def.operation === 'referral.stage.update') {
-            payload.stage = args.stage as ReferralStage;
+            const named = await this.deps.referrals.stageNamed(String(args.stage));
+            if (!named) return { ok: false, code: 'NOT_ALLOWED', content: { error: 'NOT_ALLOWED', message: `The Referral workflow has no stage called ${String(args.stage)}. Its stages are ${item.stages.join(', ')}.` } };
+            payload.stage = named as ReferralStage;
             if (args.note) payload.note = String(args.note);
-            if (item.stage === payload.stage || (item.stage !== 'New Referral' && item.stage !== 'Active')) return { ok: false, code: 'NOT_ALLOWED', content: { error: 'NOT_ALLOWED', message: `Referral #${item.comId} is already ${item.stage}.` } };
+            if (item.stage === payload.stage || CLOSED_STAGES.includes(item.stage)) return { ok: false, code: 'NOT_ALLOWED', content: { error: 'NOT_ALLOWED', message: `Referral #${item.comId} is already ${item.stage}.` } };
           } else if (def.operation === 'referral.note.add') {
             payload.note = String(args.note);
           } else {

@@ -48,6 +48,8 @@ export interface ModuleChange {
   /** What the tool's apply needs, stored with the approval. */
   apply: unknown;
   notify?: { employeeId?: number; userId?: string; title: string; detail?: string; link: string }[];
+  /** Shown under the card, such as a preview of the form after the change. Not stored with the approval. */
+  blocks?: Block[];
 }
 
 export interface ModuleTool {
@@ -110,8 +112,9 @@ export interface ModuleOutcome {
 
 export interface ModuleDraft {
   approval: ApprovalRecord;
-  payload: ModuleChange & { tool: string };
+  payload: Omit<ModuleChange, 'blocks'> & { tool: string };
   superseded: string[];
+  blocks?: Block[];
 }
 
 type CallResult = { ok: true; content: unknown; view?: ModuleView; draft?: ModuleDraft } | { ok: false; code: string; message: string };
@@ -164,10 +167,11 @@ export class ModuleGateway {
       const out = await tool.run(parsed.data as never, ctx);
       if (!('change' in out)) return { ok: true, content: { shown: out.text }, view: out };
       const operation = `${spec.prefix}.${name}`;
-      const payload = { ...out.change, tool: name };
+      const { blocks, ...change } = out.change;
+      const payload = { ...change, tool: name };
       const approval = await this.approvals.request({ operation, payload, riskTier: out.change.risk, requestedBy: ctx.user.id, runId: ctx.runId, threadId: ctx.threadId });
       const superseded = await this.approvals.supersede(ctx.threadId, approval.approvalId);
-      return { ok: true, content: { status: 'approval_required', note: 'Nothing has changed. The user approves on screen.' }, draft: { approval, payload, superseded } };
+      return { ok: true, content: { status: 'approval_required', note: 'Nothing has changed. The user approves on screen.' }, draft: { approval, payload, superseded, blocks } };
     } catch (e) {
       if (e instanceof CoreError) return { ok: false, code: e.code, message: e.message };
       throw e;
@@ -233,6 +237,7 @@ async function show(spec: ModuleSpec, s: { view?: ModuleView; draft?: ModuleDraf
     const card = moduleCard(spec, s.draft, input);
     await sink.text(`${s.draft.payload.text} Nothing happens until you approve it.`, spec.agent);
     await sink.block(card);
+    for (const b of s.draft.blocks ?? []) await sink.block(b);
     return { ...base, outcome: 'approval', approval: { record: s.draft.approval, card }, superseded: s.draft.superseded };
   }
   if (s.view) {

@@ -49,9 +49,12 @@ export interface DraftCheck {
 }
 
 /** The stage bar (spec 17.3). Sold and Not Interested close a referral; Done closes a staff task. */
-export const REFERRAL_STAGES = ['New Referral', 'Active', 'Sold', 'Not Interested', 'Done'] as const;
-export type ReferralStage = (typeof REFERRAL_STAGES)[number];
-const OPEN_STAGES: ReferralStage[] = ['New Referral', 'Active'];
+export const REFERRAL_STAGES = ['New Referral', 'Active', 'Sold', 'Not Interested', 'Done'];
+/** Any other stage comes from the published Referral workflow, such as "Waiting on member". */
+export type ReferralStage = string;
+/** The stages that close an item. Every other stage is open work. */
+export const CLOSED_STAGES = ['Sold', 'Not Interested', 'Done'];
+const isOpen = (stage: string) => !CLOSED_STAGES.includes(stage);
 
 /** Days to work a referral, by priority [Assumption]: until a tenant sets its own SLA. */
 export const DUE_DAYS: Record<string, number> = { Urgent: 1, High: 2, Normal: 5, Low: 10 };
@@ -84,6 +87,8 @@ export interface InboxDetail extends InboxItem {
   history: { kind: string; text: string; at: string }[];
   /** People who can take this referral over. */
   team: { employeeId: number; name: string }[];
+  /** The stage bar, from the published Referral workflow. */
+  stages: string[];
 }
 
 export interface ChangeMeta {
@@ -108,8 +113,13 @@ type QueueRow = { queue_id: string; name: string; branch_id: number | null; memb
 const members = (q: QueueRow): number[] => (typeof q.member_employee_ids === 'string' ? JSON.parse(q.member_employee_ids) : q.member_employee_ids);
 const sqlTime = (d: Date) => d.toISOString().slice(0, 23).replace('T', ' ');
 
+/** Bumped when a referral type is added, so every service reads the list again. */
+let typesVersion = 0;
+export const referralTypesChanged = () => void typesVersion++;
+
 export class ReferralService {
   private typeCache: ReferralType[] | null = null;
+  private typeVersion = -1;
   private employeeNames: Map<number, string> | null = null;
 
   constructor(
@@ -119,7 +129,8 @@ export class ReferralService {
 
   /** referral.types.list */
   async types(): Promise<ReferralType[]> {
-    if (!this.typeCache) {
+    if (!this.typeCache || this.typeVersion !== typesVersion) {
+      this.typeVersion = typesVersion;
       const [rows] = await this.pool.query('SELECT type_id, category, label, description, route_rule, fields FROM mod_ref_types WHERE active = 1 ORDER BY category, label');
       this.typeCache = (rows as { type_id: string; category: string; label: string; description: string; route_rule: RouteRule; fields: FormField[] }[]).map((r) => ({
         typeId: r.type_id,
@@ -332,7 +343,7 @@ export class ReferralService {
       createdAt: created.toISOString(),
       ageDays: Math.floor((now.getTime() - created.getTime()) / 86_400_000),
       dueAt: due.toISOString(),
-      overdue: OPEN_STAGES.includes(stage) && due < now,
+      overdue: isOpen(stage) && due < now,
       notes: (r.notes as string | null) ?? null,
       fields: (typeof r.fields === 'string' ? JSON.parse(r.fields) : r.fields) as Record<string, string | number>,
     };
@@ -360,8 +371,8 @@ export class ReferralService {
       where.push('c.sender_user_id = ?');
       params.push(who.userId);
     } else {
-      where.push('c.stage IN (?)');
-      params.push(OPEN_STAGES);
+      where.push('c.stage NOT IN (?)');
+      params.push(CLOSED_STAGES);
       if (ctx.purviewBranches) {
         where.push('b.name IN (?)');
         params.push(ctx.purviewBranches.length ? ctx.purviewBranches : ['']);
@@ -385,6 +396,7 @@ export class ReferralService {
     const names = await this.names();
     return {
       ...item,
+      stages: await this.stages(),
       history: (lines as { kind: string; text: string; created_at: string }[]).map((l) => ({ kind: l.kind, text: l.text, at: `${String(l.created_at).replace(' ', 'T')}Z` })),
       team: members((q as QueueRow[])[0]!).map((employeeId) => ({ employeeId, name: names.get(employeeId)! })),
     };
@@ -401,17 +413,37 @@ export class ReferralService {
     await this.pool.query('INSERT INTO esp_com_lines (com_id, kind, text, by_user_id, created_at) VALUES (?, ?, ?, ?, ?)', [comId, kind, text.slice(0, 1000), userId, sqlTime(new Date())]);
   }
 
+  /**
+   * The stage bar, from the published Referral workflow (spec 24.7): a stage added there, such as
+   * "Waiting on member", is a stage here. Sold, Not Interested and Done always close an item.
+   */
+  async stages(): Promise<string[]> {
+    const [rows] = await this.pool.query("SELECT spec FROM wf_definition WHERE name = 'Referral' AND status = 'Active' LIMIT 1").catch(() => [[]]);
+    const spec = (rows as { spec: unknown }[])[0]?.spec;
+    const listed = ((typeof spec === 'string' ? JSON.parse(spec) : spec) as { stages?: string[] } | undefined)?.stages;
+    if (!listed?.length) return [...REFERRAL_STAGES];
+    // Tasks close as Done whatever the referral workflow says.
+    return listed.includes('Done') ? listed : [...listed, 'Done'];
+  }
+
+  /** The stage a person named, in its proper case, or undefined if the workflow has no such stage. */
+  async stageNamed(name: string) {
+    return (await this.stages()).find((s) => s.toLowerCase() === name.trim().toLowerCase());
+  }
+
   /** Stage is the lifecycle; a closed referral stays closed. Repeating the same change does nothing. */
-  async transition(comId: number, stage: ReferralStage, note: string | undefined, meta: ChangeMeta, ctx: CoreContext) {
-    if (!REFERRAL_STAGES.includes(stage)) throw new CoreError('INVALID', `Stage must be one of: ${REFERRAL_STAGES.join(', ')}.`);
+  async transition(comId: number, asked: ReferralStage, note: string | undefined, meta: ChangeMeta, ctx: CoreContext) {
+    const stages = await this.stages();
+    const stage = stages.find((s) => s.toLowerCase() === asked.toLowerCase());
+    if (!stage) throw new CoreError('INVALID', `Stage must be one of: ${stages.join(', ')}.`);
     const item = await this.workable(comId, meta, ctx);
     if (item.stage === stage) return { item, changed: false };
-    if (!OPEN_STAGES.includes(item.stage)) throw new CoreError('INVALID', `Referral #${comId} is already closed as ${item.stage}.`);
+    if (!isOpen(item.stage)) throw new CoreError('INVALID', `Referral #${comId} is already closed as ${item.stage}.`);
     if (stage === 'New Referral') throw new CoreError('INVALID', 'A referral that has started cannot go back to New Referral.');
     const task = item.category === 'Task';
     if (task ? stage === 'Sold' || stage === 'Not Interested' : stage === 'Done') throw new CoreError('INVALID', task ? 'A task closes as Done.' : 'A referral closes as Sold or Not Interested.');
     // Starting work on something nobody holds makes it yours.
-    const claim = stage === 'Active' && !item.assignee && meta.employeeId !== undefined;
+    const claim = isOpen(stage) && !item.assignee && meta.employeeId !== undefined;
     await this.pool.query(`UPDATE esp_com_items SET stage = ?${claim ? ', assignee_employee_id = ?' : ''} WHERE com_id = ?`, claim ? [stage, meta.employeeId, comId] : [stage, comId]);
     await this.line(comId, 'stage', `${meta.userName} moved this from ${item.stage} to ${stage}.${note ? ` ${note}` : ''}`, meta.userId);
     return { item: await this.item(comId, meta, ctx), changed: true };
@@ -426,7 +458,7 @@ export class ReferralService {
   /** Reassigns within the referral's queue: the person must be someone who works it. */
   async reassign(comId: number, employeeId: number, meta: ChangeMeta, ctx: CoreContext) {
     const item = await this.workable(comId, meta, ctx);
-    if (!OPEN_STAGES.includes(item.stage)) throw new CoreError('INVALID', `Referral #${comId} is closed.`);
+    if (!isOpen(item.stage)) throw new CoreError('INVALID', `Referral #${comId} is closed.`);
     const to = item.team.find((m) => m.employeeId === employeeId);
     if (!to) throw new CoreError('INVALID', `${item.queueName} is worked by ${item.team.map((m) => m.name).join(', ') || 'nobody yet'}.`);
     await this.pool.query('UPDATE esp_com_items SET assignee_employee_id = ? WHERE com_id = ?', [employeeId, comId]);

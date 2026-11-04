@@ -3,8 +3,8 @@
 // key the Concierge runs its deterministic offline planner (spec 23.6.4).
 import { randomBytes } from 'node:crypto';
 import type { ApprovalCardBlock, ApprovalDecisionRequest, Block, KpiGroupBlock, ListBlock, Member360Block, SearchResult, StreamEvent, StreamingEnvelope, TableData } from '@dinext/block-schemas';
-import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, tasksModule, workflowBuilderModule, indirectModule, prospectingModule, calendarModule, callReportModule, filesModule, governanceModule, lineageModule, campaignModule, collectionsModule, complianceModule, dataLogsModule, goalsTake, ModuleGateway, onboardingModule, operationsModule, pipelineTake, segModule, referralTake, reportsTake, todayList, describeSchedule, hasClaudeCredentials, member360, memberTake, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
-import { ApprovalStore, CalendarStore, FileStore, foldersFor, TaskService, WorkflowDefService, IndirectService, ProspectService, QueryService, GovernanceService, LineageService, CallReportService, CampaignService, CollectionsService, CoreError, DataLogService, GoalsService, IssueService, OnboardingService, OperationsService, RetentionService, SegService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type CoreContext, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
+import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, tasksModule, formLayoutModule, workflowBuilderModule, indirectModule, prospectingModule, calendarModule, callReportModule, filesModule, governanceModule, lineageModule, campaignModule, collectionsModule, complianceModule, dataLogsModule, goalsTake, ModuleGateway, onboardingModule, operationsModule, pipelineTake, segModule, referralTake, reportsTake, todayList, describeSchedule, hasClaudeCredentials, member360, memberTake, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
+import { ApprovalStore, WorksheetService, CalendarStore, FileStore, foldersFor, TaskService, WorkflowDefService, IndirectService, ProspectService, QueryService, GovernanceService, LineageService, CallReportService, CampaignService, CollectionsService, CoreError, DataLogService, GoalsService, IssueService, OnboardingService, OperationsService, RetentionService, SegService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type CoreContext, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
 import type { AppNotification, AppView, AppViewId, QueryRun, DiTake, GoalsIndex, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
 import { createAppViews } from './appViews.ts';
 import { columnStatRows, tablesModule } from '@dinext/agents';
@@ -296,7 +296,8 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       () => true,
       () => false,
     );
-    if (hasDefs) growthModulesExtra.push(workflowBuilderModule(new WorkflowDefService(pool), today));
+    // Form Layout first: "add a field to the referral form" is a form change, not a workflow draft.
+    if (hasDefs) growthModulesExtra.push(formLayoutModule(new WorkflowDefService(pool), today), workflowBuilderModule(new WorkflowDefService(pool), today, new WorksheetService(pool)));
     // Calendar events and uploads exist once the tenant was seeded with Slice 23 or later.
     const hasWorkspace = await pool.query('SELECT 1 FROM cal_event LIMIT 1').then(
       () => true,
@@ -354,7 +355,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     if (!wf || !session.apps.includes('referrals')) return null;
     const purview = PERSONAS[persona].purview;
     const d = await wf.referrals.item(comId, { userId: session.user.id }, { purviewBranches: purview });
-    return { ...referralView(d, wf.relationship ?? null), history: d.history, team: d.team, canWork: !purview || purview.includes(d.branch) };
+    return { ...referralView(d, wf.relationship ?? null), history: d.history, team: d.team, stages: d.stages, canWork: !purview || purview.includes(d.branch) };
   };
 
   return {

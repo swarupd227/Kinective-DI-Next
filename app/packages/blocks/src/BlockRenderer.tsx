@@ -12,6 +12,7 @@ import { ApprovalCardView } from './approval/ApprovalCardView.tsx';
 import { ListView } from './list/ListView.tsx';
 import { DefinitionCardView } from './definition/DefinitionCardView.tsx';
 import { LineageGraphView } from './lineage/LineageGraphView.tsx';
+import { FormPreviewView } from './form/FormPreviewView.tsx';
 import { useBlockHost } from './context.tsx';
 import styles from './BlockRenderer.module.css';
 
@@ -94,6 +95,12 @@ export function BlockRenderer({ block, status = 'complete', progressText }: Bloc
       return (
         <BlockFrame block={b} status={status} progressText={progressText}>
           {complete ? <LineageGraphView block={b} /> : <TableSkeleton />}
+        </BlockFrame>
+      );
+    case 'form':
+      return (
+        <BlockFrame block={b} status={status} progressText={progressText}>
+          {complete ? <FormPreviewView block={b} /> : <TableSkeleton />}
         </BlockFrame>
       );
     case 'list':
