@@ -139,8 +139,14 @@ describe.skipIf(!available)('a referral end to end through an approval card', ()
       // Sample content from the first slice: none of it may reach a Home built from the warehouse.
       for (const sample of ['crossed the 0.70% watch level', 'ALCO committee', 'Failed: no data for Eastgate', 'Follow-ups 4', 'Northgate: new auto loans 41%']) expect(text).not.toContain(sample);
       expect(home.tabs.every((t) => t.id.startsWith('pin-'))).toBe(true);
-      expect(home.sections.find((s) => s.id === 'what_changed')!.title).toMatch(/^Since the \w+ month-end$/);
+      if (p === 'executive') expect(home.sections.find((s) => s.id === 'what_changed')!.title).toMatch(/^Since the \w+ month-end$/);
     }
+    // Frontline staff see their own month, not branch balances.
+    await persona('msr');
+    const sofia = JSON.stringify(await (await fetch(`${base}/v1/home`)).json());
+    expect(sofia).toContain('My goal attainment');
+    expect(sofia).not.toMatch(/Total loan balance|Total deposit balance/);
+    expect(sofia).toContain('"title":"Your month"');
   });
 
   it('does not find members outside the purview, and says so the same way as for nobody', async () => {

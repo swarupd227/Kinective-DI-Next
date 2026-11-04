@@ -71,7 +71,7 @@ export function HomePage() {
   const yourWork = section('your_work');
   const scheduled = section('scheduled_reports');
   const activeTab = h.tabs.find((t) => t.id === tabId) ?? h.tabs[0];
-  const title = (s: HomeSection) => (s.id === 'approvals' ? 'Needs you' : s.id === 'what_changed' ? (s.title.startsWith('Since the ') ? s.title : 'Since yesterday') : s.id === 'look_at' ? 'Worth a look' : s.title);
+  const title = (s: HomeSection) => (s.id === 'approvals' ? 'Needs you' : s.id === 'what_changed' ? (s.title.startsWith('Since the ') || s.title === 'Your month' ? s.title : 'Since yesterday') : s.id === 'look_at' ? 'Worth a look' : s.title);
 
   const changed = section('what_changed');
   const kpis = changed?.blocks.filter((b) => b.type === 'kpi_group' || b.type === 'kpi') ?? [];

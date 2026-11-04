@@ -2,7 +2,8 @@
 // "Jump back in" on Home: which places DI puts forward for each person, and why. Pure: no warehouse.
 import { describe, expect, it } from 'vitest';
 import type { KpiGroupBlock } from '@dinext/block-schemas';
-import { jumpCards } from '../src/live.ts';
+import type { Scorecard } from '@dinext/di-core';
+import { jumpCards, personalKpis } from '../src/live.ts';
 
 const kpis = {
   data: {
@@ -16,6 +17,29 @@ const kpis = {
   },
 } as unknown as KpiGroupBlock;
 const flag = { title: 'Northgate: delinquency 60+ at 1.45%', subtitle: 'Institution rate 0.82%', question: 'Why is delinquency higher at Northgate?' };
+
+describe('frontline figures', () => {
+  const now = Date.parse('2026-10-26T12:00:00Z');
+  const goal = (name: string, actual: number, target: number, qualifier = false) => ({ goalId: name, name, unit: 'count' as const, unitLabel: '', actual, target, targetFrom: '', pct: 0, pending: 0, qualifier, rule: null, earned: 0 });
+  const mine = { employeeId: 4, name: 'Sofia Ruiz', role: 'MSR', branch: 'Westport', periodEnd: '2026-10-31', period: 'October 2026', asOf: '', goals: [goal('Referrals', 8, 10), goal('Checking', 12, 10), goal('Survey', 90, 80, true)], qualified: true, total: 120, behind: true } as unknown as Scorecard;
+  const sent = [{ createdAt: '2026-10-20T10:00:00Z', stage: 'Sold' }, { createdAt: '2026-10-22T10:00:00Z', stage: 'Active' }, { createdAt: '2026-08-01T10:00:00Z', stage: 'Sold' }];
+
+  it('shows the person’s own month, never branch money', () => {
+    const { kpis: k, narrative } = personalKpis(kpis, mine, sent, { open: 3, overdue: 1 }, now);
+    expect(k.data.items.map((i) => [i.label, i.value])).toEqual([
+      ['My goal attainment', 100],
+      ['Incentive so far, October 2026', 120],
+      ['Referrals I sent', 2],
+      ['My open work', 3],
+    ]);
+    expect(JSON.stringify(k)).not.toMatch(/loan balance|deposit|Delinquency/i);
+    expect(narrative).toBe('You’re at **100%** of your October 2026 goals, with 1 behind target, and **$120.00** in incentive so far. You sent **2** referrals in the last 30 days, and 1 sold. **1** of your 3 open items is overdue: start there.');
+  });
+
+  it('still works with no goals', () => {
+    expect(personalKpis(kpis, null, [], { open: 0, overdue: 0 }, now).kpis.data.items.map((i) => i.label)).toEqual(['Referrals I sent', 'My open work']);
+  });
+});
 
 describe('Jump back in', () => {
   it('leads with what DI flagged, says why, and offers one action', () => {

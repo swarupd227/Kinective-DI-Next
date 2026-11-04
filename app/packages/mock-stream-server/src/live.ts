@@ -4,7 +4,7 @@
 import { randomBytes } from 'node:crypto';
 import type { ApprovalCardBlock, ApprovalDecisionRequest, Block, KpiGroupBlock, ListBlock, Member360Block, SearchResult, StreamEvent, StreamingEnvelope, TableData } from '@dinext/block-schemas';
 import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, tasksModule, formLayoutModule, workflowBuilderModule, indirectModule, prospectingModule, calendarModule, callReportModule, filesModule, governanceModule, lineageModule, campaignModule, collectionsModule, complianceModule, dataLogsModule, goalsTake, ModuleGateway, onboardingModule, operationsModule, pipelineTake, segModule, referralTake, reportsTake, todayList, describeSchedule, hasClaudeCredentials, member360, memberTake, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
-import { ApprovalStore, WorksheetService, CalendarStore, FileStore, foldersFor, TaskService, WorkflowDefService, IndirectService, ProspectService, QueryService, GovernanceService, LineageService, CallReportService, CampaignService, CollectionsService, CoreError, DataLogService, GoalsService, IssueService, OnboardingService, OperationsService, RetentionService, SegService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type CoreContext, type InboxItem, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
+import { ApprovalStore, WorksheetService, CalendarStore, FileStore, foldersFor, TaskService, WorkflowDefService, IndirectService, ProspectService, QueryService, GovernanceService, LineageService, CallReportService, CampaignService, CollectionsService, CoreError, DataLogService, GoalsService, IssueService, OnboardingService, OperationsService, RetentionService, SegService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type CoreContext, type InboxItem, type Scorecard, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
 import type { JumpCard, AppNotification, AppView, AppViewId, QueryRun, DiTake, GoalsIndex, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
 import { createAppViews } from './appViews.ts';
 import { columnStatRows, tablesModule } from '@dinext/agents';
@@ -752,6 +752,13 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
         )
       ).filter((x) => x !== null);
       const referrals = open && { open: open.length, overdue: open.filter((i) => i.overdue).length };
+      // Frontline staff (no Reports) see their own figures, not a smaller copy of the branch's.
+      if (!PERSONAS[persona].session.apps.includes('reports')) {
+        const mine = tenant.goals && PERSONAS[persona].session.apps.includes('gi') && who.employeeId !== undefined ? await tenant.goals.scorecard(undefined, { employeeId: who.employeeId }, { purviewBranches: purview }).catch(() => null) : null;
+        const sent = wf && PERSONAS[persona].session.apps.includes('referrals') ? await wf.referrals.inbox('sent', who, { purviewBranches: purview }).catch(() => []) : [];
+        const own = personalKpis(kpis, mine, sent, referrals);
+        return { kpis: own.kpis, narrative: own.narrative, lookAt: { ...lookAt, data: { ...lookAt.data, items: [] } }, scheduled, pinned, referrals, jump: [] };
+      }
       return { kpis, narrative: b.narrative, lookAt, scheduled, pinned, referrals, jump: jumpCards(persona, b, pinned, referrals) };
     },
 
@@ -938,4 +945,33 @@ export function jumpCards(persona: PersonaId, b: { kpis: KpiGroupBlock; lookAt: 
     cards.push({ id: 'role', title: role.title, kind: 'report', figure: figureOf(k), change: changeOf(k), reason: role.reason, link: `/reports/${role.id}`, action: { label: 'Send it to me monthly', ask: `Send me the ${role.title} every month` } });
   }
   return cards.slice(0, 4);
+}
+
+// ---- Home: frontline figures ---------------------------------------------------------------------
+
+const DAY = 86_400_000;
+
+/**
+ * Frontline staff (tellers, member service, lenders without Reports) see their own month: goals,
+ * incentive so far, the referrals they sent and the work waiting for them. Code writes every figure
+ * and the sentence; nothing here is branch or institution money they don't manage.
+ */
+export function personalKpis(base: KpiGroupBlock, mine: Scorecard | null, sent: Pick<InboxItem, 'createdAt' | 'stage'>[], work: { open: number; overdue: number } | null, now = Date.now()) {
+  const scored = mine?.goals.filter((g) => !g.qualifier && g.target > 0) ?? [];
+  const attainment = scored.length ? Math.round((scored.reduce((n, g) => n + Math.min(g.actual / g.target, 2), 0) / scored.length) * 1000) / 10 : null;
+  const behind = scored.filter((g) => g.actual < g.target).length;
+  const recent = sent.filter((r) => now - Date.parse(r.createdAt) <= 30 * DAY);
+  const sold = recent.filter((r) => r.stage === 'Sold').length;
+  const items: KpiGroupBlock['data']['items'] = [];
+  if (attainment !== null) items.push({ label: 'My goal attainment', value: attainment, unit: 'percent', format: { decimals: 1 }, comparison: { label: behind ? `${behind === 1 ? 'goal' : 'goals'} behind target` : 'every goal on target', value: behind, unit: 'count', direction: 'flat', goodWhen: 'down' }, metricRef: 'metric:goal_attainment' });
+  if (mine) items.push({ label: `Incentive so far, ${mine.period}`, value: mine.total, unit: 'currency', format: { decimals: 0 }, metricRef: 'metric:incentive_earned' });
+  items.push({ label: 'Referrals I sent', value: recent.length, unit: 'count', comparison: { label: 'sold, last 30 days', value: sold, unit: 'count', direction: 'flat', goodWhen: 'up' }, metricRef: 'metric:referrals_sent' });
+  if (work) items.push({ label: 'My open work', value: work.open, unit: 'count', comparison: { label: 'overdue', value: work.overdue, unit: 'count', direction: 'flat', goodWhen: 'down' }, metricRef: 'metric:open_work' });
+  const kpis: KpiGroupBlock = { ...base, provenance: { ...base.provenance, sources: [{ kind: 'table', label: 'Goals & Incentives', ref: 'table:gi_scorecard' }, { kind: 'table', label: 'Referrals', ref: 'table:esp_com_items' }], filters: ['Your own work'] }, data: { layout: 'row', items } };
+  const parts = [
+    attainment !== null && mine ? `You’re at **${attainment}%** of your ${mine.period} goals${behind ? `, with ${behind} behind target` : ''}, and **${usd(mine.total)}** in incentive so far${mine.qualified ? '' : ', though a qualifier is still missing'}.` : null,
+    `You sent **${recent.length}** ${recent.length === 1 ? 'referral' : 'referrals'} in the last 30 days${recent.length ? `, and ${sold} sold` : ''}.`,
+    work ? (work.overdue ? `**${work.overdue}** of your ${work.open} open ${work.open === 1 ? 'item' : 'items'} ${work.overdue === 1 ? 'is' : 'are'} overdue: start there.` : `Nothing of yours is overdue.`) : null,
+  ];
+  return { kpis, narrative: parts.filter(Boolean).join(' ') };
 }

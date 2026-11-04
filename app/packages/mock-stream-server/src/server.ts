@@ -435,7 +435,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
           // "vs September month-end" on the figures says what the section compares against.
           const since = /^vs (.+)$/.exec(real.kpis.data.items.find((k) => k.comparison?.label.startsWith('vs '))?.comparison?.label ?? '')?.[1];
           home.sections = home.sections.flatMap((s) => {
-            if (s.id === 'what_changed') return [{ ...s, title: since ? `Since the ${since}` : s.title, blocks: [real.kpis] }];
+            if (s.id === 'what_changed') return [{ ...s, title: since ? `Since the ${since}` : 'Your month', blocks: [real.kpis] }];
             if (s.id === 'your_work') return real.referrals ? [{ ...s, blocks: [yourReferrals(s.blocks[0] as ListBlock, real.referrals)] }] : [];
             if (s.id === 'look_at') return real.lookAt.data.items.length ? [{ ...s, blocks: [real.lookAt] }] : [];
             if (s.id === 'scheduled_reports') return real.scheduled ? [{ ...s, blocks: [real.scheduled] }] : [];
