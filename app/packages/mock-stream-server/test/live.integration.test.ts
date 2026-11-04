@@ -131,6 +131,18 @@ describe.skipIf(!available)('a referral end to end through an approval card', ()
     c.conn.stop();
   });
 
+  it('shows only real figures on Home: no sample sections, charts or tabs', async () => {
+    for (const p of ['executive', 'msr']) {
+      await persona(p);
+      const home = (await (await fetch(`${base}/v1/home`)).json()) as { sections: { id: string; title: string }[]; tabs: { id: string }[] };
+      const text = JSON.stringify(home);
+      // Sample content from the first slice: none of it may reach a Home built from the warehouse.
+      for (const sample of ['crossed the 0.70% watch level', 'ALCO committee', 'Failed: no data for Eastgate', 'Follow-ups 4', 'Northgate: new auto loans 41%']) expect(text).not.toContain(sample);
+      expect(home.tabs.every((t) => t.id.startsWith('pin-'))).toBe(true);
+      expect(home.sections.find((s) => s.id === 'what_changed')!.title).toMatch(/^Since the \w+ month-end$/);
+    }
+  });
+
   it('does not find members outside the purview, and says so the same way as for nobody', async () => {
     await persona('branch');
     const c = await client();

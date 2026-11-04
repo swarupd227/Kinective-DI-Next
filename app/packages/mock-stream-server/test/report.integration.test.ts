@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createApiClient, createStreamStore, StreamConnection, type ThreadState } from '@dinext/stream-client';
 import { validateBlock } from '@dinext/block-schemas';
-import { createPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
+import { createPool, stockReports, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 
 const PORT = 18799;
 const base = `http://localhost:${PORT}`;
@@ -79,7 +79,8 @@ describe.skipIf(!available)('reports over HTTP', () => {
     await persona('executive');
     const api = createApiClient({ baseUrl: base });
     const index = await api.reports();
-    expect(index.templates.filter((t) => t.status === 'stock').map((t) => t.templateId).sort()).toEqual(['alco_monthly_pack', 'branch_scorecard_monthly', 'executive_summary_quarterly']);
+    // Every stock report the seed loads, no more and no fewer.
+    expect(index.templates.filter((t) => t.status === 'stock').map((t) => t.templateId).sort()).toEqual(stockReports('credit_union').map((d) => d.templateId).sort());
     const block = await api.runReport('branch_scorecard_monthly', { period: '2026-07', node: 'Downtown' });
     expect(validateBlock(block).ok).toBe(true);
     expect(block.data.controls.map((c) => c.value)).toEqual(['2026-07', 'Downtown']);

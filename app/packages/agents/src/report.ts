@@ -189,7 +189,7 @@ export function reportTake(widgets: ReportWidgetView[], periodLabel: string, nod
   const [top] = moved.sort((a, b) => Number(b.worse) - Number(a.worse) || b.size - a.size);
   if (!top) return undefined;
   const others = moved.filter((m) => m.worse).length - 1;
-  const change = top.c.unit === 'bp' ? `${Math.abs(top.c.value)} bp` : `${Math.abs(top.c.value)}%`;
+  const change = top.c.unit === 'bp' ? `${Math.round(Math.abs(top.c.value))} bp` : `${Math.round(Math.abs(top.c.value) * 10) / 10}%`;
   const rise = top.c.direction === 'up' ? 'rise' : 'fall';
   const verdict = others > 0 ? `, the biggest move the wrong way. ${others} other ${others === 1 ? 'measure' : 'measures'} also moved the wrong way.` : top.worse ? ', the only move the wrong way.' : ', and nothing moved the wrong way.';
   const headline = `${top.label} ${top.c.direction === 'up' ? 'rose' : 'fell'} ${change} ${top.c.label}${verdict}`;

@@ -892,9 +892,10 @@ async function tablesWorkbench(tenant: Tenant, persona: PersonaId, tableId: stri
 type KpiItem = KpiGroupBlock['data']['items'][number];
 const changeOf = (k: KpiItem | undefined): JumpCard['change'] => {
   const c = k?.comparison;
-  if (!c || c.direction === 'flat') return undefined;
-  const v = Math.abs(c.value);
-  const text = `${c.direction === 'up' ? '↑' : '↓'} ${c.unit === 'bp' ? `${v} bp` : c.unit === 'percent' ? `${v}%` : v.toLocaleString('en-US')} ${c.label}`;
+  // A change that rounds to nothing ("↓ 0 bp") says nothing, so it isn't shown.
+  const v = Math.abs(c?.value ?? 0);
+  if (!c || c.direction === 'flat' || v < 0.05) return undefined;
+  const text = `${c.direction === 'up' ? '↑' : '↓'} ${c.unit === 'bp' ? `${Math.round(v)} bp` : c.unit === 'percent' ? `${Math.round(v * 10) / 10}%` : v.toLocaleString('en-US')} ${c.label}`;
   return { text, good: c.direction === c.goodWhen };
 };
 const figureOf = (k: KpiItem | undefined): JumpCard['figure'] =>
@@ -912,18 +913,20 @@ const ROLE_REPORT: Partial<Record<PersonaId, { id: string; title: string; kpi: n
  * A few places worth opening today (today's DI lists every dashboard; DI Next says which ones matter
  * and why). Each card carries a figure from the build, DI's reason, and one action. At most four.
  */
-export function jumpCards(persona: PersonaId, b: { kpis: KpiGroupBlock; lookAt: { title: string; subtitle: string; question: string }[] }, pinned: { templateId: string; name: string; audience: string; pinnedBy: string; canvas: ReportCanvasBlock }[], referrals: { open: number; overdue: number } | null): JumpCard[] {
+export function jumpCards(persona: PersonaId, b: { kpis: KpiGroupBlock; lookAt: { title: string; subtitle: string; question: string }[] }, pinned: { templateId: string; name: string; audience: string; pinnedBy: string; canvas: ReportCanvasBlock }[], _referrals: { open: number; overdue: number } | null): JumpCard[] {
   const apps = PERSONAS[persona].session.apps;
   const items = b.kpis.data.items;
+  // Every figure says whose it is: one branch is named, several are "your branches".
+  const purview = PERSONAS[persona].purview;
+  const scope = purview ? (purview.length === 1 ? `at ${purview[0]}` : 'across your branches') : 'across the institution';
   const cards: JumpCard[] = [];
   const flag = b.lookAt.find((l) => /delinquen/i.test(l.title));
   if (apps.includes('reports')) {
     const dq = items.find((k) => /delinquen/i.test(k.label));
-    cards.push({ id: 'dq', title: 'Loan delinquency', kind: 'report', figure: figureOf(dq), change: changeOf(dq), reason: flag ? flag.title : 'Loans 60+ days past due, across your branches.', link: '/reports/loan_delinquency_monthly', action: { label: 'Ask why', ask: flag?.question ?? 'Where does delinquency come from?' } });
+    const fig = figureOf(dq);
+    cards.push({ id: 'dq', title: 'Loan delinquency', kind: 'report', figure: fig && { ...fig, label: `60+ days ${scope}` }, change: changeOf(dq), reason: flag ? flag.title : `Loans 60 or more days past due ${scope}.`, link: '/reports/loan_delinquency_monthly', action: { label: 'Ask why', ask: flag?.question ?? 'Where does delinquency come from?' } });
   }
-  if (referrals && apps.includes('referrals')) {
-    cards.push({ id: 'ref', title: 'Referrals', kind: 'work', figure: { label: 'Open', value: referrals.open, unit: 'count' }, change: referrals.overdue ? { text: `${referrals.overdue} overdue`, good: false } : { text: 'None overdue', good: true }, reason: referrals.overdue ? 'Overdue ones first: members are waiting to hear back.' : 'Everything is within its due date.', link: '/workflows/referrals/inbox', action: referrals.overdue ? { label: 'Review overdue', ask: 'Show my overdue referrals' } : { label: 'What’s new?', ask: 'Show my referrals' } });
-  }
+  // Referrals live in Your work; a second card for them would say the same thing twice.
   for (const p of pinned.slice(0, 2)) {
     const first = p.canvas.data.widgets.find((w) => w.view.type === 'kpi')?.view;
     const k = first?.type === 'kpi' ? (first.data as unknown as KpiItem) : undefined;

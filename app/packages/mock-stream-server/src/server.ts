@@ -83,7 +83,8 @@ const id = (prefix: string, n = 16) => `${prefix}${randomBytes(n).toString('base
 /** "Your work" with the real referral counts in place of the placeholder line. */
 const yourReferrals = (block: ListBlock, r: { open: number; overdue: number }): ListBlock => ({
   ...block,
-  data: { ...block.data, items: block.data.items.map(({ badge: _badge, ...item }) => (item.id === 'w1' ? { ...item, meta: `${r.open} open`, subtitle: r.overdue ? `${r.overdue} overdue` : 'Nothing overdue', ...(r.overdue ? { badge: { label: 'Overdue', tone: 'danger' as const } } : {}) } : { ...item, ...(_badge ? { badge: _badge } : {}) })) },
+  // Only the real referrals line: the sample tasks and meetings beside it are left out.
+  data: { ...block.data, items: block.data.items.filter((item) => item.id === 'w1').map(({ badge: _badge, ...item }) => ({ ...item, meta: `${r.open} open`, subtitle: r.overdue ? `${r.overdue} overdue` : 'Nothing overdue', ...(r.overdue ? { badge: { label: 'Overdue', tone: 'danger' as const } } : {}) })) },
 });
 
 export function startMockServer({ port, speed = 1, live = null, voice = null, staticDir, accessCode, perBrowser = false }: MockServerOptions) {
@@ -426,19 +427,23 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         const home = homeFor(persona(), [...waiting.map((a) => a.card), ...pendingHomeCards()]);
         const asked = home.sections.find((s) => s.id === 'approvals');
         if (asked && waiting.length) asked.tasks = Object.fromEntries(waiting.map((a) => [a.card.data.approvalId, a.threadId!]));
-        // With the warehouse up, "What changed" and "Things to look at" come from real figures.
+        // With the warehouse up, every figure on Home is real: a section with nothing real to show is
+        // left out rather than filled with sample content, so no two numbers on the page disagree.
         const real = await live?.home(persona()).catch((err) => (console.error('[home]', err), null));
         if (real) {
           home.narrative = real.narrative;
-          for (const s of home.sections) {
-            if (s.id === 'what_changed') s.blocks = [real.kpis];
-            if (s.id === 'your_work' && real.referrals) s.blocks = [yourReferrals(s.blocks[0] as ListBlock, real.referrals)];
-            if (s.id === 'look_at' && real.lookAt.data.items.length) s.blocks = [real.lookAt];
-            if (s.id === 'scheduled_reports' && real.scheduled) s.blocks = [real.scheduled];
-          }
+          // "vs September month-end" on the figures says what the section compares against.
+          const since = /^vs (.+)$/.exec(real.kpis.data.items.find((k) => k.comparison?.label.startsWith('vs '))?.comparison?.label ?? '')?.[1];
+          home.sections = home.sections.flatMap((s) => {
+            if (s.id === 'what_changed') return [{ ...s, title: since ? `Since the ${since}` : s.title, blocks: [real.kpis] }];
+            if (s.id === 'your_work') return real.referrals ? [{ ...s, blocks: [yourReferrals(s.blocks[0] as ListBlock, real.referrals)] }] : [];
+            if (s.id === 'look_at') return real.lookAt.data.items.length ? [{ ...s, blocks: [real.lookAt] }] : [];
+            if (s.id === 'scheduled_reports') return real.scheduled ? [{ ...s, blocks: [real.scheduled] }] : [];
+            return [s];
+          });
           home.jump = real.jump;
-          // Reports put on Home lead the Pinned tabs, one tab each.
-          if (real.pinned.length) home.tabs = [...real.pinned.map((p) => ({ id: `pin-${p.templateId}`, label: p.name, blocks: [p.canvas] })), ...home.tabs];
+          // Pinned holds only reports someone actually put on Home, one tab each.
+          home.tabs = real.pinned.map((p) => ({ id: `pin-${p.templateId}`, label: p.name, blocks: [p.canvas] }));
         }
         // "Needs you" leads with the work DI ranked, ahead of the approvals waiting.
         const today = await live?.today(persona()).catch((err) => (console.error('[home]', err), null));

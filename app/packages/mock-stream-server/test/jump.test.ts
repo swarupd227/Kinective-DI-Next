@@ -21,14 +21,23 @@ describe('Jump back in', () => {
   it('leads with what DI flagged, says why, and offers one action', () => {
     const cards = jumpCards('executive', { kpis, lookAt: [flag] }, [], { open: 9, overdue: 3 });
     expect(cards[0]).toMatchObject({ title: 'Loan delinquency', reason: flag.title, change: { text: '↑ 5 bp vs September month-end', good: false }, action: { label: 'Ask why', ask: flag.question }, link: '/reports/loan_delinquency_monthly' });
-    expect(cards[1]).toMatchObject({ title: 'Referrals', figure: { value: 9 }, change: { text: '3 overdue', good: false }, action: { ask: 'Show my overdue referrals' } });
-    expect(cards.map((c) => c.title)).toContain('Board report');
+    // Referrals are in Your work, so they aren't repeated here.
+    expect(cards.map((c) => c.title)).toEqual(['Loan delinquency', 'Board report']);
+    expect(cards[0]!.figure!.label).toBe('60+ days across the institution');
     expect(cards.length).toBeLessThanOrEqual(4);
   });
 
+  it('shows no change that rounds to nothing', () => {
+    const still = { data: { ...kpis.data, items: kpis.data.items.map((k, i) => (i === 2 ? { ...k, comparison: { ...k.comparison!, value: 0, direction: 'down' as const } } : k)) } } as KpiGroupBlock;
+    expect(jumpCards('executive', { kpis: still, lookAt: [] }, [], null)[0]!.change).toBeUndefined();
+  });
+
   it('only offers what the person can open', () => {
-    // Sofia has no Reports: no report cards, only her referrals.
-    expect(jumpCards('msr', { kpis, lookAt: [flag] }, [], { open: 2, overdue: 0 }).map((c) => c.title)).toEqual(['Referrals']);
-    expect(jumpCards('branch', { kpis, lookAt: [] }, [], null).map((c) => c.title)).toEqual(['Loan delinquency', 'Growth report – My branch']);
+    // Sofia has no Reports: nothing to put forward beyond her own work.
+    expect(jumpCards('msr', { kpis, lookAt: [flag] }, [], { open: 2, overdue: 0 })).toEqual([]);
+    const marcus = jumpCards('branch', { kpis, lookAt: [] }, [], null);
+    expect(marcus.map((c) => c.title)).toEqual(['Loan delinquency', 'Growth report – My branch']);
+    // One branch is named, so the figure says whose it is.
+    expect(marcus[0]).toMatchObject({ figure: { label: '60+ days at Westport' }, reason: 'Loans 60 or more days past due at Westport.' });
   });
 });
