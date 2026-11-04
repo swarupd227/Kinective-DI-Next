@@ -33,7 +33,9 @@ describe('frontline figures', () => {
       ['My open work', 3],
     ]);
     expect(JSON.stringify(k)).not.toMatch(/loan balance|deposit|Delinquency/i);
-    expect(narrative).toBe('You’re at **100%** of your October 2026 goals, with 1 behind target, and **$120.00** in incentive so far. You sent **2** referrals in the last 30 days, and 1 sold. **1** of your 3 open items is overdue: start there.');
+    // The strip has the numbers; the sentence names what they mean and repeats none of them.
+    expect(narrative).toBe('**Referrals** is the goal furthest behind, so that’s where to focus this month. Start with your overdue work.');
+    expect(narrative).not.toMatch(/\d/);
   });
 
   it('still works with no goals', () => {
@@ -42,18 +44,24 @@ describe('frontline figures', () => {
 });
 
 describe('Jump back in', () => {
-  it('leads with what DI flagged, says why, and offers one action', () => {
+  it('repeats nothing Home already shows: no strip figure, no flagged outlier', () => {
+    // Northgate is in Worth a look with its own Why?, so delinquency gets no second card.
     const cards = jumpCards('executive', { kpis, lookAt: [flag] }, [], { open: 9, overdue: 3 });
-    expect(cards[0]).toMatchObject({ title: 'Loan delinquency', reason: flag.title, change: { text: '↑ 5 bp vs September month-end', good: false }, action: { label: 'Ask why', ask: flag.question }, link: '/reports/loan_delinquency_monthly' });
-    // Referrals are in Your work, so they aren't repeated here.
-    expect(cards.map((c) => c.title)).toEqual(['Loan delinquency', 'Executive dashboard']);
-    expect(cards[0]!.figure!.label).toBe('60+ days across the institution');
+    expect(cards.map((c) => c.title)).toEqual(['Executive dashboard']);
+    expect(cards[0]).toMatchObject({ reason: expect.stringContaining('per-member averages'), action: { label: 'Send it to me monthly' } });
+    expect(cards.every((c) => !c.figure && !c.change)).toBe(true);
+    // Without a flag, the delinquency card says where to go, not the strip's number again.
+    const calm = jumpCards('executive', { kpis, lookAt: [] }, [], null);
+    expect(calm.map((c) => c.title)).toEqual(['Loan delinquency', 'Executive dashboard']);
+    expect(calm[0]!.figure).toBeUndefined();
     expect(cards.length).toBeLessThanOrEqual(4);
   });
 
-  it('shows no change that rounds to nothing', () => {
-    const still = { data: { ...kpis.data, items: kpis.data.items.map((k, i) => (i === 2 ? { ...k, comparison: { ...k.comparison!, value: 0, direction: 'down' as const } } : k)) } } as KpiGroupBlock;
-    expect(jumpCards('executive', { kpis: still, lookAt: [] }, [], null)[0]!.change).toBeUndefined();
+  it('gives a pinned report its own figure, and shows no change that rounds to nothing', () => {
+    const canvas = (value: number, change: number) => ({ data: { widgets: [{ view: { type: 'kpi', data: { label: 'Checking balance', value, unit: 'currency', comparison: { label: 'vs Aug 2026', value: change, unit: 'percent', direction: change ? 'up' : 'down', goodWhen: 'up' } } } }] } }) as never;
+    const [pin] = jumpCards('executive', { kpis, lookAt: [flag] }, [{ templateId: 'checking_growth_monthly', name: 'Checking growth', audience: 'me', pinnedBy: 'Dana Lee', canvas: canvas(4.1e8, 0) }], null);
+    expect(pin).toMatchObject({ title: 'Checking growth', figure: { label: 'Checking balance', value: 4.1e8 } });
+    expect(pin!.change).toBeUndefined();
   });
 
   it('only offers what the person can open', () => {
@@ -61,7 +69,7 @@ describe('Jump back in', () => {
     expect(jumpCards('msr', { kpis, lookAt: [flag] }, [], { open: 2, overdue: 0 })).toEqual([]);
     const marcus = jumpCards('branch', { kpis, lookAt: [] }, [], null);
     expect(marcus.map((c) => c.title)).toEqual(['Loan delinquency', 'Growth report – My branch']);
-    // One branch is named, so the figure says whose it is.
-    expect(marcus[0]).toMatchObject({ figure: { label: '60+ days at Westport' }, reason: 'Loans 60 or more days past due at Westport.' });
+    // One branch is named, so the card says whose it is.
+    expect(marcus[0]).toMatchObject({ reason: 'Loans 60 or more days past due at Westport, by category and branch.' });
   });
 });

@@ -104,7 +104,8 @@ export function HomePage() {
   const side = [yourWork, scheduled].filter((s): s is HomeSection => !!s);
 
   return (
-    <BlockHostProvider value={host}>
+    // The header names the build once; cards from the same build don't say it again.
+    <BlockHostProvider value={{ ...host, pageBuildId: h.build.buildId }}>
       <div className={styles.page}>
         <header className={styles.hero}>
           <div className={styles.heroText}>

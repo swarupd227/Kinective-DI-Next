@@ -141,6 +141,8 @@ describe.skipIf(!available)('a referral end to end through an approval card', ()
       for (const sample of ['crossed the 0.70% watch level', 'ALCO committee', 'Failed: no data for Eastgate', 'Follow-ups 4', 'Northgate: new auto loans 41%']) expect(text).not.toContain(sample);
       expect(home.tabs.every((t) => t.id.startsWith('pin-'))).toBe(true);
       if (p === 'executive') expect(home.sections.find((s) => s.id === 'what_changed')!.title).toMatch(/^Since the \w+ month-end$/);
+      // One place per fact: the strip has the numbers, so DI's read beside it uses words.
+      if (p === 'executive') expect((home as unknown as { narrative: string }).narrative).not.toMatch(/\d/);
     }
     // Frontline staff see their own month, not branch balances.
     await persona('msr');

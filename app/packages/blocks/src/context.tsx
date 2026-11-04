@@ -34,6 +34,8 @@ export interface BlockHost {
   /** Applies a canvas edit to a draft report and returns the re-run canvas. */
   editReport?: (templateRef: string, op: ReportEditOp, controls: Record<string, string>) => Promise<ReportCanvasBlock | null>;
   now?: () => number;
+  /** The build the page already names in its header: blocks from it don't repeat "Data as of". */
+  pageBuildId?: string;
 }
 
 const BlockHostContext = createContext<BlockHost>({});

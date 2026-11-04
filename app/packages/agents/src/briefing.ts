@@ -9,8 +9,15 @@ export const BRIEFING_AGENT = 'Dashboard/Briefing';
 export interface Briefing {
   kpis: KpiGroupBlock;
   trend: ChartBlock;
+  /** The full read with figures, for "Brief me" in a conversation. */
   narrative: string;
-  lookAt: { title: string; subtitle: string; why: string; question: string }[];
+  /**
+   * Home's read, beside the figure strip: what moved, in words, and where to start. It repeats no
+   * figure the strip shows, so each fact on Home has one place.
+   */
+  homeNarrative: string;
+  /** An outlier (a branch well off the rest) or a move the figure strip already shows. */
+  lookAt: { kind: 'outlier' | 'move'; title: string; subtitle: string; why: string; question: string }[];
   results: SemanticResult[];
 }
 
@@ -97,18 +104,31 @@ export async function buildBriefing(svc: SemanticService, ctx: QueryContext, run
     `${formatMetric(joined, 'count')} new ${svc.model.institutionType === 'bank' ? 'customers' : 'members'} joined in ${monthName(svc.build.latestMonthEnd)}.`,
   ];
 
+  // Home: the strip has the numbers, so this says what they mean in words.
+  const worstRate = worst ? Number(worst.delinquency_ratio_60_plus) : 0;
+  const times = dq ? Math.round((worstRate / dq) * 10) / 10 : 0;
+  const outlier = worst && branches.rows.length > 1 && times >= 1.2;
+  const move = (v: number, up: string, down: string, eps: number) => (v > eps ? up : v < -eps ? down : 'held steady');
+  const moves = [`loans ${move(pct(loans, loansThen), 'grew', 'slipped', 0.05)}`, `deposits ${move(pct(deposits, depositsThen), 'grew', 'slipped', 0.05)}`, `delinquency ${move((dq - dqThen) * 100, 'rose', 'eased', 0.5)}`];
+  const homeLines = [
+    // The section title names the period ("Since the September month-end"), so the sentence doesn't.
+    `${moves[0]!.charAt(0).toUpperCase()}${moves[0]!.slice(1)}, ${moves[1]} and ${moves[2]}.`,
+    outlier ? `**${worst.branch}** is well above the rest on delinquency: start there.` : null,
+  ];
+
   const lookAt: Briefing['lookAt'] = [];
   if (worst && branches.rows.length > 1) {
-    const avg = dq;
     lookAt.push({
-      title: `${worst.branch}: delinquency 60+ at ${formatMetric(Number(worst.delinquency_ratio_60_plus), 'percent_2')}`,
-      subtitle: `Institution rate ${formatMetric(avg, 'percent_2')}`,
+      kind: 'outlier',
+      title: `${worst.branch}: delinquency 60+ at ${formatMetric(worstRate, 'percent_2')}`,
+      subtitle: `${times}× the institution rate, the highest of ${branches.rows.length} branches`,
       why: `The Briefing agent ranks branches by the 60+ day delinquency ratio as of the nightly build. ${worst.branch} has the highest ratio of ${branches.rows.length} branches.`,
       question: `Show delinquency 60+ by loan category for ${worst.branch}`,
     });
   }
   if (Math.abs(dq - dqThen) * 100 >= 3) {
     lookAt.push({
+      kind: 'move',
       title: `Delinquency 60+ ${dq > dqThen ? 'rose' : 'fell'} ${formatMetric(Math.abs(dq - dqThen) * 100, 'bp')} since the ${monthName(svc.build.latestMonthEnd)} month-end`,
       subtitle: `Now ${formatMetric(dq, 'percent_2')}`,
       why: 'Changes of 3 basis points or more against the last month-end are flagged.',
@@ -116,5 +136,5 @@ export async function buildBriefing(svc: SemanticService, ctx: QueryContext, run
     });
   }
 
-  return { kpis, trend, narrative: lines.join(' '), lookAt, results: [now, history, joins, branches] };
+  return { kpis, trend, narrative: lines.join(' '), homeNarrative: homeLines.filter(Boolean).join(' '), lookAt, results: [now, history, joins, branches] };
 }

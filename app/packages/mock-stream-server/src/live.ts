@@ -709,7 +709,8 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
         freshness: b.kpis.freshness,
         data: {
           layout: 'list',
-          items: b.lookAt.map((l, i) => ({ id: `l${i + 1}`, icon: 'alert', title: l.title, subtitle: l.subtitle, why: l.why, link: `/c/new?q=${encodeURIComponent(l.question)}` })),
+          // A move the figure strip already shows ("rose 5 bp") isn't said again here.
+          items: b.lookAt.filter((l) => l.kind === 'outlier').map((l, i) => ({ id: `l${i + 1}`, icon: 'alert', title: l.title, subtitle: l.subtitle, why: l.why, link: `/c/new?q=${encodeURIComponent(l.question)}` })),
         },
       };
       // Scheduled reports with their last result; failures carry "Why?" (spec 8.8 acceptance).
@@ -762,7 +763,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
         const own = personalKpis(kpis, mine, sent, referrals);
         return { kpis: own.kpis, narrative: own.narrative, lookAt: { ...lookAt, data: { ...lookAt.data, items: [] } }, scheduled, pinned, referrals, jump: [] };
       }
-      return { kpis, narrative: b.narrative, lookAt, scheduled, pinned, referrals, jump: jumpCards(persona, b, pinned, referrals) };
+      return { kpis, narrative: b.homeNarrative, lookAt, scheduled, pinned, referrals, jump: jumpCards(persona, { kpis: b.kpis, lookAt: b.lookAt.filter((l) => l.kind === 'outlier') }, pinned, referrals) };
     },
 
     async table(persona, tableId) {
@@ -912,11 +913,11 @@ const figureOf = (k: KpiItem | undefined): JumpCard['figure'] =>
   k && typeof k.value === 'number' && (k.unit === 'currency' || k.unit === 'percent' || k.unit === 'count') ? { label: k.label, value: k.value, unit: k.unit, decimals: k.format?.decimals, compact: k.format?.compact } : undefined;
 
 /** The report each role opens first: what they are measured on. */
-const ROLE_REPORT: Partial<Record<PersonaId, { id: string; title: string; kpi: number; reason: string }>> = {
-  executive: { id: 'executive_dashboard_monthly', title: 'Executive dashboard', kpi: 0, reason: 'The month for leadership: members, balances, per-member averages and new lending by loan group.' },
-  bank_cfo: { id: 'executive_dashboard_monthly', title: 'Executive dashboard', kpi: 1, reason: 'The month for leadership: customers, balances, per-customer averages and new lending by loan group.' },
-  analyst: { id: 'lending_portfolio_monthly', title: 'Lending portfolio', kpi: 0, reason: 'The loan book by category, as of last night’s build.' },
-  branch: { id: 'growth_my_branch_monthly', title: 'Growth report – My branch', kpi: 3, reason: 'Your branch’s new relationships and lending this month.' },
+const ROLE_REPORT: Partial<Record<PersonaId, { id: string; title: string; reason: string }>> = {
+  executive: { id: 'executive_dashboard_monthly', title: 'Executive dashboard', reason: 'The month for leadership: members, balances, per-member averages and new lending by loan group.' },
+  bank_cfo: { id: 'executive_dashboard_monthly', title: 'Executive dashboard', reason: 'The month for leadership: customers, balances, per-customer averages and new lending by loan group.' },
+  analyst: { id: 'lending_portfolio_monthly', title: 'Lending portfolio', reason: 'The loan book by category: balances, counts, rate and delinquency.' },
+  branch: { id: 'growth_my_branch_monthly', title: 'Growth report – My branch', reason: 'Your branch’s new relationships and lending this month.' },
 };
 
 /**
@@ -930,22 +931,24 @@ export function jumpCards(persona: PersonaId, b: { kpis: KpiGroupBlock; lookAt: 
   const purview = PERSONAS[persona].purview;
   const scope = purview ? (purview.length === 1 ? `at ${purview[0]}` : 'across your branches') : 'across the institution';
   const cards: JumpCard[] = [];
+  // One place per fact: the figure strip shows the numbers and Worth a look shows the outlier, so a
+  // card carries neither again. It says where to go and why. A flagged delinquency is already in
+  // Worth a look, with its own Why?, so it gets no second card.
   const flag = b.lookAt.find((l) => /delinquen/i.test(l.title));
-  if (apps.includes('reports')) {
-    const dq = items.find((k) => /delinquen/i.test(k.label));
-    const fig = figureOf(dq);
-    cards.push({ id: 'dq', title: 'Loan delinquency', kind: 'report', figure: fig && { ...fig, label: `60+ days ${scope}` }, change: changeOf(dq), reason: flag ? flag.title : `Loans 60 or more days past due ${scope}.`, link: '/reports/loan_delinquency_monthly', action: { label: 'Ask why', ask: flag?.question ?? 'Where does delinquency come from?' } });
+  const onStrip = (k: KpiItem | undefined) => Boolean(k && items.some((i) => i.label === k.label && i.value === k.value));
+  if (apps.includes('reports') && !flag) {
+    cards.push({ id: 'dq', title: 'Loan delinquency', kind: 'report', reason: `Loans 60 or more days past due ${scope}, by category and branch.`, link: '/reports/loan_delinquency_monthly', action: { label: 'Ask why', ask: 'Where does delinquency come from?' } });
   }
   // Referrals live in Your work; a second card for them would say the same thing twice.
   for (const p of pinned.slice(0, 2)) {
     const first = p.canvas.data.widgets.find((w) => w.view.type === 'kpi')?.view;
     const k = first?.type === 'kpi' ? (first.data as unknown as KpiItem) : undefined;
-    cards.push({ id: `pin-${p.templateId}`, title: p.name, kind: 'pinned', figure: figureOf(k), change: changeOf(k), reason: p.audience === 'me' ? 'Pinned to your Home.' : `Published to the ${p.audience} class by ${p.pinnedBy}.`, link: `/home/pin-${p.templateId}`, action: { label: 'Brief me', ask: `Brief me on the ${p.name} report` } });
+    const fresh = onStrip(k) ? undefined : k;
+    cards.push({ id: `pin-${p.templateId}`, title: p.name, kind: 'pinned', figure: figureOf(fresh), change: changeOf(fresh), reason: p.audience === 'me' ? 'Pinned to your Home.' : `Published to the ${p.audience} class by ${p.pinnedBy}.`, link: `/home/pin-${p.templateId}`, action: { label: 'Brief me', ask: `Brief me on the ${p.name} report` } });
   }
   const role = ROLE_REPORT[persona];
   if (role && apps.includes('reports') && !cards.some((c) => c.link.endsWith(role.id))) {
-    const k = items[role.kpi];
-    cards.push({ id: 'role', title: role.title, kind: 'report', figure: figureOf(k), change: changeOf(k), reason: role.reason, link: `/reports/${role.id}`, action: { label: 'Send it to me monthly', ask: `Send me the ${role.title} every month` } });
+    cards.push({ id: 'role', title: role.title, kind: 'report', reason: role.reason, link: `/reports/${role.id}`, action: { label: 'Send it to me monthly', ask: `Send me the ${role.title} every month` } });
   }
   return cards.slice(0, 4);
 }
@@ -971,10 +974,12 @@ export function personalKpis(base: KpiGroupBlock, mine: Scorecard | null, sent: 
   items.push({ label: 'Referrals I sent', value: recent.length, unit: 'count', comparison: { label: 'sold, last 30 days', value: sold, unit: 'count', direction: 'flat', goodWhen: 'up' }, metricRef: 'metric:referrals_sent' });
   if (work) items.push({ label: 'My open work', value: work.open, unit: 'count', comparison: { label: 'overdue', value: work.overdue, unit: 'count', direction: 'flat', goodWhen: 'down' }, metricRef: 'metric:open_work' });
   const kpis: KpiGroupBlock = { ...base, provenance: { ...base.provenance, sources: [{ kind: 'table', label: 'Goals & Incentives', ref: 'table:gi_scorecard' }, { kind: 'table', label: 'Referrals', ref: 'table:esp_com_items' }], filters: ['Your own work'] }, data: { layout: 'row', items } };
+  // The strip has the numbers; this says what they mean and where to start, without repeating them.
+  const furthest = scored.filter((g) => g.actual < g.target).sort((a, b) => a.actual / a.target - b.actual / b.target)[0];
   const parts = [
-    attainment !== null && mine ? `You’re at **${attainment}%** of your ${mine.period} goals${behind ? `, with ${behind} behind target` : ''}, and **${usd(mine.total)}** in incentive so far${mine.qualified ? '' : ', though a qualifier is still missing'}.` : null,
-    `You sent **${recent.length}** ${recent.length === 1 ? 'referral' : 'referrals'} in the last 30 days${recent.length ? `, and ${sold} sold` : ''}.`,
-    work ? (work.overdue ? `**${work.overdue}** of your ${work.open} open ${work.open === 1 ? 'item' : 'items'} ${work.overdue === 1 ? 'is' : 'are'} overdue: start there.` : `Nothing of yours is overdue.`) : null,
+    furthest ? `**${furthest.name}** is the goal furthest behind, so that’s where to focus this month.` : scored.length ? 'Every goal is on target this month.' : null,
+    mine && !mine.qualified ? 'A qualifier is still missing, so the incentive isn’t paid yet.' : null,
+    work ? (work.overdue ? 'Start with your overdue work.' : 'Nothing of yours is overdue.') : null,
   ];
   return { kpis, narrative: parts.filter(Boolean).join(' ') };
 }
