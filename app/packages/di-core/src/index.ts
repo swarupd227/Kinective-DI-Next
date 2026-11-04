@@ -1,4 +1,4 @@
-export { ApprovalStore, ApprovalError, APPROVAL_TTL_MS, canonical, payloadHash, type ApprovalRecord, type ApprovalStatus, type RiskTier } from './approvals.ts';
+export { ApprovalStore, ApprovalError, APPROVAL_TTL_MS, SECOND_APPROVER_TTL_MS, needsSecondApprover, canonical, payloadHash, type ApprovalRecord, type ApprovalStatus, type RiskTier } from './approvals.ts';
 export { WorkflowDefService, splitFields, type Definition, type Problem } from './workflowDefs.ts';
 export { allFields, applyLayout, layoutOf, previewOf, type LayoutOp } from './formLayout.ts';
 export { WorksheetService, WORKSHEET_CREATORS, WORKSHEET_PRODUCTS, type ReferralTypeSheet } from './worksheet.ts';
@@ -8,7 +8,7 @@ export { CalendarService, CalendarStore, FileStore, FILE_FOLDERS, FILE_LIBRARY, 
 export { DEFAULT_OCCURRENCES, MAX_OCCURRENCES, dayInMonth, describeEnd, describeRule, firstOccurrence, occurrences, ordinal, spokenDate, type Recurrence } from './recurrence.ts';
 export { SHARE_TARGETS, SNAPSHOT_ROW_CAP, TableService, VIEW_ROW_CAP, keyNamed, shareTargetNamed, tableCatalog, tableNamed, type CatalogTable, type ColumnStat, type MergeDefinition, type TableObject, type TableRelationship, type TableRows } from './tables.ts';
 export { GovernanceService, LineageService, LINEAGE_CATALOG, type CatalogEntry, type LineageModel, type LineageNode, type RunEntry, type UsageGroup } from './governance.ts';
-export { CallReportService, CampaignService, CollectionsService, OperationsService, SegService, CAPABILITIES, SEG_STAGES, USER_CLASSES, type DirectoryUser, type SegCompany, type WatchedLoan } from './modules2.ts';
+export { CallReportService, CampaignService, CollectionsService, OperationsService, SegService, CAPABILITIES, CLASSES, SEG_STAGES, USER_CLASSES, type DirectoryUser, type SegCompany, type WatchedLoan } from './modules2.ts';
 export { DataLogService, IssueService, OnboardingService, findPerson, ISSUE_REGULATORS, ISSUE_ROOT_CAUSES, type DataLog, type Issue, type IssueDetail, type IssueFilter, type TouchPoint } from './modules.ts';
 export { RetentionService, OFFER_RULES, offerRate, type Certificate, type MaturingCertificates, type OfferCost, type RetentionFilter } from './retention.ts';
 export { GoalsService, furthestBehind, payFor, ruleText, usd, type GoalsWho, type GoalScore, type IncentiveRule, type PayoutBatch, type PayoutLine, type ScoreExplanation, type Scorecard } from './goals.ts';

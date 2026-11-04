@@ -5,7 +5,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import type { ApprovalCardBlock, Block, TableBlock } from '@dinext/block-schemas';
-import { ApprovalStore, CoreError, type ApprovalRecord, type RiskTier } from '@dinext/di-core';
+import { ApprovalStore, CoreError, SECOND_APPROVER_TTL_MS, type ApprovalRecord, type RiskTier } from '@dinext/di-core';
 import { newBlockId } from './answer.ts';
 import type { ToolCallRecord } from './audit.ts';
 import type { ModelClient, Usage } from './model.ts';
@@ -45,6 +45,8 @@ export interface ModuleChange {
   typed?: { prompt: string; expected: string };
   /** Needs a step-up token before approving, as every admin write does (AI-AGT-140). The demo issues it silently. */
   stepUp?: boolean;
+  /** Needs someone other than the requester to approve it, such as an access change (AI-GRD-074). */
+  secondApprover?: { role: string; policy?: string };
   /** What the tool's apply needs, stored with the approval. */
   apply: unknown;
   notify?: { employeeId?: number; userId?: string; title: string; detail?: string; link: string }[];
@@ -169,7 +171,7 @@ export class ModuleGateway {
       const operation = `${spec.prefix}.${name}`;
       const { blocks, ...change } = out.change;
       const payload = { ...change, tool: name };
-      const approval = await this.approvals.request({ operation, payload, riskTier: out.change.risk, requestedBy: ctx.user.id, runId: ctx.runId, threadId: ctx.threadId });
+      const approval = await this.approvals.request({ operation, payload, riskTier: out.change.risk, requestedBy: ctx.user.id, runId: ctx.runId, threadId: ctx.threadId, ...(out.change.secondApprover ? { ttlMs: SECOND_APPROVER_TTL_MS } : {}) });
       const superseded = await this.approvals.supersede(ctx.threadId, approval.approvalId);
       return { ok: true, content: { status: 'approval_required', note: 'Nothing has changed. The user approves on screen.' }, draft: { approval, payload, superseded, blocks } };
     } catch (e) {
@@ -212,7 +214,7 @@ export function moduleCard(spec: Pick<ModuleSpec, 'agent' | 'sources'>, d: Modul
       requestedBy: { kind: 'agent_run', runId: input.runId, agent: spec.agent, onBehalfOf: input.user.id, onBehalfOfName: input.user.name },
       preview: { kind: 'diff', changes: d.payload.changes.slice(0, 8) },
       affected: { records: 1, users: 0, external: 0 },
-      confirmation: { methods: high ? ['click', 'keyboard'] : ['click', 'keyboard', 'voice'], typedValue: d.payload.typed ?? null, stepUp: Boolean(d.payload.stepUp), secondApprover: null, noteRequired: false },
+      confirmation: { methods: high ? ['click', 'keyboard'] : ['click', 'keyboard', 'voice'], typedValue: d.payload.typed ?? null, stepUp: Boolean(d.payload.stepUp), secondApprover: d.payload.secondApprover ?? null, noteRequired: false },
       editablePlan: false,
       expiresAt: d.approval.expiresAt,
       idempotencyKey: `idem_${d.approval.approvalId}`,

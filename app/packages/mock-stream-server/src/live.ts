@@ -95,6 +95,8 @@ export interface LiveRuntime {
   mode: 'live' | 'offline';
   /** A workspace page, under the person's purview. Null when it isn't theirs to see. */
   appView(persona: PersonaId, id: AppViewId): Promise<AppView | null>;
+  /** An administrator's Platform health for Home and the bell: build age, checks, late feeds, access. */
+  platform(persona: PersonaId): Promise<ListBlock | null>;
   /** Runs one read-only query. Refuses anything else, and anyone without Query Browser. */
   runQuery(persona: PersonaId, sql: string): Promise<QueryRun | null>;
   /** A rating of one answer, kept with its run (spec 26, FE-EXP feedback). */
@@ -387,6 +389,13 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       const p = PERSONAS[persona];
       if (!t || !t.runtime.modules || !p.session.apps.includes(APP_ACCESS[id])) return null;
       return createAppViews(viewDeps(t.pool, t.runtime.institutionType, { purviewBranches: p.purview, employeeId: p.employeeId, modules: p.modules ?? [], leads: giAccess(persona).leads, retention: Boolean(p.retention), user: { id: p.session.user.id, name: p.session.user.name } }, Boolean(t.files))).views[id]();
+    },
+
+    async platform(persona) {
+      const t = tenantFor(persona);
+      const p = PERSONAS[persona];
+      if (!t || !t.runtime.modules || !p.session.apps.includes('admin')) return null;
+      return createAppViews(viewDeps(t.pool, t.runtime.institutionType, { purviewBranches: p.purview, employeeId: p.employeeId, modules: p.modules ?? [], leads: false, retention: Boolean(p.retention), user: { id: p.session.user.id, name: p.session.user.name } }, Boolean(t.files))).platform();
     },
 
     async stageFile(persona, f) {

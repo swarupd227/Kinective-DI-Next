@@ -98,7 +98,7 @@ export interface JumpCard {
   action?: { label: string; ask: string };
 }
 
-export type HomeSectionId = 'build_notice' | 'approvals' | 'what_changed' | 'look_at' | 'your_work' | 'scheduled_reports';
+export type HomeSectionId = 'build_notice' | 'approvals' | 'platform' | 'what_changed' | 'look_at' | 'your_work' | 'scheduled_reports';
 
 export interface HomeSection {
   id: HomeSectionId;

@@ -100,8 +100,9 @@ export function HomePage() {
     </section>
   );
   // Desktop reads like a briefing: what needs you on the left, what changed and your own work on the right.
-  const main = h.sections.filter((s) => !['what_changed', 'your_work', 'scheduled_reports'].includes(s.id));
-  const side = [yourWork, scheduled].filter((s): s is HomeSection => !!s);
+  // An administrator's Platform health sits beside "Needs you", where an executive sees what changed.
+  const main = h.sections.filter((s) => !['what_changed', 'your_work', 'scheduled_reports', 'platform'].includes(s.id));
+  const side = [section('platform'), yourWork, scheduled].filter((s): s is HomeSection => !!s);
 
   return (
     // The header names the build once; cards from the same build don't say it again.

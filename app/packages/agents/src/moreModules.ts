@@ -3,7 +3,7 @@
 // Each states its limits: the Call Report agent is read-only, the Admin agent can't change its own
 // user or impersonate anyone, and DI never contacts a borrower or changes a loan.
 import { z } from 'zod';
-import { CAPABILITIES, CoreError, SEG_STAGES, USER_CLASSES, type CallReportService, type CampaignService, type CollectionsService, type OperationsService, type SegService } from '@dinext/di-core';
+import { CAPABILITIES, CLASSES, CoreError, SEG_STAGES, USER_CLASSES, type CallReportService, type CampaignService, type CollectionsService, type OperationsService, type SegService } from '@dinext/di-core';
 import { money } from './pipelineAgent.ts';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
@@ -26,7 +26,7 @@ export function operationsModule(ops: OperationsService): ModuleSpec {
     id: 'operations',
     prefix: 'ops',
     agent: 'Operations',
-    request: /\bnightly build\b|\blast night['’]?s? (build|load)\b|\buploaders?\b|\blate[- ]file\b|\b(data quality|dq) checks?\b|\bchecks? failed\b|\bcreate a user\b|\bwho can\b|\bwhy can['’]?t\b|\b(lock|unlock) .*(user|account)\b|^\s*(lock|unlock)\s+\S+\s+\S+\s*[.!?]?\s*$|\bspoof\b|\bimpersonate\b/i,
+    request: /\bnightly build\b|\blast night['’]?s? (build|load)\b|\buploaders?\b|\blate[- ]file\b|\b(data quality|dq) checks?\b|\bchecks? failed\b|\bcreate a user\b|\bwho can\b|\bwhy can['’]?t\b|\b(lock|unlock) .*(user|account)\b|^\s*(lock|unlock)\s+\S+\s+\S+\s*[.!?]?\s*$|\bspoof\b|\bimpersonate\b|\b(?:has|have) left\b|\bleaver\b|\boff-?board|\bremove (?:\w+ )?access\b|\bdeactivate\b|\b(?:to|into) the \w+ class\b|\bclass\b.*\b(?:to|into)\b|\bmake [A-Z][\w.'-]*(?: [A-Z][\w.'-]*)? an? (?:manager|lender|msr|executive|analyst|administrator)\b|\bsigned in\b|\bsign-?ins?\b|\bdormant\b|\blast (?:log|sign)/i,
     noAccess,
     sources: [{ kind: 'table', label: 'Build and data quality', ref: 'table:ops_dq_check' }],
     prompt: ({ tenant, user, title }) => `You are the Operations agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) runs the platform.
@@ -35,6 +35,9 @@ export function operationsModule(ops: OperationsService): ModuleSpec {
 - "Which checks failed?": ops_checks_list.
 - "Who can approve incentives?": iam_who_can. "Why can't Tom see the Westport referrals?": iam_access_explain.
 - "Create a user for Maria Gomez as a Westport MSR": iam_user_create. Lock or unlock: iam_user_status.
+- "Sofia Ruiz has left, remove her access": iam_user_offboard. "Change Ana Ruiz to the Manager class": iam_user_class.
+- "Who hasn't signed in for 90 days?": iam_signin_review. Sign-in history isn't recorded yet; say so plainly.
+- Access changes need a second approver, an executive or another administrator. The requester can withdraw them but not approve them.
 - Impersonating a user isn't available. You can't change your own user.`,
     plan: (text) => {
       const t = clean(text);
@@ -43,6 +46,17 @@ export function operationsModule(ops: OperationsService): ModuleSpec {
         const m = /\bfor ((?:[A-Z][\w'-]*\s?){1,3}?)\s+as an? (?:([A-Z][a-z]+)\s+)?([A-Z][\w]*)/.exec(t);
         return m ? { tool: 'iam_user_create', args: { name: m[1]!.trim(), user_class: m[3]!, ...(m[2] ? { branch: m[2] } : {}) } } : { say: 'Who’s the user, and which class and branch should they have?' };
       }
+      // Offboarding, class changes and the sign-in review, asked in people's own words.
+      const left = /\b((?:[A-Z][\w.'-]*\s?){1,3}?)\s+(?:has|have)\s+left\b/.exec(t) ?? /\b(?:offboard|deactivate|remove (?:the )?access (?:for|of))\s+((?:[A-Z][\w.'-]*\s?){1,3})/i.exec(t);
+      if (left || /\b(?:leaver|off-?board|remove (?:\w+ )?access|deactivate)\b/i.test(t)) {
+        const who = left?.[1]?.trim();
+        return who ? { tool: 'iam_user_offboard', args: { user: who } } : { say: 'Who is leaving? Tell me their name and I’ll prepare locking their account.' };
+      }
+      const moveTo =
+        /\b(?:[Cc]hange|[Mm]ove|[Ss]witch|[Pp]ut)\s+((?:[A-Z][\w.'-]*\s?){1,3}?)(?:\s+at\s+([A-Z][a-z]+))?\s+(?:to|into|in)\s+(?:the\s+)?([A-Za-z]+)(?:\s+class)?\b/.exec(t) ??
+        /\b[Mm]ake\s+((?:[A-Z][\w.'-]*\s?){1,3}?)(?:\s+at\s+([A-Z][a-z]+))?\s+an?\s+([A-Za-z]+)\b/.exec(t);
+      if (moveTo && USER_CLASSES.some((c) => c.toLowerCase() === moveTo[3]!.toLowerCase())) return { tool: 'iam_user_class', args: { user: [moveTo[1]!.trim(), moveTo[2]].filter(Boolean).join(' '), user_class: moveTo[3]! } };
+      if (/\bsigned in\b|\bsign-?ins?\b|\bdormant\b|\blast (?:log|sign)/i.test(t)) return { tool: 'iam_signin_review', args: {} };
       const lock = /\b([Ll]ock|[Uu]nlock)\s+((?:[A-Z][\w'-]*\s?){1,3})/.exec(t);
       if (lock) return { tool: 'iam_user_status', args: { user: lock[2]!.replace(/\s*(?:user|account)?\s*$/i, '').trim(), lock: lock[1]!.toLowerCase() === 'lock' } };
       const why = /\bwhy can'?t ((?:[A-Z][\w'-]*\s?){1,3}?)\s+(see|approve|open|work)\b(.*)$/i.exec(t);
@@ -63,7 +77,7 @@ export function operationsModule(ops: OperationsService): ModuleSpec {
           // The build is named by its date: data can be days old, and "last night's" would hide that.
           const d = new Date(`${b.asOf.slice(0, 10)}T00:00:00Z`);
           const built = /^\d{4}-\d{2}-\d{2}/.test(b.asOf) ? `${d.getUTCDate()} ${new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' }).format(d)} ${d.getUTCFullYear()}` : b.asOf;
-          return { text: `The latest build, with data as of ${built}, **${b.state}**. ${late.length ? `**${late.length}** ${late.length === 1 ? 'uploader' : 'uploaders'} missed the late-file time: ${late.map((u) => `${u.source} (due ${u.dueBy}, arrived ${u.arrived})`).join(', ')}.` : 'Every uploader arrived on time.'}`, blocks: [moduleTable(spec, 'Uploads', ctx.runId, 'build.state.get', [{ field: 'source', headerName: 'Source', type: 'text' }, { field: 'dueBy', headerName: 'Due by', type: 'text' }, { field: 'arrived', headerName: 'Arrived', type: 'text' }, { field: 'state', headerName: 'State', type: 'text' }], b.uploads.map((u) => ({ source: u.source, dueBy: u.dueBy, arrived: u.arrived, state: u.late ? 'Late' : 'On time' })))] };
+          return { text: `${b.stale ? `**No new build for ${b.ageDays} days.** ` : ''}The latest build, with data as of ${built}, **${b.state}**. ${late.length ? `**${late.length}** ${late.length === 1 ? 'uploader' : 'uploaders'} missed the late-file time: ${late.map((u) => `${u.source} (due ${u.dueBy}, arrived ${u.arrived})`).join(', ')}.` : 'Every uploader arrived on time.'}`, blocks: [moduleTable(spec, 'Uploads', ctx.runId, 'build.state.get', [{ field: 'source', headerName: 'Source', type: 'text' }, { field: 'dueBy', headerName: 'Due by', type: 'text' }, { field: 'arrived', headerName: 'Arrived', type: 'text' }, { field: 'state', headerName: 'State', type: 'text' }], b.uploads.map((u) => ({ source: u.source, dueBy: u.dueBy, arrived: u.arrived, state: u.late ? 'Late' : 'On time' })))] };
         },
       },
       {
@@ -112,7 +126,7 @@ export function operationsModule(ops: OperationsService): ModuleSpec {
           const userClass = USER_CLASSES.find((c) => c.toLowerCase() === a.user_class.toLowerCase());
           if (!userClass) throw new CoreError('INVALID', `Which class: ${USER_CLASSES.join(', ')}?`);
           if (['Administrator'].includes(userClass) && !ctx.modules.includes('admin')) throw new CoreError('NO_ACCESS', 'You can’t grant a class you don’t hold.');
-          return { change: { summary: `Create user ${a.name} as ${userClass}${a.branch ? ` at ${a.branch}` : ''}`, changes: [{ label: 'User', before: '—', after: a.name }, { label: 'Class', before: '—', after: userClass }, { label: 'Purview', before: '—', after: a.branch ?? 'All branches' }], text: `I’ve prepared a new user for **${a.name}**.`, done: `Created **${a.name}** as ${userClass}.`, risk: 'high', stepUp: true, apply: { name: a.name, userClass, branch: a.branch ?? null } } };
+          return { change: { summary: `Create user ${a.name} as ${userClass}${a.branch ? ` at ${a.branch}` : ''}`, changes: [{ label: 'User', before: '—', after: a.name }, { label: 'Class', before: '—', after: userClass }, { label: 'Purview', before: '—', after: a.branch ?? 'All branches' }], text: `I’ve prepared a new user for **${a.name}**.`, done: `Created **${a.name}** as ${userClass}.`, risk: 'high', stepUp: true, secondApprover: { role: 'An executive or another administrator', policy: 'Access changes' }, apply: { name: a.name, userClass, branch: a.branch ?? null } } };
         },
         apply: async (p: Parameters<OperationsService['createUser']>[0], meta) => ops.createUser(p, meta),
       },
@@ -126,9 +140,88 @@ export function operationsModule(ops: OperationsService): ModuleSpec {
           const u = await ops.user(a.user);
           if (u.userId === ctx.user.id || u.name === ctx.user.name) throw new CoreError('NO_ACCESS', 'I can’t change your own user.');
           const to = a.lock ? 'Locked' : 'Active';
-          return { change: { summary: `${a.lock ? 'Lock' : 'Unlock'} ${u.name}`, changes: [{ label: u.name, before: u.status, after: to }], text: `I’ve prepared ${a.lock ? 'locking' : 'unlocking'} **${u.name}**.`, done: `**${u.name}** is now ${to.toLowerCase()}.`, risk: 'high', stepUp: true, apply: { userId: u.userId, status: to } } };
+          return { change: { summary: `${a.lock ? 'Lock' : 'Unlock'} ${u.name}`, changes: [{ label: u.name, before: u.status, after: to }], text: `I’ve prepared ${a.lock ? 'locking' : 'unlocking'} **${u.name}**.`, done: `**${u.name}** is now ${to.toLowerCase()}.`, risk: 'high', stepUp: true, secondApprover: { role: 'An executive or another administrator', policy: 'Access changes' }, apply: { userId: u.userId, status: to } } };
         },
         apply: async (p: { userId: string; status: 'Active' | 'Locked' }) => ops.setStatus(p.userId, p.status),
+      },
+      {
+        name: 'iam_user_offboard',
+        description: 'Prepare offboarding someone who has left: lock their account. Needs a second approver. Returns approval_required.',
+        input: z.object({ user: z.string().min(2).max(80) }).strict(),
+        run: async (a: { user: string }, ctx) => {
+          need(ctx);
+          admin(ctx);
+          const u = await ops.user(a.user);
+          if (u.userId === ctx.user.id || u.name === ctx.user.name) throw new CoreError('NO_ACCESS', 'I can’t change your own user.');
+          if (u.status !== 'Active') throw new CoreError('INVALID', `${u.name}’s account is already ${u.status.toLowerCase()}.`);
+          return {
+            change: {
+              summary: `Offboard ${u.name}: lock their account`,
+              changes: [
+                { label: 'Account', before: u.status, after: 'Locked' },
+                { label: 'Reason', before: '—', after: 'Left the institution' },
+                { label: 'Open work', before: '—', after: `Stays in the ${u.branch ?? 'institution'} queues for the team` },
+              ],
+              text: `I’ve prepared offboarding **${u.name}** (${u.userClass}${u.branch ? `, ${u.branch}` : ''}). Locking stops their sign-in straight away. It needs a second approver: an executive or another administrator.`,
+              done: `**${u.name}** is offboarded: their account is locked.`,
+              risk: 'high',
+              stepUp: true,
+              secondApprover: { role: 'An executive or another administrator', policy: 'Access changes' },
+              apply: { userId: u.userId, status: 'Locked' },
+            },
+          };
+        },
+        apply: async (p: { userId: string; status: 'Locked' }) => ops.setStatus(p.userId, p.status),
+      },
+      {
+        name: 'iam_user_class',
+        description: 'Prepare moving a user to another class. Needs a second approver. Returns approval_required.',
+        input: z.object({ user: z.string().min(2).max(80), user_class: z.string().max(30) }).strict(),
+        run: async (a: { user: string; user_class: string }, ctx) => {
+          need(ctx);
+          admin(ctx);
+          const userClass = USER_CLASSES.find((c) => c.toLowerCase() === a.user_class.toLowerCase());
+          if (!userClass) throw new CoreError('INVALID', `Which class: ${USER_CLASSES.join(', ')}?`);
+          if (userClass === 'Administrator' && !ctx.modules.includes('admin')) throw new CoreError('NO_ACCESS', 'You can’t grant a class you don’t hold.');
+          const u = await ops.user(a.user);
+          if (u.userId === ctx.user.id || u.name === ctx.user.name) throw new CoreError('NO_ACCESS', 'I can’t change your own user.');
+          if (u.userClass === userClass) throw new CoreError('INVALID', `${u.name} is already in the ${userClass} class.`);
+          const can = (c: string) => (CLASSES[c] ?? []).map((k) => CAPABILITIES[k]!);
+          const gains = can(userClass).filter((c) => !can(u.userClass).includes(c));
+          const loses = can(u.userClass).filter((c) => !can(userClass).includes(c));
+          return {
+            change: {
+              summary: `Move ${u.name} from ${u.userClass} to ${userClass}`,
+              changes: [
+                { label: 'Class', before: u.userClass, after: userClass },
+                ...(gains.length ? [{ label: 'Can now', before: '—', after: gains.join(', ') }] : []),
+                ...(loses.length ? [{ label: 'Can no longer', before: loses.join(', '), after: '—' }] : []),
+              ],
+              text: `I’ve prepared moving **${u.name}** to the ${userClass} class. It needs a second approver: an executive or another administrator.`,
+              done: `**${u.name}** is now in the ${userClass} class.`,
+              risk: 'high',
+              stepUp: true,
+              secondApprover: { role: 'An executive or another administrator', policy: 'Access changes' },
+              apply: { userId: u.userId, userClass },
+            },
+          };
+        },
+        apply: async (p: { userId: string; userClass: string }) => ops.setClass(p.userId, p.userClass),
+      },
+      {
+        name: 'iam_signin_review',
+        description: 'Who has not signed in lately. Sign-in history is not recorded yet, so this says so and shows what can be reviewed.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const classes = await ops.classes();
+          const active = classes.reduce((n, c) => n + c.active, 0);
+          const locked = classes.reduce((n, c) => n + c.locked, 0);
+          return {
+            text: `DI doesn’t record sign-ins yet, so I can’t tell who hasn’t signed in. Sign-in history arrives with single sign-on through your identity provider. For an access review now: **${active}** active users and **${locked}** locked, by class below.`,
+            blocks: [moduleTable(spec, 'Users by class', ctx.runId, 'iam.class.list', [{ field: 'userClass', headerName: 'Class', type: 'text' }, { field: 'active', headerName: 'Active', type: 'count' }, { field: 'locked', headerName: 'Locked', type: 'count' }], classes.map((c) => ({ userClass: c.userClass, active: c.active, locked: c.locked })))],
+          };
+        },
       },
     ],
   };

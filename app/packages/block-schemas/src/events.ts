@@ -88,4 +88,5 @@ export interface ApprovalDecisionRequest {
   clientContext: { blockVersionSeen: string; previewHash: string };
 }
 
-export type ApprovalErrorCode = 'STEP_UP_REQUIRED' | 'PREVIEW_CHANGED' | 'ALREADY_DECIDED' | 'EXPIRED' | 'CONFIRMATION_MISMATCH';
+/** AWAITING_SECOND_APPROVER is not a failure: the requester's approval was taken, and a second person now decides. */
+export type ApprovalErrorCode = 'STEP_UP_REQUIRED' | 'PREVIEW_CHANGED' | 'ALREADY_DECIDED' | 'EXPIRED' | 'CONFIRMATION_MISMATCH' | 'AWAITING_SECOND_APPROVER';

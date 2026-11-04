@@ -7,6 +7,11 @@ export type RiskTier = 'low' | 'medium' | 'high';
 export type ApprovalStatus = 'pending' | 'approved' | 'denied' | 'returned' | 'expired' | 'superseded' | 'executed' | 'failed';
 
 /** Default lifetimes from AI-GRD-071: 15 minutes for medium, 5 for high. */
+/** A change that needs a second person waits a working day for them. */
+export const SECOND_APPROVER_TTL_MS = 24 * 60 * 60_000;
+
+/** True when the stored change asks for a second approver (access changes, AI-GRD-074). */
+export const needsSecondApprover = (payload: unknown) => Boolean(payload && typeof payload === 'object' && (payload as { secondApprover?: unknown }).secondApprover);
 export const APPROVAL_TTL_MS: Record<RiskTier, number> = { low: 15 * 60_000, medium: 15 * 60_000, high: 5 * 60_000 };
 
 export interface ApprovalRecord {
@@ -27,7 +32,7 @@ export interface ApprovalRecord {
 
 export class ApprovalError extends Error {
   constructor(
-    readonly code: 'NOT_FOUND' | 'ALREADY_DECIDED' | 'EXPIRED' | 'WRONG_USER' | 'PAYLOAD_CHANGED',
+    readonly code: 'NOT_FOUND' | 'ALREADY_DECIDED' | 'EXPIRED' | 'WRONG_USER' | 'PAYLOAD_CHANGED' | 'SECOND_APPROVER_REQUIRED',
     message: string,
   ) {
     super(message);
@@ -76,10 +81,10 @@ export class ApprovalStore {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  async request(r: { operation: string; payload: unknown; riskTier: RiskTier; requestedBy: string; runId: string; threadId: string }): Promise<ApprovalRecord> {
+  async request(r: { operation: string; payload: unknown; riskTier: RiskTier; requestedBy: string; runId: string; threadId: string; ttlMs?: number }): Promise<ApprovalRecord> {
     const approvalId = `apr_${randomBytes(12).toString('base64url').replace(/[^A-Za-z0-9]/g, '').slice(0, 14).padEnd(14, '0')}`;
     const created = this.now();
-    const expires = new Date(created.getTime() + APPROVAL_TTL_MS[r.riskTier]);
+    const expires = new Date(created.getTime() + (r.ttlMs ?? APPROVAL_TTL_MS[r.riskTier]));
     await this.pool.query(
       `INSERT INTO ai_approvals (approval_id, operation, payload, payload_hash, risk_tier, requested_by, run_id, thread_id, status, created_at, expires_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
@@ -112,11 +117,16 @@ export class ApprovalStore {
   /**
    * Records a decision. Only the user the approval was prepared for can decide it, only once, and
    * only before it expires (AI-GRD-071). The conditional UPDATE makes a double submit harmless.
+   * A change that needs a second approver is the exception: someone other than the requester
+   * approves it, and the requester can only withdraw it (deny or return). Who may be that second
+   * person is decided by the caller, from their class.
    */
   async decide(approvalId: string, d: { decision: 'approved' | 'denied' | 'returned'; userId: string; channel?: string; note?: string; payloadHash?: string }): Promise<ApprovalRecord> {
     const a = await this.get(approvalId);
     if (!a) throw new ApprovalError('NOT_FOUND', 'That approval does not exist.');
-    if (a.requestedBy !== d.userId) throw new ApprovalError('WRONG_USER', 'Only the person this was prepared for can approve it.');
+    if (needsSecondApprover(a.payload)) {
+      if (a.requestedBy === d.userId && d.decision === 'approved') throw new ApprovalError('SECOND_APPROVER_REQUIRED', 'Someone other than the requester has to approve this change.');
+    } else if (a.requestedBy !== d.userId) throw new ApprovalError('WRONG_USER', 'Only the person this was prepared for can approve it.');
     if (a.status !== 'pending') throw new ApprovalError(a.status === 'expired' ? 'EXPIRED' : 'ALREADY_DECIDED', a.status === 'superseded' ? 'A newer version of this draft replaced it.' : 'It has already been decided.');
     if (d.payloadHash && d.payloadHash !== a.payloadHash) throw new ApprovalError('PAYLOAD_CHANGED', 'The change differs from what was shown.');
     const now = this.now();

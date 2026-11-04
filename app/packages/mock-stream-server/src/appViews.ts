@@ -1,7 +1,7 @@
 // The workspace pages (spec 8.10 to 8.15, 8.19, 8.22). Each page opens on DI's view, then the figures
 // and records to check. They read the same DI Core services the agents use, under the same purview,
 // so a page and an answer always agree. Changes happen in a task, behind an approval card.
-import type { AppTile, AppView, AppViewId, Block, TableBlock } from '@dinext/block-schemas';
+import type { AppTile, AppView, AppViewId, Block, ListBlock, TableBlock } from '@dinext/block-schemas';
 import { memberNumber, WorkflowDefService, WorksheetService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 import { TableService } from '@dinext/di-core';
@@ -176,8 +176,8 @@ export function createAppViews(deps: ViewDeps) {
       return {
         title: 'Admin',
         lede: `Platform health. Data as of ${day(build.asOf)}.`,
-        take: { headline: `The ${day(build.asOf)} build ${build.state}. ${checks.failed ? `${count(checks.failed, 'check')} failed` : 'All checks passed'}${late.length ? `, and ${late[0]!.source} arrived late` : ''}.`, action: { label: 'Which checks failed?', ask: 'Which checks failed?' } },
-        tiles: [{ label: 'Build', value: title(build.state), detail: day(build.asOf) }, { label: 'Checks failed', value: `${checks.failed} of ${checks.total}`, tone: checks.failed ? 'danger' : 'neutral' }, { label: 'Late uploads', value: String(late.length), tone: late.length ? 'warning' : 'neutral' }, ...(usage ? [{ label: 'AI cost', value: `$${usage.totals.cost.toFixed(2)}`, detail: monthName(month!) } satisfies AppTile] : [])],
+        take: { headline: `${build.stale ? `No new build for ${build.ageDays} days. The latest, from ${day(build.asOf)}, ${build.state}.` : `The ${day(build.asOf)} build ${build.state}.`} ${checks.failed ? `${count(checks.failed, 'check')} failed` : 'All checks passed'}${late.length ? `, and ${late[0]!.source} arrived late` : ''}.`, action: { label: 'Which checks failed?', ask: 'Which checks failed?' } },
+        tiles: [build.stale ? { label: 'Since the last build', value: `${build.ageDays} days`, detail: day(build.asOf), tone: 'danger' as const } : { label: 'Build', value: title(build.state), detail: day(build.asOf) }, { label: 'Checks failed', value: `${checks.failed} of ${checks.total}`, tone: checks.failed ? 'danger' : 'neutral' }, { label: 'Late uploads', value: String(late.length), tone: late.length ? 'warning' : 'neutral' }, ...(usage ? [{ label: 'AI cost', value: `$${usage.totals.cost.toFixed(2)}`, detail: monthName(month!) } satisfies AppTile] : [])],
         prompts: ['Which checks failed?', 'Show AI cost by agent for October', 'Show the negative feedback'],
         blocks: [table('Uploads', 'build.state.get', [text('source', 'Source'), text('dueBy', 'Due by'), text('arrived', 'Arrived'), text('state', 'State')], build.uploads.map((u) => ({ source: u.source, dueBy: u.dueBy, arrived: u.arrived, state: u.late ? 'Late' : 'On time' }))), table('Data quality checks', 'dq.status_report', [text('name', 'Check'), text('result', 'Result'), text('domain', 'Domain'), text('dimension', 'Dimension')], checks.items.map((c) => ({ domain: c.domain, dimension: c.dimension, name: c.name, result: c.passed ? 'Passed' : `Failed, ${c.rowsFailed} rows` })))],
       };
@@ -359,8 +359,8 @@ export function createAppViews(deps: ViewDeps) {
       return {
         title: 'Integrations',
         lede: `Where the data comes from, and how the latest loads went. Data as of ${day(build.asOf)}.`,
-        take: { headline: late.length ? `${count(late.length, 'source')} arrived late: ${late.map((u) => `${u.source}, due ${u.dueBy}, arrived ${u.arrived}`).join('; ')}. The build ${build.state} with what was there.` : `Every source arrived on time, and the build ${build.state}.`, action: { label: 'Which uploaders were late?', ask: 'Which uploaders missed their late-file time?' } },
-        tiles: [{ label: 'Sources', value: String(build.uploads.length) }, { label: 'Late', value: String(late.length), tone: late.length ? 'warning' : 'neutral' }, { label: 'Last build', value: title(build.state), detail: day(build.asOf) }],
+        take: { headline: (build.stale ? `No new build for ${build.ageDays} days; the latest is from ${day(build.asOf)}. ` : '') + (late.length ? `${count(late.length, 'source')} arrived late: ${late.map((u) => `${u.source}, due ${u.dueBy}, arrived ${u.arrived}`).join('; ')}. The build ${build.state} with what was there.` : `Every source arrived on time, and the build ${build.state}.`), action: { label: 'Which uploaders were late?', ask: 'Which uploaders missed their late-file time?' } },
+        tiles: [{ label: 'Sources', value: String(build.uploads.length) }, { label: 'Late', value: String(late.length), tone: late.length ? 'warning' : 'neutral' }, build.stale ? { label: 'Since the last build', value: `${build.ageDays} days`, detail: day(build.asOf), tone: 'danger' as const } : { label: 'Last build', value: title(build.state), detail: day(build.asOf) }],
         prompts: ['Which uploaders missed their late-file time?', 'Did last night’s build finish?'],
         notice: 'Read only. Adding a source, connections and credentials are set up by Kinective and aren’t built here yet.',
         blocks: [table('Data sources', 'ingestion.sources', [text('source', 'Source'), text('method', 'How it arrives'), text('dueBy', 'Due by'), text('arrived', 'Arrived'), text('state', 'Last load')], build.uploads.map((u) => ({ source: u.source, method: u.method, dueBy: u.dueBy, arrived: u.arrived, state: u.late ? 'Late' : 'On time' })))],
@@ -418,5 +418,21 @@ export function createAppViews(deps: ViewDeps) {
       };
     },
   };
-  return { views, calendarEvents };
+  /** Home's Platform health for an administrator: the build's age, checks, late feeds and access, worst first. */
+  const platform = async (): Promise<ListBlock> => {
+    const [build, checks, users] = await Promise.all([operations.build(), operations.checks(false), operations.users()]);
+    const late = build.uploads.filter((u) => u.late);
+    const failed = checks.items.filter((c) => !c.passed);
+    const locked = users.filter((u) => u.status !== 'Active').length;
+    const items: ListBlock['data']['items'] = [
+      build.stale
+        ? { id: 'build', lead: `${build.ageDays}d`, title: `No new build for ${build.ageDays} days`, subtitle: `The latest is from ${day(build.asOf)} and ${build.state}. Every figure in DI is from then.`, badge: { label: 'Stale', tone: 'danger' }, link: '/integrations', why: 'A nightly build is expected every night. Check the core extract and the build schedule.' }
+        : { id: 'build', lead: '✓', title: `The ${day(build.asOf)} build ${build.state}`, subtitle: 'Figures are current.', badge: { label: 'Current', tone: 'success' }, link: '/integrations' },
+      ...(failed.length ? [{ id: 'checks', lead: String(failed.length), title: `${count(failed.length, 'data quality check')} failed`, subtitle: failed.map((c) => `${c.name} (${c.rowsFailed.toLocaleString('en-US')} rows)`).join('; ').slice(0, 240), badge: { label: 'Failed', tone: 'danger' as const }, link: '/dq' }] : []),
+      ...late.map((u) => ({ id: `late-${u.source}`, lead: u.arrived, title: `${u.source} arrived late`, subtitle: `Due by ${u.dueBy}, arrived ${u.arrived}. The build ran with what was there.`, badge: { label: 'Late', tone: 'warning' as const }, link: '/integrations' })),
+      { id: 'access', lead: String(users.length - locked), title: `${count(users.length - locked, 'active user')}${locked ? `, ${locked} locked` : ', none locked'}`, subtitle: 'Access changes need a second approver.', link: '/admin/users' },
+    ];
+    return { id: blockId(), type: 'list', version: '1.0.0', title: 'Platform health', provenance: { agent: 'DI', operations: ['build.state.get', 'dq.status_report', 'iam.user.list'], sources: [] }, freshness: { kind: 'workflow_event' }, data: { items, layout: 'list' } } as ListBlock;
+  };
+  return { views, calendarEvents, platform };
 }

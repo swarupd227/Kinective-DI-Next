@@ -123,6 +123,7 @@ const DECISION_HTTP: Record<ApprovalError['code'], [number, string]> = {
   EXPIRED: [410, 'EXPIRED'],
   WRONG_USER: [403, 'FORBIDDEN'],
   PAYLOAD_CHANGED: [409, 'PREVIEW_CHANGED'],
+  SECOND_APPROVER_REQUIRED: [409, 'AWAITING_SECOND_APPROVER'],
 };
 
 /** Asking about the record on screen, as opposed to asking something new while it happens to be open. */

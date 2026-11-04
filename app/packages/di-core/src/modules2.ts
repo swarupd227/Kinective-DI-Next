@@ -11,7 +11,7 @@ const moved = (r: unknown) => (r as { affectedRows: number }).affectedRows;
 // ---- operations and admin ---------------------------------------------------------------------
 
 export const CAPABILITIES: Record<string, string> = { approve_incentives: 'approve incentives', referrals: 'work referrals', loan_pipeline: 'see the Loan Pipeline', reports: 'open reports', compliance: 'work compliance issues', manage_users: 'manage users', data_logs: 'approve data logs' };
-const CLASSES: Record<string, string[]> = {
+export const CLASSES: Record<string, string[]> = {
   Administrator: ['manage_users', 'reports'],
   Executive: ['approve_incentives', 'referrals', 'loan_pipeline', 'reports', 'compliance', 'data_logs'],
   Manager: ['approve_incentives', 'referrals', 'loan_pipeline', 'reports', 'compliance', 'data_logs'],
@@ -37,8 +37,11 @@ export class OperationsService {
   async build() {
     const [b] = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM meta_build ORDER BY as_of_date DESC LIMIT 1');
     const uploads = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM ops_upload ORDER BY source');
+    // How old the newest build's data is, in whole days. A nightly build older than two days is stale.
+    const asOf = day(b?.as_of_date);
+    const ageDays = /^\d{4}-\d{2}-\d{2}$/.test(asOf) ? Math.max(0, Math.floor((Date.now() - Date.parse(`${asOf}T00:00:00Z`)) / 86_400_000)) : 0;
     // How each source arrives. Demo values, like the sources themselves.
-    return { buildId: b?.build_id as string, asOf: day(b?.as_of_date), state: b?.state as string, completedAt: String(b?.completed_at ?? ''), uploads: uploads.map((u) => ({ source: u.source as string, method: SOURCE_METHODS[u.source as string] ?? 'File upload', dueBy: u.due_by as string, arrived: u.arrived as string, late: u.late === 1 })) };
+    return { buildId: b?.build_id as string, asOf, ageDays, stale: ageDays >= 2, state: b?.state as string, completedAt: String(b?.completed_at ?? ''), uploads: uploads.map((u) => ({ source: u.source as string, method: SOURCE_METHODS[u.source as string] ?? 'File upload', dueBy: u.due_by as string, arrived: u.arrived as string, late: u.late === 1 })) };
   }
 
   async checks(onlyFailed: boolean) {
@@ -88,6 +91,10 @@ export class OperationsService {
 
   async setStatus(userId: string, status: 'Active' | 'Locked') {
     await this.pool.query('UPDATE iam_user SET status = ? WHERE user_id = ?', [status, userId]);
+  }
+
+  async setClass(userId: string, userClass: string) {
+    await this.pool.query('UPDATE iam_user SET user_class = ? WHERE user_id = ?', [userClass, userId]);
   }
 }
 

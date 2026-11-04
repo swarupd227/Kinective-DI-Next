@@ -318,6 +318,7 @@
   color: var(--color-text-primary);
   text-align: left;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .item:hover,

@@ -3,7 +3,7 @@
 // warehouse. No model calls are made.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateBlock, type Block } from '@dinext/block-schemas';
-import { ApprovalStore, CallReportService, CampaignService, CollectionsService, OperationsService, SegService } from '@dinext/di-core';
+import { ApprovalError, ApprovalStore, CallReportService, CampaignService, CollectionsService, OperationsService, SegService } from '@dinext/di-core';
 import { createPool, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { ModuleGateway, callReportModule, campaignModule, collectionsModule, operationsModule, runModuleOffline, segModule, type ModuleSpec, type ModuleTurn, type RunSink } from '../src/index.ts';
 
@@ -45,6 +45,8 @@ describe.skipIf(!up)('more modules against the warehouse', () => {
     gateway = new ModuleGateway(approvals, [ops, cr, col, cmp, seg]);
   });
   afterAll(async () => {
+    await admin.query("UPDATE iam_user SET status = 'Active' WHERE name = 'Sofia Ruiz'");
+    await admin.query("UPDATE iam_user SET user_class = 'Lender' WHERE name = 'Ana Ruiz' AND branch = 'Westport'");
     await admin.query('DELETE FROM col_outreach');
     await admin.query("DELETE FROM seg_interaction WHERE approval_id IS NOT NULL");
     await admin.query("UPDATE seg_company SET stage = 'Meeting Held' WHERE name = 'Acme HR'");
@@ -53,7 +55,7 @@ describe.skipIf(!up)('more modules against the warehouse', () => {
   });
 
   it('routes each request to the right module', () => {
-    const cases: [string, string][] = [['Did last night’s build finish?', 'operations'], ['Lock Tom Walsh', 'operations'], ['Which uploaders missed their late-file time?', 'operations'], ['Create a user for Maria Gomez as a Westport MSR', 'operations'], ['Are we ready to file Q3?', 'callreport'], ['How is 025B calculated?', 'callreport'], ['Show the early-warning list', 'collections'], ['Which campaigns produced the most loan dollars?', 'campaigns'], ['Which SEGs had the most new members?', 'seg']];
+    const cases: [string, string][] = [['Did last night’s build finish?', 'operations'], ['Lock Tom Walsh', 'operations'], ['Which uploaders missed their late-file time?', 'operations'], ['Create a user for Maria Gomez as a Westport MSR', 'operations'], ['Sofia Ruiz has left the credit union. Remove her access.', 'operations'], ['Change Ana Ruiz at Westport to the Manager class', 'operations'], ['Who hasn’t signed in for 90 days?', 'operations'], ['Make D. Novak a Manager', 'operations'], ['Are we ready to file Q3?', 'callreport'], ['How is 025B calculated?', 'callreport'], ['Show the early-warning list', 'collections'], ['Which campaigns produced the most loan dollars?', 'campaigns'], ['Which SEGs had the most new members?', 'seg']];
     for (const [t, id] of cases) expect(gateway.match(t)?.id, t).toBe(id);
     expect(gateway.match('Show loan growth by branch')).toBeNull();
   });
@@ -88,6 +90,34 @@ describe.skipIf(!up)('more modules against the warehouse', () => {
       expect(out.approval!.card.data).toMatchObject({ riskTier: 'high', confirmation: { stepUp: true } });
       const none = await run(ops, turn('Create a user for Maria Gomez as a Westport MSR', 'thr_a7', { modules: ['operations'] }));
       expect(none.out.approval).toBeUndefined();
+    });
+
+    it('offboards a leaver only with a second approver, never the requester', async () => {
+      const { out } = await run(ops, turn('Sofia Ruiz has left the credit union. Remove her access.', 'thr_b1'));
+      const card = out.approval!.card.data;
+      expect(card).toMatchObject({ riskTier: 'high', summary: 'Offboard Sofia Ruiz: lock their account', confirmation: { stepUp: true, secondApprover: { role: 'An executive or another administrator' } } });
+      // A second approval has a working day, not five minutes.
+      expect(new Date(card.expiresAt).getTime() - Date.now()).toBeGreaterThan(60 * 60_000);
+      const record = out.approval!.record;
+      await expect(approvals.decide(record.approvalId, { decision: 'approved', userId: 'user:1002', payloadHash: record.payloadHash })).rejects.toMatchObject({ code: 'SECOND_APPROVER_REQUIRED' });
+      const decided = await approvals.decide(record.approvalId, { decision: 'approved', userId: 'user:9229', payloadHash: record.payloadHash });
+      await gateway.execute(decided, turn('', 'thr_b1', { user: { id: 'user:9229', name: 'Dana Lee', title: 'President and CEO' } }));
+      expect((await new OperationsService(pool).user('Sofia Ruiz')).status).toBe('Locked');
+    });
+
+    it('lets the requester withdraw an access change, but not approve it', async () => {
+      const { out } = await run(ops, turn('Change Ana Ruiz at Westport to the Manager class', 'thr_b2'));
+      expect(out.approval!.card.data.summary).toBe('Move Ana Ruiz from Lender to Manager');
+      expect(JSON.stringify(out.approval!.card.data.preview)).toContain('approve incentives');
+      const record = out.approval!.record;
+      await expect(approvals.decide(record.approvalId, { decision: 'approved', userId: 'user:1002' })).rejects.toBeInstanceOf(ApprovalError);
+      expect((await approvals.decide(record.approvalId, { decision: 'denied', userId: 'user:1002' })).status).toBe('denied');
+    });
+
+    it('says plainly that sign-in history isn’t recorded', async () => {
+      const { r } = await run(ops, turn('Who hasn’t signed in for 90 days?', 'thr_b3'));
+      expect(r.texts[0]).toContain('doesn’t record sign-ins yet');
+      expect(validateBlock(r.blocks[0]!).ok).toBe(true);
     });
 
     it('won’t change your own user, or impersonate anyone', async () => {

@@ -322,3 +322,20 @@
 .resolution span {
   color: var(--color-text-primary);
 }
+
+.run {
+  opacity: 0.8;
+}
+
+/* An access change sent on for its second approval: information, not an error. */
+.sentOn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-agent);
+  color: var(--color-accent-text);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}

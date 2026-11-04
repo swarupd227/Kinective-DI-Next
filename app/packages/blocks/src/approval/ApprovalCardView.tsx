@@ -36,6 +36,8 @@ export function ApprovalCardView({ block }: { block: ApprovalCardBlock }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState<Decision | null>(null);
   const [error, setError] = useState<{ field?: 'typed' | 'note'; message: string } | null>(null);
+  /** Set once the requester has sent an access change on for its second approval. */
+  const [sentOn, setSentOn] = useState<string | null>(null);
   const [needsNote, setNeedsNote] = useState(false);
   const announced = useRef(false);
   const noteRef = useRef<HTMLTextAreaElement>(null);
@@ -114,6 +116,10 @@ export function ApprovalCardView({ block }: { block: ApprovalCardBlock }) {
       case 'EXPIRED':
         setError({ message: 'This request has expired. Ask again to get a fresh approval.' });
         return;
+      case 'AWAITING_SECOND_APPROVER':
+        setSentOn(result.message ?? 'Sent for a second approval. Nothing changes until someone else approves it.');
+        announce('Sent for a second approval');
+        return;
     }
   };
 
@@ -142,8 +148,16 @@ export function ApprovalCardView({ block }: { block: ApprovalCardBlock }) {
         <p className={styles.requested}>
           {d.requestedBy.kind === 'agent_run' ? (
             <>
-              Requested by <strong>{d.requestedBy.agent ?? 'an agent'}</strong> (run {d.requestedBy.runId})
-              {d.requestedBy.onBehalfOfName && <>, on behalf of {d.requestedBy.onBehalfOfName}</>}
+              {d.requestedBy.onBehalfOfName ? (
+                <>
+                  Requested by <strong>{d.requestedBy.onBehalfOfName}</strong>, prepared by {d.requestedBy.agent ?? 'DI'}
+                </>
+              ) : (
+                <>
+                  Prepared by <strong>{d.requestedBy.agent ?? 'DI'}</strong>
+                </>
+              )}
+              <span className={styles.run}> · run {d.requestedBy.runId}</span>
             </>
           ) : (
             <>
@@ -245,6 +259,13 @@ export function ApprovalCardView({ block }: { block: ApprovalCardBlock }) {
                   </span>
                 )}
               </div>
+            )}
+
+            {sentOn && (
+              <p className={styles.sentOn} role="status">
+                <UserCheck size={16} aria-hidden />
+                {sentOn}
+              </p>
             )}
 
             {error && !error.field && (

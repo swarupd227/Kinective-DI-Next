@@ -17,7 +17,7 @@ import type {
   ThreadSummary,
 } from '@dinext/block-schemas';
 import { pickScenario, scriptForAgent, type Script, type ScriptContext } from './scenarios.ts';
-import { homeApprovals, homeFor, isPersona, searchFor, sessionFor, tableFor, usersToTell, type PersonaId } from './data.ts';
+import { PERSONAS, homeApprovals, homeFor, isPersona, searchFor, sessionFor, tableFor, usersToTell, type PersonaId } from './data.ts';
 import type { LiveRuntime, Notice } from './live.ts';
 import { createSpeechTap } from './speech.ts';
 import type { VoiceGateway } from '@dinext/voice';
@@ -226,6 +226,12 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     }
   };
 
+  /** Someone has this task open right now, so an "Answer ready" in the bell would only repeat what they see. */
+  const watched = (threadId: string) => [...sockets.values()].some((subs) => subs.has(threadId));
+  const answerReady = (threadId: string) => {
+    if (!watched(threadId)) answerReady(threadId);
+  };
+
   const completeRun = (runId: string, threadId: string) => {
     const run = runs.get(runId);
     if (run?.done) return;
@@ -270,7 +276,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         return;
       }
       completeRun(runId, threadId);
-      notify(thread(threadId).owner, { group: 'agent_runs', title: 'Answer ready', detail: thread(threadId).summary.title, link: `/c/${threadId}` });
+      answerReady(threadId);
     } catch (err) {
       if (signal.aborted) return;
       run.done = true;
@@ -343,10 +349,21 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     return result;
   };
 
+  /** An access change needs a second person: an executive or an administrator other than the requester (AI-GRD-074). */
+  const SECOND_APPROVERS = new Set(['Executive', 'Administrator']);
+  const secondApprover = (a: PendingApproval, p: PersonaId) => Boolean(a.live && a.card.data.confirmation.secondApprover) && a.card.data.requestedBy.onBehalfOf !== sessionFor(p).user.id && SECOND_APPROVERS.has(PERSONAS[p].userClass ?? '');
+  /** Someone else's access changes waiting for this person, shown on their Home and in the bell. */
+  const awaitingMe = () => [...approvals.values()].filter((a) => !a.decided && new Date(a.card.data.expiresAt).getTime() > Date.now() && a.threadId && foreign(threads.get(a.threadId)) && secondApprover(a, persona()));
+
   const decide = async (approvalId: string, key: string, body: ApprovalDecisionRequest): Promise<{ status: number; body: unknown }> => {
     if (idempotency.has(key)) return idempotency.get(key)!;
     const a = approvals.get(approvalId);
-    if (!a || (a.threadId && foreign(threads.get(a.threadId)))) return { status: 404, body: { code: 'NOT_FOUND' } };
+    const asSecond = Boolean(a && secondApprover(a, persona()));
+    if (!a || (a.threadId && foreign(threads.get(a.threadId)) && !asSecond)) return { status: 404, body: { code: 'NOT_FOUND' } };
+    // The requester's own Approve on an access change sends it for the second approval; nothing changes yet.
+    if (a.live && a.card.data.confirmation.secondApprover && !asSecond && body.decision === 'approve') {
+      return { status: 409, body: { code: 'AWAITING_SECOND_APPROVER', message: 'Sent for a second approval. An executive or another administrator approves it from their Home; nothing changes until they do.' } };
+    }
     const c = a.card.data.confirmation;
     if (a.decided) return a.decided.status === 410 ? { status: 410, body: { code: 'EXPIRED' } } : { status: 409, body: { code: 'ALREADY_DECIDED' } };
     if (new Date(a.card.data.expiresAt).getTime() < Date.now()) return { status: 410, body: { code: 'EXPIRED' } };
@@ -402,7 +419,12 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     const cards = pendingHomeCards();
     const failed = (err: unknown) => (console.error('[notifications]', err), null);
     const overdue = [...((await live?.overdueReferrals(persona()).catch(failed)) ?? []), ...((await live?.stalledApplications(persona()).catch(failed)) ?? []), ...((await live?.waitingPayouts(persona()).catch(failed)) ?? [])];
-    const open: Omit<AppNotification, 'read'>[] = cards.length ? [{ id: 'ntc_home_approvals', group: 'approvals', title: `${cards.length} ${cards.length === 1 ? 'approval' : 'approvals'} waiting`, detail: cards.map((c) => c.title).join(' · '), at: startedAt, link: '/home' }, ...overdue] : overdue;
+    const health = await live?.platform(persona()).catch(failed);
+    const system: Omit<AppNotification, 'read'>[] = (health?.data.items ?? [])
+      .filter((i) => i.badge && (i.badge.tone === 'danger' || i.badge.tone === 'warning'))
+      .map((i) => ({ id: `ntc_system_${i.id}`, group: 'system', title: i.title, detail: i.subtitle, at: startedAt, link: i.link ?? '/admin' }));
+    const second: Omit<AppNotification, 'read'>[] = awaitingMe().map((a) => ({ id: `ntc_second_${a.card.data.approvalId}`, group: 'approvals', title: `Second approval needed: ${a.card.data.summary}`, detail: `Requested by ${a.card.data.requestedBy.onBehalfOfName ?? 'a colleague'}`, at: startedAt, link: '/home' }));
+    const open: Omit<AppNotification, 'read'>[] = [...system, ...second, ...(cards.length ? [{ id: 'ntc_home_approvals', group: 'approvals' as const, title: `${cards.length} ${cards.length === 1 ? 'approval' : 'approvals'} waiting`, detail: cards.map((c) => c.title).join(' · '), at: startedAt, link: '/home' }] : []), ...overdue];
     return open.map((n) => ({ ...n, read: readNotices.has(`${me()}:${n.id}`) }));
   };
 
@@ -413,6 +435,13 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     const path = url.pathname;
     const method = req.method ?? 'GET';
     if (path === '/healthz') return json(res, 200, { status: 'ok' });
+    // Signing out drops the demo access and the persona, then goes back to the start (Entra ID sign-out replaces this, spec 25.5).
+    if (path === '/v1/sign-out') {
+      const secure = req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
+      res.writeHead(303, { location: gate ? '/demo-access' : '/', 'set-cookie': [`di_demo=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`, `dinext_persona=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`] });
+      res.end();
+      return;
+    }
     if (gate && (await gate.handle(req, res, path))) return;
     if (files && !path.startsWith('/v1/') && (method === 'GET' || method === 'HEAD')) return files(path, res);
     try {
@@ -424,7 +453,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       }
       if (method === 'GET' && path === '/v1/home') {
         const waiting = waitingInTasks();
-        const home = homeFor(persona(), [...waiting.map((a) => a.card), ...pendingHomeCards()]);
+        const home = homeFor(persona(), [...waiting.map((a) => a.card), ...awaitingMe().map((a) => a.card), ...pendingHomeCards()]);
         const asked = home.sections.find((s) => s.id === 'approvals');
         if (asked && waiting.length) asked.tasks = Object.fromEntries(waiting.map((a) => [a.card.data.approvalId, a.threadId!]));
         // With the warehouse up, every figure on Home is real: a section with nothing real to show is
@@ -445,6 +474,15 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
           home.jump = real.jump;
           // Pinned holds only reports someone actually put on Home, one tab each.
           home.tabs = real.pinned.map((p) => ({ id: `pin-${p.templateId}`, label: p.name, blocks: [p.canvas] }));
+        }
+        // An administrator runs the platform: Platform health follows "Needs you", and the balance-sheet
+        // figures and "Worth a look" are for the people who run the institution.
+        const platform = await live?.platform(persona()).catch((err) => (console.error('[home]', err), null));
+        if (platform) {
+          home.sections = home.sections.filter((s) => s.id !== 'what_changed' && s.id !== 'look_at');
+          const at = home.sections.findIndex((s) => s.id === 'approvals');
+          home.sections.splice(at + 1, 0, { id: 'platform', title: 'Platform health', blocks: [platform] });
+          home.narrative = undefined;
         }
         // "Needs you" leads with the work DI ranked, ahead of the approvals waiting.
         const today = await live?.today(persona()).catch((err) => (console.error('[home]', err), null));
