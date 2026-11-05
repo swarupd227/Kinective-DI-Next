@@ -39,3 +39,4 @@ export { IRR_LIMITS, IrrService, SHOCKS_BP } from './irr.ts';
 export { CHARGED_OFF, DQ_BUCKETS, DelinquencyService, type DqScope } from './delinquency.ts';
 export { LIQUIDITY_POLICY, LiquidityService, pctAgainst } from './liquidity.ts';
 export { MEMBER_AGE_BANDS, MEMBERSHIP_BENCHMARKS, MembershipService, type MembershipScope } from './membership.ts';
+export { ALCO_POLICY, AlcoService, type PolicyLine, type PolicyStatus } from './alco.ts';

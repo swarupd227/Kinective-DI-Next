@@ -7,7 +7,9 @@ export type WidgetSize = 'quarter' | 'third' | 'half' | 'full';
 export interface ReportWidget {
   id: string;
   title: string;
-  kind: 'kpi' | 'chart' | 'table' | 'text';
+  kind: 'kpi' | 'chart' | 'table' | 'text' | 'analysis';
+  /** An analysis section the report runner fills from a service, such as "alco.policy". */
+  analysis?: string;
   /** Semantic metric names: one for a kpi or chart, up to four for a table. */
   metrics: string[];
   /** A dimension to group by (chart and table), such as "branch". */
@@ -198,13 +200,15 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
     {
       templateId: 'alco_monthly_pack',
       name: 'ALCO monthly pack',
-      description: `Capital, earnings, balances, the deposit mix, certificates maturing and credit quality for the asset-liability committee.${institutionType === 'credit_union' ? ' Interest rate risk and liquidity have their own pages.' : ''}`,
+      description: 'The asset-liability committee’s review: policy compliance first, then earnings and margin, interest rate risk, liquidity, capital, funding and certificate maturities, and the loan book’s mix, yields, growth and concentration.',
       folder: 'Periodic / Monthly',
       settings: { ...settings('month', ['Executive', 'Finance']), addHierarchyControls: false },
-      layoutVersion: 1,
+      layoutVersion: 2,
       pendingEdits: [],
       widgets: [
-        // Capital and earnings come from the 5300, which only a credit union files.
+        // What the committee reads first: every board limit, the actual figure and whether it's met.
+        { id: 'a1', title: 'Policy compliance', kind: 'analysis', analysis: 'alco.policy', metrics: [], size: 'full' },
+        // Capital and earnings from the 5300, which only a credit union files; a bank's are in the sections below.
         ...(institutionType === 'credit_union'
           ? [
               { id: 'k4', title: 'Net worth ratio', kind: 'kpi' as const, metrics: ['net_worth_ratio'], size: 'third' as const },
@@ -212,13 +216,18 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
               { id: 'k6', title: 'Return on assets', kind: 'kpi' as const, metrics: ['return_on_assets'], size: 'third' as const },
             ]
           : []),
-        { id: 'k1', title: 'Loan-to-share', kind: 'kpi', metrics: ['loan_to_share_ratio'], compare: true, size: 'third' },
-        { id: 'k2', title: 'Delinquency 60+', kind: 'kpi', metrics: ['delinquency_ratio_60_plus'], compare: true, size: 'third' },
-        { id: 'k3', title: 'Total deposits', kind: 'kpi', metrics: ['deposit_balance'], compare: true, size: 'third' },
-        { id: 'k7', title: 'Certificates maturing in 90 days', kind: 'kpi', metrics: ['certificates_maturing_90_days'], size: 'third' },
-        { id: 'c1', title: 'Loan balance by category, last 13 months', kind: 'chart', chart: 'stacked_bar', metrics: ['loan_balance'], by: 'loan_category', trend: 13, size: 'full' },
-        { id: 'c2', title: 'Deposit mix', kind: 'chart', chart: 'donut', metrics: ['deposit_balance'], by: 'deposit_category', size: 'half' },
-        { id: 't1', title: 'Deposits by product', kind: 'table', metrics: ['deposit_balance', 'deposit_account_count'], by: 'deposit_category', size: 'half' },
+        { id: 'k1', title: institutionType === 'credit_union' ? 'Loan-to-share' : 'Loan-to-deposit', kind: 'kpi', metrics: ['loan_to_share_ratio'], compare: true, size: 'quarter' },
+        { id: 'k2', title: 'Delinquency 60+', kind: 'kpi', metrics: ['delinquency_ratio_60_plus'], compare: true, size: 'quarter' },
+        { id: 'k3', title: 'Total deposits', kind: 'kpi', metrics: ['deposit_balance'], compare: true, size: 'quarter' },
+        { id: 'k7', title: 'Certificates maturing in 90 days', kind: 'kpi', metrics: ['certificates_maturing_90_days'], size: 'quarter' },
+        { id: 'a2', title: 'Earnings: yields, cost of funds and margin', kind: 'analysis', analysis: 'alco.earnings', metrics: [], size: 'half' },
+        { id: 'a3', title: 'Interest rate risk: NII and NEV under rate shocks', kind: 'analysis', analysis: 'alco.irr', metrics: [], size: 'half' },
+        { id: 'a4', title: 'Liquidity: available funds and a deposit run', kind: 'analysis', analysis: 'alco.liquidity', metrics: [], size: 'half' },
+        { id: 'a5', title: 'Capital', kind: 'analysis', analysis: 'alco.capital', metrics: [], size: 'half' },
+        { id: 'a6', title: 'Funding: deposits and certificate maturities', kind: 'analysis', analysis: 'alco.funding', metrics: [], size: 'full' },
+        { id: 'a7', title: 'Loans: mix, yields, growth and concentration', kind: 'analysis', analysis: 'alco.loans', metrics: [], size: 'full' },
+        { id: 'c1', title: 'Loan balance by category, last 13 months', kind: 'chart', chart: 'stacked_bar', metrics: ['loan_balance'], by: 'loan_category', trend: 13, size: 'half' },
+        { id: 'c2', title: 'Deposit balance by product, last 13 months', kind: 'chart', chart: 'stacked_bar', metrics: ['deposit_balance'], by: 'deposit_category', trend: 13, size: 'half' },
       ],
     },
     {

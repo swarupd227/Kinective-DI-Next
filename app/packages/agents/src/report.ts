@@ -72,15 +72,22 @@ export interface ReportControls {
   node?: string;
 }
 
+/** Sections a service computes on each run (the ALCO package's policy, rate risk, liquidity and so on). */
+export interface ReportAnalyses {
+  keys: string[];
+  run: (key: string, runId: string) => Promise<{ block: Block; take?: DiTake }>;
+}
+
 export interface RunContext {
   purviewBranches?: string[];
   canViewSql: boolean;
+  analyses?: ReportAnalyses | null;
   /** The person's user class: a saved report limited to some classes opens only for them. */
   userClass?: string;
 }
 
 const SIZE_W: Record<WidgetSize, number> = { quarter: 3, third: 4, half: 6, full: 12 };
-const HEIGHT: Record<ReportWidget['kind'], number> = { kpi: 2, chart: 4, table: 4, text: 2 };
+const HEIGHT: Record<ReportWidget['kind'], number> = { kpi: 2, chart: 4, table: 4, text: 2, analysis: 5 };
 
 /** Widgets flow left to right on a 12-column grid (spec 8.9). */
 export function layout(widgets: ReportWidget[]) {
@@ -123,7 +130,13 @@ export function resolveControls(def: ReportDefinition, input: ReportControls, sv
 }
 
 /** One widget's block. A failure becomes a notice in its place; the rest of the report still runs. */
-async function widgetBlock(w: ReportWidget, def: ReportDefinition, c: { period: string; node: string }, svc: SemanticService, ctx: RunContext, runId: string): Promise<{ block: Block; sql?: string[] }> {
+async function widgetBlock(w: ReportWidget, def: ReportDefinition, c: { period: string; node: string }, svc: SemanticService, ctx: RunContext, runId: string): Promise<{ block: Block; sql?: string[]; take?: DiTake }> {
+  if (w.kind === 'analysis') {
+    // Whole-institution analyses, as of the build: they don't follow the period or branch controls.
+    if (!w.analysis || !ctx.analyses?.keys.includes(w.analysis)) return { block: noticeBlock('not_supported', `${w.title} is not available here`, REPORT_AGENT, runId, { detail: 'This section needs an analysis that isn’t set up for this institution.' }) };
+    const r = await ctx.analyses.run(w.analysis, runId);
+    return { block: { ...r.block, title: w.title } as Block, take: r.take };
+  }
   const type = def.settings.periodType;
   const filters = [...(c.node !== 'all' ? [{ dimension: 'branch', op: 'in' as const, values: [c.node] }] : []), ...(w.where ? [{ dimension: w.where.dimension, op: 'in' as const, values: w.where.values }] : [])];
   const scope = c.node === 'all' ? '' : ` · ${c.node}`;
@@ -244,7 +257,8 @@ export async function runReport(def: ReportDefinition, input: ReportControls, sv
       mode: meta.mode,
       version: meta.version,
       periodLabel: c.periodLabel,
-      take: reportTake(widgets, c.periodLabel, c.node),
+      // An analysis that says what matters most (a policy breach) leads; otherwise the biggest move.
+      take: built.find((b) => b.take)?.take ?? reportTake(widgets, c.periodLabel, c.node),
       controls: c.controls,
       widgets,
       pendingEdits: def.pendingEdits.map((e) => ({ id: e.id, widgetId: e.widgetId, summary: e.summary, kind: e.kind })),
@@ -540,7 +554,7 @@ function canvasForModel(c: ReportCanvasBlock) {
 
 export class ReportGateway {
   constructor(
-    private readonly deps: { store: ReportStore; semantic: SemanticService; approvals: ApprovalStore; tenantRaise?: Partial<Record<string, RiskTier>>; classSize?: (userClass: string) => Promise<number> },
+    private readonly deps: { store: ReportStore; semantic: SemanticService; approvals: ApprovalStore; tenantRaise?: Partial<Record<string, RiskTier>>; classSize?: (userClass: string) => Promise<number>; analyses?: ReportAnalyses | null },
     private readonly tools: ToolDef[] = REPORT_TOOLS,
   ) {}
 
@@ -561,7 +575,7 @@ export class ReportGateway {
     const t = await this.deps.store.get(templateId, ctx.user.id, { userClass: ctx.userClass });
     // Only the owner reaches a report that is turned off; it still doesn't run.
     if (t.definition.settings.enabled === false) throw new CoreError('INVALID', `${t.name} is turned off, so it doesn’t run. Ask DI to turn it back on.`);
-    return runReport(t.definition, controls, this.deps.semantic, ctx, { runId: ctx.runId, mode: t.status === 'draft' ? 'edit' : 'read', status: t.status === 'draft' ? 'draft' : t.status === 'stock' ? 'stock' : 'published', version: t.definition.layoutVersion, origin: originText(t), test: ctx.test });
+    return runReport(t.definition, controls, this.deps.semantic, { ...ctx, analyses: ctx.analyses ?? this.deps.analyses }, { runId: ctx.runId, mode: t.status === 'draft' ? 'edit' : 'read', status: t.status === 'draft' ? 'draft' : t.status === 'stock' ? 'stock' : 'published', version: t.definition.layoutVersion, origin: originText(t), test: ctx.test });
   }
 
   /** A report's settings, read-only, for its Settings view and for report_settings_show. */

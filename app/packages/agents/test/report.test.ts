@@ -35,7 +35,7 @@ describe('draft edits (FE-BLD-003)', () => {
   const base: ReportDefinition = { ...stockReports('credit_union')[1]!, templateId: 'draft_test', pendingEdits: [] };
   it('records each change for review, and revert restores exactly what was there', () => {
     const changed = applyEdits(base, [{ op: 'change', widget_id: 'c2', set: { chart: 'bar' } }, { op: 'remove', widget_id: 'k1' }, { op: 'add', widget: { title: 'New loans', kind: 'kpi', metrics: ['new_loan_amount'], compare: true, size: 'third' }, position: 0 }]);
-    expect(changed.pendingEdits.map((e) => e.summary)).toEqual(['Made “Deposit mix” a bar chart', 'Removed “Loan-to-share”', 'Added “New loans”']);
+    expect(changed.pendingEdits.map((e) => e.summary)).toEqual(['Made “Deposit balance by product, last 13 months” a bar chart', 'Removed “Loan-to-share”', 'Added “New loans”']);
     expect(changed.widgets[0]!.title).toBe('New loans');
     let d = changed;
     for (const e of [...changed.pendingEdits].reverse()) d = resolveEdit(d, e.id, 'revert');

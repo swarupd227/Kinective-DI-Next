@@ -1,0 +1,107 @@
+// The ALCO package's sections as report blocks: policy compliance, earnings, rate risk, liquidity,
+// capital, funding and the loan book, from the AlcoService. A report widget of kind "analysis" names
+// one, and the report runner fills it on each run, so the ALCO monthly pack carries the committee's
+// whole review, not only the balances. One analysis per run serves every section.
+import type { Block, DiTake, TableBlock } from '@dinext/block-schemas';
+import type { AlcoService } from '@dinext/di-core';
+import { moduleTable } from './moduleAgent.ts';
+import type { ReportAnalyses } from './report.ts';
+
+type Cols = TableBlock['data']['columns'];
+const p1 = (n: number) => `${n.toFixed(1)}%`;
+const p2 = (n: number) => `${n.toFixed(2)}%`;
+const signed = (n: number) => `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(1)}%`;
+const shock = (bp: number) => (bp === 0 ? 'Base' : `${bp > 0 ? '+' : ''}${bp} bp`);
+
+export const ALCO_SECTIONS = ['alco.policy', 'alco.earnings', 'alco.irr', 'alco.liquidity', 'alco.capital', 'alco.funding', 'alco.loans'] as const;
+
+export function alcoAnalyses(svc: AlcoService): ReportAnalyses {
+  const runs = new Map<string, ReturnType<AlcoService['analysis']>>();
+  const once = (runId: string) => {
+    if (!runs.has(runId)) {
+      runs.set(runId, svc.analysis());
+      // Keep only the last few runs.
+      if (runs.size > 8) runs.delete(runs.keys().next().value!);
+    }
+    return runs.get(runId)!;
+  };
+  const text = (field: string, headerName: string) => ({ field, headerName, type: 'text' as const });
+  const money = (field: string, headerName: string) => ({ field, headerName, type: 'currency' as const });
+
+  return {
+    keys: [...ALCO_SECTIONS],
+    async run(key, runId): Promise<{ block: Block; take?: DiTake }> {
+      const a = await once(runId);
+      const who = { agent: 'ALCO', sources: [{ kind: 'table' as const, label: a.bank ? 'Loans, deposits and the balance sheet' : 'Loans, shares and the latest 5300', ref: 'table:cdm_loan' }] };
+      const t = (title: string, op: string, cols: Cols, rows: Record<string, string | number>[], subtitle?: string) => ({ ...moduleTable(who, title, runId, op, cols, rows, a.asOf), ...(subtitle ? { subtitle } : {}) }) as Block;
+      const deposits = a.bank ? 'Deposits' : 'Shares';
+      switch (key) {
+        case 'alco.policy': {
+          const order = { Breach: 0, Watch: 1, Within: 2 } as const;
+          const lines = [...a.policy].sort((x, y) => order[x.status] - order[y.status] || y.closeness - x.closeness);
+          const first = a.breaches[0];
+          const ask = first ? (/nev|net interest/i.test(first.measure) ? 'What drives our rate risk?' : /liquid/i.test(first.measure) ? 'How is our liquidity?' : /commercial real estate|business loans/i.test(first.measure) ? 'Show loan balance by loan category' : 'What changed since last month-end?') : 'What drives our rate risk?';
+          return {
+            block: t('Policy compliance', 'alco.policy', [text('status', 'Status'), text('area', 'Area'), text('measure', 'Measure'), text('actual', 'Actual'), text('policy', 'Policy')], lines.map((l) => ({ status: l.status, area: l.area, measure: l.measure, actual: l.actual, policy: l.policy })), `Every board limit at the ${new Date(`${a.asOf}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })} build, breaches first. Rate risk and liquidity are DI’s estimates; the ALM vendor’s model is the one of record.`),
+            take: { headline: a.headline, action: { label: first ? 'Why is it outside policy?' : 'What drives our rate risk?', ask } },
+          };
+        }
+        case 'alco.earnings': {
+          const e = a.earnings;
+          const rows = [
+            { item: 'Yield on earning assets', value: p2(e.yieldPct) },
+            { item: a.bank ? 'Cost of funds' : 'Cost of funds (shares and borrowings)', value: p2(e.costPct) },
+            { item: 'Spread', value: p2(e.spreadPct) },
+            { item: 'Net interest margin', value: p2(e.nimPct) },
+            { item: 'Net interest income, next 12 months', value: `$${(e.nii / 1e6).toFixed(1)}M` },
+            ...e.lines.map((l) => ({ item: `${l.side === 'asset' ? 'Yield' : 'Cost'}: ${l.name}`, value: p2(l.ratePct) })),
+          ];
+          return { block: t('Earnings: yields, cost of funds and margin', 'alco.earnings', [text('item', 'Measure'), text('value', 'Annualized')], rows) };
+        }
+        case 'alco.irr': {
+          const s = a.irr.scenarios;
+          return {
+            block: t('Interest rate risk: NII and NEV under rate shocks', 'alco.irr', [text('shock', 'Shock'), text('nii', 'NII change'), text('nev', 'NEV change'), text('ratio', 'NEV ratio'), text('limits', 'Board limits')], s.map((x) => ({ shock: shock(x.shockBp), nii: x.shockBp ? signed(x.niiPct) : '—', nev: x.shockBp ? signed(x.nevPct) : '—', ratio: p1(x.nevRatio), limits: x.withinLimits ? 'Within' : 'Breach' }))),
+          };
+        }
+        case 'alco.liquidity': {
+          const l = a.liq;
+          return {
+            block: t('Liquidity: available funds and a deposit run', 'alco.liquidity', [text('item', 'Measure'), text('value', 'Value')], [
+              { item: 'On balance sheet (cash and investments within a year)', value: `$${(l.liquid / 1e6).toFixed(1)}M` },
+              { item: 'Borrowing capacity (FHLB, discount window, securities, lines)', value: `$${(l.contingent / 1e6).toFixed(1)}M` },
+              { item: `Available liquidity to ${deposits.toLowerCase()}`, value: p1(l.availableToShares) },
+              ...l.stress.map((x) => ({ item: `${x.pct}% of ${deposits.toLowerCase()} leave in 30 days`, value: x.covered ? `Covered ${x.coverage.toFixed(1)}×, ${x.days} days` : `Short $${(x.shortfall / 1e6).toFixed(1)}M` })),
+            ]),
+          };
+        }
+        case 'alco.capital': {
+          const c = a.capital;
+          return {
+            block: t('Capital', 'alco.capital', [text('item', 'Measure'), text('value', 'Actual'), text('min', 'Well capitalized')], [
+              ...c.lines.map((x) => ({ item: x.name, value: p1(x.value), min: `${x.limit}%` })),
+              { item: a.bank ? 'Equity capital' : 'Net worth', value: `$${(c.equity / 1e6).toFixed(1)}M`, min: '—' },
+            ], c.basis),
+          };
+        }
+        case 'alco.funding': {
+          const f = a.funding;
+          const mix = f.mix.map((m) => ({ group: 'Mix', item: m.category, balance: Math.round(m.balance), share: p1(m.sharePct), rate: p2(m.ratePct) }));
+          const ladder = f.ladder.map((l) => ({ group: 'Certificates maturing', item: l.band, balance: Math.round(l.balance), share: p1(l.sharePct), rate: p2(l.ratePct) }));
+          return {
+            block: t('Funding', 'alco.funding', [text('group', ''), text('item', 'Product or maturity'), money('balance', 'Balance'), text('share', 'Share'), text('rate', 'Rate paid')], [...mix, ...ladder], `Cost of ${deposits.toLowerCase()} ${p2(f.costOfDepositsPct)}; certificates and money market are ${p1(f.rateSensitivePct)} of ${deposits.toLowerCase()}, the funding most likely to move with rates.`),
+          };
+        }
+        case 'alco.loans': {
+          const l = a.loans;
+          const c = l.concentration;
+          return {
+            block: t('Loans', 'alco.loans', [text('category', 'Loan type'), money('balance', 'Balance'), text('share', 'Share'), text('rate', 'Yield'), text('growth', '12-month growth'), text('dq', '60+ delinquent')], l.lines.map((x) => ({ category: x.category, balance: Math.round(x.balance), share: p1(x.sharePct), rate: p2(x.ratePct), growth: x.growthPct === null ? '—' : signed(x.growthPct), dq: p2(x.dq60Pct) })), `Loan yield ${p2(l.yieldPct)}; ${c.name.toLowerCase()} is ${c.unit === '%' ? `${Math.round(c.value)}%` : `${c.value.toFixed(2)}×`} (limit ${c.unit === '%' ? `${c.limit}%` : `${c.limit}×`}).`),
+          };
+        }
+        default:
+          throw new Error(`Unknown ALCO section ${key}`);
+      }
+    },
+  };
+}

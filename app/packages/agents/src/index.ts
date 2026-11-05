@@ -42,3 +42,4 @@ export { delinquencyModule } from './delinquency.ts';
 export { liquidityModule, runoffFrom } from './liquidity.ts';
 export { membershipModule } from './membership.ts';
 export { bankText } from './concierge.ts';
+export { ALCO_SECTIONS, alcoAnalyses } from './alco.ts';
