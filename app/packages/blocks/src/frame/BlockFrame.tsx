@@ -128,7 +128,8 @@ export function BlockFrame({ block, status = 'complete', progressText, bare, hea
         <p className={styles.stale} role="note">
           <TriangleAlert size={14} aria-hidden />
           {/* The date comes from the data itself: never "last night", which is wrong once a build is days old. */}
-          From the {block.freshness.asOf ? formatDay(new Date(`${block.freshness.asOf.slice(0, 10)}T12:00:00Z`)) : 'last'} build. No newer build has finished.
+          {/* Without a build id the date is a source's own load (the loan system's), not a DI build. */}
+          From the {block.freshness.asOf ? formatDay(new Date(`${block.freshness.asOf.slice(0, 10)}T12:00:00Z`)) : 'last'} {block.freshness.buildId ? 'build. No newer build has finished.' : 'load. No newer load has arrived.'}
         </p>
       )}
 

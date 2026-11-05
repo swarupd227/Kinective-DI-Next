@@ -3,10 +3,11 @@
 import { lazy, Suspense, useRef, type KeyboardEvent, type PointerEvent } from 'react';
 import { Link, useMatch } from 'react-router';
 import clsx from 'clsx';
-import { ArrowLeft, ExternalLink, Maximize2, Minimize2, X } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Maximize2, MessageSquarePlus, Minimize2, X } from 'lucide-react';
 import { IconButton, Skeleton } from '@dinext/ui';
 import { useSession } from '../session/SessionProvider.tsx';
-import { useUi, type WorkspaceView } from './uiStore.ts';
+import type { ContextRef } from '@dinext/block-schemas';
+import { useUi, viewKey, type WorkspaceView } from './uiStore.ts';
 import { TableWorkspace } from '../workspace/TableWorkspace.tsx';
 import { PagePane } from './PagePane.tsx';
 import styles from './WorkspacePane.module.css';
@@ -20,9 +21,24 @@ const TaskOutput = lazy(() => import('../workspace/TaskPanel.tsx').then((m) => (
 export type PaneMode = 'side' | 'sheet' | 'max';
 
 export function WorkspacePane({ mode }: { mode: PaneMode }) {
-  const { workspace, workspaceWidth, setWorkspaceWidth, workspaceMaximized, toggleWorkspaceMax, closeWorkspace, openWorkspace } = useUi();
+  const { workspace, workspaceTrail, workspaceBack, workspaceWidth, setWorkspaceWidth, workspaceMaximized, toggleWorkspaceMax, closeWorkspace, openWorkspace, addContext } = useUi();
   const paneRef = useRef<HTMLElement>(null);
+  const routeThread = useMatch('/c/:threadId/*')?.params.threadId;
+  const threadId = routeThread && routeThread !== 'new' ? routeThread : undefined;
   if (!workspace) return null;
+  const previous = workspaceTrail.length > 1 ? workspaceTrail[workspaceTrail.length - 2] : null;
+  const chip = contextFor(workspace);
+
+  // "Ask about this" names what is open (its record or block, never its data) on the next message.
+  const askAbout = () => {
+    if (!chip || !threadId) return;
+    addContext(threadId, chip);
+    // The conversation has to be in view for the question (and any approval it raises): a widened
+    // pane gives way, and a phone's sheet steps aside.
+    if (mode === 'max') toggleWorkspaceMax();
+    else if (mode === 'sheet') closeWorkspace();
+    document.querySelector<HTMLTextAreaElement>('[data-region="bar"] textarea, textarea')?.focus();
+  };
 
   // Dragging the edge resizes; the separator is also operable with arrow keys (spec 10.7, 2.5.7).
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
@@ -68,7 +84,9 @@ export function WorkspacePane({ mode }: { mode: PaneMode }) {
       )}
       {/* eslint-enable jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}
       <header className={styles.header}>
-        {workspace.kind === 'output' ? (
+        {previous ? (
+          <IconButton label={`Back to ${previous.label}`} icon={<ArrowLeft size={18} aria-hidden />} onClick={() => workspaceBack()} />
+        ) : workspace.kind === 'output' ? (
           <IconButton label="Back to progress" icon={<ArrowLeft size={18} aria-hidden />} onClick={() => openWorkspace({ kind: 'task', threadId: workspace.threadId, label: 'This task' })} />
         ) : (
           mode === 'sheet' && <IconButton label="Back to conversation" icon={<ArrowLeft size={18} aria-hidden />} onClick={closeWorkspace} />
@@ -76,7 +94,18 @@ export function WorkspacePane({ mode }: { mode: PaneMode }) {
         <div className={styles.titles}>
           <h2 className={styles.title}>{workspace.label}</h2>
         </div>
+        {chip && threadId && (
+          <button type="button" className={styles.ask} onClick={askAbout} title="Ask DI about what is open here">
+            <MessageSquarePlus size={14} aria-hidden />
+            <span className={styles.askText}>Ask about this</span>
+          </button>
+        )}
         {workspace.kind === 'member' && <FullRecordLink token={workspace.ref} />}
+        {workspace.kind === 'page' && (
+          <Link to={workspace.path} className={styles.fullLink} aria-label={`Open ${workspace.label} as a page`} title="Open as a page">
+            <ExternalLink size={14} aria-hidden />
+          </Link>
+        )}
         {mode !== 'sheet' && (
           <IconButton
             label={workspaceMaximized ? 'Restore workspace' : 'Maximise workspace'}
@@ -86,11 +115,43 @@ export function WorkspacePane({ mode }: { mode: PaneMode }) {
         )}
         <IconButton label="Close workspace" icon={<X size={16} aria-hidden />} onClick={closeWorkspace} />
       </header>
+      {workspaceTrail.length > 1 && (
+        <nav className={styles.crumbs} aria-label="Opened in this pane">
+          <ol>
+            {workspaceTrail.slice(-4).map((v, j, shown) => { const i = workspaceTrail.length - shown.length + j; return (
+              <li key={`${viewKey(v)}-${i}`}>
+                {i < workspaceTrail.length - 1 ? (
+                  <button type="button" onClick={() => workspaceBack(i)}>
+                    {v.label}
+                  </button>
+                ) : (
+                  <span aria-current="page">{v.label}</span>
+                )}
+              </li>
+            ); })}
+          </ol>
+        </nav>
+      )}
       <div className={clsx(styles.body, workspace.kind === 'page' && styles.pageBody)}>
         <WorkspaceContent view={workspace} />
       </div>
     </aside>
   );
+}
+
+function contextFor(v: WorkspaceView): ContextRef | null {
+  switch (v.kind) {
+    case 'member':
+      return { type: 'member', ref: v.ref, label: v.label };
+    case 'table':
+      return { type: 'table', ref: v.tableId, label: v.label };
+    case 'block':
+      return { type: 'table', ref: `block:${v.block.id}`, label: v.label };
+    case 'output':
+      return { type: 'block', ref: v.blockId, label: v.label };
+    default:
+      return null;
+  }
 }
 
 function FullRecordLink({ token }: { token: string }) {

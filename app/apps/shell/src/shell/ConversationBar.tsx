@@ -63,6 +63,10 @@ export function ConversationBar({ threadId, collapsedByDefault, hero = false }: 
     const t = threadId ? s.threads[threadId] : undefined;
     return t?.turns.findLast((x) => x.kind === 'agent' && x.state === 'running') as { runId: string } | undefined;
   });
+  // A task waiting on an approval card isn't working: the bar offers a follow-up, not Stop. The card's
+  // own buttons decide the task, and Esc still stops it.
+  const waitingOnYou = useStore(stream.store, (s) => Boolean(threadId && s.threads[threadId]?.pendingApprovals.length));
+  const working = running && !waitingOnYou;
 
   // ---- voice (spec 7) ----
   const voice = useVoice();
@@ -510,7 +514,7 @@ export function ConversationBar({ threadId, collapsedByDefault, hero = false }: 
             ref={ref}
             rows={1}
             className={styles.input}
-            placeholder={running ? 'Add an instruction…' : threadId ? 'Ask a follow-up…' : bp === 'phone' ? 'Give DI a task…' : `Give DI a task or ask a question. @ for a ${terms.person} or branch`}
+            placeholder={working ? 'Add an instruction…' : threadId ? 'Ask a follow-up…' : bp === 'phone' ? 'Give DI a task…' : `Give DI a task or ask a question. @ for a ${terms.person} or branch`}
             value={text}
             onChange={(e) => {
               setText(e.target.value);
@@ -525,7 +529,7 @@ export function ConversationBar({ threadId, collapsedByDefault, hero = false }: 
             aria-autocomplete="list"
           />
           {micButton}
-          {running && !text ? (
+          {working && running && !text ? (
             <button type="button" className={clsx(styles.send, styles.stop)} onClick={() => void api.cancelRun(running.runId)} aria-label="Stop the run" aria-keyshortcuts="Escape">
               <Square size={14} aria-hidden />
             </button>

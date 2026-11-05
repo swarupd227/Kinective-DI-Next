@@ -120,7 +120,7 @@ describe.skipIf(!available)('Relationship agent, offline planner', () => {
     const r = await runRelationshipOffline(input('Why is her attrition risk medium?'), { gateway, relationship }, state, why.s);
     expect(r.outcome).toBe('explained');
     expect(why.texts[0]).toBe('Suzanne’s attrition risk is 6 of 10 (Medium), mainly because of deposit balances down 18% in 30 days and holds only one product.');
-    expect(why.blocks[0]).toMatchObject({ type: 'list', subtitle: 'Model attrition_v4, last run Oct 25, 2026' });
+    expect(why.blocks[0]).toMatchObject({ type: 'list', subtitle: 'Scored Oct 25, 2026' });
 
     // The name matches the member in focus, so no second search (names are not unique).
     const declined = sink();

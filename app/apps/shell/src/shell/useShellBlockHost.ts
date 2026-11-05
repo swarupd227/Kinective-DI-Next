@@ -76,8 +76,8 @@ export function useShellBlockHost({ threadId, onResolved, approvalDisplay = 'ful
             if (action.params?.question) void ask(String(action.params.question), member);
             return;
           case 'open_workspace':
-            openWorkspace({ kind: 'block', block, label: block.title ?? label });
-            addContext(threadId ?? 'new', { type: 'table', ref: `block:${block.id}`, label: block.title ?? label });
+            // The rows open beside the conversation; "Ask about this" in the pane puts them on the next message.
+            openWorkspace({ kind: 'block', block, label: block.title ?? label, threadId });
             return;
           case 'drill':
           case 'ask_followup':

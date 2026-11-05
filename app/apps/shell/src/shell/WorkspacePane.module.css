@@ -1,7 +1,8 @@
 .pane {
   position: relative;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
+  container: pane / inline-size;
   min-width: 0;
   min-height: 0;
   border-left: 1px solid var(--color-border-subtle);
@@ -106,6 +107,7 @@
 }
 
 .body {
+  flex: 1;
   min-height: 0;
   padding: var(--space-4);
   overflow: auto;
@@ -114,6 +116,100 @@
 .pageBody {
   padding: 0;
   overflow: hidden;
+}
+
+.ask {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 32px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: var(--type-caption-size);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ask:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text-primary);
+}
+
+.ask:focus-visible {
+  outline: 2px solid var(--color-focus-ring, var(--color-accent-default));
+  outline-offset: 1px;
+}
+
+/* A narrow pane keeps the icon; the words come back when there is room. */
+@container pane (width < 520px) {
+  .askText {
+    display: none;
+  }
+}
+
+.crumbs {
+  padding: var(--space-2) var(--space-5);
+  border-bottom: 1px solid var(--color-border-subtle);
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.crumbs ol {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.crumbs li {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 200px;
+}
+
+/* The open view's own name gets the room left over. */
+.crumbs li:last-child {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
+.crumbs li + li::before {
+  content: '›';
+  color: var(--color-text-muted);
+}
+
+.crumbs button {
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text-link);
+  font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.crumbs button:hover {
+  text-decoration: underline;
+}
+
+.crumbs [aria-current] {
+  overflow: hidden;
+  color: var(--color-text-primary);
+  text-overflow: ellipsis;
 }
 
 @keyframes pane-in {

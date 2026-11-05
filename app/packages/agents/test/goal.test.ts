@@ -249,7 +249,7 @@ describe.skipIf(!up)('goal work against the warehouse', () => {
       expect(state.status).toBe('closed');
       expect(r.plans[0]!.steps.map((s) => s.id)).toEqual(['find', 'review', 'topics', 'brief']);
       for (const b of r.blocks) expect(validateBlock(b).ok).toBe(true);
-      expect(r.blocks.filter((b) => b.output).map((b) => b.type)).toEqual(['member_360', 'list']);
+      expect(r.blocks.filter((b) => b.output).map((b) => b.type)).toEqual(['member_360', 'text', 'list']);
       expect(r.texts.join(' ')).toContain('Suzanne Jackson');
       expect(state.member?.name).toBe('Suzanne Jackson');
     });

@@ -189,6 +189,11 @@ export function verifyNarrative(template: string, resolved: Map<string, Resolved
       removed.push(s);
       return false;
     }
+    // A placeholder the model wrote badly ("{{total_chg}`") can't be checked or filled: the sentence goes.
+    if (/\{\{|\}\}/.test(withoutPlaceholders)) {
+      removed.push(s);
+      return false;
+    }
     if (bare.some((n) => !allowed.has(n))) {
       removed.push(s);
       return false;
@@ -201,7 +206,15 @@ export function verifyNarrative(template: string, resolved: Map<string, Resolved
     // A change placeholder carries its own direction word ("rose $938K"), so a narrative that also wrote
     // the word, or repeated the placeholder after "by", would read "rose rose" or "rose $938K by rose $938K".
     .replace(/(\b[a-z]+ (?:by )?[-$\d][\d.,]*(?:[KMB%]| ?bp)?) by \1/gi, '$1')
+    // "fell least $89.8K by $89.8K": the same figure twice with a word between.
+    .replace(/(\$[\d.,]+[KMB]?|[\d.,]+%) by \1(?![\d.])/g, 'by $1')
     .replace(/\b(rose|fell|grew|increased|decreased|declined|dropped|slipped|eased|improved|worsened|up|down)\s+(?:by\s+)?\1\b/gi, '$1')
+    // A change figure after "of", "to" or "from" is an amount, not a movement: "a total change of rose $19.8M".
+    .replace(/\b(of|to|from|at|with|than) (?:rose|fell|grew|up|down) (?=[-$\d])/gi, '$1 ')
+    // and before a verb it is the subject: "Northgate rose $3.5M were close behind" reads "Northgate ($3.5M)".
+    .replace(/((?:[A-Z][a-z]+ (?:rose|fell|grew) [-$\d][\d.,]*[KMB%]?(?:, | and ))*[A-Z][a-z]+ (?:rose|fell|grew) [-$\d][\d.,]*[KMB%]?)(?= (?:were|was|added|came|led|trailed|followed)\b)/g, (list: string) => list.replace(/([A-Z][a-z]+) (?:rose|fell|grew) ([-$\d][\d.,]*[KMB%]?)/g, '$1 ($2)'))
+    // "fell least {{x}} by {{x}}" ends as "fell least fell $89.8K": the second word goes.
+    .replace(/\b(rose|fell|grew)( most| least) \1 /g, '$1$2, by ')
     .trim();
   return { text, removed, unresolved };
 }

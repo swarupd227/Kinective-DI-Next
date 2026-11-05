@@ -68,9 +68,33 @@ export function PlanStepsView({ block }: { block: PlanStepsBlock }) {
   const now = useNow(running);
   const done = steps.filter((s) => s.state === 'done' || s.state === 'skipped').length;
   useStepAnnouncements(steps);
+  // A question's steps fold away once the answer is in, so a long conversation reads as questions and
+  // answers; a task's plan (it has an output) stays open in its progress pane.
+  const folds = !block.output && state === 'completed' && !steps.some((s) => s.state === 'failed' || s.state === 'needs_input');
+  const [open, setOpen] = useState(!folds);
+  const wasFolding = useRef(folds);
+  useEffect(() => {
+    if (folds && !wasFolding.current) setOpen(false);
+    wasFolding.current = folds;
+  }, [folds]);
+  const stepsId = `${block.id}-steps`;
+
+  if (folds && !open) {
+    const last = steps.at(-1)?.resultSummary;
+    return (
+      <button type="button" className={styles.folded} aria-expanded={false} aria-controls={stepsId} onClick={() => setOpen(true)}>
+        <Check size={14} aria-hidden className={styles.foldedIcon} />
+        <span className={styles.foldedText}>
+          {steps.length} {steps.length === 1 ? 'step' : 'steps'}
+          {last ? ` · ${last}` : ''}
+        </span>
+        <ChevronRight size={14} aria-hidden className={styles.chev} />
+      </button>
+    );
+  }
 
   return (
-    <div className={styles.plan}>
+    <div className={styles.plan} id={stepsId}>
       <div className={styles.summary}>
         <div className={styles.progressTrack} aria-hidden>
           <span className={styles.progressFill} style={{ width: `${steps.length ? (done / steps.length) * 100 : 0}%` }} />
@@ -79,6 +103,11 @@ export function PlanStepsView({ block }: { block: PlanStepsBlock }) {
           {state === 'cancelled' ? 'Cancelled · ' : state === 'failed' ? 'Stopped · ' : ''}
           {done} of {steps.length} steps
         </span>
+        {folds && (
+          <Button size="sm" variant="ghost" onClick={() => setOpen(false)} aria-expanded aria-controls={stepsId}>
+            Hide steps
+          </Button>
+        )}
         {cancellable && running && (
           <Button size="sm" variant="ghost" icon={<Square size={12} aria-hidden />} onClick={() => host.onCancelRun?.(runId)} aria-keyshortcuts="Escape">
             Stop

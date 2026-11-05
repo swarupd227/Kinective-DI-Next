@@ -41,6 +41,11 @@
   min-height: 0;
 }
 
+/* A block's own rows have no toolbar above them, so the grid takes the first row. */
+.noToolbar {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
 .count {
   color: var(--color-text-muted);
   font-size: var(--type-caption-size);

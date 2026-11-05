@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import type { Block, ContextRef } from '@dinext/block-schemas';
 
 /** A table from the catalog, a block's own rows at full size ("Open grid"), a member's 360 by token, a task's progress, one of its outputs, or a whole view opened beside the task. */
-export type WorkspaceView = { kind: 'table'; tableId: string; label: string } | { kind: 'block'; block: Block; label: string } | { kind: 'member'; ref: string; label: string } | { kind: 'task'; threadId: string; label: string } | { kind: 'output'; threadId: string; blockId: string; label: string } | { kind: 'page'; path: string; label: string };
+export type WorkspaceView = { kind: 'table'; tableId: string; label: string } | { kind: 'block'; block: Block; label: string; threadId?: string } | { kind: 'member'; ref: string; label: string } | { kind: 'task'; threadId: string; label: string } | { kind: 'output'; threadId: string; blockId: string; label: string } | { kind: 'page'; path: string; label: string };
 
 export interface RecentItem {
   kind: 'thread' | 'view';
@@ -17,6 +17,8 @@ interface UiState {
   mobileNavOpen: boolean;
   paletteOpen: boolean;
   workspace: WorkspaceView | null;
+  /** What was open in the pane before, oldest first, ending at the open view: Back walks it. */
+  workspaceTrail: WorkspaceView[];
   /** Workspace width as a percentage of the content area: 30-70, default 44 (spec 6.2). */
   workspaceWidth: number;
   workspaceMaximized: boolean;
@@ -32,6 +34,8 @@ interface UiState {
   setPalette: (open: boolean) => void;
   openWorkspace: (view: WorkspaceView) => void;
   closeWorkspace: () => void;
+  /** Back to an earlier view in the trail: the one before by default. */
+  workspaceBack: (index?: number) => void;
   setWorkspaceWidth: (pct: number) => void;
   toggleWorkspaceMax: () => void;
   addContext: (key: string, ref: ContextRef) => void;
@@ -41,6 +45,25 @@ interface UiState {
 }
 
 const sameRef = (a: ContextRef, b: ContextRef) => a.type === b.type && a.ref === b.ref;
+
+/** Which thing a view shows, so opening it again goes back to it rather than adding it twice. */
+export function viewKey(v: WorkspaceView): string {
+  switch (v.kind) {
+    case 'table':
+      return `table:${v.tableId}`;
+    case 'block':
+      return `block:${v.block.id}`;
+    case 'member':
+      return `member:${v.ref}`;
+    case 'task':
+      return `task:${v.threadId}`;
+    case 'output':
+      return `output:${v.blockId}`;
+    case 'page':
+      return `page:${v.path}`;
+  }
+}
+const TRAIL_MAX = 8;
 const clamp = (n: number) => Math.min(70, Math.max(30, Math.round(n)));
 
 export const useUi = create<UiState>((set) => ({
@@ -48,6 +71,7 @@ export const useUi = create<UiState>((set) => ({
   mobileNavOpen: false,
   paletteOpen: false,
   workspace: null,
+  workspaceTrail: [],
   workspaceWidth: 44,
   workspaceMaximized: false,
   contexts: {},
@@ -58,8 +82,22 @@ export const useUi = create<UiState>((set) => ({
   toggleNav: () => set((s) => ({ navCollapsed: !s.navCollapsed })),
   setMobileNav: (open) => set({ mobileNavOpen: open }),
   setPalette: (open) => set({ paletteOpen: open }),
-  openWorkspace: (view) => set({ workspace: view }),
-  closeWorkspace: () => set({ workspace: null, workspaceMaximized: false }),
+  // A new view goes on the end of the trail; one already on it is gone back to, not added twice.
+  openWorkspace: (view) =>
+    set((s) => {
+      const key = viewKey(view);
+      // A member's card from a task and their full record are the same person: one crumb, not two.
+      const at = s.workspaceTrail.findIndex((v) => viewKey(v) === key || (v.label === view.label && (v.kind === 'member' || view.kind === 'member')));
+      const trail = at >= 0 ? [...s.workspaceTrail.slice(0, at), view] : [...s.workspaceTrail, view].slice(-TRAIL_MAX);
+      return { workspace: view, workspaceTrail: trail };
+    }),
+  closeWorkspace: () => set({ workspace: null, workspaceTrail: [], workspaceMaximized: false }),
+  workspaceBack: (index) =>
+    set((s) => {
+      const i = index ?? s.workspaceTrail.length - 2;
+      const to = s.workspaceTrail[i];
+      return to ? { workspace: to, workspaceTrail: s.workspaceTrail.slice(0, i + 1) } : s;
+    }),
   setWorkspaceWidth: (pct) => set({ workspaceWidth: clamp(pct) }),
   toggleWorkspaceMax: () => set((s) => ({ workspaceMaximized: !s.workspaceMaximized })),
   addContext: (key, ref) =>

@@ -40,7 +40,8 @@ export function ThreadPage() {
   const wide = bp === 'desktop' || bp === 'laptop';
   const blocks = thread?.blocks;
   const hasPlan = Object.values(blocks ?? {}).some((b) => b.envelope.type === 'plan_steps' && b.envelope.output);
-  const report = Object.values(blocks ?? {}).find((b) => (b.envelope.type === 'report_canvas' || b.envelope.type === 'member_360') && b.envelope.output && b.status === 'complete');
+  // The latest document a task produced: a record, then the brief written from it.
+  const report = Object.values(blocks ?? {}).findLast((b) => (b.envelope.type === 'report_canvas' || b.envelope.type === 'member_360' || b.envelope.type === 'text') && b.envelope.output && b.status === 'complete');
   const openTask = () => useUi.getState().openWorkspace({ kind: 'task', threadId, label: 'This task' });
   const shown = useRef(new Set<string>());
   useEffect(() => {
@@ -133,6 +134,16 @@ export function ThreadPage() {
         const label = String(card.data.displayName);
         useUi.getState().addContext(threadId, { type: 'member', ref, label });
         if (bp === 'desktop' || bp === 'laptop') useUi.getState().openWorkspace({ kind: 'member', ref, label });
+      }
+      // With a result already open beside the conversation, a follow-up's result takes its place,
+      // so the pane shows what was just asked; Back returns to the one before. A closed pane stays
+      // closed: the answer is in the conversation.
+      const open = useUi.getState().workspace;
+      if (!card && t.state === 'completed' && open && open.kind !== 'task' && (bp === 'desktop' || bp === 'laptop')) {
+        // A task's own document (a brief, a report, a record) is what it opens; a list beside it doesn't replace it.
+        const own = blocks.some((b) => b && b.output && (b.type === 'text' || b.type === 'report_canvas' || b.type === 'member_360'));
+        const result = own ? undefined : blocks.findLast((b) => b && (b.type === 'chart' || b.type === 'table' || b.type === 'list'));
+        if (result) useUi.getState().openWorkspace({ kind: 'output', threadId, blockId: result.id, label: result.output?.label ?? result.title ?? 'Result' });
       }
       // An approved change to a member record (a decline) shows at once in an open 360.
       if (blocks.some((b) => b?.type === 'approval_card' && b.data.operation === 'relationship.suggestion.decline')) void queryClient.invalidateQueries({ queryKey: ['member'] });

@@ -33,6 +33,9 @@ export const MATCH_THRESHOLD = 3;
 const STOP = new Set(['the', 'a', 'an', 'of', 'for', 'by', 'in', 'on', 'to', 'and', 'or', 'what', 'how', 'is', 'are', 'was', 'were', 'our', 'my', 'me', 'show', 'give', 'tell', 'did', 'do', 'does', 'vs', 'versus', 'compared', 'with', 'last', 'this', 'per', 'each', 'all', 'at', 'from', 'over', 'which', 'many', 'much',
   // Everyday grammar, so "How many members do we have?" is not refused for "we" and "have".
   'we', 'us', 'i', 'you', 'your', 'they', 'their', 'it', 'its', 'have', 'has', 'had', 'got', 'get', 'be', 'been', 'being', 'there', 'that', 'these', 'those', 'any', 'so', 'just', 'right', 'whats', 'hows', 'currently',
+  // Words of a follow-up ("break that down", "why did deposits move", "which branch drove that"): they ask
+  // about a figure already on screen, they don't name a new one. ("Behind" stays: loans behind are delinquent.)
+  'break', 'broken', 'down', 'why', 'move', 'moved', 'moves', 'moving', 'drove', 'drive', 'drives', 'driving', 'driven', 'caused', 'now', 'same', 'instead', 'again',
   // Question words and fillers, so a refusal names the subject, never "if" or "happen".
   'if', 'when', 'where', 'why', 'who', 'would', 'could', 'should', 'can', 'will', 'happen', 'happens', 'happened', 'please', 'about', 'like', 'look', 'looks', 'see', 'into', 'up', 'out', 'than', 'then', 'now', 'today', 'trend', 'trending', 'trended', 'trends']);
 

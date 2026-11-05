@@ -56,6 +56,21 @@
   list-style: none;
 }
 
+.options li {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* A long option wraps inside the card instead of running past its edge. */
+.options button {
+  max-width: 100%;
+  height: auto;
+  min-height: 32px;
+  padding-block: var(--space-1);
+  white-space: normal;
+  text-align: left;
+}
+
 .info {
   background: var(--color-status-info-subtle);
 }

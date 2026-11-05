@@ -58,6 +58,11 @@
   overflow: hidden;
 }
 
+/* Earlier crumbs keep their size; only the page's own name shortens. */
+.trail li:not(:last-child) {
+  flex: none;
+}
+
 .trailLink {
   color: var(--color-text-secondary);
   text-decoration: none;
@@ -349,6 +354,12 @@
 @container topbar (max-width: 820px) {
   .kbd,
   .userText {
+    display: none;
+  }
+
+  /* Beside an open pane only the page's own name fits: Back and the sidebar lead to the rest. */
+  .trail li:not(:last-child),
+  .trail li:last-child .sep {
     display: none;
   }
 }

@@ -12,7 +12,7 @@ import type { ModuleWork } from './moduleAgent.ts';
 import { mostWaitOn, money, taskCard } from './pipelineAgent.ts';
 import type { RunSink } from './sink.ts';
 
-export const TODAY_REQUEST = /\bwhat should (i|we) (do|work on|focus on|start with|tackle)\b|\bplan (my|our) day\b|\bwhat needs (me|my attention)\b|\bwhere should i start\b|\bget (me|us) ready for (the|my|our) (day|week)\b/i;
+export const TODAY_REQUEST = /\bwhat (else )?should (i|we) (do|work on|focus on|start with|tackle)\b|\bplan (my|our) day\b|\bwhat needs (me|my attention)\b|\bwhere should i start\b|\bget (me|us) ready for (the|my|our) (day|week)\b/i;
 
 const MAX_ITEMS = 5;
 const FOLLOW_UPS = 3;

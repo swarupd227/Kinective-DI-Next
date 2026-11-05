@@ -30,6 +30,8 @@ export interface AnalyticsInput {
   canViewSql: boolean;
   history: MemoryTurn[];
   contextLabels: string[];
+  /** What other agents showed just before, when the last answer wasn't this agent's (a lineage, a task). */
+  earlier?: string;
 }
 
 export interface AnalyticsOutcome {
@@ -127,7 +129,7 @@ function userMessage(input: AnalyticsInput, catalog: CatalogResult) {
     .slice(-4)
     .map((h, i) => `<turn index="${i + 1}">\nQuestion: ${h.question}\nQueries: ${JSON.stringify(h.requests)}\nAnswer given: ${h.answer}\n</turn>`)
     .join('\n');
-  return `${history ? `Conversation so far:\n${history}\n\n` : ''}${input.contextLabels.length ? `The user has this in context: ${input.contextLabels.join('; ')}.\n\n` : ''}<data source="semantic.search" trust="data">
+  return `${input.earlier ?? ''}${history ? `Conversation so far:\n${history}\n\n` : ''}${input.contextLabels.length ? `The user has this in context: ${input.contextLabels.join('; ')}.\n\n` : ''}<data source="semantic.search" trust="data">
 ${JSON.stringify({ matched: catalog.matched, metrics: catalog.metrics.map((h) => ({ name: h.name, score: h.score })), dimensions: catalog.dimensions.map((h) => h.name), values: catalog.values, unknown_terms: catalog.unknownTerms })}
 </data>
 
@@ -208,7 +210,7 @@ export async function runAnalytics(input: AnalyticsInput, deps: { model: ModelCl
 
   // A first question that matches nothing in the catalog is refused without a model call (AI-GRD-052).
   // Terms with no definition anywhere in the model mean a guess, however well the other words match.
-  if (!catalog.matched && !input.history.length && !catalog.values.length && catalog.unknownTerms.length) {
+  if (!catalog.matched && !input.history.length && !input.earlier && !catalog.values.length && catalog.unknownTerms.length) {
     // Closest defined items first, then the most-asked metrics, as questions the user can pick.
     const names = [...catalog.metrics.map((h) => h.name), 'loan_balance', 'deposit_balance', 'member_count'];
     const closest = [...new Set(names)].slice(0, 3).map((n) => `Show ${svc.model.metrics[n]!.label.toLowerCase()}`);

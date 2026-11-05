@@ -10,7 +10,7 @@ import { SemanticError, type SemanticResult, type SemanticService } from '@dinex
 import { buildBlock, formatMetric, newBlockId, TENANT_UTC_OFFSET } from './answer.ts';
 import type { ToolCallRecord } from './audit.ts';
 import { FOLLOW_UP_CAP, type BatchDraft, type GatewayContext, type GatewayResult, type ToolGateway } from './gateway.ts';
-import { member360, talkingPoints } from './member.ts';
+import { meetingBrief, member360, talkingPoints } from './member.ts';
 import type { ModelClient, Usage } from './model.ts';
 import { periodOptions, REPORT_TOOLS, type ReportGateway, type ReportGatewayContext, type ReportResult, type ReportThread } from './report.ts';
 import { grounded } from './reportAgent.ts';
@@ -50,6 +50,8 @@ export interface GoalInput {
   canViewSql: boolean;
   /** The member chip on the message, if any. */
   focus?: { ref: string; name: string };
+  /** What the conversation showed before this task, so "that branch" means the one just discussed. */
+  earlier?: string;
 }
 
 export interface MemberDeps {
@@ -345,6 +347,8 @@ export class GoalWork {
   }
 
   async showTalkingPoints(points: { text: string; topic: Topic }[], p: MemberProfile) {
+    // The brief comes first: the whole picture on one page, then the points to raise.
+    await this.sink.block(meetingBrief(p, points.map((x) => x.topic), points.map((x) => x.text), this.input.runId));
     await this.sink.block({ ...talkingPoints(points, p, this.input.runId), output: { label: 'Talking points', summary: `For ${p.firstName}` } });
   }
 
@@ -511,7 +515,7 @@ export async function runGoal(input: GoalInput, deps: { model: ModelClient; gate
   const deadline = new AbortController();
   const timer = setTimeout(() => deadline.abort(), TURN_BUDGET_MS);
   const signal = AbortSignal.any([deadline.signal, sink.signal]);
-  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: 'user', content: `${state.findings.length ? `Found so far: ${state.findings.join('; ')}\n\n` : ''}Goal from ${input.user.name}: ${state.goal}${input.text !== state.goal ? `\n\nLatest message: ${input.text}` : ''}` }];
+  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: 'user', content: `${input.earlier ?? ''}${state.findings.length ? `Found so far: ${state.findings.join('; ')}\n\n` : ''}Goal from ${input.user.name}: ${state.goal}${input.text !== state.goal ? `\n\nLatest message: ${input.text}` : ''}` }];
   let planned = Boolean(state.planId);
   const topics = new Map<string, { topics: Topic[]; profile: MemberProfile }>();
   let nudges = 0;

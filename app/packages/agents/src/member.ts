@@ -1,6 +1,6 @@
 // Member blocks (spec 8.24, 9.4): the member_card and the member_360, written by code from the DI
 // Core profile. The model never fills these in; it only writes the talking points beside them.
-import type { DiTake, ListBlock, Member360Block, MemberCardBlock, MemberScore } from '@dinext/block-schemas';
+import type { DiTake, ListBlock, Member360Block, MemberCardBlock, MemberScore, TextBlock } from '@dinext/block-schemas';
 import { OPPORTUNITY_THRESHOLD, type MemberProfile, type PartyMatch, type Topic } from '@dinext/di-core';
 import { newBlockId, TENANT_UTC_OFFSET } from './answer.ts';
 
@@ -209,12 +209,78 @@ export function talkingPoints(points: { text: string; topic: Topic }[], p: Membe
     type: 'list',
     version: '1.0.0',
     title: 'Suggested talking points',
-    provenance: { ...provenance(runId, ['relationship.next_best_conversation']), sources: [{ kind: 'model', label: `${p.attrition.model}, run ${longDate(p.attrition.runDate)}` }] },
+    provenance: { ...provenance(runId, ['relationship.next_best_conversation']), sources: [{ kind: 'model', label: `Attrition score, ${longDate(p.attrition.runDate)}` }] },
     freshness: freshness(p),
     data: {
       layout: 'list',
       items: points.map(({ text, topic }, i) => ({ id: `tp${i + 1}`, icon: icon(topic.kind), title: text, subtitle: topic.reason })),
     },
+  };
+}
+
+const money = (n: number) => `${n < 0 ? '−' : ''}$${Math.abs(Math.round(n)).toLocaleString('en-US')}`;
+const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1).replace(/[.;]\s*$/, '');
+const md = (s: string) => s.replace(/([*_`[\]|<>])/g, '\\$1');
+
+/**
+ * The meeting brief: one page a person can read in the minute before a meeting. Every line is written
+ * by code from the record, so nothing in it is a guess; the talking points beside it are the model's
+ * wording of the same topics.
+ */
+export function meetingBrief(p: MemberProfile, topics: Topic[], points: string[], runId: string): TextBlock {
+  const person = p.person === 'customer' ? 'Customer' : 'Member';
+  const change30 = p.totals.deposits - p.deposits.reduce((s, a) => s + a.balance30d, 0);
+  const dd = p.directDeposit.status === 'stopped' ? `stopped ${p.directDeposit.changed ? longDate(p.directDeposit.changed) : ''}`.trim() : p.directDeposit.status === 'active' ? 'active' : 'none on file';
+  const login = p.lastLogin ? longDate(p.lastLogin) : 'never';
+  const lines: string[] = [];
+  const section = (title: string, rows: string[]) => {
+    if (rows.length) lines.push(`### ${title}`, ...rows, '');
+  };
+
+  lines.push(`**${md(p.name)}** · ${person} …${p.last4} · ${md(p.branch)} · ${md(p.segment)} · since ${monthYear(p.joined)} · prefers ${md(p.contact.preferred.toLowerCase())}`, '');
+  section('At a glance', [
+    `- **Deposits** ${money(p.totals.deposits)}${change30 ? ` (${change30 > 0 ? 'up' : 'down'} ${money(Math.abs(change30))} in 30 days)` : ''} · **Loans** ${money(p.totals.loans)} · **Products** ${p.totals.products}`,
+    `- **Attrition risk** ${p.attrition.score} of 10 (${p.attrition.band}) · **Direct deposit** ${dd} · **Last online login** ${login}`,
+  ]);
+  section('Accounts', [...p.deposits, ...p.loans].slice(0, 6).map((a) => {
+    const moved = a.balance - a.balance30d;
+    return `- ${md(a.name)} …${a.suffix}: ${money(a.balance)}${Math.abs(moved) >= 1 ? `, ${moved > 0 ? 'up' : 'down'} ${money(Math.abs(moved))} in 30 days` : ''}${a.fees30d ? `, ${money(a.fees30d)} in fees` : ''}${a.relationship !== 'Primary' ? ` (${a.relationship.toLowerCase()})` : ''}`;
+  }));
+  const pending = p.applications.items.filter((a) => a.status === 'Pending');
+  section('Open items', [
+    ...pending.map((a) => `- ${md(a.product)} application for ${money(a.amount)}, applied ${longDate(a.applied)}: ${md(a.detail.toLowerCase())}`),
+    ...topics.filter((t) => t.kind === 'open_issue').map((t) => `- ${md(sentence(t.headline))}`),
+  ]);
+  const denied = p.applications.items.filter((a) => a.status === 'Denied').slice(0, 2);
+  section('What has changed', [
+    ...(change30 < 0 ? [`- Deposits fell ${money(Math.abs(change30))} in the last 30 days.`] : change30 > 0 ? [`- Deposits grew ${money(change30)} in the last 30 days.`] : []),
+    ...(p.directDeposit.status === 'stopped' ? [`- Direct deposit stopped${p.directDeposit.changed ? ` on ${longDate(p.directDeposit.changed)}` : ''}.`] : []),
+    ...(p.lastLogin ? [] : ['- Has never logged in online or on mobile.']),
+    ...denied.map((a) => `- ${md(a.product)} application for ${money(a.amount)} was denied${a.decided ? ` on ${longDate(a.decided)}` : ''}.`),
+  ]);
+  section('Why they might leave', p.attrition.factors.filter((f) => f.weight > 0).slice(0, 4).map((f) => `- ${md(sentence(f.label))} (adds ${f.weight})`));
+  section('What to offer', [
+    ...p.opportunities.filter((o) => o.likelihood >= OPPORTUNITY_THRESHOLD).slice(0, 3).map((o) => `- **${md(o.product)}**, ${o.likelihood} of 10: ${md(o.reason)}`),
+    ...p.declined.map((d) => `- Don't offer **${md(d.product)}**: declined, hidden until ${longDate(d.until)}`),
+  ]);
+  section('Recent contact', p.interactions.items.slice(0, 3).map((i) => `- ${longDate(i.at)}, ${md(i.channel.toLowerCase())}: ${md(sentence(i.summary))}${i.by ? ` (${md(i.by)})` : ''}`));
+  const seen = p.household.filter((h) => h.inPurview && h.name);
+  const unseen = p.household.length - seen.length;
+  section('Household', [...seen.map((h) => `- ${md(h.name!)}${h.branch ? `, ${md(h.branch)}` : ''}`), ...(unseen > 0 ? [`- ${unseen} more outside your access`] : [])]);
+  section('Suggested agenda', [
+    ...points.slice(0, 4).map((t, i) => `${i + 1}. ${md(sentence(t))}`),
+    `${Math.min(points.length, 4) + 1}. Agree the next step and confirm ${p.contact.preferred.toLowerCase()} is still the best way to reach ${md(p.firstName)}.`,
+  ]);
+
+  return {
+    id: newBlockId('brf'),
+    type: 'text',
+    version: '1.0.0',
+    title: `Meeting brief: ${p.name}`,
+    provenance: { ...provenance(runId, ['relationship.profile.get', 'relationship.next_best_conversation']), sources: [{ kind: 'table', label: 'Relationship Manager', ref: 'table:cdm_party' }, { kind: 'model', label: `Attrition score, ${longDate(p.attrition.runDate)}` }] },
+    freshness: freshness(p),
+    output: { label: 'Meeting brief', summary: `${p.name}, ${p.branch}` },
+    data: { markdown: lines.join('\n').trim().slice(0, 8000) },
   };
 }
 
@@ -225,8 +291,8 @@ export function scoreFactors(explained: { score: string; value: string; factors:
     type: 'list',
     version: '1.0.0',
     title: `${explained.score}: ${explained.value}`,
-    subtitle: `Model ${explained.model}, last run ${longDate(explained.runDate)}`,
-    provenance: { ...provenance(runId, ['predictive.scores.explain']), sources: [{ kind: 'model', label: explained.model }] },
+    subtitle: `Scored ${longDate(explained.runDate)}`,
+    provenance: { ...provenance(runId, ['predictive.scores.explain']), sources: [{ kind: 'model', label: explained.score === 'Attrition risk' ? 'Attrition score' : 'Next-best-product score' }] },
     freshness: freshness(p),
     data: { layout: 'list', items: explained.factors.map((f, i) => ({ id: `f${i + 1}`, icon: f.effect.startsWith('lowers') ? 'trend_down' : 'trend_up', title: f.label, subtitle: f.effect })) },
   };
