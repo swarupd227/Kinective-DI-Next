@@ -136,13 +136,13 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       user: user('user:7001', 'Elena Ortiz', 'Chief Financial Officer', 'Finance leader'),
       tenant: BANK,
       // Bank tenants never see 5300 Call Report or SEG Management (FE-EXP-003).
-      apps: ['home', 'conversations', 'tasks', 'reports', 'tables', 'workflows', 'calendar', 'files', 'rm', 'lap', 'gi', 'indirect', 'prospecting', 'campaigns', 'compliance', 'predictive', 'dq', 'irr', 'delinquency', 'liquidity', 'membership'],
+      apps: ['home', 'conversations', 'tasks', 'reports', 'tables', 'workflows', 'calendar', 'files', 'rm', 'lap', 'gi', 'indirect', 'prospecting', 'campaigns', 'compliance', 'predictive', 'dq', 'irr', 'delinquency', 'liquidity', 'membership', 'callreport'],
       permissions: { queryBrowser: false, dashboardAdmin: false },
     },
     approvesIncentives: true,
     retention: true,
-    modules: ['governance', 'tasks', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'datalogs', 'datalogs-approve', 'collections', 'campaigns', 'tables', 'irr', 'delinquency', 'liquidity', 'membership', 'records', 'records-members'],
-    suggestions: ['Get me ready for the next ALCO meeting', 'What’s our interest rate risk?', 'How much could we borrow tomorrow?', 'What changed since last month-end?', 'Show loan growth by branch for Q3 vs Q2', 'Show the October payouts'],
+    modules: ['governance', 'tasks', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'datalogs', 'datalogs-approve', 'collections', 'campaigns', 'tables', 'irr', 'delinquency', 'liquidity', 'membership', 'records', 'records-members', 'callreport'],
+    suggestions: ['Get me ready for the next ALCO meeting', 'Are we ready to file the Call Report?', 'What’s our interest rate risk?', 'How much could we borrow tomorrow?', 'What changed since last month-end?', 'Show loan growth by branch for Q3 vs Q2', 'Show the October payouts'],
   },
   admin: {
     userClass: 'Administrator',

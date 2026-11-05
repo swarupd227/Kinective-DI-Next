@@ -120,7 +120,8 @@ describe('mock stream server and client protocol', () => {
     const bank = await api.session('bank_cfo');
     expect(bank.tenant.institutionType).toBe('bank');
     expect(bank.apps).not.toContain('seg');
-    expect(bank.apps).not.toContain('callreport');
+    // A bank files the FFIEC Call Report, not the 5300; the app is the same, the form is the bank's.
+    expect(bank.apps).toContain('callreport');
     expect(bank.slashCommands).toContain('/customer');
 
     const branch = await api.session('branch');

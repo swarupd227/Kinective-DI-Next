@@ -19,3 +19,5 @@ export { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 export { CORE_READER, SOURCES_DDL, SOURCES_LANDING_TABLES, SOURCES_WRITE_TABLES, SOURCE_TARGETS, SYMITAR_CODES, coreReaderPassword, createSourceTables, landingTable, replicaDatabase, seedCoreReplica } from './sources.ts';
 export { AGE_BANDS, generateMemberHistory } from './membership.ts';
 export { BENCHMARK_DDL, benchmarks } from './benchmarks.ts';
+export { FFIEC_FILING, FFIEC_QUARTERS, generateFfiecCallReport } from './ffiecCallReport.ts';
+export { FFIEC_051, FFIEC_051_EDITION } from './ffiec051.ts';

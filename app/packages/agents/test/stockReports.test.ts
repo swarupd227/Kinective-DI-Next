@@ -44,9 +44,8 @@ for (const [schema, tenant, type] of [['dinext_t_test_cu', 'test_cu', 'credit_un
         const policy = canvas.data.widgets[0]!.view;
         expect(policy.type).toBe('table');
         if (type === 'bank') {
-          // A CRE-heavy bank: NEV at +400 bp and commercial real estate concentration are outside policy, and the pack says so first.
-          expect(canvas.data.take?.headline).toMatch(/^\d+ of \d+ policy limits are breached\. NEV at \+400 bp is −\d+\.\d% \(limit −30%\)/);
-          expect(canvas.data.take?.headline).toMatch(/[Cc]ommercial real estate is \d+% of capital \(limit 300%\)/);
+          // With capital from the Call Report, the bank's one breach is NEV at +400 bp, and the pack says so first.
+          expect(canvas.data.take?.headline).toMatch(/^1 of \d+ policy limits is breached\. NEV at \+400 bp is −\d+\.\d% \(limit −30%\)/);
         } else {
           expect(canvas.data.take?.headline).toMatch(/^All \d+ policy limits are met/);
         }

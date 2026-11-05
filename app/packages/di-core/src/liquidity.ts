@@ -45,7 +45,8 @@ export class LiquidityService {
     const loans = assets.filter((p) => !['Cash and overnight funds', 'Investments'].includes(p.name)).reduce((s, p) => s + p.balance, 0);
     const cash = bal('Cash and overnight funds');
     const investments = bal('Investments');
-    const invWithinYear = fromCallReport ? v('NV0153') : investments * 0.21;
+    // The 5300's Schedule B gives investments within a year; otherwise 21% of the portfolio is assumed.
+    const invWithinYear = cr.length ? v('NV0153') : investments * 0.21;
     const A = totalAssets ?? assets.reduce((s, p) => s + p.balance, 0) * 1.04;
     const nw = netWorth ?? A * 0.1;
 
@@ -86,7 +87,7 @@ export class LiquidityService {
         SUM(CASE WHEN loan_category IN ('Commercial Real Estate') AND days_delinquent < 60 THEN balance ELSE 0 END) AS cre
       FROM cdm_loan WHERE close_date IS NULL AND charge_off_date IS NULL`);
     const c = (k: string) => Number(collateral?.[k] ?? 0);
-    const securities = fromCallReport ? v('AS0067') + v('AS0073') : investments;
+    const securities = cr.length ? v('AS0067') + v('AS0073') : investments;
     // Securities within a year are already counted as liquid; the rest can be pledged or sold.
     const pledgeableSecurities = Math.max(0, securities - invWithinYear);
     const fhlbCollateral = (c('mortgage') * LENDABLE.firstMortgage + c('heloc') * LENDABLE.homeEquity + c('cre') * 0.5) * FHLB_LISTED;
@@ -138,7 +139,7 @@ export class LiquidityService {
       policy: LIQUIDITY_POLICY,
       clf: bank ? null : 'Access through the corporate credit union (agent membership); not drawn.',
       assumptions: [
-        ['Liquid assets', fromCallReport ? 'Cash and deposits (5300 AS0009) plus investments maturing within a year (Schedule B, NV0153).' : 'Cash, plus 21% of investments assumed to mature within a year.'],
+        ['Liquid assets', cr.length ? 'Cash and deposits (5300 AS0009) plus investments maturing within a year (Schedule B, NV0153).' : fromCallReport ? 'Cash and balances due (Call Report RC 0081, 0071), plus 21% of securities (RC-B) assumed to mature within a year.' : 'Cash, plus 21% of investments assumed to mature within a year.'],
         ['Cash-flow ladder', `Loan payments and prepayments and investment maturities as in the IRR model; ${Math.round(CERT_RENEWAL * 100)}% of maturing certificates renew; non-maturity shares run off at the IRR model's decay rates.`],
         ['FHLB lendable values', `First mortgages ${LENDABLE.firstMortgage * 100}%, home equity ${LENDABLE.homeEquity * 100}%, commercial real estate 50% of balance, performing loans only, with ${FHLB_LISTED * 100}% of eligible loans listed as collateral; capped at ${FHLB_ASSET_CAP * 100}% of total assets, less advances outstanding.`],
         ['Discount window', `Auto loans ${LENDABLE.auto * 100}%, consumer loans and cards ${LENDABLE.consumer * 100}%, under 30 days past due, assuming they are pledged under a borrower-in-custody arrangement.`],

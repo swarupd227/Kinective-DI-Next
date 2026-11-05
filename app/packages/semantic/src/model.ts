@@ -25,6 +25,8 @@ const StockSchema = z.object({
       filters: z.array(sqlFragment).default([]),
       time_column: sqlFragment.optional(),
       purview_column: sqlFragment,
+      /** Only for these institution types: the 5300 for a credit union, the FFIEC Call Report for a bank. */
+      institution_types: z.array(z.enum(['credit_union', 'bank'])).optional(),
       lineage: z.array(ident),
     }),
   ),
@@ -134,7 +136,17 @@ export function loadModel(tenant: string, institutionType: InstitutionType, dir 
   const label = (name: string, base: string, byType?: { credit_union?: string; bank?: string }) => override.labels[name] ?? byType?.[institutionType] ?? base;
 
   const settings = Object.fromEntries(Object.entries(stock.settings).map(([k, v]) => [k, override.settings[k] ?? v.default]));
-  const sources = Object.fromEntries(Object.entries(stock.sources).map(([name, s]) => [name, { ...s, name }]));
+  const sources = Object.fromEntries(Object.entries(stock.sources).filter(([, s]) => !s.institution_types || s.institution_types.includes(institutionType)).map(([name, s]) => [name, { ...s, name }]));
+  // A bank's definitions name the Call Report, not the 5300 and its account codes.
+  const forType = (text: string | undefined) =>
+    text === undefined || institutionType !== 'bank'
+      ? text
+      : text
+          .replace(/\s*\((?:5300 )?(?:accounts? )?[A-Z]{0,2}\d{3,4}[A-Z]?\d?(?:(?:, | and )[A-Z]{0,2}\d{3,4}[A-Z]?\d?)*\)/g, '')
+          .replace(/\bthe latest 5300\b/g, 'the latest Call Report')
+          .replace(/\bthe 5300\b/g, 'the Call Report')
+          .replace(/\b5300\b/g, 'Call Report')
+          .replace(/NCUA Financial Performance Report/g, 'FFIEC Uniform Bank Performance Report');
   const measures = Object.fromEntries(Object.entries(stock.measures).map(([name, m]) => [name, { name, ...m }]));
   const dimensions = Object.fromEntries(
     Object.entries(stock.dimensions).map(([name, d]) => [
@@ -155,8 +167,8 @@ export function loadModel(tenant: string, institutionType: InstitutionType, dir 
           type: m.type,
           measures: ms,
           format: m.format,
-          description: m.description,
-          regulatoryBasis: m.regulatory_basis,
+          description: forType(m.description)!,
+          regulatoryBasis: forType(m.regulatory_basis),
           synonyms: [...m.synonyms, ...(override.synonyms[name] ?? [])],
           owner: m.owner,
           dimensionsAllowed: m.dimensions_allowed,

@@ -1,5 +1,6 @@
 // Creates one schema per synthetic tenant and loads it (spec 13.6 tenancy, 27.2 test tenants).
 // Usage: npm run db:seed   (idempotent: drops and recreates each tenant schema)
+import { generateFfiecCallReport } from './ffiecCallReport.ts';
 import mysql from 'mysql2/promise';
 import { ADMIN_DB_URL, DEFAULT_DB_URL, dbSsl } from './db.ts';
 import { AS_OF, BUILD, generate, TENANTS } from './generate.ts';
@@ -17,7 +18,7 @@ import { generateRelationship, RELATIONSHIP_DDL } from './relationship.ts';
 import { generateMemberHistory } from './membership.ts';
 import { BENCHMARK_DDL, benchmarks } from './benchmarks.ts';
 import { reportSeed } from './reports.ts';
-import { generateCallReport } from './callReport.ts';
+import { CR_FILING, generateCallReport } from './callReport.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
 import { createSourceTables, seedCoreReplica } from './sources.ts';
@@ -97,6 +98,16 @@ async function main() {
     await insert(admin, 'ops_upload', ['source', 'due_by', 'arrived', 'late'], fx.uploads);
     await insert(admin, 'ops_dq_check', ['domain', 'dimension', 'name', 'status', 'rows_failed'], fx.checks);
     await insert(admin, 'iam_user', ['user_id', 'name', 'user_class', 'branch', 'status'], [...fx.classes.map((c) => [...c, 'Active']), ...(t.employees as [number, string, string, number][]).filter((e) => e[0] > 6).map((e) => [`emp:${e[0]}`, e[1], e[2] === 'Loan officer' ? 'Lender' : e[2] === 'Branch manager' ? 'Manager' : 'MSR', String(t.locations[e[3] - 1]![1]), 'Active']), ['emp:2', 'Tom Walsh', 'Lender', 'Westport', 'Active']]);
+    if (profile.institutionType === 'bank') {
+      // A bank files the FFIEC 051 Call Report: the same tables, keyed by MDRM item code.
+      const ff = generateFfiecCallReport(t);
+      await insert(admin, 'cr_line', ['code', 'schedule', 'schedule_name', 'section', 'sort_order', 'name', 'kind', 'formula', 'source'], ff.lines);
+      await insert(admin, 'cr_value', ['code', 'quarter_end', 'amount', 'text_value'], ff.values);
+      await insert(admin, 'cr_check', ['name', 'status', 'detail', 'severity', 'edit_code', 'codes'], ff.checks);
+      await insert(admin, 'cr_explanation', ['code', 'quarter_end', 'explanation', 'status', 'written_by'], ff.explanations);
+      await insert(admin, 'cr_gl_account', ['gl_number', 'name', 'balance', 'prior_balance', 'line_code', 'opened', 'last_posted', 'likely_line', 'note'], ff.gl);
+      await insert(admin, 'cr_form', ['form', 'edition', 'filed_in', 'quarter', 'due_date', 'preparer'], ff.form);
+    }
     if (profile.institutionType === 'credit_union') {
       const cr = generateCallReport(t);
       await insert(admin, 'cr_line', ['code', 'schedule', 'schedule_name', 'section', 'sort_order', 'name', 'kind', 'formula', 'source'], cr.lines);
@@ -104,6 +115,7 @@ async function main() {
       await insert(admin, 'cr_check', ['name', 'status', 'detail', 'severity', 'edit_code', 'codes'], cr.checks);
       await insert(admin, 'cr_explanation', ['code', 'quarter_end', 'explanation', 'status', 'written_by'], cr.explanations);
       await insert(admin, 'cr_gl_account', ['gl_number', 'name', 'balance', 'prior_balance', 'line_code', 'opened', 'last_posted', 'likely_line', 'note'], cr.gl);
+      await insert(admin, 'cr_form', ['form', 'edition', 'filed_in', 'quarter', 'due_date', 'preparer'], [['5300', CR_FILING.edition, 'CUOnline', CR_FILING.quarter, CR_FILING.dueDate, CR_FILING.preparer]]);
       await insert(admin, 'seg_company', ['company_id', 'name', 'stage', 'members', 'new_members', 'loans', 'deposits', 'owner', 'sponsorship'], fx.companies);
       await insert(admin, 'seg_interaction', ['company_id', 'at', 'kind', 'note', 'by_name'], fx.interactions);
     }

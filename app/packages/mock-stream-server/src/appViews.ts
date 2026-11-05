@@ -411,6 +411,48 @@ export function createAppViews(deps: ViewDeps) {
     },
     async callreport() {
       const cr = new CallReportService(pool);
+      if (deps.person === 'customer') {
+        // A bank files the FFIEC 051: validity edits block, quality edits need an explanation, CBLR capital.
+        const [lines, ready, form, moved] = await Promise.all([cr.lines(), cr.readiness(), cr.form(), cr.variance(10)]);
+        const q = ready.quarter;
+        const due = new Date(`${q.dueDate}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+        const v = (code: string) => lines.find((l) => l.code === code);
+        const needed = ready.explanations.filter((e) => e.status === 'Needed');
+        const cols = [text('code', 'Item'), text('name', 'Caption'), { field: 'prior', headerName: q.priorLabel ?? 'Prior', type: 'currency' as const }, { field: 'current', headerName: q.label, type: 'currency' as const }, text('pct', 'Change')];
+        const rowsOf = (ls: typeof lines) => ls.map((l) => ({ code: l.code, name: l.name, prior: l.prior ?? 0, current: l.current ?? 0, pct: l.text ?? (l.code === 'RCON7204' ? `${(l.current ?? 0).toFixed(2)}%` : l.pct === null ? '' : `${l.pct}%`) }));
+        const sched = (id: string) => lines.filter((l) => l.schedule === id);
+        const capitalBase = (v('RCON8274')?.current ?? 0) + (v('RCON3123')?.current ?? 0);
+        const cre = ['RCONF159', 'RCON1460', 'RCONF161'].reduce((s, c) => s + (v(c)?.current ?? 0), 0);
+        return {
+          title: `${form.form} Call Report · ${q.label}`,
+          lede: `${form.edition}, for the quarter ending ${new Date(`${q.current}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}. Due ${due} in ${form.filedIn}. DI prepares and checks it; a person submits it with the officer’s attestation.`,
+          take: {
+            headline: ready.ready && !ready.warnings.length ? `${q.label} is ready to review and submit by ${due}.` : `${q.label} isn’t ready: ${[...ready.errors, ...ready.warnings].map((c) => c.detail).join(' ')}`,
+            action: { label: 'Are we ready to file?', ask: 'Are we ready to file the Call Report?' },
+          },
+          tiles: [
+            { label: 'Due in CDR', value: due },
+            { label: 'Validity edits failing', value: String(ready.errors.length), tone: ready.errors.length ? 'danger' : 'neutral' },
+            { label: 'Explanations needed', value: String(needed.length), tone: needed.length ? 'warning' : 'neutral' },
+            { label: 'Leverage ratio (CBLR)', value: `${(v('RCON7204')?.current ?? 0).toFixed(2)}%`, detail: '8% required' },
+            { label: 'CRE concentration', value: `${Math.round((cre / capitalBase) * 100)}%`, detail: 'guidance 300%' },
+          ],
+          prompts: ['Are we ready to file the Call Report?', ...(ready.uncategorized.length ? ['Which GL accounts are uncategorized?'] : []), ...(needed.length ? ['Which items need an explanation?'] : []), 'How is RCON2122 built?', 'What’s our CRE concentration?', 'Show capital'],
+          blocks: [
+            table('Edits', 'dq.status_report', [text('name', 'Edit'), text('severity', 'Type'), text('result', 'Result'), text('detail', 'Detail')], ready.checks.map((c) => ({ name: c.editCode ? `${c.editCode}: ${c.name}` : c.name, severity: c.severity === 'Error' ? 'Validity' : 'Quality', result: c.passed ? 'Passed' : 'Failed', detail: c.detail }))),
+            ...(ready.uncategorized.length ? [table('Uncategorized GL accounts', 'callreport.gl_uncategorized', [text('gl', 'GL account'), text('name', 'Name'), { field: 'balance', headerName: 'Balance', type: 'currency' }, text('lastPosted', 'Last posted'), text('likely', 'Likely schedule'), text('note', 'Why it is open')], ready.uncategorized.map((g) => ({ gl: g.glNumber, name: g.name, balance: g.balance, lastPosted: g.lastPosted, likely: g.likelyLine ?? 'Not suggested', note: g.note ?? '' })))] : []),
+            ...(moved.length ? [table(`Moved more than 10% since ${q.priorLabel}`, 'callreport.variance', [...cols, text('explanation', 'Explanation')], moved.map((l) => ({ ...rowsOf([l])[0]!, explanation: l.explanation ? (l.explanation.explanation ?? 'Needed') : '' })))] : []),
+            table('RC-R Part I: regulatory capital (community bank leverage ratio)', 'callreport.capital', cols, rowsOf(sched('RC-R'))),
+            table('RC: balance sheet', 'callreport.rc', cols, rowsOf(sched('RC'))),
+            table('RI: income statement (year to date)', 'callreport.ri', cols, rowsOf(sched('RI'))),
+            table('RC-C Part I: loans and leases', 'callreport.rcc', cols, rowsOf(sched('RC-C'))),
+            table('RC-N: past due and nonaccrual', 'callreport.rcn', cols, rowsOf(sched('RC-N'))),
+            table('RI-B: charge-offs and the allowance', 'callreport.rib', cols, rowsOf(sched('RI-B'))),
+            table('RC-E, RC-O: deposits and uninsured deposits', 'callreport.rce', cols, rowsOf([...sched('RC-E'), ...sched('RC-O')])),
+            table('RC-B, RC-K: securities and quarterly averages', 'callreport.rcb', cols, rowsOf([...sched('RC-B'), ...sched('RC-K')])),
+          ],
+        };
+      }
       const [lines, ready, capital, moved] = await Promise.all([cr.lines(), cr.readiness(), cr.capital(), cr.variance(25)]);
       const q = ready.quarter;
       const due = new Date(`${q.dueDate}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });

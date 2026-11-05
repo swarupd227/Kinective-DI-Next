@@ -210,10 +210,10 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
       widgets: [
         // What the committee reads first: every board limit, the actual figure and whether it's met.
         { id: 'a1', title: 'Policy compliance', kind: 'analysis', analysis: 'alco.policy', metrics: [], size: 'full' },
-        // Capital and earnings from the 5300, which only a credit union files; a bank's are in the sections below.
-        ...(institutionType === 'credit_union'
+        // Capital and earnings from the 5300 or the FFIEC Call Report.
+        ...(institutionType === 'credit_union' || institutionType === 'bank'
           ? [
-              { id: 'k4', title: 'Net worth ratio', kind: 'kpi' as const, metrics: ['net_worth_ratio'], size: 'third' as const },
+              { id: 'k4', title: institutionType === 'credit_union' ? 'Net worth ratio' : 'Tier 1 leverage ratio', kind: 'kpi' as const, metrics: ['net_worth_ratio'], size: 'third' as const },
               { id: 'k5', title: 'Net interest margin', kind: 'kpi' as const, metrics: ['net_interest_margin'], size: 'third' as const },
               { id: 'k6', title: 'Return on assets', kind: 'kpi' as const, metrics: ['return_on_assets'], size: 'third' as const },
             ]
@@ -254,14 +254,14 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
     {
       templateId: 'executive_dashboard_monthly',
       name: 'Executive dashboard',
-      description: `The month for leadership: the scorecard against plan and peers, ${institutionType === 'credit_union' ? 'earnings, ' : ''}${persons}, loans and deposits, per-${persons === 'members' ? 'member' : 'customer'} averages, ${persons === 'members' ? 'member' : 'customer'} growth and new loan production by loan group.`,
+      description: `The month for leadership: the scorecard against plan and peers, earnings, ${persons}, loans and deposits, per-${persons === 'members' ? 'member' : 'customer'} averages, ${persons === 'members' ? 'member' : 'customer'} growth and new loan production by loan group.`,
       folder: 'Executive',
       settings: { ...settings('month', ['Executive', 'Finance']), addHierarchyControls: false },
       layoutVersion: 1,
       pendingEdits: [],
       widgets: [
         { id: 'a1', title: 'Scorecard against plan and peers', kind: 'analysis', analysis: 'board.scorecard', metrics: [], size: 'full' },
-        ...(institutionType === 'credit_union'
+        ...(institutionType === 'credit_union' || institutionType === 'bank'
           ? [
               { ...kpi('k8', 'Return on assets', 'return_on_assets'), size: 'third' as const },
               { ...kpi('k9', 'Net interest margin', 'net_interest_margin'), size: 'third' as const },
@@ -428,20 +428,20 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
     {
       templateId: 'board_report_quarterly',
       name: 'Board report',
-      description: `The quarter for the board: a scorecard against the 2026 plan and peers, ${institutionType === 'credit_union' ? 'earnings, capital, ' : ''}growth, ${persons}, loan-to-share and credit quality, with five quarters of trend.`,
+      description: `The quarter for the board: a scorecard against the 2026 plan and peers, earnings, capital, growth, ${persons}, loan-to-share and credit quality, with five quarters of trend.`,
       folder: 'Board',
       settings: { ...settings('quarter', ['Executive']), addHierarchyControls: false },
       layoutVersion: 2,
       pendingEdits: [],
       widgets: [
         { id: 'a1', title: 'Scorecard against plan and peers', kind: 'analysis', analysis: 'board.scorecard', metrics: [], size: 'full' },
-        // Earnings and capital from the 5300, which only a credit union files.
-        ...(institutionType === 'credit_union'
+        // Earnings and capital from the 5300 or the FFIEC Call Report.
+        ...(institutionType === 'credit_union' || institutionType === 'bank'
           ? [
               kpi('k5', 'Return on assets', 'return_on_assets'),
               kpi('k6', 'Net interest margin', 'net_interest_margin'),
               kpi('k7', 'Efficiency ratio', 'efficiency_ratio'),
-              kpi('k8', 'Net worth ratio', 'net_worth_ratio'),
+              kpi('k8', institutionType === 'credit_union' ? 'Net worth ratio' : 'Tier 1 leverage ratio', 'net_worth_ratio'),
               { id: 'c3', title: 'Return on assets, last 5 quarters', kind: 'chart' as const, chart: 'line' as const, metrics: ['return_on_assets'], trend: 5, size: 'half' as const },
               { id: 'c4', title: 'Net interest margin, last 5 quarters', kind: 'chart' as const, chart: 'line' as const, metrics: ['net_interest_margin'], trend: 5, size: 'half' as const },
               { id: 'c5', title: 'Efficiency ratio, last 5 quarters', kind: 'chart' as const, chart: 'line' as const, metrics: ['efficiency_ratio'], trend: 5, size: 'half' as const },

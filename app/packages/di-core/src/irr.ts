@@ -113,14 +113,19 @@ export class IrrService {
 
     // Investments, cash and borrowings from the latest 5300 when there is one; otherwise from the balance sheet's shape.
     const cr = await rows<{ code: string; amount: number }>(this.pool, `SELECT code, amount FROM cr_value WHERE quarter_end = (SELECT MAX(quarter_end) FROM cr_value) AND code IN ('AS0009','AS0067','AS0073','AS0055','NV0153','NV0154','NV0155','NV0156','NV0157','860C','997','010','AS0007')`).catch(() => []);
+    // A bank's FFIEC Call Report: cash (RC 0081, 0071), securities (1754, 1773), borrowings (3190), equity and assets.
+    const ff = cr.length ? [] : await rows<{ code: string; amount: number }>(this.pool, `SELECT code, amount FROM cr_value WHERE quarter_end = (SELECT MAX(quarter_end) FROM cr_value) AND code IN ('RCON0081','RCON0071','RCON1754','RCON1773','RCON3190','RCON3210','RCON2170')`).catch(() => []);
+    const f = (code: string) => Number(ff.find((x) => x.code === code)?.amount ?? 0);
+    const fromFfiec = ff.length > 0;
     const v = (code: string) => Number(cr.find((x) => x.code === code)?.amount ?? 0);
     const shares = await rows<{ c: string; b: number; r: number }>(this.pool, 'SELECT deposit_category AS c, SUM(balance) AS b, SUM(balance * rate) / NULLIF(SUM(balance), 0) AS r FROM cdm_deposit_account WHERE close_date IS NULL GROUP BY deposit_category');
     const totalShares = shares.reduce((s, x) => s + Number(x.b), 0);
-    const fromCallReport = cr.length > 0;
-    const cash = fromCallReport ? v('AS0009') - v('AS0007') : totalShares * 0.06;
-    const investments = fromCallReport ? v('NV0153') + v('NV0154') + v('NV0155') + v('NV0156') + v('NV0157') : totalShares * 0.24;
-    const ladder = fromCallReport ? [v('NV0153'), v('NV0154'), v('NV0155'), v('NV0156'), v('NV0157')] : [0.21, 0.33, 0.26, 0.15, 0.05].map((f) => investments * f);
-    const borrowings = fromCallReport ? v('860C') : totalShares * 0.015;
+    const fromCallReport = cr.length > 0 || fromFfiec;
+    const cash = fromFfiec ? f('RCON0081') + f('RCON0071') : cr.length ? v('AS0009') - v('AS0007') : totalShares * 0.06;
+    const investments = fromFfiec ? f('RCON1754') + f('RCON1773') : cr.length ? v('NV0153') + v('NV0154') + v('NV0155') + v('NV0156') + v('NV0157') : totalShares * 0.24;
+    // The Call Report's RC-B has no maturity distribution in the 051's headline items, so a bank's ladder keeps the usual shape.
+    const ladder = cr.length ? [v('NV0153'), v('NV0154'), v('NV0155'), v('NV0156'), v('NV0157')] : [0.21, 0.33, 0.26, 0.15, 0.05].map((x) => investments * x);
+    const borrowings = fromFfiec ? f('RCON3190') : cr.length ? v('860C') : totalShares * 0.015;
     out.push({ name: 'Cash and overnight funds', side: 'asset', balance: cash, rate: MARKET_RATE, flows: () => [cash, ...new Array<number>(HORIZON - 1).fill(0)], repriced: () => 1, beta: 1, discount: MARKET_RATE, floating: true });
     // Each maturity band matures evenly across its range; the portfolio yields 3.05%.
     const bands: [number, number][] = [[1, 12], [13, 36], [37, 60], [61, 120], [121, 240]];
@@ -158,7 +163,7 @@ export class IrrService {
       for (let m = 13; m <= 36; m++) flows[m - 1] = borrowings / 24;
       out.push({ name: 'Borrowings', side: 'liability', balance: borrowings, rate: 0.046, flows: () => flows, repriced: (m) => flows.slice(0, m).reduce((a, b) => a + b, 0) / borrowings, beta: 1, discount: 0.046, floating: false });
     }
-    return { asOf, positions: out, netWorth: fromCallReport ? v('997') : null, totalAssets: fromCallReport ? v('010') : null, fromCallReport };
+    return { asOf, positions: out, netWorth: fromFfiec ? f('RCON3210') : cr.length ? v('997') : null, totalAssets: fromFfiec ? f('RCON2170') : cr.length ? v('010') : null, fromCallReport, form: fromFfiec ? ('FFIEC 051' as const) : cr.length ? ('5300' as const) : null };
   }
 
   /** Net interest income over the next 12 months on a static balance sheet, at one shock. */
@@ -201,7 +206,7 @@ export class IrrService {
   }
 
   async analysis() {
-    const { asOf, positions, netWorth, totalAssets, fromCallReport } = await this.positions();
+    const { asOf, positions, netWorth, totalAssets, fromCallReport, form } = await this.positions();
     // Non-rate-sensitive assets and equity are carried at book in both NEV and the ratio's denominator.
     const rateAssets = positions.filter((p) => p.side === 'asset').reduce((s, p) => s + p.balance, 0);
     const otherAssets = totalAssets ? Math.max(0, totalAssets - rateAssets) : rateAssets * 0.04;
@@ -265,7 +270,7 @@ export class IrrService {
         ['Loan prepayments', 'Auto 18%, consumer 12%, mortgages 8%, commercial 5–6% a year (CPR); 12% faster per 100 bp fall, slower when rates rise.'],
         ['Variable-rate loans', 'Credit cards and home equity lines reprice monthly.'],
         ['Share decay and betas', 'Savings 12% a year, beta 0.20; checking 10%, 0.05; money market 25%, 0.55; IRAs 8%, 0.40. Certificates reprice at maturity.'],
-        ['Investments and borrowings', fromCallReport ? 'From the latest 5300: Schedule B’s maturity distribution, yielding 3.05%, and FHLB borrowings over 1–3 years at 4.6%.' : 'Estimated from the balance sheet: a 24% investment ladder at 3.05% and borrowings of 1.5% of deposits.'],
+        ['Investments and borrowings', form === 'FFIEC 051' ? 'From the latest Call Report: securities (RC-B, held to maturity and available for sale) on a typical ladder, yielding 3.05%, and FHLB advances (RCON3190) over 1–3 years at 4.6%.' : fromCallReport ? 'From the latest 5300: Schedule B’s maturity distribution, yielding 3.05%, and FHLB borrowings over 1–3 years at 4.6%.' : 'Estimated from the balance sheet: a 24% investment ladder at 3.05% and borrowings of 1.5% of deposits.'],
         ['Model of record', 'This is DI’s estimate from core data. The ALM vendor’s model remains the one reported to the board and examiners.'],
       ] as [string, string][],
     };

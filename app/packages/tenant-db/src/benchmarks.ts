@@ -21,6 +21,16 @@ const PEER_BANK = 'Peer median: commercial banks $1–3B in assets, Q2 2026 (ill
 export function benchmarks(institutionType: 'credit_union' | 'bank'): Row[] {
   if (institutionType === 'bank') {
     return [
+      ['plan', 'return_on_assets', 1.0, PLAN_BANK],
+      ['plan', 'net_interest_margin', 3.4, PLAN_BANK],
+      ['plan', 'efficiency_ratio', 62, PLAN_BANK],
+      ['plan', 'net_worth_ratio', 10.25, PLAN_BANK],
+      ['plan', 'net_charge_off_ratio', 0.3, PLAN_BANK],
+      ['peer', 'return_on_assets', 1.05, PEER_BANK],
+      ['peer', 'net_interest_margin', 3.45, PEER_BANK],
+      ['peer', 'efficiency_ratio', 62.5, PEER_BANK],
+      ['peer', 'net_worth_ratio', 10.6, PEER_BANK],
+      ['peer', 'net_charge_off_ratio', 0.22, PEER_BANK],
       ['plan', 'delinquency_ratio_60_plus', 0.55, PLAN_BANK],
       ['plan', 'loan_to_share_ratio', 80, PLAN_BANK],
       ['plan', 'loan_growth', 5, PLAN_BANK],

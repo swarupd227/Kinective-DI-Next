@@ -87,8 +87,18 @@ export class AlcoService {
 
     // ---- capital ----
     const equity = pos.netWorth ?? totalAssets - funding;
+    // A bank's reported capital, from the latest FFIEC Call Report (RC-R Part I) when one is on file.
+    const ff = bank ? await rows<{ code: string; amount: number }>(this.pool, `SELECT code, amount FROM cr_value WHERE quarter_end = (SELECT MAX(quarter_end) FROM cr_value) AND code IN ('RCON8274', 'RCONA224', 'RCON7204', 'RCON3123', 'RCONF159', 'RCON1460', 'RCONF161')`).catch(() => []) : [];
+    const fv = (code: string) => Number(ff.find((x) => x.code === code)?.amount ?? 0);
+    const reported = ff.length > 0;
     const rwa = assets.reduce((s, p) => s + p.balance * (RISK_WEIGHT.find(([re]) => re.test(p.name))![1]), 0) + Math.max(0, totalAssets - earning);
-    const capital = bank
+    const capital = bank && reported
+      ? {
+          basis: 'From the latest FFIEC 051 Call Report: RC-R Part I, with the community bank leverage ratio elected (8% required from July 1, 2026).',
+          equity,
+          lines: [{ name: 'Tier 1 leverage ratio (CBLR)', value: fv('RCON7204'), limit: 8 }],
+        }
+      : bank
       ? {
           basis: 'Estimated from the balance sheet DI holds: equity is assets less deposits and borrowings, with standard risk weights. The FFIEC Call Report (RC-R) gives the reported ratios.',
           equity,
@@ -146,7 +156,10 @@ export class AlcoService {
         const g = growth.find((x) => x.c === l.c);
         return { category: l.c, balance: Number(l.b), sharePct: (Number(l.b) / loanTotal) * 100, ratePct: Number(l.r), growthPct: g && Number(g.then_b) ? ((Number(g.now_b) - Number(g.then_b)) / Number(g.then_b)) * 100 : null, dq60Pct: Number(l.b) ? (Number(l.d60) / Number(l.b)) * 100 : 0 };
       }),
-      concentration: bank
+      // The interagency guidance: non-owner-occupied CRE over Tier 1 capital plus the allowance, from the Call Report.
+      concentration: bank && reported
+        ? { name: 'Non-owner-occupied CRE to capital', value: ((fv('RCONF159') + fv('RCON1460') + fv('RCONF161')) / (fv('RCON8274') + fv('RCON3123'))) * 100, limit: ALCO_POLICY.creToCapitalMaxPct, unit: '%' as const }
+        : bank
         ? { name: 'Commercial real estate to capital', value: (cre / (equity * 1.08)) * 100, limit: ALCO_POLICY.creToCapitalMaxPct, unit: '%' as const }
         : { name: 'Business loans to net worth', value: business / equity, limit: ALCO_POLICY.businessLoansToNetWorthMax, unit: '×' as const },
     };

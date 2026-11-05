@@ -69,7 +69,7 @@ export const APP_META: Record<string, AppMeta> = {
   compliance: { label: 'Compliance', icon: i(ShieldCheck), path: '/m/compliance', group: 'modules' },
   predictive: { label: 'Predictive Analytics', icon: i(Brain), path: '/m/predictive', group: 'modules' },
   seg: { label: 'SEG Management', icon: i(Network), path: '/m/seg', group: 'modules', phase: 'Phase 3' },
-  callreport: { label: '5300 Call Report', icon: i(Database), path: '/m/callreport', group: 'modules', phase: 'Phase 3' },
+  callreport: { label: 'Call Report', icon: i(Database), path: '/m/callreport', group: 'modules', phase: 'Phase 3' },
   irr: { label: 'Interest Rate Risk', icon: i(Gauge), path: '/m/irr', group: 'modules' },
   delinquency: { label: 'Delinquency', icon: i(TrendingDown), path: '/m/delinquency', group: 'modules' },
   liquidity: { label: 'Liquidity', icon: i(Droplets), path: '/m/liquidity', group: 'modules' },

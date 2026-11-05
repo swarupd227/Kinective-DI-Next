@@ -702,11 +702,6 @@ export class Concierge {
     const input = { runId: turn.runId, threadId: turn.threadId, text, user: turn.user, tenant: { name: turn.tenant.name }, purviewBranches: turn.purviewBranches, employeeId: turn.employeeId, modules: turn.modules ?? [], leads: turn.gi?.leads };
     if (!input.modules.includes(spec.id)) {
       sink.routing('DI Concierge', `${spec.agent} not available`);
-      // A bank's call report is the FFIEC one; DI says what it can do instead of sending a CFO to an administrator.
-      if (spec.id === 'callreport' && turn.tenant.institutionType === 'bank') {
-        await sink.text('DI doesn’t prepare the FFIEC Call Report yet. I can show the figures that feed it: loans and deposits by category and branch, delinquency, and how each changed over the quarter. Try “Show loan balances by category for Q3 vs Q2”.', 'DI Concierge');
-        return { outcome: 'answer', toolCalls: [], usage: [], superseded: [] };
-      }
       await sink.block(noticeBlock('no_access', spec.noAccess, 'DI Concierge', turn.runId, { permission: spec.agent, detail: 'Ask your DI administrator if you need it.' }));
       return { outcome: 'not_found', toolCalls: [], usage: [], superseded: [] };
     }

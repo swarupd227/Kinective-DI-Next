@@ -32,11 +32,16 @@ const CU: Line[] = [
   { key: 'net_charge_off_ratio', label: 'Net charge-offs to average loans', metric: 'net_charge_off_ratio', good: 'down', places: 2 },
 ];
 const BANK: Line[] = [
+  { key: 'return_on_assets', label: 'Return on assets', metric: 'return_on_assets', good: 'up', places: 2 },
+  { key: 'net_interest_margin', label: 'Net interest margin', metric: 'net_interest_margin', good: 'up', places: 2 },
+  { key: 'efficiency_ratio', label: 'Efficiency ratio', metric: 'efficiency_ratio', good: 'down', places: 1 },
+  { key: 'net_worth_ratio', label: 'Tier 1 leverage ratio', metric: 'net_worth_ratio', good: 'up', places: 2 },
   { key: 'loan_growth', label: 'Loan growth, 12 months', metric: 'loan_balance', growth: true, good: 'up', places: 1 },
   { key: 'deposit_growth', label: 'Deposit growth, 12 months', metric: 'deposit_balance', growth: true, good: 'up', places: 1 },
   { key: 'member_growth', label: 'Customer growth, 12 months', metric: 'member_count', growth: true, good: 'up', places: 1 },
   { key: 'loan_to_share_ratio', label: 'Loan-to-deposit', metric: 'loan_to_share_ratio', good: 'target', places: 1 },
   { key: 'delinquency_ratio_60_plus', label: 'Delinquency 60+', metric: 'delinquency_ratio_60_plus', good: 'down', places: 2 },
+  { key: 'net_charge_off_ratio', label: 'Net charge-offs to average loans', metric: 'net_charge_off_ratio', good: 'down', places: 2 },
 ];
 
 const fmt = (n: number | null, places: number) => (n === null || !Number.isFinite(n) ? '—' : `${n.toFixed(places)}%`);
@@ -126,7 +131,7 @@ export function boardAnalyses(svc: SemanticService, pool: Pool, institutionType:
         { field: 'trend', headerName: 'Last five quarters', type: 'text' },
       ];
       const block = moduleTable(
-        { agent: 'Report Builder', sources: [{ kind: 'table', label: institutionType === 'bank' ? 'Month-end history and the 2026 plan' : 'The 5300, month-end history and the 2026 plan', ref: 'table:fin_benchmark' }] },
+        { agent: 'Report Builder', sources: [{ kind: 'table', label: institutionType === 'bank' ? 'The Call Report, month-end history and the 2026 plan' : 'The 5300, month-end history and the 2026 plan', ref: 'table:fin_benchmark' }] },
         'Scorecard against plan and peers',
         runId,
         'board.scorecard',
@@ -136,7 +141,7 @@ export function boardAnalyses(svc: SemanticService, pool: Pool, institutionType:
       );
       const first = s.behind[0];
       return {
-        block: { ...block, subtitle: `Plan: the 2026 budget. Peers: ${institutionType === 'bank' ? 'commercial banks $1–3B' : 'credit unions over $1B'}, Q2 2026 medians (illustrative).${institutionType === 'bank' ? ' Earnings and capital need the FFIEC Call Report, which isn’t loaded.' : ''}` } as Block,
+        block: { ...block, subtitle: `Plan: the 2026 budget. Peers: ${institutionType === 'bank' ? 'commercial banks $1–3B' : 'credit unions over $1B'}, Q2 2026 medians (illustrative).` } as Block,
         take: { headline: s.headline, action: first ? { label: `Why is ${first.label.toLowerCase().replace(/, 12 months$/, '')} behind plan?`, ask: `Why is ${first.label.toLowerCase().replace(/, 12 months$/, '')} behind plan?` } : { label: 'What changed since last quarter?', ask: 'What changed since last quarter-end?' } },
       };
     },

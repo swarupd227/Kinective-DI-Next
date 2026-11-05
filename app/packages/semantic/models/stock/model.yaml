@@ -93,6 +93,7 @@ sources:
     alias: cv
     filters: ['cv.quarter_end = (SELECT MAX(q.quarter_end) FROM cr_value AS q)']
     purview_column: '0'
+    institution_types: [credit_union]
     lineage: [cr_value, cr_line]
   call_report_history:
     # Every quarter's 5300, for trends: board reports read five quarters. Institution-wide, like the latest.
@@ -101,6 +102,24 @@ sources:
     alias: cvh
     time_column: cvh.quarter_end
     purview_column: '0'
+    institution_types: [credit_union]
+    lineage: [cr_value, cr_line]
+  ffiec_report:
+    # The bank's latest FFIEC 051 Call Report, institution-wide.
+    kind: current
+    table: cr_value
+    alias: fv
+    filters: ['fv.quarter_end = (SELECT MAX(q.quarter_end) FROM cr_value AS q)']
+    purview_column: '0'
+    institution_types: [bank]
+    lineage: [cr_value, cr_line]
+  ffiec_history:
+    kind: history
+    table: cr_value
+    alias: fvh
+    time_column: fvh.quarter_end
+    purview_column: '0'
+    institution_types: [bank]
     lineage: [cr_value, cr_line]
 
 dimensions:
@@ -202,38 +221,52 @@ measures:
     exprs:
       call_report: "SUM(CASE WHEN cv.code = '115' THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
       call_report_history: "SUM(CASE WHEN cvh.code = '115' THEN cvh.amount * 12 / MONTH(cvh.quarter_end) ELSE 0 END)"
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RIAD4107' THEN fv.amount ELSE 0 END * 12 / MONTH(fv.quarter_end))"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RIAD4107' THEN fvh.amount ELSE 0 END * 12 / MONTH(fvh.quarter_end))"
   interest_expense_annualized_sum:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = '350' THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
       call_report_history: "SUM(CASE WHEN cvh.code = '350' THEN cvh.amount * 12 / MONTH(cvh.quarter_end) ELSE 0 END)"
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RIAD4073' THEN fv.amount ELSE 0 END * 12 / MONTH(fv.quarter_end))"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RIAD4073' THEN fvh.amount ELSE 0 END * 12 / MONTH(fvh.quarter_end))"
   non_interest_income_annualized_sum:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = '117' THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
       call_report_history: "SUM(CASE WHEN cvh.code = '117' THEN cvh.amount * 12 / MONTH(cvh.quarter_end) ELSE 0 END)"
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RIAD4079' THEN fv.amount ELSE 0 END * 12 / MONTH(fv.quarter_end))"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RIAD4079' THEN fvh.amount ELSE 0 END * 12 / MONTH(fvh.quarter_end))"
   operating_expense_annualized_sum:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = '671' THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
       call_report_history: "SUM(CASE WHEN cvh.code = '671' THEN cvh.amount * 12 / MONTH(cvh.quarter_end) ELSE 0 END)"
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RIAD4093' THEN fv.amount ELSE 0 END * 12 / MONTH(fv.quarter_end))"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RIAD4093' THEN fvh.amount ELSE 0 END * 12 / MONTH(fvh.quarter_end))"
   provision_annualized_sum:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = 'IS0017' THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
       call_report_history: "SUM(CASE WHEN cvh.code = 'IS0017' THEN cvh.amount * 12 / MONTH(cvh.quarter_end) ELSE 0 END)"
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RIADJJ33' THEN fv.amount ELSE 0 END * 12 / MONTH(fv.quarter_end))"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RIADJJ33' THEN fvh.amount ELSE 0 END * 12 / MONTH(fvh.quarter_end))"
   revenue_annualized_sum:
     unit: usd
     exprs:
       # Net interest income plus non-interest income: the efficiency ratio's denominator.
       call_report: "SUM(CASE WHEN cv.code IN ('IS0010', '117') THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
       call_report_history: "SUM(CASE WHEN cvh.code IN ('IS0010', '117') THEN cvh.amount * 12 / MONTH(cvh.quarter_end) ELSE 0 END)"
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RIAD4074' THEN fv.amount WHEN fv.code = 'RIAD4079' THEN fv.amount ELSE 0 END * 12 / MONTH(fv.quarter_end))"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RIAD4074' THEN fvh.amount WHEN fvh.code = 'RIAD4079' THEN fvh.amount ELSE 0 END * 12 / MONTH(fvh.quarter_end))"
   funding_sum:
     unit: usd
     exprs:
       # Shares and deposits plus borrowings: what the cost of funds is paid on.
       call_report: "SUM(CASE WHEN cv.code IN ('018', '860C') THEN cv.amount ELSE 0 END)"
       call_report_history: "SUM(CASE WHEN cvh.code IN ('018', '860C') THEN cvh.amount ELSE 0 END)"
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RCON2200' THEN fv.amount WHEN fv.code = 'RCON3190' THEN fv.amount ELSE 0 END)"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RCON2200' THEN fvh.amount WHEN fvh.code = 'RCON3190' THEN fvh.amount ELSE 0 END)"
   loan_balance_sum:
     unit: usd
     exprs:
@@ -287,12 +320,16 @@ measures:
       call_report: "SUM(CASE WHEN cv.code = '997' THEN cv.amount ELSE 0 END)"
 
       call_report_history: "SUM(CASE WHEN cvh.code = '997' THEN cvh.amount ELSE 0 END)"
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RCON8274' THEN fv.amount ELSE 0 END)"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RCON8274' THEN fvh.amount ELSE 0 END)"
   net_worth_assets_sum:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = 'NW0010' THEN cv.amount ELSE 0 END)"
 
       call_report_history: "SUM(CASE WHEN cvh.code = 'NW0010' THEN cvh.amount ELSE 0 END)"
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RCONA224' THEN fv.amount ELSE 0 END)"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RCONA224' THEN fvh.amount ELSE 0 END)"
   net_income_annualized_sum:
     unit: usd
     exprs:
@@ -300,24 +337,32 @@ measures:
       call_report: "SUM(CASE WHEN cv.code = '661A' THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
 
       call_report_history: "SUM(CASE WHEN cvh.code = '661A' THEN cvh.amount * 12 / MONTH(cvh.quarter_end) ELSE 0 END)"
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RIAD4340' THEN fv.amount ELSE 0 END * 12 / MONTH(fv.quarter_end))"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RIAD4340' THEN fvh.amount ELSE 0 END * 12 / MONTH(fvh.quarter_end))"
   net_interest_income_annualized_sum:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = 'IS0010' THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
 
       call_report_history: "SUM(CASE WHEN cvh.code = 'IS0010' THEN cvh.amount * 12 / MONTH(cvh.quarter_end) ELSE 0 END)"
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RIAD4074' THEN fv.amount ELSE 0 END * 12 / MONTH(fv.quarter_end))"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RIAD4074' THEN fvh.amount ELSE 0 END * 12 / MONTH(fvh.quarter_end))"
   net_charge_off_annualized_sum:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = '550' THEN cv.amount WHEN cv.code = '551' THEN -cv.amount ELSE 0 END * 12 / MONTH(cv.quarter_end))"
 
       call_report_history: "SUM(CASE WHEN cvh.code = '550' THEN cvh.amount WHEN cvh.code = '551' THEN -cvh.amount ELSE 0 END * 12 / MONTH(cvh.quarter_end))"
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RIAD4635' THEN fv.amount WHEN fv.code = 'RIAD4605' THEN -fv.amount ELSE 0 END * 12 / MONTH(fv.quarter_end))"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RIAD4635' THEN fvh.amount WHEN fvh.code = 'RIAD4605' THEN -fvh.amount ELSE 0 END * 12 / MONTH(fvh.quarter_end))"
   call_report_loans_sum:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = '025B' THEN cv.amount ELSE 0 END)"
 
       call_report_history: "SUM(CASE WHEN cvh.code = '025B' THEN cvh.amount ELSE 0 END)"
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RCON2122' THEN fv.amount ELSE 0 END)"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RCON2122' THEN fvh.amount ELSE 0 END)"
   average_loans_sum:
     unit: usd
     exprs:
@@ -326,24 +371,32 @@ measures:
       call_report: "(SUM(CASE WHEN cv.code = '025B' THEN cv.amount ELSE 0 END) + (SELECT SUM(ye.balance) FROM hist_loan_month AS ye WHERE ye.month_end = (SELECT MAX(m.month_end) FROM hist_loan_month AS m WHERE m.month_end < MAKEDATE(YEAR((SELECT MAX(q.quarter_end) FROM cr_value AS q)), 1)))) / 2"
 
       call_report_history: "SUM(CASE WHEN cvh.code = '025B' THEN (cvh.amount + COALESCE((SELECT ye.amount FROM cr_value AS ye WHERE ye.code = '025B' AND ye.quarter_end = MAKEDATE(YEAR(cvh.quarter_end), 1) - INTERVAL 1 DAY), cvh.amount)) / 2 ELSE 0 END)"
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RCON2122' THEN (fv.amount + COALESCE((SELECT ye.amount FROM cr_value AS ye WHERE ye.code = 'RCON2122' AND ye.quarter_end = MAKEDATE(YEAR(fv.quarter_end), 1) - INTERVAL 1 DAY), fv.amount)) / 2 ELSE 0 END)"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RCON2122' THEN (fvh.amount + COALESCE((SELECT ye.amount FROM cr_value AS ye WHERE ye.code = 'RCON2122' AND ye.quarter_end = MAKEDATE(YEAR(fvh.quarter_end), 1) - INTERVAL 1 DAY), fvh.amount)) / 2 ELSE 0 END)"
   allowance_sum:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = 'AS0048' THEN cv.amount ELSE 0 END)"
 
       call_report_history: "SUM(CASE WHEN cvh.code = 'AS0048' THEN cvh.amount ELSE 0 END)"
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RCON3123' THEN fv.amount ELSE 0 END)"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RCON3123' THEN fvh.amount ELSE 0 END)"
   call_report_dq60_sum:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = '041B' THEN cv.amount ELSE 0 END)"
 
       call_report_history: "SUM(CASE WHEN cvh.code = '041B' THEN cvh.amount ELSE 0 END)"
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RCON1407' THEN fv.amount WHEN fv.code = 'RCON1403' THEN fv.amount ELSE 0 END)"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RCON1407' THEN fvh.amount WHEN fvh.code = 'RCON1403' THEN fvh.amount ELSE 0 END)"
   call_report_assets_sum:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = '010' THEN cv.amount ELSE 0 END)"
 
       call_report_history: "SUM(CASE WHEN cvh.code = '010' THEN cvh.amount ELSE 0 END)"
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RCON2170' THEN fv.amount ELSE 0 END)"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RCON2170' THEN fvh.amount ELSE 0 END)"
   maturing_90_balance_sum:
     unit: usd
     exprs:
@@ -532,6 +585,7 @@ metrics:
     requires_any: [matur, renew, rolling off]
   net_worth_ratio:
     label: Net worth ratio
+    labels_by_type: { bank: Tier 1 leverage ratio }
     type: ratio
     numerator: net_worth_sum
     denominator: net_worth_assets_sum
@@ -579,6 +633,7 @@ metrics:
     dimensions_allowed: []
   allowance_coverage:
     label: Allowance coverage of delinquent loans
+    labels_by_type: { bank: Allowance coverage of noncurrent loans }
     type: ratio
     numerator: allowance_sum
     denominator: call_report_dq60_sum

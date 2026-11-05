@@ -159,12 +159,18 @@ export interface CallReportCheck {
 export const CALL_REPORT_EDITION = 'Version 2025.1 (effective March 31, 2025)';
 
 /** Year-to-date lines grow every quarter by design, so they are never a change to explain. */
-const YEAR_TO_DATE = (l: { schedule: string; section: string; code: string }) => l.schedule === 'SIE' || l.section.startsWith('Section 3') || l.code === '031A' || l.code === '031B';
+const YEAR_TO_DATE = (l: { schedule: string; section: string; code: string }) => l.schedule === 'SIE' || l.schedule.startsWith('RI') || l.section.startsWith('Section 3') || l.code === '031A' || l.code === '031B';
 
 const quarterLabel = (end: string) => `Q${Math.ceil(Number(end.slice(5, 7)) / 3)} ${end.slice(0, 4)}`;
 
 export class CallReportService {
   constructor(private readonly pool: Pool) {}
+
+  /** Which form this institution files (the 5300 or the FFIEC 051), its edition, and where it's filed. */
+  async form() {
+    const [f] = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM cr_form LIMIT 1').catch(() => []);
+    return f ? { form: String(f.form), edition: String(f.edition), filedIn: String(f.filed_in), preparer: String(f.preparer) } : { form: '5300', edition: CALL_REPORT_EDITION, filedIn: 'CUOnline', preparer: '' };
+  }
 
   /** The quarter being prepared and the one before it, from the values on file. */
   async quarters() {
@@ -213,7 +219,8 @@ export class CallReportService {
     const l = all.find((x) => x.code.toLowerCase() === code.toLowerCase());
     if (!l) throw new CoreError('NOT_FOUND', `There’s no 5300 line ${code}. Lines are NCUA account codes such as 025B, 018 or 041B.`);
     const gl = (await rows<Record<string, unknown>>(this.pool, 'SELECT gl_number, name, balance, prior_balance FROM cr_gl_account WHERE line_code = ? ORDER BY gl_number', [l.code]).catch(() => [])).map((g) => ({ glNumber: g.gl_number as string, name: g.name as string, current: Number(g.balance), prior: Number(g.prior_balance) }));
-    const named = l.formula ? [...new Set(l.formula.match(/\b[A-Z]{0,2}\d{3,4}[A-Z]?\d?\b/g) ?? [])].filter((c) => c !== l.code) : [];
+    // NCUA account codes (025B, 041B) or FFIEC MDRM codes (RCON2122, RIAD4074).
+    const named = l.formula ? [...new Set(l.formula.match(/\b(?:RCON|RIAD)[A-Z0-9]{4}\b|\b[A-Z]{0,2}\d{3,4}[A-Z]?\d?\b/g) ?? [])].filter((c) => c !== l.code) : [];
     const parts = named.map((c) => all.find((x) => x.code === c)).filter((x): x is CallReportLine => !!x);
     // Totals without a printed formula add Schedule A's rows by loan type (025B, 041B, 550), or their section's inputs.
     // Loans granted year to date sit in Section 1 but are activity, not part of the balance.
