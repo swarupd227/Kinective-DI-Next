@@ -62,7 +62,8 @@ export interface ModuleTool {
   input: z.ZodType;
   /** A read's view, or a change for approval. Throws CoreError to refuse. */
   run: (args: never, ctx: ModuleContext) => Promise<ModuleView | { change: ModuleChange }>;
-  apply?: (apply: never, meta: { approvalId: string; userId: string }, ctx: ModuleContext) => Promise<void>;
+  /** Runs the approved change. What it returns, if anything, is shown instead of the change's done text. */
+  apply?: (apply: never, meta: { approvalId: string; userId: string }, ctx: ModuleContext) => Promise<void | ModuleView>;
 }
 
 export interface ModuleWork {
@@ -188,14 +189,15 @@ export class ModuleGateway {
     const spec = this.spec(approval.operation)!;
     const payload = approval.payload as ModuleDraft['payload'];
     const tool = spec.tools.find((t) => t.name === payload.tool)!;
+    let view: ModuleView | undefined;
     try {
-      await tool.apply?.(payload.apply as never, { approvalId: approval.approvalId, userId: ctx.user.id }, ctx);
+      view = (await tool.apply?.(payload.apply as never, { approvalId: approval.approvalId, userId: ctx.user.id }, ctx)) ?? undefined;
       await this.approvals.markExecuted(approval.approvalId, approval.operation.slice(0, 40));
     } catch (e) {
       await this.approvals.markFailed(approval.approvalId);
       throw e;
     }
-    return { spec, payload };
+    return { spec, payload, view };
   }
 }
 

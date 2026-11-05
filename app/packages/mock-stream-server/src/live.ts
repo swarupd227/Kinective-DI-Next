@@ -7,8 +7,8 @@ import { AnthropicModelClient, AuditLog, Concierge, ReportGateway, ToolGateway, 
 import { ApprovalStore, WorksheetService, CalendarStore, FileStore, foldersFor, TaskService, WorkflowDefService, IndirectService, ProspectService, QueryService, GovernanceService, LineageService, CallReportService, CampaignService, CollectionsService, CoreError, DataLogService, GoalsService, IssueService, OnboardingService, OperationsService, RetentionService, SegService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type CoreContext, type InboxItem, type Scorecard, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
 import type { JumpCard, AppNotification, AppView, AppViewId, QueryRun, DiTake, GoalsIndex, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
 import { createAppViews } from './appViews.ts';
-import { columnStatRows, dataLoadModule, tablesModule } from '@dinext/agents';
-import { IngestService, TableService, type TableObject } from '@dinext/di-core';
+import { columnStatRows, dataLoadModule, sourcesModule, tablesModule } from '@dinext/agents';
+import { IngestService, SourceService, coreSystem, secretKeyFrom, TableService, type TableObject } from '@dinext/di-core';
 import { readWorkbook } from './spreadsheet.ts';
 import type { TableSavedItem, TableWorkbench } from '@dinext/block-schemas';
 import { renderExport } from './exports.ts';
@@ -18,7 +18,7 @@ import { SemanticService } from '@dinext/semantic';
 import { notificationsModule } from '@dinext/agents';
 import { EmailOutbox, tenantDomain, type EmailKind } from '@dinext/di-core';
 import type { ReportSettingsView } from '@dinext/block-schemas';
-import { tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
+import { CORE_READER, coreReaderPassword, dbUrl, replicaDatabase, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { PERSONAS, type PersonaId } from './data.ts';
 import { matchesAll, rank } from './search.ts';
 
@@ -81,7 +81,23 @@ interface Tenant {
   tables: TableService | null;
   /** The simulated email outbox, once the tenant has the notification tables. */
   outbox: EmailOutbox | null;
+  /** Direct core connections, once the tenant has the source tables. */
+  sources: SourceService | null;
+  /** The demo core replica, when the tenant has one. */
+  replica: string | null;
 }
+
+/**
+ * Hosts DI may connect to: DI_SOURCE_HOSTS (the institution's VPN or private link endpoints), else the
+ * warehouse's own server, where the demo replica lives.
+ */
+const sourceHosts = () => {
+  const listed = (process.env.DI_SOURCE_HOSTS ?? '').split(',').map((h) => h.trim()).filter(Boolean);
+  if (listed.length) return listed;
+  const host = new URL(dbUrl()).hostname;
+  return host === '127.0.0.1' || host === 'localhost' ? ['127.0.0.1', 'localhost'] : [host];
+};
+const sourceOptions = () => ({ secretKey: secretKeyFrom(), allowedHosts: sourceHosts(), ...(process.env.DI_DB_SSL === '1' ? { ssl: { minVersion: 'TLSv1.2', rejectUnauthorized: true } } : {}) });
 
 export interface LiveRunResult {
   /** Set when the turn belongs to an agent that is still a scripted placeholder. */
@@ -151,6 +167,10 @@ export interface LiveRuntime {
   exportFile(persona: PersonaId, exportId: string): Promise<{ fileName: string; contentType: string; body: Buffer } | null>;
   /** Keeps an upload as Staged for its uploader; nothing is in a folder until a save is approved (spec 8.15). */
   stageFile(persona: PersonaId, f: { name: string; body: Buffer }): Promise<{ fileId: number; name: string; type: string; sizeKb: number } | null>;
+  /** Saves a core login for the person; the password never comes back. Null without the access. */
+  saveSourceLogin(persona: PersonaId, f: { system: string; host: string; port: number; database: string; login: string; password: string }): Promise<{ credentialId: number; system: string; host: string; database: string; login: string } | null>;
+  /** The demo replica's connection details, so a demo can fill the form. Null where there's none. */
+  demoSource(persona: PersonaId): { system: string; host: string; port: number; database: string; login: string; password: string } | null;
   /** An uploaded file's content, under the same folder rules as the page. Null reads as not found. */
   fileContent(persona: PersonaId, fileId: number): Promise<{ name: string; mime: string; body: Buffer } | null>;
   /** Runs every active schedule as the nightly build would (local stand-in for the after-build trigger). */
@@ -296,7 +316,14 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     );
     const governance = hasLedger ? new GovernanceService(pool) : null;
     if (governance) audit.ledger(t.key, (r) => governance.record({ runId: r.runId, at: r.at, userId: r.userId, threadId: r.threadId, agent: r.route.label ?? AGENT_LABELS[r.route.agent] ?? r.route.agent, intent: r.route.intent, mode: r.route.mode, question: r.question, outcome: r.outcome, model: r.usage.at(-1)?.model ?? null, inputTokens: r.usage.reduce((n, u) => n + u.inputTokens, 0), outputTokens: r.usage.reduce((n, u) => n + u.outputTokens, 0), cacheReadTokens: r.usage.reduce((n, u) => n + u.cacheReadTokens, 0), costUsd: r.totalCostUsd, toolCalls: r.toolCalls }));
-    const governanceModules = governance ? [lineageModule(new LineageService(pool, semantic.model)), governanceModule(governance, () => new Date().getFullYear())] : [];
+    // Direct core connections exist once the tenant was seeded with the sources slice or later.
+    const hasSources = await pool.query('SELECT 1 FROM src_connection LIMIT 1').then(
+      () => true,
+      () => false,
+    );
+    const sources = hasSources ? new SourceService(pool, sourceOptions()) : null;
+    const replica = hasSources && institutionType === 'credit_union' ? replicaDatabase(t.schema) : null;
+    const governanceModules = governance ? [lineageModule(new LineageService(pool, semantic.model, undefined, sources ? () => sources.feeds() : undefined)), governanceModule(governance, () => new Date().getFullYear())] : [];
     // Indirect Lending and Prospecting exist once the tenant was seeded with Slice 21 or later.
     const growth = await Promise.all([pool.query('SELECT name FROM ind_dealer ORDER BY dealer_id'), pool.query('SELECT company FROM prs_prospect ORDER BY prospect_id'), pool.query('SELECT name FROM prs_stage ORDER BY position')]).then(
       ([d, p, s]) => ({ dealers: (d[0] as { name: string }[]).map((x) => x.name), companies: (p[0] as { company: string }[]).map((x) => x.company), stages: (s[0] as { name: string }[]).map((x) => x.name) }),
@@ -336,6 +363,8 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     const tables = hasTables ? new TableService(pool, institutionType === 'bank' ? 'customer' : 'member') : null;
     // Data files load into the Tables store; the module goes first so "load x.csv into a table" is never read as Tables or Files.
     const tablesModules = tables ? [dataLoadModule(files, new IngestService(pool, readWorkbook), today), tablesModule(tables, today)] : [];
+    // "Connect the Symitar replica" and "pull from the core" go to Data Sources before anything else reads them.
+    if (sources) tablesModules.unshift(sourcesModule(sources, today));
     // Email notifications exist once the tenant has the outbox tables; the module goes first so its
     // narrow phrases ("stop emailing me …") are never read as another module's request.
     const hasOutbox = await pool.query('SELECT 1 FROM ntf_pref LIMIT 1').then(
@@ -364,7 +393,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     const [staff] = await pool.query('SELECT DISTINCT display_name FROM cdm_employee');
     const dims = semantic.dimensionValues;
     const vocabulary = [...new Set([...(dims.branch ?? []), ...(dims.region ?? []), ...(dims.loan_category ?? []), ...(dims.deposit_category ?? []), ...(staff as { display_name: string }[]).map((s) => s.display_name).filter((s) => !/^\w\. /.test(s))])];
-    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, governance, files, tables, outbox, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules } });
+    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, governance, files, tables, outbox, sources, replica, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules } });
   }
   if (!tenants.size) return null;
 
@@ -408,6 +437,22 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       const p = PERSONAS[persona];
       if (!t?.files || !p.session.apps.includes('files') || !p.modules?.includes('files')) return null;
       return t.files.stage({ name: f.name, body: f.body, owner: { userId: p.session.user.id, name: p.session.user.name }, on: new Date().toISOString().slice(0, 10) });
+    },
+
+    async saveSourceLogin(persona, f) {
+      const t = tenantFor(persona);
+      const p = PERSONAS[persona];
+      if (!t?.sources || !p.session.apps.includes('integrations') || !p.modules?.includes('sources')) return null;
+      const saved = await t.sources.saveLogin(f, { userId: p.session.user.id });
+      return { credentialId: saved.credentialId, system: saved.system.label, host: saved.host, database: saved.database, login: saved.login };
+    },
+
+    demoSource(persona) {
+      const t = tenantFor(persona);
+      const p = PERSONAS[persona];
+      if (!t?.replica || !p.modules?.includes('sources')) return null;
+      const url = new URL(dbUrl());
+      return { system: coreSystem('symitar')!.id, host: url.hostname, port: Number(url.port || 3306), database: t.replica, login: CORE_READER, password: coreReaderPassword() };
     },
 
     async fileContent(persona, fileId) {

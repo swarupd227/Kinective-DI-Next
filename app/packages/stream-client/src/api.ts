@@ -141,6 +141,18 @@ export function createApiClient({ baseUrl, token }: ApiClientOptions) {
       if (!res.ok) throw new Error(json.message ?? 'That file could not be uploaded.');
       return json;
     },
+    /** Saves a core login. The password goes to DI Core and never comes back; the reply has its number. */
+    async saveSourceLogin(f: { system: string; host: string; port: number; database: string; login: string; password: string }): Promise<{ credentialId: number; system: string; host: string; database: string; login: string }> {
+      const res = await fetch(`${baseUrl}/v1/sources/login`, { method: 'POST', headers: headers(), body: JSON.stringify(f) });
+      const json = (await res.json().catch(() => ({}))) as { credentialId: number; system: string; host: string; database: string; login: string; message?: string };
+      if (!res.ok) throw new Error(json.message ?? 'Those connection details could not be saved.');
+      return json;
+    },
+    /** The demo replica's details, where there is one. */
+    async demoSource(): Promise<{ system: string; host: string; port: number; database: string; login: string; password: string } | null> {
+      const res = await fetch(`${baseUrl}/v1/sources/demo`, { headers: headers() });
+      return res.ok ? ((await res.json()) as { system: string; host: string; port: number; database: string; login: string; password: string }) : null;
+    },
     feedback: (f: { runId: string; rating: 'up' | 'down'; comment?: string }) => send<void>('POST', '/v1/feedback', f),
     table: (tableId: string) => get<TableData>(`/v1/tables/${encodeURIComponent(tableId)}`),
     tableWorkbench: (tableId: string) => get<TableWorkbench>(`/v1/tables/${encodeURIComponent(tableId)}/workbench`),

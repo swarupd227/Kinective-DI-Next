@@ -670,6 +670,23 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
           throw err;
         }
       }
+      // ---- direct core connections (spec 14.5) ----
+      if (method === 'POST' && path === '/v1/sources/login') {
+        // The password stops here: DI Core encrypts it, and nothing returns it.
+        const body = await readBody<{ system?: unknown; host?: unknown; port?: unknown; database?: unknown; login?: unknown; password?: unknown }>(req);
+        const str = (v: unknown) => (typeof v === 'string' ? v : '');
+        try {
+          const saved = await live?.saveSourceLogin(persona(), { system: str(body.system), host: str(body.host), port: Number(body.port), database: str(body.database), login: str(body.login), password: str(body.password) });
+          return saved ? json(res, 201, saved) : json(res, 403, { code: 'NO_ACCESS', message: 'Connecting a core is part of the Integrations administrator’s access.' });
+        } catch (err) {
+          if (err instanceof CoreError) return json(res, 422, { code: err.code, message: err.message });
+          throw err;
+        }
+      }
+      if (method === 'GET' && path === '/v1/sources/demo') {
+        const demo = live?.demoSource(persona());
+        return demo ? json(res, 200, demo) : json(res, 404, { code: 'NOT_FOUND' });
+      }
       const fileContent = /^\/v1\/files\/(\d+)\/content$/.exec(path);
       if (method === 'GET' && fileContent) {
         // Outside the person's folders and not found give the same answer.

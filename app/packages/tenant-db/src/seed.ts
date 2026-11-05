@@ -17,6 +17,7 @@ import { generateRelationship, RELATIONSHIP_DDL } from './relationship.ts';
 import { reportSeed } from './reports.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
+import { createSourceTables, seedCoreReplica } from './sources.ts';
 import { referralSeed, WORKFLOW_DDL, WORKFLOW_WRITE_TABLES, workflowSeed } from './workflow.ts';
 
 const BATCH = 2000;
@@ -127,6 +128,9 @@ async function main() {
     for (const table of [...WORKFLOW_WRITE_TABLES, ...PIPELINE_WRITE_TABLES, ...GOALS_WRITE_TABLES, ...MODULES_WRITE_TABLES, ...GROWTH_WRITE_TABLES, ...TASKS_WRITE_TABLES, ...WORKFLOW_DEF_WRITE_TABLES, ...WORKSPACE_WRITE_TABLES, ...CALENDAR_SERIES_WRITE_TABLES, ...TABLES_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     // Add-only: a run record or a rating can't be changed once written (AI-GRD-090).
     for (const table of GOVERNANCE_APPEND_TABLES) await admin.query(`GRANT INSERT ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
+    // Direct core connections: DI's store for every tenant, and a Symitar-style replica for the credit union.
+    await createSourceTables(admin, profile.schema);
+    if (profile.institutionType === 'credit_union') await seedCoreReplica(admin, profile.schema);
     console.log(`${profile.key}: ${t.parties.length} parties, ${t.loans.length} loans, ${t.deposits.length} deposit accounts, ${t.histLoan.length} loan history rows, ${rm.interactions.length} interactions in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   }
   await admin.end();

@@ -106,7 +106,12 @@ export function AppViewPage({ app }: { app: AppViewId }) {
     <Frame q={q}>
       {(v) => (
         <>
-          {app === 'integrations' && <DataUpload />}
+          {app === 'integrations' && (
+            <>
+              <ConnectSource />
+              <DataUpload />
+            </>
+          )}
           <Blocks view={v} />
         </>
       )}
@@ -165,6 +170,122 @@ function DataUpload() {
       {load.isError && (
         <p className={styles.message} role="alert">
           {load.error.message}
+        </p>
+      )}
+    </section>
+  );
+}
+
+// ---- connect a source ---------------------------------------------------------------------------
+
+const CORES = [
+  { id: 'symitar', label: 'Jack Henry Symitar' },
+  { id: 'dna', label: 'Fiserv DNA' },
+  { id: 'keystone', label: 'Corelation KeyStone' },
+  { id: 'premier', label: 'Fiserv Premier' },
+  { id: 'other', label: 'Another MySQL database' },
+];
+const KINDS = [
+  { id: 'database', label: 'Core database' },
+  { id: 'sftp', label: 'SFTP folder' },
+  { id: 'api', label: 'Vendor API' },
+] as const;
+const EMPTY_LOGIN = { system: 'symitar', host: '', port: '3306', database: '', login: '', password: '' };
+
+/**
+ * Connect a source (Integrations > Databases): one place for every way data arrives. For a core
+ * database the person enters the replica and a read-only login; the password goes to DI Core, which
+ * keeps it encrypted, and DI's agent only ever sees its number. DI then tests it, proves it can't
+ * write, and proposes the mapping. Nothing is connected until the card is approved.
+ */
+function ConnectSource() {
+  const { api, startThread } = useSession();
+  const navigate = useNavigate();
+  const [kind, setKind] = useState<(typeof KINDS)[number]['id']>('database');
+  const [f, setF] = useState(EMPTY_LOGIN);
+  const demo = useQuery({ queryKey: ['sources', 'demo'], queryFn: () => api.demoSource(), staleTime: Infinity });
+  const set = (k: keyof typeof EMPTY_LOGIN) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const test = useMutation<void, Error, typeof EMPTY_LOGIN>({
+    mutationFn: async (v) => {
+      const saved = await api.saveSourceLogin({ ...v, port: Number(v.port) });
+      setF((x) => ({ ...x, password: '' }));
+      const id = await startThread(`Test the connection to the ${saved.system} replica (connection details #${saved.credentialId})`);
+      navigate(`/c/${id}`);
+    },
+  });
+  const ready = f.host.trim() && f.database.trim() && f.login.trim() && f.password && Number(f.port) > 0;
+  return (
+    <section className={styles.query} aria-labelledby="connect-source">
+      <h2 id="connect-source" className={styles.heading}>
+        Connect a source
+      </h2>
+      <div className={styles.choices} role="radiogroup" aria-label="How the data arrives">
+        {KINDS.map((k) => (
+          <button key={k.id} type="button" role="radio" aria-checked={kind === k.id} className={kind === k.id ? styles.choiceOn : styles.choice} onClick={() => setKind(k.id)}>
+            {k.label}
+          </button>
+        ))}
+      </div>
+      {kind === 'database' ? (
+        <form
+          className={styles.query}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (ready) test.mutate(f);
+          }}
+        >
+          <div className={styles.loginGrid}>
+            <label className={styles.field}>
+              <span className={styles.tileLabel}>Core system</span>
+              <select className={styles.select} value={f.system} onChange={set('system')}>
+                {CORES.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={styles.field}>
+              <span className={styles.tileLabel}>Replica host</span>
+              <input className={styles.select} value={f.host} onChange={set('host')} placeholder="replica.core.example.org" autoComplete="off" spellCheck={false} />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.tileLabel}>Port</span>
+              <input className={styles.select} value={f.port} onChange={set('port')} inputMode="numeric" autoComplete="off" />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.tileLabel}>Database</span>
+              <input className={styles.select} value={f.database} onChange={set('database')} autoComplete="off" spellCheck={false} />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.tileLabel}>Read-only login</span>
+              <input className={styles.select} value={f.login} onChange={set('login')} autoComplete="off" spellCheck={false} />
+            </label>
+            <label className={styles.field}>
+              <span className={styles.tileLabel}>Password</span>
+              <input className={styles.select} type="password" value={f.password} onChange={set('password')} autoComplete="new-password" />
+            </label>
+          </div>
+          <p className={styles.tileLabel}>DI tests the login, checks it can only read, and proposes how the core’s tables map to DI’s. Nothing connects until you approve. The password is encrypted, never shown again, and never seen by DI’s agents.</p>
+          <div className={styles.uploadRow}>
+            <Button type="submit" variant="primary" disabled={!ready || test.isPending}>
+              {test.isPending ? 'Saving…' : 'Test it and ask DI to connect it'}
+            </Button>
+            {demo.data && (
+              <Button type="button" variant="secondary" onClick={() => setF({ system: demo.data!.system, host: demo.data!.host, port: String(demo.data!.port), database: demo.data!.database, login: demo.data!.login, password: demo.data!.password })}>
+                Fill in the demo replica
+              </Button>
+            )}
+          </div>
+          {test.isError && (
+            <p className={styles.message} role="alert">
+              {test.error.message}
+            </p>
+          )}
+        </form>
+      ) : (
+        <p className={styles.notice} role="note">
+          {kind === 'sftp' ? 'SFTP folders are set up by Kinective today. They’ll join this flow next: DI checks the first file, proposes the mapping and the late-file time, and connects it when you approve.' : 'Vendor APIs, such as Jack Henry jXchange or Fiserv Communicator, are set up by Kinective today. They’ll join this flow next, with the same test, mapping and approval.'}
         </p>
       )}
     </section>

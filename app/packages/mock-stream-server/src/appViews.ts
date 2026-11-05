@@ -4,7 +4,7 @@
 import type { AppTile, AppView, AppViewId, Block, ListBlock, TableBlock } from '@dinext/block-schemas';
 import { memberNumber, WorkflowDefService, WorksheetService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
-import { TableService } from '@dinext/di-core';
+import { SourceService, TableService, secretKeyFrom } from '@dinext/di-core';
 import { EmailOutbox } from '@dinext/di-core';
 
 type ColumnSpec = TableBlock['data']['columns'][number];
@@ -390,14 +390,29 @@ export function createAppViews(deps: ViewDeps) {
     async integrations() {
       const build = await operations.build();
       const late = build.uploads.filter((u) => u.late);
+      // Direct core connections, once the tenant has the source tables. Listing needs no key.
+      const connections = await new SourceService(deps.pool, { secretKey: secretKeyFrom(), allowedHosts: [] }).connections().catch(() => []);
+      const feeding = connections.find((c) => c.inUse);
       return {
         title: 'Integrations',
         lede: `Where the data comes from, and how the latest loads went. Data as of ${day(build.asOf)}.`,
         take: { headline: (build.stale ? `No new build for ${build.ageDays} days; the latest finished ${day(build.finishedOn)}, with data as of ${day(build.asOf)}. ` : '') + (late.length ? `${count(late.length, 'source')} arrived late: ${late.map((u) => `${u.source}, due ${u.dueBy}, arrived ${u.arrived}`).join('; ')}. The build ${build.state} with what was there.` : `Every source arrived on time, and the build ${build.state}.`), action: { label: 'Which uploaders were late?', ask: 'Which uploaders missed their late-file time?' } },
         tiles: [{ label: 'Sources', value: String(build.uploads.length) }, { label: 'Late', value: String(late.length), tone: late.length ? 'warning' : 'neutral' }, build.stale ? { label: 'Since the last build', value: `${build.ageDays} days`, detail: `Finished ${day(build.finishedOn)}`, tone: 'danger' as const } : { label: 'Last build', value: title(build.state), detail: day(build.asOf) }],
         prompts: ['Which uploaders missed their late-file time?', build.stale ? 'Why hasn’t a new build run?' : 'Did last night’s build finish?'],
-        notice: 'Load a CSV or Excel file below: DI checks it and loads it into a table of your own once you approve. SFTP connections, scheduled uploaders and new core sources are still set up by Kinective.',
-        blocks: [table('Data sources', 'ingestion.sources', [text('source', 'Source'), text('method', 'How it arrives'), text('dueBy', 'Due by'), text('arrived', 'Arrived'), text('state', 'Last load')], build.uploads.map((u) => ({ source: u.source, method: u.method, dueBy: u.dueBy, arrived: u.arrived, state: u.late ? 'Late' : 'On time' })))],
+        notice: `Connect the core’s reporting replica below with a read-only login: DI tests it, maps its tables and checks every row before anything changes. Or load a CSV or Excel file into a table of your own.${feeding ? ` Members, deposits and loans load from the ${feeding.name} from the next build.` : ''}`,
+        blocks: [
+          ...(connections.length
+            ? [
+                table(
+                  'Core connections',
+                  'src.connections',
+                  [text('name', 'Connection'), text('core', 'Core'), text('tables', 'Tables'), text('schedule', 'Schedule'), text('last', 'Last pull'), text('use', 'Builds use it')],
+                  connections.map((c) => ({ name: c.name, core: `${c.system.label} · ${c.login}, read-only`, tables: c.tables.map((t) => t.label).join(', '), schedule: c.schedule, last: c.lastRun ? `${c.lastRun.state === 'Done' ? c.lastRun.rows.toLocaleString('en-US') + ' rows' : c.lastRun.state}, ${day(c.lastRun.at)} ${c.lastRun.at.slice(11, 16)} UTC` : 'Not yet', use: c.inUse ? `From the first build after ${day(c.inUseSince ?? '')}` : 'Not yet' })),
+                ),
+              ]
+            : []),
+          table('Data sources', 'ingestion.sources', [text('source', 'Source'), text('method', 'How it arrives'), text('dueBy', 'Due by'), text('arrived', 'Arrived'), text('state', 'Last load')], build.uploads.map((u) => ({ source: u.source, method: u.source === 'Core extract' && feeding ? `Replaced by the ${feeding.name} from the next build` : u.method, dueBy: u.dueBy, arrived: u.arrived, state: u.late ? 'Late' : 'On time' }))),
+        ],
       };
     },
     async classes() {

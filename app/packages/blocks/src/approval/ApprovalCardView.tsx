@@ -429,7 +429,7 @@ function Preview({ preview }: { preview: ApprovalPreview }) {
 
 function Affected({ affected }: { affected: ApprovalCardBlock['data']['affected'] }) {
   const parts = [
-    `${affected.records} ${affected.records === 1 ? 'record' : 'records'}`,
+    `${affected.records.toLocaleString('en-US')} ${affected.records === 1 ? 'record' : 'records'}`,
     affected.users ? `${affected.users} ${affected.users === 1 ? 'person' : 'people'} notified` : null,
     affected.external ? `${affected.external} external` : 'nothing leaves DI',
   ].filter(Boolean);

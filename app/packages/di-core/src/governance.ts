@@ -56,6 +56,8 @@ export class LineageService {
     private readonly pool: Pool,
     private readonly model: LineageModel,
     private readonly catalog = LINEAGE_CATALOG,
+    /** Curated tables a direct core connection feeds, in place of the extract file. */
+    private readonly feeds?: () => Promise<Map<string, { name: string; system: string; theirTables: string[]; lastPull: string | null; since: string | null; schedule: string }>>,
   ) {}
 
   /** The metric a question names, by its longest matching name or synonym. */
@@ -114,6 +116,7 @@ export class LineageService {
     const unknown: string[] = [];
     const domains = new Set<string>();
     const columns = this.columnsFor(metric.measures);
+    const fed = (await this.feeds?.().catch(() => null)) ?? new Map();
     for (const [table, cols] of columns) {
       const entry = this.catalog[table];
       const detail = cols.size ? [...cols].join(', ') : undefined;
@@ -124,6 +127,17 @@ export class LineageService {
       }
       const base = entry.rollupOf ? this.catalog[entry.rollupOf] : entry;
       for (const d of [...entry.domains, ...(base?.domains ?? [])]) domains.add(d);
+      const feed = fed.get(entry.rollupOf ?? table);
+      if (feed) {
+        // A direct connection replaced the extract file for this table.
+        // Today's figures still came from the last build; the switch takes effect with the next one.
+        const nodes: LineageNode[] = [{ kind: 'table', label: entry.label, detail: `${table}${detail ? `: ${detail}` : ''}`, dq: dqFor(entry.domains), lastLoad: lastLoad(base?.upload) }];
+        if (entry.rollupOf) nodes.push({ kind: 'rollup', label: 'Month-end rollup', detail: `From ${entry.rollupOf}` });
+        nodes.push({ kind: 'load', label: `${feed.name} sync`, detail: `Read-only, ${feed.schedule.toLowerCase()}. Replaces the core extract file from the next build${feed.lastPull ? `; last pulled ${feed.lastPull} UTC` : ''}` });
+        nodes.push({ kind: 'source', label: `${feed.system} replica`, detail: feed.theirTables.join(' + ') });
+        lanes.push({ nodes });
+        continue;
+      }
       const nodes: LineageNode[] = [{ kind: 'table', label: entry.label, detail: `${table}${detail ? `: ${detail}` : ''}`, dq: dqFor(entry.domains), lastLoad: lastLoad(base?.upload) }];
       if (entry.rollupOf) nodes.push({ kind: 'rollup', label: 'Month-end rollup', detail: `From ${entry.rollupOf}` });
       if (base?.load) nodes.push({ kind: 'load', label: base.load, lastLoad: lastLoad(base.upload), dq: dqFor(base.domains) });

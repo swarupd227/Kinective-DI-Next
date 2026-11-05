@@ -34,3 +34,4 @@ export {
 export { EmailOutbox, EMAIL_KINDS, SIMULATED, composeEmail, emailAddress, emailKindLabel, scrub, tenantDomain, type EmailDraft, type EmailKind, type EmailPref, type EmailRow } from './notifications.ts';
 export { memberNumber } from './referrals.ts';
 export { IngestService, LOADABLE, convert, fieldFor, looksFixedWidth, parseDelimited, profile, tableNameFrom, type Cell, type ColumnProfile, type FileProfile, type Sheet, type SpreadsheetReader, type UploadedTable, type ValueKind } from './ingest.ts';
+export { CORE_SYSTEMS, SourceService, coreSystem, describeTransform, secretKeyFrom, transform, type ColumnMap, type ConnectionTest, type CoreSystem, type Difference, type MappingCheck, type PullResult, type SavedLogin, type SourceConnection, type SourceOptions, type TableMap, type TableReconcile, type Transform } from './sources.ts';

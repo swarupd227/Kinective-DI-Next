@@ -906,9 +906,11 @@ export class Concierge {
           return;
         }
         try {
-          const { spec, payload } = await modules.execute(approval, this.moduleContext(d, d.runId, d.threadId));
+          const { spec, payload, view } = await modules.execute(approval, this.moduleContext(d, d.runId, d.threadId));
           void this.deps.audit.event({ eventType: 'ai.action.executed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, operation: approval.operation, resultRef: approval.operation });
-          await sink.text(payload.done, spec.agent, spec.sources);
+          await sink.text(view?.text || payload.done, spec.agent, spec.sources);
+          for (const b of view?.blocks ?? []) await sink.block(b);
+          for (const t of view?.suggestions ?? []) sink.suggestion(t);
           sink.done?.({ notify: payload.notify ?? [] });
         } catch (err) {
           void this.deps.audit.event({ eventType: 'ai.action.failed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, error: err instanceof Error ? err.message : String(err) });

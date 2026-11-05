@@ -10,6 +10,7 @@
     "mysql2": "^3.24.6"
   },
   "scripts": {
-    "seed": "tsx src/seed.ts"
+    "seed": "tsx src/seed.ts",
+    "seed:sources": "tsx src/seed-sources.ts"
   }
 }
