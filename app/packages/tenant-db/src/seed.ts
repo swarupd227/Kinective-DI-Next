@@ -15,6 +15,7 @@ import { generateGoals, GI_GOALS, GI_INCENTIVES, GI_TIERS, GOALS_DDL, GOALS_WRIT
 import { generatePipeline, LAP_APPLICATION_COLUMNS, LAP_HOLDS, LAP_STATUSES, PIPELINE_DDL, PIPELINE_WRITE_TABLES } from './pipeline.ts';
 import { generateRelationship, RELATIONSHIP_DDL } from './relationship.ts';
 import { generateMemberHistory } from './membership.ts';
+import { BENCHMARK_DDL, benchmarks } from './benchmarks.ts';
 import { reportSeed } from './reports.ts';
 import { generateCallReport } from './callReport.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
@@ -82,6 +83,8 @@ async function main() {
     await insert(admin, 'mod_gi_period', ['period_end', 'state'], gi.periods);
     await insert(admin, 'cdm_gi_credit', ['goal_id', 'employee_id', 'period_end', 'occurred', 'label', 'value', 'state'], gi.credits);
     await insert(admin, 'mod_gi_adjustment', ['employee_id', 'period_end', 'amount', 'reason_code', 'note', 'status', 'created_by'], gi.adjustments);
+    for (const ddl of BENCHMARK_DDL) await admin.query(ddl);
+    await insert(admin, 'fin_benchmark', ['kind', 'metric', 'value', 'source'], benchmarks(profile.institutionType));
     for (const ddl of MODULES_DDL) await admin.query(ddl);
     const mods = generateModules(t, profile.institutionType);
     await insert(admin, 'cpm_issue', ['issue_id', 'party_id', 'kind', 'source', 'category', 'summary', 'status', 'owner_employee_id', 'branch_id', 'opened', 'respond_by', 'resolve_by', 'closed', 'resolution', 'root_cause'], mods.issues);

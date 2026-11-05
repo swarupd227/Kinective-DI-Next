@@ -94,6 +94,14 @@ sources:
     filters: ['cv.quarter_end = (SELECT MAX(q.quarter_end) FROM cr_value AS q)']
     purview_column: '0'
     lineage: [cr_value, cr_line]
+  call_report_history:
+    # Every quarter's 5300, for trends: board reports read five quarters. Institution-wide, like the latest.
+    kind: history
+    table: cr_value
+    alias: cvh
+    time_column: cvh.quarter_end
+    purview_column: '0'
+    lineage: [cr_value, cr_line]
 
 dimensions:
   branch:
@@ -189,6 +197,43 @@ dimensions:
 
 # Aggregations per source. {{ setting.x }} reads a tenant setting; values are never user input.
 measures:
+  interest_income_annualized_sum:
+    unit: usd
+    exprs:
+      call_report: "SUM(CASE WHEN cv.code = '115' THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
+      call_report_history: "SUM(CASE WHEN cvh.code = '115' THEN cvh.amount * 12 / MONTH(cvh.quarter_end) ELSE 0 END)"
+  interest_expense_annualized_sum:
+    unit: usd
+    exprs:
+      call_report: "SUM(CASE WHEN cv.code = '350' THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
+      call_report_history: "SUM(CASE WHEN cvh.code = '350' THEN cvh.amount * 12 / MONTH(cvh.quarter_end) ELSE 0 END)"
+  non_interest_income_annualized_sum:
+    unit: usd
+    exprs:
+      call_report: "SUM(CASE WHEN cv.code = '117' THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
+      call_report_history: "SUM(CASE WHEN cvh.code = '117' THEN cvh.amount * 12 / MONTH(cvh.quarter_end) ELSE 0 END)"
+  operating_expense_annualized_sum:
+    unit: usd
+    exprs:
+      call_report: "SUM(CASE WHEN cv.code = '671' THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
+      call_report_history: "SUM(CASE WHEN cvh.code = '671' THEN cvh.amount * 12 / MONTH(cvh.quarter_end) ELSE 0 END)"
+  provision_annualized_sum:
+    unit: usd
+    exprs:
+      call_report: "SUM(CASE WHEN cv.code = 'IS0017' THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
+      call_report_history: "SUM(CASE WHEN cvh.code = 'IS0017' THEN cvh.amount * 12 / MONTH(cvh.quarter_end) ELSE 0 END)"
+  revenue_annualized_sum:
+    unit: usd
+    exprs:
+      # Net interest income plus non-interest income: the efficiency ratio's denominator.
+      call_report: "SUM(CASE WHEN cv.code IN ('IS0010', '117') THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
+      call_report_history: "SUM(CASE WHEN cvh.code IN ('IS0010', '117') THEN cvh.amount * 12 / MONTH(cvh.quarter_end) ELSE 0 END)"
+  funding_sum:
+    unit: usd
+    exprs:
+      # Shares and deposits plus borrowings: what the cost of funds is paid on.
+      call_report: "SUM(CASE WHEN cv.code IN ('018', '860C') THEN cv.amount ELSE 0 END)"
+      call_report_history: "SUM(CASE WHEN cvh.code IN ('018', '860C') THEN cvh.amount ELSE 0 END)"
   loan_balance_sum:
     unit: usd
     exprs:
@@ -240,45 +285,65 @@ measures:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = '997' THEN cv.amount ELSE 0 END)"
+
+      call_report_history: "SUM(CASE WHEN cvh.code = '997' THEN cvh.amount ELSE 0 END)"
   net_worth_assets_sum:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = 'NW0010' THEN cv.amount ELSE 0 END)"
+
+      call_report_history: "SUM(CASE WHEN cvh.code = 'NW0010' THEN cvh.amount ELSE 0 END)"
   net_income_annualized_sum:
     unit: usd
     exprs:
       # Year-to-date net income scaled to a full year: nine months at Q3 count 12/9.
       call_report: "SUM(CASE WHEN cv.code = '661A' THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
+
+      call_report_history: "SUM(CASE WHEN cvh.code = '661A' THEN cvh.amount * 12 / MONTH(cvh.quarter_end) ELSE 0 END)"
   net_interest_income_annualized_sum:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = 'IS0010' THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
+
+      call_report_history: "SUM(CASE WHEN cvh.code = 'IS0010' THEN cvh.amount * 12 / MONTH(cvh.quarter_end) ELSE 0 END)"
   net_charge_off_annualized_sum:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = '550' THEN cv.amount WHEN cv.code = '551' THEN -cv.amount ELSE 0 END * 12 / MONTH(cv.quarter_end))"
+
+      call_report_history: "SUM(CASE WHEN cvh.code = '550' THEN cvh.amount WHEN cvh.code = '551' THEN -cvh.amount ELSE 0 END * 12 / MONTH(cvh.quarter_end))"
   call_report_loans_sum:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = '025B' THEN cv.amount ELSE 0 END)"
+
+      call_report_history: "SUM(CASE WHEN cvh.code = '025B' THEN cvh.amount ELSE 0 END)"
   average_loans_sum:
     unit: usd
     exprs:
       # NCUA's average loans: this quarter's total loans (025B) and last year-end's, averaged. The
       # year-end comes from the month-end loan history, which ties to the 5300.
       call_report: "(SUM(CASE WHEN cv.code = '025B' THEN cv.amount ELSE 0 END) + (SELECT SUM(ye.balance) FROM hist_loan_month AS ye WHERE ye.month_end = (SELECT MAX(m.month_end) FROM hist_loan_month AS m WHERE m.month_end < MAKEDATE(YEAR((SELECT MAX(q.quarter_end) FROM cr_value AS q)), 1)))) / 2"
+
+      call_report_history: "SUM(CASE WHEN cvh.code = '025B' THEN (cvh.amount + COALESCE((SELECT ye.amount FROM cr_value AS ye WHERE ye.code = '025B' AND ye.quarter_end = MAKEDATE(YEAR(cvh.quarter_end), 1) - INTERVAL 1 DAY), cvh.amount)) / 2 ELSE 0 END)"
   allowance_sum:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = 'AS0048' THEN cv.amount ELSE 0 END)"
+
+      call_report_history: "SUM(CASE WHEN cvh.code = 'AS0048' THEN cvh.amount ELSE 0 END)"
   call_report_dq60_sum:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = '041B' THEN cv.amount ELSE 0 END)"
+
+      call_report_history: "SUM(CASE WHEN cvh.code = '041B' THEN cvh.amount ELSE 0 END)"
   call_report_assets_sum:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = '010' THEN cv.amount ELSE 0 END)"
+
+      call_report_history: "SUM(CASE WHEN cvh.code = '010' THEN cvh.amount ELSE 0 END)"
   maturing_90_balance_sum:
     unit: usd
     exprs:
@@ -476,7 +541,6 @@ metrics:
     synonyms: [net worth, capital ratio, capital, well capitalized, capitalization, pca, prompt corrective action, leverage ratio, cculr]
     owner: Finance data team
     dimensions_allowed: []
-    current_only: true
   return_on_assets:
     label: Return on assets (ROA)
     type: ratio
@@ -489,7 +553,6 @@ metrics:
     requires_any: [roa, return, profitab, earning]
     owner: Finance data team
     dimensions_allowed: []
-    current_only: true
   net_interest_margin:
     label: Net interest margin (NIM)
     type: ratio
@@ -502,7 +565,6 @@ metrics:
     requires_any: [nim, margin, spread]
     owner: Finance data team
     dimensions_allowed: []
-    current_only: true
   net_charge_off_ratio:
     label: Net charge-offs to average loans
     type: ratio
@@ -515,7 +577,6 @@ metrics:
     requires_any: [charge, nco, loss]
     owner: Finance data team
     dimensions_allowed: []
-    current_only: true
   allowance_coverage:
     label: Allowance coverage of delinquent loans
     type: ratio
@@ -527,7 +588,112 @@ metrics:
     requires_any: [allowance, acl, reserve, alll, coverage]
     owner: Finance data team
     dimensions_allowed: []
-    current_only: true
+  net_interest_income:
+    label: Net interest income
+    type: simple
+    measure: net_interest_income_annualized_sum
+    format: currency
+    description: Interest income less dividends and interest expense, year to date from the 5300 (IS0010) and annualized.
+    synonyms: [net interest income, nii, interest margin dollars, spread income]
+    requires_any: [net interest income, nii]
+    owner: Finance data team
+    dimensions_allowed: []
+  non_interest_income:
+    label: Non-interest income
+    type: simple
+    measure: non_interest_income_annualized_sum
+    format: currency
+    description: Fees, interchange, gains on loan sales and other income, year to date from the 5300 (117) and annualized.
+    synonyms: [non-interest income, noninterest income, fee income, fees, other income, interchange income]
+    requires_any: [non-interest, noninterest, fee income, fees, interchange, other income]
+    owner: Finance data team
+    dimensions_allowed: []
+  operating_expense:
+    label: Operating expense
+    type: simple
+    measure: operating_expense_annualized_sum
+    format: currency
+    description: Salaries and benefits, occupancy, operations and every other non-interest expense, year to date from the 5300 (671) and annualized.
+    synonyms: [operating expense, operating expenses, opex, non-interest expense, noninterest expense, overhead, expenses]
+    requires_any: [operating, opex, non-interest expense, noninterest expense, overhead, expense]
+    owner: Finance data team
+    dimensions_allowed: []
+  provision_expense:
+    label: Provision for credit losses
+    type: simple
+    measure: provision_annualized_sum
+    format: currency
+    description: Credit loss expense, year to date from the 5300 (IS0017) and annualized.
+    synonyms: [provision, provision for credit losses, provision expense, credit loss expense, pll, loan loss provision]
+    requires_any: [provision, credit loss expense, pll]
+    owner: Finance data team
+    dimensions_allowed: []
+  net_income:
+    label: Net income
+    type: simple
+    measure: net_income_annualized_sum
+    format: currency
+    description: Year-to-date net income from the 5300 (661A), annualized.
+    synonyms: [net income, earnings, profit, bottom line]
+    requires_any: [net income, earnings, profit, bottom line]
+    owner: Finance data team
+    dimensions_allowed: []
+  efficiency_ratio:
+    label: Efficiency ratio
+    type: ratio
+    numerator: operating_expense_annualized_sum
+    denominator: revenue_annualized_sum
+    format: percent_1
+    description: Operating expense as a share of net interest income plus non-interest income, from the 5300. Lower is better; most credit unions run 70% to 85%.
+    regulatory_basis: NCUA Financial Performance Report basis - operating expenses over net interest income plus fee and other operating income.
+    synonyms: [efficiency ratio, efficiency, cost to income, cost-to-income, overhead ratio]
+    requires_any: [efficiency, cost to income, cost-to-income, overhead ratio]
+    owner: Finance data team
+    dimensions_allowed: []
+  operating_expense_ratio:
+    label: Operating expense to assets
+    type: ratio
+    numerator: operating_expense_annualized_sum
+    denominator: call_report_assets_sum
+    format: percent_2
+    description: Annualized operating expense over total assets, from the 5300.
+    synonyms: [operating expense ratio, operating expense to assets, opex ratio, expense ratio]
+    requires_any: [operating expense ratio, operating expense to assets, opex ratio, expense ratio]
+    owner: Finance data team
+    dimensions_allowed: []
+  non_interest_income_ratio:
+    label: Non-interest income to assets
+    type: ratio
+    numerator: non_interest_income_annualized_sum
+    denominator: call_report_assets_sum
+    format: percent_2
+    description: Annualized fee and other income over total assets, from the 5300.
+    synonyms: [fee income ratio, non-interest income to assets, noninterest income ratio]
+    requires_any: [fee income ratio, non-interest income to assets, noninterest income ratio, fee ratio]
+    owner: Finance data team
+    dimensions_allowed: []
+  yield_on_assets:
+    label: Yield on assets
+    type: ratio
+    numerator: interest_income_annualized_sum
+    denominator: call_report_assets_sum
+    format: percent_2
+    description: Annualized interest and investment income over total assets, from the 5300.
+    synonyms: [yield on assets, asset yield, interest income ratio]
+    requires_any: [yield on assets, asset yield]
+    owner: Finance data team
+    dimensions_allowed: []
+  cost_of_funds:
+    label: Cost of funds
+    type: ratio
+    numerator: interest_expense_annualized_sum
+    denominator: funding_sum
+    format: percent_2
+    description: Annualized dividends and interest expense over shares, deposits and borrowings, from the 5300.
+    synonyms: [cost of funds, funding cost, cost of deposits, cost of shares, dividend cost]
+    requires_any: [cost of funds, funding cost, cost of deposits, cost of shares, dividend cost]
+    owner: Finance data team
+    dimensions_allowed: []
   loan_to_share_ratio:
     label: Loan-to-share ratio
     labels_by_type: { bank: Loan-to-deposit ratio }

@@ -44,3 +44,5 @@ export { membershipModule } from './membership.ts';
 export { bankText } from './concierge.ts';
 export { ALCO_SECTIONS, alcoAnalyses } from './alco.ts';
 export { asksAboutStaff } from './incentives.ts';
+export { boardAnalyses, boardScorecard } from './scorecard.ts';
+export { combineAnalyses } from './report.ts';

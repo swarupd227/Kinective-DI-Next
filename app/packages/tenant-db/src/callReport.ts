@@ -6,7 +6,11 @@
 import type { GeneratedTenant } from './generate.ts';
 import { NCUA_5300, NCUA_5300_EDITION } from './ncua5300.ts';
 
+/** Five quarters filed, oldest first: the board's trends read them; the last two are the filing and the one before. */
 export const CR_QUARTERS = [
+  { end: '2025-09-30', label: 'Q3 2025', ytdMonths: 9 },
+  { end: '2025-12-31', label: 'Q4 2025', ytdMonths: 12 },
+  { end: '2026-03-31', label: 'Q1 2026', ytdMonths: 3 },
   { end: '2026-06-30', label: 'Q2 2026', ytdMonths: 6 },
   { end: '2026-09-30', label: 'Q3 2026', ytdMonths: 9 },
 ] as const;
@@ -84,7 +88,8 @@ export function generateCallReport(t: GeneratedTenant) {
     for (const r of rows) m.set(key(r), (m.get(key(r)) ?? 0) + val(r));
     return m;
   };
-  const monthsTo = (end: string) => [...new Set(histLoan.map((h) => h[0]))].filter((me) => me.startsWith('2026') && me <= end).sort();
+  // Year to date: the quarter's own year, from the first month-end the history has.
+  const monthsTo = (end: string) => [...new Set(histLoan.map((h) => h[0]))].filter((me) => me.startsWith(end.slice(0, 4)) && me <= end).sort();
 
   const build = (q: (typeof CR_QUARTERS)[number], i: number): Quarter => {
     const v = new Map<string, number>();
@@ -106,9 +111,10 @@ export function generateCallReport(t: GeneratedTenant) {
     const m = q.ytdMonths / 12;
 
     // ---- Schedule A: loans, delinquency and charge-offs by loan type ----
-    const coRaw = sumBy(loans.filter((l) => l[8] && l[8] >= '2026-01-01' && l[8] <= q.end), (l) => l[4], (l) => l[9] * 0.55);
+    const coRaw = sumBy(loans.filter((l) => l[8] && l[8] >= `${q.end.slice(0, 4)}-01-01` && l[8] <= q.end), (l) => l[4], (l) => l[9] * 0.55);
     // Net charge-offs run about 0.62% of loans a year; the mix follows the book's own charge-offs.
-    const coTarget = [...avgLoan.values()].reduce((a, b) => a + b, 0) * 0.0062 * m;
+    // A year of losses moves: higher late in 2025, easing in the first half of 2026.
+    const coTarget = [...avgLoan.values()].reduce((a, b) => a + b, 0) * [0.0066, 0.0069, 0.0056, 0.0059, 0.0062][i]! * m;
     const coMix = [...bal.keys()].map((c) => (coRaw.get(c) ?? 0) + (dq60.get(c) ?? 0) * 0.15);
     const coByCat = new Map([...bal.keys()].map((c, k) => [c, (coTarget * coMix[k]!) / (coMix.reduce((a, b) => a + b, 0) || 1)]));
     for (const [cat, share, countCode, amountCode, row, coCode, recCode] of LOAN_TYPES) {
@@ -186,12 +192,12 @@ export function generateCallReport(t: GeneratedTenant) {
 
     // ---- Statement of Financial Condition: assets solved so the balance sheet balances ----
     const L = get('025B');
-    const nwRatio = [0.1041, 0.1052][i]!;
+    const nwRatio = [0.1009, 0.1018, 0.1029, 0.1041, 0.1052][i]!;
     // A few balances move between quarters (the ones the variance check asks to explain).
-    const timeDep = [0.0071, 0.0113][i]!;
-    const borrow = [0.0221, 0.0118][i]!;
-    const heldForSale = [0.0008, 0.0015][i]!;
-    const fa = { AS0004: 0.0032, AS0005: 0.0004, '730B1': 0.0065, AS0003: [0.034, 0.029][i]!, '730B2': 0.0035, AS0007: timeDep, AS0008: 0, AS0055: 0.0008, AS0061: 0, AS0073: 0.016, '769A': 0.0004, '769B': 0.0006, AS0016: 0.0035, AS0022: 0, AS0023: 0.0001, AS0024: 0.0002, AS0025: 0.00005, '007': 0.0135, '008': 0.0022, '009D2': 0, '779': 0.0004, AS0032: 0, '009C': 0.0045 } as Record<string, number>;
+    const timeDep = [0.0062, 0.0066, 0.0068, 0.0071, 0.0113][i]!;
+    const borrow = [0.0255, 0.0246, 0.0236, 0.0221, 0.0118][i]!;
+    const heldForSale = [0.0006, 0.0007, 0.0007, 0.0008, 0.0015][i]!;
+    const fa = { AS0004: 0.0032, AS0005: 0.0004, '730B1': 0.0065, AS0003: [0.031, 0.033, 0.032, 0.034, 0.029][i]!, '730B2': 0.0035, AS0007: timeDep, AS0008: 0, AS0055: 0.0008, AS0061: 0, AS0073: 0.016, '769A': 0.0004, '769B': 0.0006, AS0016: 0.0035, AS0022: 0, AS0023: 0.0001, AS0024: 0.0002, AS0025: 0.00005, '007': 0.0135, '008': 0.0022, '009D2': 0, '779': 0.0004, AS0032: 0, '009C': 0.0045 } as Record<string, number>;
     const liabF = 0.0055 + 0.0008 + 0.0002;
     // Total assets follow from shares and the funding mix; the AFS portfolio then closes the balance sheet.
     const A = S / (1 - liabF - borrow - nwRatio);
@@ -277,16 +283,18 @@ export function generateCallReport(t: GeneratedTenant) {
     set('IS0013', 0);
     set('IS0016', get('IS0011') * 0.005);
     set('IS0017', add(['IS0011', 'IS0012', 'IS0013', 'IS0016']));
-    set('131', members * 7.4 * q.ytdMonths);
-    set('IS0020', members * 4.1 * q.ytdMonths);
+    // Fees and interchange at about 0.8% of assets a year, typical of a credit union this size.
+    set('131', members * 13.5 * q.ytdMonths);
+    set('IS0020', members * 14.2 * q.ytdMonths);
     for (const c of ['IS0046', 'IS0047', '421', '430', 'IS0030', '431']) set(c, 0);
     set('IS0029', get('031B') * 0.0011);
-    set('440', members * 0.9 * q.ytdMonths);
+    set('440', members * 2.6 * q.ytdMonths);
     set('117', add(['131', 'IS0020', 'IS0046', 'IS0047', '421', '430', 'IS0029', 'IS0030', '431', '440']));
     const opex: [string, number][] = [['230', 0.0003], ['250', 0.0024], ['260', 0.0052], ['270', 0.0011], ['280', 0.0019], ['290', 0.0021], ['310', 0.0001], ['320', 0.0003], ['360', 0.0007]];
     for (const [c, f] of opex) set(c, A * f * m);
-    // Compensation is the largest expense and closes to a return on assets of about 0.92%.
-    const target = A * 0.0092 * m;
+    // Compensation is the largest expense and closes each year to date to its return on assets:
+    // 0.86% at Q3 2025 rising to about 0.92%, as margin recovered.
+    const target = A * [0.0086, 0.0088, 0.0095, 0.0093, 0.0092][i]! * m;
     set('210', get('IS0010') - get('IS0017') + get('117') - add(opex.map((x) => x[0])) - target);
     set('671', add(['210', ...opex.map((x) => x[0])]));
     set('661A', get('IS0010') - get('300') - get('IS0017') + get('117') - get('671'));
@@ -324,7 +332,8 @@ export function generateCallReport(t: GeneratedTenant) {
   const numbers = new Map<string, string>();
   const next = new Map<number, number>();
   const glRows: unknown[][] = [];
-  const [prior, current] = quarters as [Quarter, Quarter];
+  const prior = quarters.at(-2)!;
+  const current = quarters.at(-1)!;
   for (const g of current.gl) {
     const key = `${g.line}|${g.name}`;
     if (!numbers.has(key)) {

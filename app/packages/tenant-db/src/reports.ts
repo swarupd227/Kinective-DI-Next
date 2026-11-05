@@ -252,12 +252,20 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
     {
       templateId: 'executive_dashboard_monthly',
       name: 'Executive dashboard',
-      description: `The month for leadership: ${persons}, loans and deposits, per-${persons === 'members' ? 'member' : 'customer'} averages, ${persons === 'members' ? 'member' : 'customer'} growth and new loan production by loan group.`,
+      description: `The month for leadership: the scorecard against plan and peers, ${institutionType === 'credit_union' ? 'earnings, ' : ''}${persons}, loans and deposits, per-${persons === 'members' ? 'member' : 'customer'} averages, ${persons === 'members' ? 'member' : 'customer'} growth and new loan production by loan group.`,
       folder: 'Executive',
       settings: { ...settings('month', ['Executive', 'Finance']), addHierarchyControls: false },
       layoutVersion: 1,
       pendingEdits: [],
       widgets: [
+        { id: 'a1', title: 'Scorecard against plan and peers', kind: 'analysis', analysis: 'board.scorecard', metrics: [], size: 'full' },
+        ...(institutionType === 'credit_union'
+          ? [
+              { ...kpi('k8', 'Return on assets', 'return_on_assets'), size: 'third' as const },
+              { ...kpi('k9', 'Net interest margin', 'net_interest_margin'), size: 'third' as const },
+              { ...kpi('k10', 'Efficiency ratio', 'efficiency_ratio'), size: 'third' as const },
+            ]
+          : []),
         { ...kpi('k1', persons === 'members' ? 'Active members' : 'Active customers', 'member_count'), size: 'third' },
         { ...kpi('k2', 'Total loans', 'loan_balance'), size: 'third' },
         { ...kpi('k3', 'Total deposits', 'deposit_balance'), size: 'third' },
@@ -396,18 +404,32 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
     {
       templateId: 'board_report_quarterly',
       name: 'Board report',
-      description: `The quarter for the board: ${persons}, balances, loan-to-share and delinquency, with six quarters of trend.`,
+      description: `The quarter for the board: a scorecard against the 2026 plan and peers, ${institutionType === 'credit_union' ? 'earnings, capital, ' : ''}growth, ${persons}, loan-to-share and credit quality, with five quarters of trend.`,
       folder: 'Board',
       settings: { ...settings('quarter', ['Executive']), addHierarchyControls: false },
-      layoutVersion: 1,
+      layoutVersion: 2,
       pendingEdits: [],
       widgets: [
+        { id: 'a1', title: 'Scorecard against plan and peers', kind: 'analysis', analysis: 'board.scorecard', metrics: [], size: 'full' },
+        // Earnings and capital from the 5300, which only a credit union files.
+        ...(institutionType === 'credit_union'
+          ? [
+              kpi('k5', 'Return on assets', 'return_on_assets'),
+              kpi('k6', 'Net interest margin', 'net_interest_margin'),
+              kpi('k7', 'Efficiency ratio', 'efficiency_ratio'),
+              kpi('k8', 'Net worth ratio', 'net_worth_ratio'),
+              { id: 'c3', title: 'Return on assets, last 5 quarters', kind: 'chart' as const, chart: 'line' as const, metrics: ['return_on_assets'], trend: 5, size: 'half' as const },
+              { id: 'c4', title: 'Net interest margin, last 5 quarters', kind: 'chart' as const, chart: 'line' as const, metrics: ['net_interest_margin'], trend: 5, size: 'half' as const },
+              { id: 'c5', title: 'Efficiency ratio, last 5 quarters', kind: 'chart' as const, chart: 'line' as const, metrics: ['efficiency_ratio'], trend: 5, size: 'half' as const },
+              { id: 'c6', title: 'Net income, annualized, last 5 quarters', kind: 'chart' as const, chart: 'bar' as const, metrics: ['net_income'], trend: 5, size: 'half' as const },
+            ]
+          : []),
         kpi('k1', persons === 'members' ? 'Members' : 'Customers', 'member_count'),
         kpi('k2', 'Total loans', 'loan_balance'),
         kpi('k3', 'Total deposits', 'deposit_balance'),
-        kpi('k4', 'Loan-to-share', 'loan_to_share_ratio'),
-        { id: 'c1', title: 'Loans and deposits, last 6 quarters', kind: 'chart', chart: 'line', metrics: ['loan_balance'], trend: 6, size: 'half' },
-        { id: 'c2', title: 'Delinquency 60+, last 6 quarters', kind: 'chart', chart: 'line', metrics: ['delinquency_ratio_60_plus'], trend: 6, size: 'half' },
+        kpi('k4', institutionType === 'credit_union' ? 'Loan-to-share' : 'Loan-to-deposit', 'loan_to_share_ratio'),
+        { id: 'c1', title: 'Loan balance by category, last 5 quarters', kind: 'chart', chart: 'stacked_bar', metrics: ['loan_balance'], by: 'loan_category', trend: 5, size: 'half' },
+        { id: 'c2', title: 'Delinquency 60+, last 5 quarters', kind: 'chart', chart: 'line', metrics: ['delinquency_ratio_60_plus'], trend: 5, size: 'half' },
         { id: 't1', title: 'By region', kind: 'table', metrics: ['loan_balance', 'deposit_balance', 'new_loan_amount', 'delinquency_ratio_60_plus'], by: 'region', size: 'full' },
       ],
     },

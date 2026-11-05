@@ -78,6 +78,12 @@ export interface ReportAnalyses {
   run: (key: string, runId: string) => Promise<{ block: Block; take?: DiTake }>;
 }
 
+/** Several sets of analyses as one: the ALCO sections and the board scorecard. */
+export function combineAnalyses(...sets: (ReportAnalyses | null | undefined)[]): ReportAnalyses {
+  const all = sets.filter((s): s is ReportAnalyses => !!s);
+  return { keys: all.flatMap((s) => s.keys), run: (key, runId) => all.find((s) => s.keys.includes(key))!.run(key, runId) };
+}
+
 export interface RunContext {
   purviewBranches?: string[];
   canViewSql: boolean;
@@ -152,6 +158,15 @@ async function widgetBlock(w: ReportWidget, def: ReportDefinition, c: { period: 
       let r;
       try {
         r = await svc.query({ metrics: [metric], filters, time: timeFor(type, c.period, w.compare ? 2 : 1) }, ctx);
+        // Quarterly figures (the 5300) in a monthly report: compare quarter with quarter, ending at the
+        // report's month, and if even that finds nothing, show the latest quarter filed.
+        const has = (x: { rows: Record<string, unknown>[]; periods?: { label: string }[] | null }) => (x.periods ?? []).filter((p) => x.rows.some((row) => row.period === p.label && row[metric] !== null && row[metric] !== undefined)).length;
+        if (type === 'month' && has(r) < (w.compare ? 2 : 1)) {
+          const end = new Date(`${c.period}-01T00:00:00Z`);
+          end.setUTCMonth(end.getUTCMonth() - (w.compare ? 5 : 2));
+          const q = await svc.query({ metrics: [metric], filters, time: { grain: 'quarter', from: end.toISOString().slice(0, 7), to: c.period } }, ctx);
+          r = has(q) ? q : await svc.query({ metrics: [metric], filters }, ctx);
+        }
       } catch (e) {
         // Measures without month-end history show their value as of the build.
         if (!(e instanceof SemanticError) || e.code !== 'CURRENT_ONLY') throw e;
