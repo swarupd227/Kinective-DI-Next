@@ -7,6 +7,7 @@ import { z } from 'zod';
 import type { ApprovalCardBlock, Block, KpiGroupBlock } from '@dinext/block-schemas';
 import type { ApprovalRecord as Approval, MemberProfile, RelationshipService, Topic } from '@dinext/di-core';
 import { SemanticError, type SemanticResult, type SemanticService } from '@dinext/semantic';
+import type { IrrService, LiquidityService } from '@dinext/di-core';
 import { buildBlock, formatMetric, newBlockId, TENANT_UTC_OFFSET } from './answer.ts';
 import type { ToolCallRecord } from './audit.ts';
 import { FOLLOW_UP_CAP, type BatchDraft, type GatewayContext, type GatewayResult, type ToolGateway } from './gateway.ts';
@@ -442,6 +443,7 @@ const GOAL_TOOLS = [
   { name: 'write_talking_points', description: 'Add talking points to the outputs: one short sentence per topic, in the order given. Use only facts from the record.', input: z.object({ step, member_ref: z.string(), points: z.array(z.object({ topic_id: z.string(), text: z.string().max(160) }).strict()).min(1).max(5) }).strict() },
   { name: 'find_at_risk', description: 'List the people most likely to leave that the user may see, with reasons. Adds the list to the outputs.', input: z.object({ step }).strict() },
   { name: 'request_follow_ups', description: `Prepare a retention follow-up for up to ${FOLLOW_UP_CAP} people, as one approval. Nothing is sent until the user approves.`, input: z.object({ step, member_refs: z.array(z.string()).min(1).max(FOLLOW_UP_CAP) }).strict() },
+  { name: 'review_rate_risk_and_liquidity', description: 'For an ALCO meeting: interest rate risk (NII and NEV under rate shocks against board limits) and liquidity (available liquidity, borrowing capacity and survival under a share run). Adds a summary to the outputs.', input: z.object({ step }).strict() },
   { name: 'ask_user', description: 'Ask one question when you cannot go on without an answer. Ends this turn; their reply continues the work.', input: z.object({ question: z.string().max(200), options: z.array(z.string().max(80)).max(4).default([]) }).strict() },
   { name: 'finish', description: 'End the task when nothing is left to do or wait for. Give a short summary of what you found and did.', input: z.object({ message: z.string().max(800) }).strict() },
 ];
@@ -501,15 +503,37 @@ ${metrics.join('\n')}
 ${input.focus ? `\nThe person on screen is <data>${input.focus.name}</data>, member_ref ${input.focus.ref}. When the goal is about them, this is the exact record: skip find_member, even if others share the name, and start at review_member.\n` : ''}${state.followUps ? `\nFollow-ups waiting for approval, which the user may be changing: ${state.followUps.names.join(', ')} (${state.followUps.refs.join(', ')}).` : ''}${state.note ? `\nThe note waiting for approval, which the user may be changing:\nTo: ${state.note.recipients.join(', ')}\nSubject: ${state.note.subject}\n${state.note.body}` : ''}`;
 }
 
+/** Rate risk and liquidity for an ALCO meeting: what the committee reviews beyond the balances. */
+export interface AlmDeps {
+  irr: IrrService;
+  liquidity: LiquidityService;
+}
+
+/** One short read of interest rate risk and liquidity, every figure from the two analyses. */
+export async function almSummary(alm: AlmDeps) {
+  const [irr, liq] = await Promise.all([alm.irr.analysis(), alm.liquidity.analysis()]);
+  const m = (n: number) => `$${(Math.abs(n) / 1e6).toFixed(1)}M`;
+  const up = irr.scenarios.find((s) => s.shockBp === 300)!;
+  const down = irr.scenarios.find((s) => s.shockBp === -300)!;
+  const breaches = irr.scenarios.filter((s) => !s.withinLimits);
+  const run = liq.stress.find((s) => s.pct === 30)!;
+  const la = liq.ratios[0]!;
+  const lines = [
+    `At +300 bp, net interest income ${up.niiPct < 0 ? 'falls' : 'rises'} ${Math.abs(up.niiPct).toFixed(1)}% and NEV ${up.nevPct < 0 ? 'falls' : 'rises'} ${Math.abs(up.nevPct).toFixed(1)}% (NEV ratio ${up.nevRatio.toFixed(1)}%); at -300 bp, NEV ${down.nevPct < 0 ? 'falls' : 'rises'} ${Math.abs(down.nevPct).toFixed(1)}%. ${breaches.length ? `${breaches.map((b) => `${b.shockBp > 0 ? '+' : ''}${b.shockBp} bp`).join(' and ')} breaches the board's rate risk limits.` : 'Every rate shock is within the board limits.'}`,
+    `Available liquidity is ${m(liq.available)}, ${liq.availableToShares.toFixed(1)}% of shares, with ${m(liq.contingent)} of borrowing capacity; liquid assets are ${la.value.toFixed(1)}% of total assets${la.value < liq.policy.liquidToAssetsMinPct ? `, below the ${liq.policy.liquidToAssetsMinPct}% policy` : ''}. A 30% share run within 30 days would be covered ${run.coverage.toFixed(1)} times.`,
+  ];
+  return { lines, irr, liq };
+}
+
 const MEMBER_TOOLS = ['find_member', 'review_member', 'suggest_topics', 'write_talking_points', 'find_at_risk'];
 
-export async function runGoal(input: GoalInput, deps: { model: ModelClient; gateway: ReportGateway; people?: MemberDeps | null }, state: GoalThread, sink: RunSink): Promise<GoalOutcome> {
+export async function runGoal(input: GoalInput, deps: { model: ModelClient; gateway: ReportGateway; people?: MemberDeps | null; alm?: AlmDeps | null }, state: GoalThread, sink: RunSink): Promise<GoalOutcome> {
   const usage: Usage[] = [];
   const work = new GoalWork(input, deps.gateway, state, sink, 0, deps.people ?? null);
   const toolCalls = work.toolCalls;
   const fail = (outcome: GoalOutcome['outcome'], error?: string): GoalOutcome => ({ outcome, toolCalls, usage, superseded: [], error });
   const lookups = REPORT_TOOLS.filter((t) => t.name === 'report_template_list' || t.name === 'semantic_search');
-  const canUse = (name: string) => (MEMBER_TOOLS.includes(name) ? Boolean(deps.people) && input.apps.includes('rm') : name === 'request_follow_ups' ? Boolean(deps.people) && input.apps.includes('referrals') && input.apps.includes('rm') : name === 'run_report' || name === 'request_send' ? input.apps.includes('reports') : true);
+  const canUse = (name: string) => (name === 'review_rate_risk_and_liquidity' ? Boolean(deps.alm) && input.apps.includes('irr') : MEMBER_TOOLS.includes(name) ? Boolean(deps.people) && input.apps.includes('rm') : name === 'request_follow_ups' ? Boolean(deps.people) && input.apps.includes('referrals') && input.apps.includes('rm') : name === 'run_report' || name === 'request_send' ? input.apps.includes('reports') : true);
   const tools: Anthropic.Beta.BetaTool[] = [...GOAL_TOOLS.filter((t) => canUse(t.name)).map((t) => ({ name: t.name, description: t.description, input_schema: jsonSchema(t.input), eager_input_streaming: true })), ...lookups.map((t) => ({ name: t.name, description: t.description, input_schema: jsonSchema(t.input), eager_input_streaming: true }))];
   sink.routing(GOAL_AGENT, 'Working toward a goal');
   const deadline = new AbortController();
@@ -568,6 +592,19 @@ export async function runGoal(input: GoalInput, deps: { model: ModelClient; gate
             record(true);
             reply({ ok: true });
             break;
+          case 'review_rate_risk_and_liquidity': {
+            await work.enter(`s${a.step}`);
+            const r = await almSummary(deps.alm!);
+            for (const line of r.lines) {
+              work.corpus.push(line);
+              state.findings.push(line);
+            }
+            work.finishStep('Rate risk and liquidity reviewed');
+            await work.say(r.lines.join(' '));
+            record(true);
+            reply(r.lines);
+            break;
+          }
           case 'review_changes': {
             await work.enter(`s${a.step}`);
             const r = await work.reviewChanges(a.metrics);
@@ -888,7 +925,7 @@ async function followUpAtRisk(work: GoalWork, input: GoalInput, state: GoalThrea
   return { ...base, outcome: 'approval', approval: { record: x.batch.approval, card }, superseded: x.batch.superseded };
 }
 
-export async function runGoalOffline(input: GoalInput, deps: { gateway: ReportGateway; beatMs?: number; people?: MemberDeps | null }, state: GoalThread, sink: RunSink): Promise<GoalOutcome> {
+export async function runGoalOffline(input: GoalInput, deps: { gateway: ReportGateway; beatMs?: number; people?: MemberDeps | null; alm?: AlmDeps | null }, state: GoalThread, sink: RunSink): Promise<GoalOutcome> {
   const work = new GoalWork(input, deps.gateway, state, sink, deps.beatMs, deps.people ?? null);
   const base = { toolCalls: work.toolCalls, usage: [] as Usage[], superseded: [] as string[] };
   sink.routing(GOAL_AGENT, 'Working toward a goal');
@@ -941,12 +978,15 @@ export async function runGoalOffline(input: GoalInput, deps: { gateway: ReportGa
   }
 
   const canSend = input.apps.includes('reports');
+  // The ALCO reviews rate risk and liquidity as well as the balances.
+  const alm = meeting.name === 'ALCO' && deps.alm && input.apps.includes('irr') ? deps.alm : null;
   const day = DAYS.exec(state.goal)?.[0];
   const dayLabel = day ? (/tomorrow/i.test(day) ? 'tomorrow' : `${day.charAt(0).toUpperCase()}${day.slice(1).toLowerCase()}`) : undefined;
   await work.say(`I’ll get you ready for the ${meeting.name} meeting${dayLabel ? ` ${dayLabel === 'tomorrow' ? 'tomorrow' : `on ${dayLabel}`}` : ''}. Here’s my plan. You can add instructions while I work.`);
   work.plan([
     { id: 'review', label: 'Review what moved since last month-end' },
     { id: 'why', label: 'Find out why the biggest change happened' },
+    ...(alm ? [{ id: 'alm', label: 'Review interest rate risk and liquidity' }] : []),
     ...(canSend ? [{ id: 'pack', label: `Run the ${meeting.name} pack` }] : []),
     { id: 'note', label: `Draft a note to the ${meeting.group}` },
     ...(canSend ? [{ id: 'send', label: 'Send it once you approve' }] : []),
@@ -1005,6 +1045,22 @@ export async function runGoalOffline(input: GoalInput, deps: { gateway: ReportGa
   }
   if (stopped()) return stopped()!;
   await applySteers(traceable.metric);
+
+  if (alm) {
+    await work.enter('alm');
+    const r = await almSummary(alm).catch(() => null);
+    if (r) {
+      for (const line of r.lines) {
+        work.corpus.push(line);
+        state.findings.push(line);
+      }
+      work.finishStep('Rate risk and liquidity reviewed');
+      await work.say(r.lines.join(' '));
+    } else {
+      work.finishStep('Rate risk and liquidity weren’t available', 'skipped');
+    }
+    if (stopped()) return stopped()!;
+  }
 
   const period = periodOptions('month', deps.gateway.semantic.build.latestMonthEnd)[0]!.label;
   if (canSend) {

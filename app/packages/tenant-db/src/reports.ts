@@ -198,15 +198,24 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
     {
       templateId: 'alco_monthly_pack',
       name: 'ALCO monthly pack',
-      description: 'Loan balances by category, deposit mix, loan-to-share and delinquency for the asset-liability committee.',
+      description: `Capital, earnings, balances, the deposit mix, certificates maturing and credit quality for the asset-liability committee.${institutionType === 'credit_union' ? ' Interest rate risk and liquidity have their own pages.' : ''}`,
       folder: 'Periodic / Monthly',
       settings: { ...settings('month', ['Executive', 'Finance']), addHierarchyControls: false },
       layoutVersion: 1,
       pendingEdits: [],
       widgets: [
+        // Capital and earnings come from the 5300, which only a credit union files.
+        ...(institutionType === 'credit_union'
+          ? [
+              { id: 'k4', title: 'Net worth ratio', kind: 'kpi' as const, metrics: ['net_worth_ratio'], size: 'third' as const },
+              { id: 'k5', title: 'Net interest margin', kind: 'kpi' as const, metrics: ['net_interest_margin'], size: 'third' as const },
+              { id: 'k6', title: 'Return on assets', kind: 'kpi' as const, metrics: ['return_on_assets'], size: 'third' as const },
+            ]
+          : []),
         { id: 'k1', title: 'Loan-to-share', kind: 'kpi', metrics: ['loan_to_share_ratio'], compare: true, size: 'third' },
         { id: 'k2', title: 'Delinquency 60+', kind: 'kpi', metrics: ['delinquency_ratio_60_plus'], compare: true, size: 'third' },
         { id: 'k3', title: 'Total deposits', kind: 'kpi', metrics: ['deposit_balance'], compare: true, size: 'third' },
+        { id: 'k7', title: 'Certificates maturing in 90 days', kind: 'kpi', metrics: ['certificates_maturing_90_days'], size: 'third' },
         { id: 'c1', title: 'Loan balance by category, last 13 months', kind: 'chart', chart: 'stacked_bar', metrics: ['loan_balance'], by: 'loan_category', trend: 13, size: 'full' },
         { id: 'c2', title: 'Deposit mix', kind: 'chart', chart: 'donut', metrics: ['deposit_balance'], by: 'deposit_category', size: 'half' },
         { id: 't1', title: 'Deposits by product', kind: 'table', metrics: ['deposit_balance', 'deposit_account_count'], by: 'deposit_category', size: 'half' },

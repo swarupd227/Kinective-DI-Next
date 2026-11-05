@@ -39,3 +39,4 @@ export { kindNamed, notificationsModule, NOTIFICATIONS_AGENT, NOTIFICATIONS_REQU
 export { scheduleFrom, sourcesModule } from './sources.ts';
 export { irrModule, shockFrom } from './irr.ts';
 export { delinquencyModule } from './delinquency.ts';
+export { liquidityModule, runoffFrom } from './liquidity.ts';

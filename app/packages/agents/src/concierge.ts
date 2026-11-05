@@ -10,7 +10,7 @@ import { AGENT_NAME, runAnalytics, type MemoryTurn } from './analytics.ts';
 import type { AuditLog, AuditRecord, ToolCallRecord } from './audit.ts';
 import { BRIEFING_AGENT, buildBriefing } from './briefing.ts';
 import type { ReferralPayload, ToolGateway } from './gateway.ts';
-import { GOAL_AGENT, GOAL_REQUEST, LIST_EDIT, NOTE_EDIT, newGoalThread, runGoal, runGoalOffline, type GoalOutcome, type GoalThread } from './goal.ts';
+import { GOAL_AGENT, GOAL_REQUEST, LIST_EDIT, NOTE_EDIT, newGoalThread, runGoal, runGoalOffline, type AlmDeps, type GoalOutcome, type GoalThread } from './goal.ts';
 import { RELATIONSHIP_AGENT } from './member.ts';
 import { INBOX_AGENT, INBOX_REQUEST, runInbox, runInboxOffline, type InboxOutcome } from './inbox.ts';
 import type { ModelClient, Usage } from './model.ts';
@@ -69,6 +69,8 @@ export interface TenantRuntime {
   reports?: { gateway: ReportGateway } | null;
   /** The business modules on the shared agent. */
   modules?: ModuleGateway | null;
+  /** Interest rate risk and liquidity, for ALCO preparation. */
+  alm?: AlmDeps | null;
 }
 
 export interface ConciergeTurn {
@@ -785,7 +787,7 @@ export class Concierge {
     const input = { runId: turn.runId, threadId: turn.threadId, text, user: turn.user, tenant: { name: turn.tenant.name, institutionType: turn.tenant.institutionType }, apps: turn.apps, purviewBranches: turn.purviewBranches, canViewSql: turn.canViewSql, focus: chip ? { ref: chip.ref, name: chip.name } : undefined, earlier: describeRecent((this.recent.get(turn.threadId) ?? []).filter((x) => x.said || x.shown.length || x.people.length)) || undefined };
     let r: GoalOutcome;
     try {
-      r = this.deps.model ? await runGoal(input, { model: this.deps.model, gateway, people }, state, sink) : await runGoalOffline(input, { gateway, beatMs: this.deps.beatMs, people }, state, sink);
+      r = this.deps.model ? await runGoal(input, { model: this.deps.model, gateway, people, alm: turn.tenant.alm }, state, sink) : await runGoalOffline(input, { gateway, beatMs: this.deps.beatMs, people, alm: turn.tenant.alm }, state, sink);
     } catch (e) {
       state.status = 'closed';
       throw e;

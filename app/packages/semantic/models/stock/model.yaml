@@ -473,9 +473,9 @@ metrics:
     numerator: loan_balance_sum
     denominator: deposit_balance_sum
     format: percent_1
-    description: Total loans divided by total deposits. Institution level only, because branch ratios mislead.
-    regulatory_basis: NCUA basis - total loans divided by total shares and deposits.
-    synonyms: [loan to share, loan to deposit, ltd, lts, liquidity]
+    description: Total loans divided by total shares and deposits, from month-end balances. Most credit unions run 70% to 90%; higher leaves little room to lend or absorb outflows, lower means shares are not being put to work. Institution level only, because branch ratios mislead.
+    regulatory_basis: NCUA basis - total loans and leases (5300 account 025B) divided by total shares and deposits (018).
+    synonyms: [loan to share, loan to deposit, loan-to-share, loan-to-deposit, ltd, lts, ltd ratio, lts ratio]
     owner: Finance data team
     dimensions_allowed: []
   loans_per_member:

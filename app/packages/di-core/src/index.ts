@@ -37,3 +37,4 @@ export { IngestService, LOADABLE, convert, fieldFor, looksFixedWidth, parseDelim
 export { CORE_SYSTEMS, SourceService, coreSystem, describeTransform, secretKeyFrom, transform, type ColumnMap, type ConnectionTest, type CoreSystem, type Difference, type MappingCheck, type PullResult, type SavedLogin, type SourceConnection, type SourceOptions, type TableMap, type TableReconcile, type Transform } from './sources.ts';
 export { IRR_LIMITS, IrrService, SHOCKS_BP } from './irr.ts';
 export { CHARGED_OFF, DQ_BUCKETS, DelinquencyService, type DqScope } from './delinquency.ts';
+export { LIQUIDITY_POLICY, LiquidityService } from './liquidity.ts';

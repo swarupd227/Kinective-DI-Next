@@ -6,6 +6,9 @@ export const AS_OF = '2026-10-25';
 export const BUILD = { buildId: 'bld_20261026', completedAt: '2026-10-26 04:10:00' };
 /** Month-ends kept in history: 18 months up to the last complete month before the build. */
 export const HISTORY_MONTHS = 18;
+/** Annual growth the month-end history follows: loans, and shares and deposits. */
+const LOAN_GROWTH = 0.03;
+const SHARE_GROWTH = 0.05;
 
 export interface BranchProfile {
   name: string;
@@ -450,6 +453,24 @@ export function generate(profile: TenantProfile): GeneratedTenant {
   /** Each loan's last month-end status and balance. */
   const dqState = new Map<number, string>();
   const lastBal = new Map<number, number>();
+  // Account-level paths give the mix and the branches, not believable totals: late account opening alone
+  // grew shares 13% a year and sank loan-to-share 18 points in 18 months. Each month-end is scaled so loans
+  // grow about 3% a year and shares about 5%, with the spring tax-refund bump in shares: loan-to-share
+  // eases a point or two a year, as it has at most credit unions since 2023.
+  const loansNow = loans.reduce((s, l) => s + balanceAt(l, asOf), 0);
+  const depsNow = deps.reduce((s, d) => s + depBalanceAt(d, asOf), 0);
+  const yearsBack = (at: Date) => Math.max(0, (asOf.getTime() - at.getTime()) / (365.25 * 86_400_000));
+  const loanFactor = months.map((me) => {
+    const at = new Date(`${me}T23:59:59Z`);
+    const raw = loans.reduce((s, l) => s + balanceAt(l, at), 0);
+    return raw ? loansNow / Math.pow(1 + LOAN_GROWTH, yearsBack(at)) / raw : 1;
+  });
+  const depFactor = months.map((me) => {
+    const at = new Date(`${me}T23:59:59Z`);
+    const raw = deps.reduce((s, d) => s + depBalanceAt(d, at), 0);
+    const spring = [2, 3].includes(at.getUTCMonth()) ? 1.012 : 1;
+    return raw ? (depsNow / Math.pow(1 + SHARE_GROWTH, yearsBack(at))) * spring / raw : 1;
+  });
   months.forEach((me, mi) => {
     const at = new Date(`${me}T23:59:59Z`);
     const monthStart = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), 1));
@@ -457,7 +478,7 @@ export function generate(profile: TenantProfile): GeneratedTenant {
     for (const l of loans) {
       const key = `${me}|${l.branch + 1}|${l.cat.category}|${l.indirect ? 1 : 0}`;
       const agg = histLoan.get(key) ?? [0, 0, 0, 0, 0];
-      const bal = balanceAt(l, at);
+      const bal = balanceAt(l, at) * loanFactor[mi]!;
       if (bal > 0) {
         agg[0]! += bal;
         agg[2]! += 1;
@@ -507,7 +528,7 @@ export function generate(profile: TenantProfile): GeneratedTenant {
       }
     }
     for (const d of deps) {
-      const bal = depBalanceAt(d, at);
+      const bal = depBalanceAt(d, at) * depFactor[mi]!;
       if (bal <= 0) continue;
       const key = `${me}|${d.branch + 1}|${d.mix.category}`;
       const agg = histDeposit.get(key) ?? [0, 0];

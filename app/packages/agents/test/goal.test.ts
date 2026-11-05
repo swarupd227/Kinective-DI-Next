@@ -3,7 +3,7 @@
 // loop with a scripted model, and the Concierge routing around it. No real model calls are made.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateBlock, type Block } from '@dinext/block-schemas';
-import { ApprovalStore, ReferralService, RelationshipService, ReportStore } from '@dinext/di-core';
+import { ApprovalStore, IrrService, LiquidityService, ReferralService, RelationshipService, ReportStore } from '@dinext/di-core';
 import { SemanticService } from '@dinext/semantic';
 import { createPool, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { AuditLog, Concierge, GOAL_REQUEST, LIST_EDIT, newGoalThread, newReportThread, ReportGateway, reviseFollowUps, reviseNote, runGoal, runGoalOffline, ToolGateway, type GoalInput, type ModelClient, type RunSink, type StepUpdate, type TenantRuntime } from '../src/index.ts';
@@ -121,6 +121,24 @@ describe.skipIf(!up)('goal work against the warehouse', () => {
     const approval = await approvals.decide(out.approval!.record.approvalId, { decision: 'approved', userId: user.id, payloadHash: out.approval!.record.payloadHash });
     const first = await gateway.execute(approval, { user });
     expect(first).toMatchObject({ operation: 'report.share', recipientCount: 7 });
+  });
+
+  it('reviews rate risk and liquidity for the ALCO when the user has them', async () => {
+    const r = recorder();
+    const state = newGoalThread('Get me ready for Thursday’s ALCO meeting', newReportThread());
+    const alm = { irr: new IrrService(pool), liquidity: new LiquidityService(pool, 'credit_union') };
+    await runGoalOffline(input(state.goal, 'thr_goal1b', { apps: [...ALL_APPS, 'irr', 'liquidity'] }), { gateway, alm }, state, r.sink);
+    expect(r.plans[0]!.steps.map((s) => s.id)).toEqual(['review', 'why', 'alm', 'pack', 'note', 'send']);
+    const said = r.texts.join('\n');
+    expect(said).toMatch(/At \+300 bp, net interest income (falls|rises) \d+\.\d%/);
+    expect(said).toMatch(/Available liquidity is \$\d+\.\dM, \d+\.\d% of shares/);
+    expect(state.findings.some((f) => f.startsWith('At +300 bp'))).toBe(true);
+
+    // Without IRR access the step isn't there.
+    const other = recorder();
+    const s2 = newGoalThread('Get me ready for Thursday’s ALCO meeting', newReportThread());
+    await runGoalOffline(input(s2.goal, 'thr_goal1c'), { gateway, alm }, s2, other.sink);
+    expect(other.plans[0]!.steps.map((s) => s.id)).not.toContain('alm');
   });
 
   it('asks which meeting when it cannot tell, and carries on from the answer', async () => {

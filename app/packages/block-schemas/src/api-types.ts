@@ -25,6 +25,7 @@ export type AppId =
   | 'callreport'
   | 'irr'
   | 'delinquency'
+  | 'liquidity'
   | 'indirect'
   | 'prospecting'
   | 'campaigns'
@@ -184,7 +185,7 @@ export interface ReferralsIndex {
 export type ReferralAction = { kind: 'start' } | { kind: 'note'; text: string } | { kind: 'close'; stage: 'Sold' | 'Not Interested' | 'Done'; note?: string } | { kind: 'assign'; employeeId: number };
 
 /** DI's view of a page: one sentence, and the next step it would take. Code writes both. */
-export type AppViewId = 'calendar' | 'files' | 'queries' | 'users' | 'admin' | 'datalogs' | 'seg' | 'callreport' | 'irr' | 'delinquency' | 'workflows' | 'rm' | 'indirect' | 'prospecting' | 'campaigns' | 'onboarding' | 'compliance' | 'predictive' | 'dq' | 'tasks' | 'integrations' | 'classes' | 'wfbuilder' | 'tables' | 'emails';
+export type AppViewId = 'calendar' | 'files' | 'queries' | 'users' | 'admin' | 'datalogs' | 'seg' | 'callreport' | 'irr' | 'delinquency' | 'liquidity' | 'workflows' | 'rm' | 'indirect' | 'prospecting' | 'campaigns' | 'onboarding' | 'compliance' | 'predictive' | 'dq' | 'tasks' | 'integrations' | 'classes' | 'wfbuilder' | 'tables' | 'emails';
 
 export interface AppTile {
   label: string;

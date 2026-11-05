@@ -48,7 +48,7 @@ const SHARES: [RegExp, string, ShareBehaviour | 'term'][] = [
   [/./, 'Savings', { decay: 0.12, beta: 0.2 }],
 ];
 
-interface Position {
+export interface Position {
   name: string;
   side: 'asset' | 'liability';
   balance: number;
@@ -84,7 +84,8 @@ function amortizing(balance: number, remaining: number, cpr: number, shockBp: nu
 export class IrrService {
   constructor(private readonly pool: Pool) {}
 
-  private async positions() {
+  /** The rate-sensitive balance sheet: every position with its cash flows, as the IRR and liquidity views use it. */
+  async positions() {
     const [build] = await rows<{ as_of: unknown }>(this.pool, 'SELECT MAX(as_of_date) AS as_of FROM meta_build');
     const asOf = String(build?.as_of instanceof Date ? build.as_of.toISOString() : build?.as_of ?? '2026-10-25').slice(0, 10);
     const out: Position[] = [];

@@ -2,7 +2,7 @@
 // and records to check. They read the same DI Core services the agents use, under the same purview,
 // so a page and an answer always agree. Changes happen in a task, behind an approval card.
 import type { AppTile, AppView, AppViewId, Block, ListBlock, TableBlock } from '@dinext/block-schemas';
-import { memberNumber, WorkflowDefService, WorksheetService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, DelinquencyService, DQ_BUCKETS, IrrService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
+import { memberNumber, WorkflowDefService, WorksheetService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, DelinquencyService, DQ_BUCKETS, IrrService, LiquidityService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 import { SourceService, TableService, secretKeyFrom } from '@dinext/di-core';
 import { EmailOutbox } from '@dinext/di-core';
@@ -274,6 +274,40 @@ export function createAppViews(deps: ViewDeps) {
           table('Highest 60+ by branch and product', 'dq.segments', [text('branch', 'Branch'), text('category', 'Category'), { field: 'balance', headerName: 'Balance', type: 'currency' }, text('r60', '60+'), text('change', 'Change, 3 months')], seg.map((x) => ({ branch: x.branch, category: x.category, balance: Math.round(x.balance), r60: p2(x.ratio60), change: `${x.changeBp >= 0 ? '+' : ''}${x.changeBp} bp` }))),
           table('Delinquency by vintage', 'dq.vintages', [text('vintage', 'Year opened'), { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'loans', headerName: 'Loans', type: 'number' }, text('r30', '30+'), text('r60', '60+')], [...vint].filter((x) => x.balance > 0).reverse().slice(0, 12).map((x) => ({ vintage: String(x.vintage), balance: Math.round(x.balance), loans: x.loans, r30: p2(x.ratio30), r60: p2(x.ratio60) }))),
           table('Largest loans 60+ days past due', 'dq.loans', [text('name', deps.person === 'customer' ? 'Customer' : 'Member'), text('member', 'Number'), text('category', 'Category'), text('branch', 'Branch'), { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'days', headerName: 'Days past due', type: 'number' }, text('bucket', 'Bucket'), text('channel', 'Channel')], loans.map((l) => ({ name: l.name, member: `…${l.last4}`, category: l.category, branch: l.branch, balance: Math.round(l.balance), days: l.days, bucket: l.bucket, channel: l.channel }))),
+        ],
+      };
+    },
+    async liquidity() {
+      const a = await new LiquidityService(pool, deps.person === 'customer' ? 'bank' : 'credit_union').analysis();
+      const m = (n: number) => `$${(n / 1e6).toFixed(1)}M`;
+      const p1 = (n: number) => `${n.toFixed(1)}%`;
+      const la = a.ratios[0]!;
+      const s20 = a.stress.find((x) => x.pct === 20)!;
+      const s30 = a.stress.find((x) => x.pct === 30)!;
+      const fhlb = a.capacity[0]!;
+      const asOf = new Date(`${a.asOf}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+      return {
+        title: 'Liquidity',
+        lede: `Liquidity ratios, the cash-flow ladder, borrowing capacity and survival under share runoff, from the balances as of ${asOf}. Capacity is DI’s estimate at typical lendable values; the FHLB’s and the Reserve Bank’s collateral rules set the real figures.`,
+        take: {
+          headline: `Available liquidity is ${m(a.available)}, ${p1(a.availableToShares)} of shares: ${m(a.liquid)} on the balance sheet and ${m(a.contingent)} of borrowing capacity. ${la.value < a.policy.liquidToAssetsMinPct ? `Liquid assets are ${p1(la.value)} of total assets, just below the ${a.policy.liquidToAssetsMinPct}% policy.` : `Liquid assets are ${p1(la.value)} of total assets, within policy.`} A 30% share run within 30 days would be covered ${s30.coverage.toFixed(1)} times.`,
+          action: { label: 'How much could we borrow tomorrow?', ask: 'How much could we borrow tomorrow?' },
+        },
+        tiles: [
+          { label: 'Liquid assets to total assets', value: p1(la.value), detail: `policy ${a.policy.liquidToAssetsMinPct}%+`, tone: la.value < a.policy.liquidToAssetsMinPct ? 'warning' : 'neutral' },
+          { label: 'Available liquidity to shares', value: p1(a.availableToShares), detail: `policy ${a.policy.availableToSharesMinPct}%+` },
+          { label: 'FHLB capacity available', value: m(fhlb.available), detail: `${m(fhlb.used)} drawn` },
+          { label: '20% share run, covered', value: `${s20.coverage.toFixed(1)}×`, detail: `${s20.days} days` },
+          { label: 'Loan-to-share', value: p1(a.ratios[2]!.value) },
+        ],
+        prompts: ['How much could we borrow tomorrow?', 'Can we survive a 30% deposit run?', 'Show the cash-flow ladder', 'What assumptions does the liquidity view use?'],
+        blocks: [
+          table('Liquidity ratios', 'liq.ratios', [text('name', 'Ratio'), text('value', 'Value'), text('note', 'What it shows')], a.ratios.map((r) => ({ name: r.name, value: p1(r.value), note: r.note }))),
+          bar('Cash-flow ladder: cumulative position from cash', 'liq.ladder.chart', a.ladder.map((l) => [l.label, Math.round(l.cumulative)] as [string, number]), 'currency', 'Cumulative position', 'Inflows from loan payments and maturing investments, less share runoff, certificates that don’t renew and borrowings.'),
+          table('Cash-flow ladder', 'liq.ladder', [text('band', 'Band'), { field: 'inflows', headerName: 'Inflows', type: 'currency' }, { field: 'outflows', headerName: 'Outflows', type: 'currency' }, { field: 'net', headerName: 'Net', type: 'currency' }, { field: 'cumulative', headerName: 'Cumulative, from cash', type: 'currency' }], a.ladder.map((l) => ({ band: l.label, inflows: Math.round(l.inflows), outflows: Math.round(l.outflows), net: Math.round(l.net), cumulative: Math.round(l.cumulative) }))),
+          table('Borrowing capacity', 'liq.capacity', [text('source', 'Source'), text('collateral', 'Collateral'), { field: 'value', headerName: 'Collateral value', type: 'currency' }, { field: 'lendable', headerName: 'Lendable value', type: 'currency' }, { field: 'used', headerName: 'Used', type: 'currency' }, { field: 'available', headerName: 'Available', type: 'currency' }], [...a.capacity.map((c) => ({ source: c.source, collateral: c.collateral, value: Math.round(c.collateralValue), lendable: Math.round(c.lendable), used: Math.round(c.used), available: Math.round(c.available) })), ...(a.clf ? [{ source: 'Central Liquidity Facility', collateral: a.clf, value: 0, lendable: 0, used: 0, available: 0 }] : [])]),
+          table('Share runoff within 30 days', 'liq.stress', [text('pct', 'Runoff'), { field: 'runoff', headerName: 'Shares leaving', type: 'currency' }, { field: 'available', headerName: 'Available liquidity', type: 'currency' }, text('coverage', 'Coverage'), { field: 'days', headerName: 'Days covered', type: 'number' }, text('draw', 'Drawn from, in order')], a.stress.map((x) => ({ pct: `${x.pct}%`, runoff: Math.round(x.runoff), available: Math.round(x.available), coverage: `${x.coverage.toFixed(2)}×`, days: x.days, draw: x.used.map((u) => `${u.name} ${m(u.amount)}`).join('; ') }))),
+          table('Assumptions', 'liq.assumptions', [text('item', 'Assumption'), text('detail', 'What DI uses')], a.assumptions.map(([item, detail]) => ({ item, detail }))),
         ],
       };
     },
