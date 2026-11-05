@@ -96,7 +96,7 @@ export function alcoAnalyses(svc: AlcoService): ReportAnalyses {
           const l = a.loans;
           const c = l.concentration;
           return {
-            block: t('Loans', 'alco.loans', [text('category', 'Loan type'), money('balance', 'Balance'), text('share', 'Share'), text('rate', 'Yield'), text('growth', '12-month growth'), text('dq', '60+ delinquent')], l.lines.map((x) => ({ category: x.category, balance: Math.round(x.balance), share: p1(x.sharePct), rate: p2(x.ratePct), growth: x.growthPct === null ? '—' : signed(x.growthPct), dq: p2(x.dq60Pct) })), `Loan yield ${p2(l.yieldPct)}; ${c.name.toLowerCase()} is ${c.unit === '%' ? `${Math.round(c.value)}%` : `${c.value.toFixed(2)}×`} (limit ${c.unit === '%' ? `${c.limit}%` : `${c.limit}×`}).`),
+            block: t('Loans', 'alco.loans', [text('category', 'Loan type'), money('balance', 'Balance'), text('share', 'Share'), text('rate', 'Yield'), text('growth', '12-month growth'), text('dq', '60+ delinquent')], l.lines.map((x) => ({ category: x.category, balance: Math.round(x.balance), share: p1(x.sharePct), rate: p2(x.ratePct), growth: x.growthPct === null ? '—' : signed(x.growthPct), dq: p2(x.dq60Pct) })), `Loan yield ${p2(l.yieldPct)}; ${c.name.charAt(0).toLowerCase()}${c.name.slice(1)} is ${c.unit === '%' ? `${Math.round(c.value)}%` : `${c.value.toFixed(2)}×`} (limit ${c.unit === '%' ? `${c.limit}%` : `${c.limit}×`}).`),
           };
         }
         case 'alco.pricing':
@@ -106,10 +106,11 @@ export function alcoAnalyses(svc: AlcoService): ReportAnalyses {
           const when = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' });
           const bp = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n)} bp`;
           const b2 = (n: number | null) => (n === null ? '—' : n.toFixed(2));
+          const mm = (n: number) => (n >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : `$${(n / 1e6).toFixed(1)}M`);
           if (key === 'alco.pricing') {
-            const rows = [...pr.products.map((p) => ({ item: p.category, balance: Math.round(p.balance), then: p2(p.rateThen), now: p2(p.rateNow), change: bp(p.changeBp), beta: b2(p.beta) })), { item: `All ${deposits.toLowerCase()}`, balance: Math.round(pr.products.reduce((s, p) => s + p.balance, 0)), then: p2(pr.total.rateThen), now: p2(pr.total.rateNow), change: bp(pr.total.changeBp), beta: b2(pr.total.beta) }];
+            const rows = [...pr.products.map((p) => ({ item: p.category, balance: mm(p.balance), then: p2(p.rateThen), now: p2(p.rateNow), change: bp(p.changeBp), beta: b2(p.beta) })), { item: `All ${deposits.toLowerCase()}: repricing`, balance: mm(pr.products.reduce((s, p) => s + p.balance, 0)), then: '', now: '', change: bp(pr.total.repricingBp), beta: b2(pr.total.repricingBeta) }, { item: 'Mix moving to higher-rate products', balance: '', then: '', now: '', change: bp(pr.total.mixBp), beta: '' }, { item: `All ${deposits.toLowerCase()}: cost`, balance: mm(pr.products.reduce((s, p) => s + p.balance, 0)), then: p2(pr.total.rateThen), now: p2(pr.total.rateNow), change: bp(pr.total.changeBp), beta: b2(pr.total.beta) }];
             return {
-              block: t('Deposit pricing and beta', 'alco.pricing', [text('item', 'Product'), money('balance', 'Balance'), text('then', `Rate, ${when(pr.start)}`), text('now', `Rate, ${when(pr.end)}`), text('change', 'Change'), text('beta', 'Beta')], rows, `Fed funds ${bp(pr.marketMoveBp)} since ${when(pr.start)}. Rates paid repriced ${bp(pr.total.repricingBp)} (beta ${b2(pr.total.repricingBeta)}); the mix ${pr.total.mixBp > 0 ? 'took back' : 'added'} ${Math.abs(pr.total.mixBp)} bp, so cost moved ${bp(pr.total.changeBp)}.`),
+              block: t('Deposit pricing and beta', 'alco.pricing', [text('item', 'Product'), text('balance', 'Balance'), text('then', `Rate, ${when(pr.start)}`), text('now', `Rate, ${when(pr.end)}`), text('change', 'Change'), text('beta', 'Beta')], rows, `Fed funds ${bp(pr.marketMoveBp)} since ${when(pr.start)}. Rates paid repriced ${bp(pr.total.repricingBp)} (beta ${b2(pr.total.repricingBeta)}); the mix ${pr.total.mixBp > 0 ? 'took back' : 'added'} ${Math.abs(pr.total.mixBp)} bp, so cost moved ${bp(pr.total.changeBp)}.`),
             };
           }
           const rows = pr.loans.filter((l) => l.newAmount > 0).map((l) => ({ item: l.category, amount: Math.round(l.newAmount), fresh: l.newYield === null ? '—' : p2(l.newYield), book: p2(l.bookYield), spread: l.spreadBp === null ? '—' : bp(l.spreadBp) }));

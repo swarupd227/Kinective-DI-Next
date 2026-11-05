@@ -78,7 +78,7 @@ describe.skipIf(!available)('relationship.profile.get (FE-RM-001, BE-RM-001)', (
     expect(p.deposits.map((a) => `${a.name} …${a.suffix}`)).toEqual(['Share Savings …0001']);
     expect(p.attrition).toMatchObject({ score: 6, band: 'Medium', model: 'attrition_v4', runDate: '2026-10-25' });
     expect(p.attrition.factors[0]).toMatchObject({ code: 'balance_drop', weight: 2 });
-    expect(p.applications).toMatchObject({ pending: 1, items: [{ product: 'Auto loan', amount: 18500, detail: 'Waiting for a pay stub' }] });
+    expect(p.applications).toMatchObject({ pending: 1, items: [{ product: 'Auto loan', amount: 18500, detail: 'Waiting on documents: proof of income hasn’t come in' }] });
     // A pending auto application keeps "Auto loan" out of the suggestions.
     expect(p.opportunities.map((o) => o.product)).toEqual(['Checking', 'Credit card']);
     expect(p.contact.email).toBe('s•••@example.com');

@@ -131,6 +131,8 @@ export const EVAL_ITEMS: EvalItem[] = [
   // DI hands the person the file; filing in CUOnline stays theirs (24.25 read-only).
   { id: 'RF-002', set: 'golden', persona: 'executive', q: 'Export the Q3 5300 for upload', agent: 'Call Report', contains: ['data file', 'Filing in CUOnline stays with you'], approval: 'none', ref: '24.25 read-only' },
   { id: 'GQ-FF-005', set: 'golden', persona: 'bank_cfo', q: 'Can I download the Call Report for CDR?', agent: 'Call Report', contains: ['data file', 'thousands'], approval: 'none' },
+  { id: 'GQ-DQ-DRV-001', set: 'golden', persona: 'executive', q: 'Which branches and products drive delinquency?', agent: 'Delinquency', contains: ['Eastgate'], approval: 'none' },
+  { id: 'GQ-OPS-FRESH-001', set: 'golden', persona: 'analyst', q: 'Is the data current?', agent: 'Operations', contains: ['late-file time', 'data quality checks failed'], approval: 'none' },
   { id: 'GQ-PR-001', set: 'golden', persona: 'bank_cfo', q: 'What is our deposit beta?', agent: 'Interest Rate Risk', contains: ['beta'], approval: 'none' },
   { id: 'GQ-PF-001', set: 'golden', persona: 'bank_cfo', q: 'Which products are most profitable?', agent: 'Profitability', contains: ['before overhead'], approval: 'none' },
   { id: 'GQ-CMP-002', set: 'golden', persona: 'executive', q: 'Which campaigns paid for themselves?', agent: 'Campaigns', contains: ['control group'], approval: 'none' },

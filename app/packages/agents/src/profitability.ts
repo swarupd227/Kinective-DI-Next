@@ -9,8 +9,8 @@ import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.
 import type { ReportAnalyses } from './report.ts';
 
 type Cols = TableBlock['data']['columns'];
-const m = (n: number) => `${n < 0 ? '−' : ''}$${(Math.abs(n) / 1e6).toFixed(2)}M`;
-const p2 = (n: number) => `${n.toFixed(2)}%`;
+const m = (n: number) => `${n < 0 ? '−' : ''}$${Math.abs(n) >= 1e9 ? `${(Math.abs(n) / 1e9).toFixed(2)}B` : `${(Math.abs(n) / 1e6).toFixed(2)}M`}`;
+const p2 = (n: number) => `${n < 0 ? '−' : ''}${Math.abs(n).toFixed(2)}%`;
 const text = (field: string, headerName: string) => ({ field, headerName, type: 'text' as const });
 const money = (field: string, headerName: string) => ({ field, headerName, type: 'currency' as const });
 const NO_ACCESS = 'Profitability isn’t part of your DI access. It is for finance and executives.';
@@ -44,7 +44,7 @@ export function profitAnalyses(svc: ProfitabilityService): ReportAnalyses {
         const worst = a.byProduct.at(-1);
         return {
           block: t('Contribution by product', 'profit.products', productCols, productRows(a.byProduct), `${m(a.total)} a year before overhead. ${best ? `${best.name} contributes the most (${m(best.contribution)})` : ''}${worst && worst.contribution < 0 ? `; ${worst.name.toLowerCase()} loses ${m(-worst.contribution)}` : ''}.`.slice(0, 200)),
-          ...(best ? { take: { headline: `Products contribute ${m(a.total)} a year before overhead. ${best.name} leads at ${m(best.contribution)}, ${p2(best.marginPct)} on its balance${worst && worst.contribution < 0 ? `; ${worst.name} loses ${m(-worst.contribution)} after its credit and servicing costs` : ''}.`, action: { label: 'Which branches contribute most?', ask: 'Which branches contribute the most?' } } } : {}),
+          ...(best ? { take: { headline: `Products contribute ${m(a.total)} a year before overhead. ${best.name} leads at ${m(best.contribution)}, ${p2(best.marginPct)} on its balance${worst && worst.contribution < 0 ? `; ${worst.name} loses ${m(-worst.contribution)}${worst.side === 'deposit' ? ', paying more than its funding is worth' : ' after its credit and servicing costs'}` : ''}.`, action: { label: 'Which branches contribute most?', ask: 'Which branches contribute the most?' } } } : {}),
         };
       }
       const rows = a.byBranch.map((b) => ({ name: b.name, balance: Math.round(b.balance), contribution: m(b.contribution), margin: p2(b.marginPct), loans: '', deposits: '' }));
@@ -99,7 +99,7 @@ export function profitabilityModule(svc: ProfitabilityService): ModuleSpec {
           const losers = a.byProduct.filter((l) => l.contribution < 0);
           const bestMargin = [...loans].sort((x, y) => y.marginPct - x.marginPct)[0];
           return {
-            text: `Products contribute **${m(a.total)} a year** before overhead: ${m(loans.reduce((s, l) => s + l.contribution, 0))} from loans and ${m(deps.reduce((s, l) => s + l.contribution, 0))} from deposits. **${best.name}** contributes the most, ${m(best.contribution)}.${bestMargin ? ` The best margin on balance is ${bestMargin.name.toLowerCase()} at ${p2(bestMargin.marginPct)}.` : ''}${losers.length ? ` ${losers.map((l) => `${l.name} loses ${m(-l.contribution)}`).join('; ')}, after ${losers.length === 1 ? 'its' : 'their'} credit and servicing costs.` : ''} This uses DI’s standard FTP curve, loss rates and costs; your own allocations would replace them.`,
+            text: `Products contribute **${m(a.total)} a year** before overhead: ${m(loans.reduce((s, l) => s + l.contribution, 0))} from loans and ${m(deps.reduce((s, l) => s + l.contribution, 0))} from deposits. **${best.name}** contributes the most, ${m(best.contribution)}.${bestMargin ? ` The best margin on balance is ${bestMargin.name.toLowerCase()} at ${p2(bestMargin.marginPct)}.` : ''}${losers.length ? ` ${losers.map((l) => `${l.name} ${l.side === 'deposit' ? 'loses' : 'loses'} ${m(-l.contribution)}${l.side === 'deposit' ? ': it pays more than its funding is worth' : ' after its credit and servicing costs'}`).join('; ')}.` : ''} This uses DI’s standard FTP curve, loss rates and costs; your own allocations would replace them.`,
             blocks: [moduleTable(spec, 'Contribution by product', ctx.runId, 'profit.products', productCols, productRows(a.byProduct))],
             suggestions: ['Which branches contribute the most?', 'Where is the allowance?', 'How is profitability calculated?'],
           };

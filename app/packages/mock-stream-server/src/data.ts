@@ -71,7 +71,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     approvesIncentives: true,
     retention: true,
     modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'ai-admin', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'callreport', 'collections', 'campaigns', 'seg', 'tables', 'irr', 'profitability', 'budget', 'delinquency', 'liquidity', 'membership', 'records', 'records-members'],
-    suggestions: ['What should I do today?', 'Show the October payouts', 'Which regulatory issues are open more than 3 weeks?', 'Where does delinquency come from?', 'What’s our interest rate risk?', 'How much could we borrow tomorrow?', 'Are we ready to file Q3?', 'Show the early-warning list', 'Get me ready for the next ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'What changed since last month-end?'],
+    suggestions: ['What should I do today?', 'Show the October payouts', 'Which regulatory issues are open more than 3 weeks?', 'Which branches and products drive delinquency?', 'What’s our interest rate risk?', 'How much could we borrow tomorrow?', 'Are we ready to file Q3?', 'Show the early-warning list', 'Get me ready for the next ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'What changed since last month-end?'],
   },
   analyst: {
     userClass: 'Analyst',

@@ -370,7 +370,7 @@ export function buildBlock(spec: BlockSpec, results: Map<string, SemanticResult>
       provenance: prov,
       freshness: freshness(result),
       actions: [{ id: 'explain', kind: 'explain', label: 'How it’s calculated' }, ...recordsAction(result, spec.metric, col.label), { id: 'pin', kind: 'pin', label: 'Pin to Home', riskTier: 'low' }, ...traceAction(prov.sources)],
-      data: { label: col.label, value, unit: unitOf(col.format), format: col.format === 'currency' ? { compact: true, decimals: 2 } : { decimals: col.format === 'percent_1' ? 1 : 2 }, comparison, metricRef: `metric:${spec.metric}` },
+      data: { label: col.label, value, unit: unitOf(col.format), format: col.format === 'currency' ? { compact: true, decimals: 2 } : { decimals: col.format === 'count' ? 0 : col.format === 'percent_1' ? 1 : 2 }, comparison, metricRef: `metric:${spec.metric}` },
     };
     return block;
   }

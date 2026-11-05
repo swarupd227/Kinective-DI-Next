@@ -7,7 +7,7 @@ import * as Popover from '@radix-ui/react-popover';
 import { IconButton, SegmentedControl, usePreferences, type Density, type ThemePreference } from '@dinext/ui';
 import { useSession } from '../session/SessionProvider.tsx';
 import { NotificationsButton } from './NotificationsPanel.tsx';
-import { APP_META } from './apps.tsx';
+import { APP_META, appLabel as labelFor } from './apps.tsx';
 import { BrandMark } from './BrandMark.tsx';
 import { viewLabel } from './paneViews.ts';
 import { useUi } from './uiStore.ts';
@@ -24,8 +24,9 @@ export function TopBar({ threadId }: { threadId?: string }) {
   // The breadcrumb is the thread title in a conversation and the app name elsewhere (spec 6.2).
   const [, first, second] = location.pathname.split('/');
   const segment = (first === 'm' ? second : first) ?? 'home';
-  const page = viewLabel(location.pathname, Object.values(APP_META));
-  const crumb = threadId ? (thread.data?.title ?? 'Task') : isTasks(location.pathname) ? 'All tasks' : page === 'View' ? (APP_META[segmentToApp(segment)]?.label ?? 'Home') : page;
+  const bank = session.tenant.institutionType === 'bank';
+  const page = viewLabel(location.pathname, metasFor(bank));
+  const crumb = threadId ? (thread.data?.title ?? 'Task') : isTasks(location.pathname) ? 'All tasks' : page === 'View' ? (APP_META[segmentToApp(segment)] ? labelFor(segmentToApp(segment), bank) : 'Home') : page;
 
   return (
     <header className={styles.bar} data-region="topbar" tabIndex={-1}>
@@ -55,22 +56,27 @@ export function TopBar({ threadId }: { threadId?: string }) {
 /** A task's own pages: "/c", "/c/new" and "/c/<id>", but not "/calendar". */
 const isTasks = (path: string) => /^\/c(\/|$)/.test(path);
 
+/** The apps with the institution's own page names (a bank's Customer Growth). */
+const metasFor = (bank: boolean) => Object.entries(APP_META).map(([id, m]) => ({ ...m, label: labelFor(id, bank) }));
+
 const segmentToApp = (s: string) => (s === 'c' ? 'conversations' : s === 'members' || s === 'customers' ? 'rm' : s);
 
 /** Desktop header: where you are (back, forward and a breadcrumb), then search, notifications and
  *  who you are. The sidebar keeps the brand, the apps and the tasks. */
 export function DeskBar({ threadId }: { threadId?: string }) {
-  const { api } = useSession();
+  const { api, session } = useSession();
   const { setPalette } = useUi();
   const { pathname } = useLocation();
+  const bank = session.tenant.institutionType === 'bank';
   const navigate = useNavigate();
   const thread = useQuery({ queryKey: ['thread', threadId], queryFn: () => api.thread(threadId!), enabled: !!threadId });
-  const page = viewLabel(pathname, Object.values(APP_META));
+  const page = viewLabel(pathname, metasFor(bank));
   // A report names itself once, here: Home > Reports > Board report (the page has no second trail).
   const reportId = /^\/reports\/([^/?]+)$/.exec(pathname)?.[1];
   const report = useQuery({ queryKey: ['report', reportId], queryFn: () => api.runReport(reportId!), enabled: false });
   const [, first, second] = pathname.split('/');
-  const appLabel = APP_META[segmentToApp((first === 'm' ? second : first) ?? 'home')]?.label;
+  const appId = segmentToApp((first === 'm' ? second : first) ?? 'home');
+  const appLabel = APP_META[appId] ? labelFor(appId, bank) : undefined;
   const trail: { label: string; to?: string }[] = isTasks(pathname)
     ? [{ label: 'All tasks', to: '/c' }, ...(threadId ? [{ label: thread.data?.title ?? 'Task' }] : pathname.startsWith('/c/new') ? [{ label: 'New task' }] : [])]
     : pathname.startsWith('/home')

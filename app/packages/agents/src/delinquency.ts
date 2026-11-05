@@ -24,7 +24,7 @@ export function delinquencyModule(dq: DelinquencyService): ModuleSpec {
     id: 'delinquency',
     prefix: 'dq',
     agent: 'Delinquency',
-    request: /\broll ?rates?\b|\brolled\b|\bvintages?\b|\bcohorts?\b|\baging\b|\bdays past due\b|\bdelinquency buckets?\b|\b30\+|\b30[-–]59\b|\b30 (day|plus)\b|\bcure rate|\bcured\b|\b(largest|biggest|top|most) delinquent\b|\bdelinquent loans to work\b|\bworst (segments?|branches and products)\b|\bnet charge-?off|\bcharge-?off ratio|\ballowance coverage|\bcollections (list|queue)\b/i,
+    request: /\broll ?rates?\b|\brolled\b|\bvintages?\b|\bcohorts?\b|\baging\b|\bdays past due\b|\bdelinquency buckets?\b|\b30\+|\b30[-–]59\b|\b30 (day|plus)\b|\bcure rate|\bcured\b|\b(largest|biggest|top|most) delinquent\b|\bdelinquent loans to work\b|\bworst (segments?|branches and products)\b|\b(drives?|driving) (our |the )?delinquency\b|\bdelinquency drivers?\b|\bnet charge-?off|\bcharge-?off ratio|\ballowance coverage|\bcollections (list|queue)\b/i,
     noAccess: NO_ACCESS,
     sources: [{ kind: 'table', label: 'Delinquency history (month-end)', ref: 'table:hist_loan_dq_month' }],
     prompt: ({ tenant, user, title }) => `You are the Delinquency agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) manages credit quality. Buckets are the 5300's: Current, 30–59, 60–89, 90–179, 180–359 and 360+ days; 60+ is reportable delinquency. Roll rates are the share of last month's balance in a status that moved to each status this month.
@@ -42,7 +42,7 @@ export function delinquencyModule(dq: DelinquencyService): ModuleSpec {
       if (/charge-?off|allowance|coverage|\bnco\b|loss/.test(t)) return { tool: 'dq_losses', args: {} };
       if (/roll|cure|migrat/.test(t)) return { tool: 'dq_rolls', args: {} };
       if (/vintage|cohort|year (opened|booked|made)|origination year/.test(t)) return { tool: 'dq_vintages', args: {} };
-      if (/worst|segments?|hot ?spots?/.test(t)) return { tool: 'dq_segments', args: {} };
+      if (/worst|segments?|hot ?spots?|drive|driving|drivers?/.test(t)) return { tool: 'dq_segments', args: {} };
       if (/\bloans\b.*(largest|biggest|top|work|list|which|show)|(largest|biggest|top|most) delinquent/.test(t)) {
         const days = /\b(30|60|90|180|360)\s*\+|\b(30|60|90|180|360) days/.exec(t);
         return { tool: 'dq_loans', args: { min_days: days ? Number(days[1] ?? days[2]) : 60, ...(category ? { category } : {}) } };
@@ -124,7 +124,7 @@ export function delinquencyModule(dq: DelinquencyService): ModuleSpec {
           const rising = s.filter((x) => x.changeBp > 0).sort((a, b) => b.changeBp - a.changeBp)[0];
           return {
             text: `The highest 60+ ratio is **${s[0]!.category} at ${s[0]!.branch}**, ${p2(s[0]!.ratio60)} of ${m(s[0]!.balance)}.${rising ? ` The fastest rise over three months is ${rising.category} at ${rising.branch}, up ${rising.changeBp} bp.` : ''}`,
-            blocks: [moduleTable(spec, 'Highest 60+ by branch and product', ctx.runId, 'dq.segments', [{ field: 'branch', headerName: 'Branch', type: 'text' }, { field: 'category', headerName: 'Category', type: 'text' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'r60', headerName: '60+', type: 'text' }, { field: 'change', headerName: 'Change, 3 months', type: 'text' }], s.map((x) => ({ branch: x.branch, category: x.category, balance: Math.round(x.balance), r60: p2(x.ratio60), change: `${x.changeBp >= 0 ? '+' : ''}${x.changeBp} bp` })))],
+            blocks: [moduleTable(spec, 'Highest 60+ by branch and product', ctx.runId, 'dq.segments', [{ field: 'branch', headerName: 'Branch', type: 'text' }, { field: 'category', headerName: 'Category', type: 'text' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'r60', headerName: '60+', type: 'text' }, { field: 'change', headerName: 'Change, 3 months', type: 'text' }], s.map((x) => ({ branch: x.branch, category: x.category, balance: Math.round(x.balance), r60: p2(x.ratio60), change: `${x.changeBp > 0 ? '+' : x.changeBp < 0 ? '−' : ''}${Math.abs(x.changeBp)} bp` })))],
             suggestions: [`Show the largest delinquent ${s[0]!.category.toLowerCase()} loans`],
           };
         },

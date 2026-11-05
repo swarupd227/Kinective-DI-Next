@@ -399,7 +399,10 @@ export class RelationshipService {
       [partyId, asOf],
     );
     const apps = await q<{ product: string; amount: number; status_group: 'Approved' | 'Denied' | 'Pending'; status_detail: string; applied_date: string; decided_date: string | null }>(
-      'SELECT product, amount, status_group, status_detail, applied_date, decided_date FROM cdm_loan_application WHERE party_id = ? AND applied_date >= ? ORDER BY applied_date DESC',
+      // What the loan system says now: the pipeline's status and hold, so the profile and the pipeline agree.
+      `SELECT a.product, a.amount, a.status_group, CASE WHEN a.status_group = 'Pending' AND (hr.label IS NOT NULL OR s.label IS NOT NULL) THEN CONCAT(COALESCE(s.label, a.status_detail), CASE WHEN hr.label IS NOT NULL THEN CONCAT(': ', LOWER(hr.label)) ELSE '' END) ELSE a.status_detail END AS status_detail, a.applied_date, a.decided_date
+         FROM cdm_loan_application a LEFT JOIN mod_lap_status_map s ON s.status_code = a.status_code LEFT JOIN cdm_loan_app_hold ah ON ah.application_id = a.application_id LEFT JOIN mod_lap_hold_reason hr ON hr.hold_code = ah.hold_code
+         WHERE a.party_id = ? AND a.applied_date >= ? ORDER BY a.applied_date DESC`,
       [partyId, addDays(asOf, -365)],
     );
     const [count] = await q<{ n: number }>('SELECT COUNT(*) AS n FROM cdm_interaction WHERE party_id = ?', [partyId]);
