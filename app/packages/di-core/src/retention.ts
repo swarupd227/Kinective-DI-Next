@@ -87,7 +87,7 @@ export class RetentionService {
       `SELECT d.party_id, d.balance, d.rate, d.maturity_date, p.first_name, p.last_name, b.name AS branch, COALESCE(s.score, 0) AS score, s.factors, c.party_id IS NOT NULL AS has_checking
        FROM cdm_deposit_account d JOIN cdm_party p ON p.party_id = d.party_id JOIN cdm_location b ON b.int_id = d.branch_id LEFT JOIN cdm_attrition_score s ON s.party_id = d.party_id
        LEFT JOIN (SELECT DISTINCT party_id FROM cdm_deposit_account WHERE deposit_category = 'Checking' AND close_date IS NULL) c ON c.party_id = d.party_id
-       WHERE d.deposit_category = 'Certificates' AND d.close_date IS NULL AND d.maturity_date BETWEEN ? AND ? + INTERVAL ? DAY AND d.balance >= ?${scope}`,
+       WHERE d.deposit_category LIKE 'Certificate%' AND d.close_date IS NULL AND d.maturity_date BETWEEN ? AND ? + INTERVAL ? DAY AND d.balance >= ?${scope}`,
       [asOf, asOf, days, f.minAmount ?? 0, ...(ctx.purviewBranches ? [ctx.purviewBranches.length ? ctx.purviewBranches : ['']] : [])],
     );
     const all = (rows as Record<string, unknown>[]).map((r): Certificate => {

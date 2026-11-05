@@ -61,6 +61,17 @@ describe.skipIf(!up)('retention against the warehouse', () => {
     expect((await service.maturing({ minAmount: 50_000 }, {})).items.every((c) => c.amount >= 50_000)).toBe(true);
   });
 
+  it('finds a bank’s certificates of deposit too, and some look likely to leave', async () => {
+    const bank = tenantPool('dinext_t_test_bank');
+    try {
+      const m = await new RetentionService(bank).maturing({ days: 30 }, {});
+      expect(m.count).toBeGreaterThan(100);
+      expect(m.atRisk.count).toBeGreaterThan(0);
+    } finally {
+      await bank.end();
+    }
+  });
+
   it('prices an offer from its inputs, held to each rule, and gives the same answer every time', async () => {
     const f = { atRiskOnly: true };
     const found = await service.maturing(f, {});
