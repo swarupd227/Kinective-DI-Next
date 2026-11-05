@@ -17,7 +17,9 @@ const m = (n: number) => (Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : `$$
 /** "Can you create this report?", "are you able to prepare the Call Report?" */
 const CAN_YOU = /\b(can|could|are|will) (you|di)\b|\babilit|\bable to\b|\bdo you\b|\bis it possible\b/i;
 const MAKE = /\b(create|prepare|produce|build|generate|make|fill out|fill in)\b/i;
-const READ_ONLY = 'I can’t submit the Call Report or change GL mappings. Submitting it in the FFIEC’s Central Data Repository (CDR), with the officer’s attestation, stays a person’s action.';
+const READ_ONLY = 'I can’t submit the Call Report or change GL mappings. Submitting it in the FFIEC’s Central Data Repository (CDR), with the officer’s attestation, stays a person’s action. To take it there, download the data file from the Call Report page.';
+/** Where the files are: the person downloads them and loads them into their Call Report software or CDR. */
+const DOWNLOAD = 'Yes. On the **Call Report** page there are two downloads: the **data file** (CSV), each MDRM item and its value in thousands of dollars, for your Call Report software or for keying into CDR; and the **review workbook** (Excel), every schedule with the prior quarter, the edits and the explanations, for sign-off. While edits are open the files are marked DRAFT. Submitting in CDR, with the officer’s attestation, stays with you.';
 const CODE = /\b(RCON|RIAD)[A-Z0-9]{4}\b/i;
 const SCHEDULES: [RegExp, string][] = [
   [/\brc-?c\b|loans by type|loan types|loans and leases/i, 'RC-C'],
@@ -58,6 +60,7 @@ export function ffiecModule(cr: CallReportService): ModuleSpec {
 - You are read-only. If asked to submit or change a mapping, say a person does that in CDR or the GL.`,
     plan: (text) => {
       const t = clean(text);
+      if (/\b(download|export|excel|csv|spreadsheet|workbook|xbrl|file for cdr|upload file|send (it )?to cdr|get it (in)?to cdr)\b/i.test(t)) return { say: DOWNLOAD };
       if (CAN_YOU.test(t) && MAKE.test(t)) return { tool: 'cr_overview', args: {} };
       if (/\b(submit|file it|upload|change|edit|remap|map)\b/i.test(t) && !/\bready\b|\bdue\b/i.test(t)) return { say: READ_ONLY };
       if (/\buncategori[sz]ed\b|\bunmapped\b|\bgl accounts?\b/i.test(t)) return { tool: 'cr_uncategorized', args: {} };

@@ -6,6 +6,16 @@ export const AS_OF = '2026-10-25';
 export const BUILD = { buildId: 'bld_20261026', completedAt: '2026-10-26 04:10:00' };
 /** Month-ends kept in history: 18 months up to the last complete month before the build. */
 export const HISTORY_MONTHS = 18;
+
+/**
+ * The effective federal funds rate at each month-end: 4.33% until the September, October and December
+ * 2025 cuts took it to 3.64%, where it has held through 2026. Illustrative, for pricing questions; not
+ * a published series.
+ */
+export const FED_FUNDS: Record<string, number> = { '2025-09': 4.09, '2025-10': 3.87, '2025-11': 3.88, '2025-12': 3.64 };
+export const fedFundsAt = (monthEnd: string) => FED_FUNDS[monthEnd.slice(0, 7)] ?? (monthEnd < '2025-09' ? 4.33 : 3.64);
+/** How far each deposit product's rate follows the market (its beta). Certificates reprice as they roll. */
+const DEPOSIT_BETA: Record<string, number> = { Checking: 0.03, 'Share Savings': 0.12, Savings: 0.12, 'Money Market': 0.48, Certificates: 0.58, 'Certificates of Deposit': 0.6, IRA: 0.42 };
 /** Annual growth the month-end history follows: loans, and shares and deposits. */
 const LOAN_GROWTH = 0.03;
 const SHARE_GROWTH = 0.05;
@@ -266,6 +276,7 @@ export interface GeneratedTenant {
   deposits: unknown[][];
   histLoan: unknown[][];
   histDeposit: unknown[][];
+  marketRates: unknown[][];
   histParty: unknown[][];
   /** Month-end balance by delinquency status, branch, category, channel and vintage. */
   histDq: unknown[][];
@@ -351,6 +362,37 @@ const capByAge = (state: string, open: Date, at: Date) => {
   while (i > 0 && BUCKETS[i]![1] > behind) i -= 1;
   return BUCKETS[i]![0];
 };
+/**
+ * A loan's credit at origination: a FICO-style score for consumer loans, loan-to-value for secured ones,
+ * the contractual term, and a risk rating (1 to 9, 6 special mention, 7 substandard) for commercial
+ * loans. Pricing is risk-based, so the dearer loans in a product carry the lower scores, and loans that
+ * later fell 60+ days behind were made to weaker borrowers.
+ */
+const CREDIT: Record<string, { score?: number; ltv?: [number, number]; terms?: number[]; commercial?: boolean }> = {
+  Mortgage: { score: 752, ltv: [55, 97], terms: [180, 360, 360, 360] },
+  HELOC: { score: 746, ltv: [45, 89], terms: [120, 180, 240] },
+  Auto: { score: 714, ltv: [72, 125], terms: [36, 48, 60, 72, 84] },
+  Personal: { score: 688, terms: [24, 36, 48, 60] },
+  'Credit Card': { score: 702 },
+  Consumer: { score: 694, terms: [24, 36, 48, 60] },
+  Business: { commercial: true, ltv: [45, 85], terms: [36, 60, 84, 120] },
+  'Commercial Real Estate': { commercial: true, ltv: [48, 80], terms: [60, 84, 120, 240] },
+  'Commercial & Industrial': { commercial: true, terms: [36, 60, 84] },
+};
+function creditTerms(l: { id: number; cat: { category: string; rate: [number, number]; termMonths: number }; open: Date; rate: number }, asOf: Date, weak: boolean): [number | null, number | null, number | null, number | null] {
+  const c = CREDIT[l.cat.category] ?? {};
+  const u = (k: number) => unit(l.id, 7000 + k);
+  const pricing = (l.rate - l.cat.rate[0]) / Math.max(0.01, l.cat.rate[1] - l.cat.rate[0]);
+  const noise = (u(1) + u(2) + u(3) - 1.5) * 112;
+  const score = c.score ? Math.round(Math.min(850, Math.max(560, c.score + (0.5 - pricing) * 70 + noise - (weak ? 55 + u(4) * 45 : 0)))) : null;
+  const ltv = c.ltv ? Math.round((c.ltv[0] + Math.pow(u(5), 0.75) * (c.ltv[1] - c.ltv[0]) + (weak ? 7 : 0)) * 100) / 100 : null;
+  // The term is one the loan is still within, so an open loan is never past its own maturity.
+  const age = Math.max(0, (asOf.getTime() - l.open.getTime()) / (30.44 * 86_400_000));
+  const fits = (c.terms ?? []).filter((t) => t > age + 1);
+  const term = c.terms ? (fits.length ? fits[Math.floor(u(6) * fits.length)]! : Math.max(...c.terms)) : null;
+  const rating = c.commercial ? (weak ? 6 + Math.floor(u(7) * 2) : 2 + Math.min(3, Math.floor(Math.pow(u(7), 0.8) * 4))) : null;
+  return [score, ltv, term, rating];
+}
 const SIXTY_PLUS = new Set(['60–89 days', '90–179 days', '180–359 days', '360+ days']);
 /** Where a loan starts when history begins, from its draw: about its delinquency rate is 60+. */
 const startStatus = (r: number) => (r < 0.065 ? '360+ days' : r < 0.3 ? '180–359 days' : r < 0.7 ? '90–179 days' : r < 1 ? '60–89 days' : r < 2.32 ? '30–59 days' : 'Current');
@@ -517,6 +559,8 @@ export function generate(profile: TenantProfile): GeneratedTenant {
   const histRoll = new Map<string, number[]>();
   /** Each loan's last month-end status and balance. */
   const dqState = new Map<number, string>();
+  /** Loans that were 60+ days behind at any month-end: their borrowers had weaker credit at origination. */
+  const everBehind = new Set<number>();
   const lastBal = new Map<number, number>();
   // Account-level paths give the mix and the branches, not believable totals: late account opening alone
   // grew shares 13% a year and sank loan-to-share 18 points in 18 months. Each month-end is scaled so loans
@@ -542,7 +586,7 @@ export function generate(profile: TenantProfile): GeneratedTenant {
     const monthsAgo = HISTORY_MONTHS - mi;
     for (const l of loans) {
       const key = `${me}|${l.branch + 1}|${l.cat.category}|${l.indirect ? 1 : 0}`;
-      const agg = histLoan.get(key) ?? [0, 0, 0, 0, 0];
+      const agg = histLoan.get(key) ?? [0, 0, 0, 0, 0, 0];
       const bal = balanceAt(l, at) * loanFactor[mi]!;
       if (bal > 0) {
         agg[0]! += bal;
@@ -560,7 +604,10 @@ export function generate(profile: TenantProfile): GeneratedTenant {
         // Loans that will be charged off are seriously behind in their last months.
         if (toChargeOff <= 3 && toChargeOff >= 0) state = capByAge(toChargeOff <= 1 ? '180–359 days' : '90–179 days', l.open, at);
         else state = capByAge(prev ? nextStatus(prev, p / 1.35, unit(l.id, 1000 + mi)) : startStatus(unit(l.id, 0) / p), l.open, at);
-        if (SIXTY_PLUS.has(state)) agg[1]! += bal;
+        if (SIXTY_PLUS.has(state)) {
+          agg[1]! += bal;
+          everBehind.add(l.id);
+        }
       } else if (l.chargeOff && l.chargeOff > monthStart && l.chargeOff <= at && prev) {
         state = 'Charged off';
         amount = lastBal.get(l.id) ?? 0;
@@ -590,15 +637,20 @@ export function generate(profile: TenantProfile): GeneratedTenant {
       if (l.open >= monthStart && l.open <= at) {
         agg[3]! += l.original;
         agg[4]! += 1;
+        agg[5]! += l.original * l.rate;
       }
     }
     for (const d of deps) {
       const bal = depBalanceAt(d, at) * depFactor[mi]!;
       if (bal <= 0) continue;
       const key = `${me}|${d.branch + 1}|${d.mix.category}`;
-      const agg = histDeposit.get(key) ?? [0, 0];
+      const agg = histDeposit.get(key) ?? [0, 0, 0];
       agg[0]! += bal;
       agg[1]! += 1;
+      // Today's rate, repriced back by the product's beta to that month's market.
+      const now = d.mix.rate[0] + unit(d.id, 3) * (d.mix.rate[1] - d.mix.rate[0]);
+      const then = Math.max(0, now + (DEPOSIT_BETA[d.mix.category] ?? 0.3) * (fedFundsAt(me) - fedFundsAt(months[months.length - 1]!)));
+      agg[2]! += bal * then;
       histDeposit.set(key, agg);
     }
     for (const p of parties) {
@@ -636,6 +688,9 @@ export function generate(profile: TenantProfile): GeneratedTenant {
     row[12] = state === 'Current' ? 0 : Math.min(BUCKET_END[state] ?? 9999, pastDueDays(l.id, state) + sinceMonthEnd, behind);
   });
 
+  // Credit at origination. Hashes of the loan id, so adding these leaves every other figure unchanged.
+  loans.forEach((l, i) => loanRows[i]!.push(...creditTerms(l, asOf, everBehind.has(l.id) || Boolean(l.chargeOff))));
+
   return {
     profile,
     locations,
@@ -645,12 +700,13 @@ export function generate(profile: TenantProfile): GeneratedTenant {
     deposits: depositRows,
     histLoan: [...histLoan].map(([k, v]) => {
       const [me, b, c, i] = k.split('|');
-      return [me, Number(b), c, Number(i), round2(v[0]!), round2(v[1]!), v[2], round2(v[3]!), v[4]];
+      return [me, Number(b), c, Number(i), round2(v[0]!), round2(v[1]!), v[2], round2(v[3]!), v[4], round2(v[5]!)];
     }),
     histDeposit: [...histDeposit].map(([k, v]) => {
       const [me, b, c] = k.split('|');
-      return [me, Number(b), c, round2(v[0]!), v[1]];
+      return [me, Number(b), c, round2(v[0]!), v[1], round2(v[2]!)];
     }),
+    marketRates: months.map((me) => [me, fedFundsAt(me)]),
     histDq: [...histDq].map(([k, v]) => {
       const [me, b, c, i, y, st] = k.split('|');
       return [me, Number(b), c, Number(i), Number(y), st, round2(v[0]!), v[1]];

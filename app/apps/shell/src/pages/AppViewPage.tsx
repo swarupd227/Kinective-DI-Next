@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Search } from 'lucide-react';
 import { BlockHostProvider, BlockRenderer, formatDay } from '@dinext/blocks';
 import { Button, Skeleton } from '@dinext/ui';
 import type { AppEvent, AppFile, AppView, AppViewId, QueryRun, SavedQueryView, SearchResult } from '@dinext/block-schemas';
@@ -51,6 +51,19 @@ function Frame({ q, children }: { q: ReturnType<typeof useView>; children: (v: A
       <header className={page.header}>
         <h1 className={page.title}>{v?.title ?? ' '}</h1>
         {v && <p className={page.lede}>{v.lede}</p>}
+        {v?.downloads?.length ? (
+          <ul className={styles.downloads} aria-label="Downloads">
+            {v.downloads.map((d) => (
+              <li key={d.href}>
+                <a className={styles.download} href={d.href} download title={d.detail}>
+                  <Download size={16} aria-hidden />
+                  {d.label}
+                </a>
+                {d.detail && <span className={styles.downloadDetail}>{d.detail}</span>}
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </header>
       {q.isPending && <Skeleton height="320px" radius="md" />}
       {q.isError && (

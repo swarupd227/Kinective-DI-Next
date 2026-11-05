@@ -234,7 +234,8 @@ export function operationsModule(ops: OperationsService): ModuleSpec {
 export function callReportModule(cr: CallReportService): ModuleSpec {
   const noAccess = 'The 5300 Call Report is for credit unions with the module. A bank call report is scoped separately by Kinective.';
   const need = (ctx: ModuleContext) => guard(ctx, 'callreport', noAccess);
-  const READ_ONLY = 'I can’t submit, export for upload or change mappings on the 5300. Filing in CUOnline stays a person’s action, and GL mappings are changed in the 5300 workspace by authorised staff.';
+  const READ_ONLY = 'I can’t submit or change mappings on the 5300. Filing in CUOnline stays a person’s action, and GL mappings are changed in the 5300 workspace by authorised staff. To take it there, download the data file from the Call Report page.';
+  const DOWNLOAD = 'Yes. On the **Call Report** page there are two downloads: the **data file** (CSV), each 5300 account code and its value in dollars, for CUOnline or your Call Report software; and the **review workbook** (Excel), every schedule with the prior quarter, the edits and the explanations, for sign-off. While edits are open the files are marked DRAFT. Filing in CUOnline stays with you.';
   const code = /\b(\d{3}[A-Z]?\d?|[A-Z]{2}\d{4}|\d{4}[A-Z])\b/;
   const SCHEDULES: [RegExp, string, string?][] = [
     [/balance sheet|financial condition|\bassets\b|liabilit/i, 'SFC'],
@@ -270,6 +271,7 @@ export function callReportModule(cr: CallReportService): ModuleSpec {
 - You are read-only. If asked to submit, export for upload or change a mapping, say a person does that.`,
     plan: (text) => {
       const t = clean(text);
+      if (/\b(download|export|excel|csv|spreadsheet|workbook|upload file|send (it )?to cuonline|get it (in)?to cuonline)\b/i.test(t)) return { say: DOWNLOAD };
       if (/\b(can|could|are|will) (you|di)\b|\babilit|\bable to\b|\bdo you\b|\bis it possible\b/i.test(t) && /\b(create|prepare|produce|build|generate|make|fill out|fill in)\b/i.test(t)) return { tool: 'cr_overview', args: {} };
       if (/\b(submit|file it|upload|change|edit|remap|map)\b/i.test(t) && !/\bready\b|\bdue\b/i.test(t)) return { say: READ_ONLY };
       if (/\buncategori[sz]ed\b|\bunmapped\b|\bgl accounts?\b/i.test(t)) return { tool: 'cr_uncategorized', args: {} };
@@ -483,12 +485,13 @@ export function campaignModule(cmp: CampaignService): ModuleSpec {
     id: 'campaigns',
     prefix: 'cmp',
     agent: 'Campaigns',
-    request: /\bcampaigns?\b|\baudiences?\b/i,
+    request: /\bcampaigns?\b|\baudiences?\b|\bmarketing (roi|return|spend)\b|\bcampaign lift\b/i,
     noAccess,
     sources: [{ kind: 'table', label: 'Campaign Success', ref: 'table:cmp_campaign' }],
     prompt: ({ tenant, user, title }) => `You are the Campaign agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) reviews campaigns and builds audiences.
 
 - "Which campaigns produced the most loan dollars?": cmp_results.
+- "Which campaigns paid for themselves?", "what was the lift?", "campaign ROI": cmp_roi. Lift is against each campaign's held-back control group.
 - "Build an audience of members with no auto loan": cmp_audience_prepare. Suppression is applied by the platform and its counts are shown.
 - Exporting an audience file isn't available here.`,
     plan: (text) => {
@@ -496,9 +499,32 @@ export function campaignModule(cmp: CampaignService): ModuleSpec {
       if (/\bexport\b/i.test(t)) return { say: 'Exporting an audience moves member contact data out of DI, and that isn’t built in this demo. I can save the audience.' };
       const no = /\bno ([\w ]+?) loan\b|\bwithout an? ([\w ]+?) loan\b/i.exec(t);
       if (/\baudience\b/i.test(t)) return no ? { tool: 'cmp_audience_prepare', args: { without_category: (no[1] ?? no[2])! } } : { say: 'Which loan should the audience not already have?' };
+      if (/\blift\b|\broi\b|\breturn\b|\bincremental\b|\bpa(id|y) (for|off)\b|\bworth it\b|\bprofitab|\bcost per\b|\bspend\b|\bcontrol group\b/i.test(t)) return { tool: 'cmp_roi', args: {} };
       return { tool: 'cmp_results', args: {} };
     },
     tools: [
+      {
+        name: 'cmp_roi',
+        description: 'Each campaign’s lift over its held-back control group, the incremental responses and dollars it caused, its cost, and the return on that cost from the lifetime contribution of what it caused.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const r = (await cmp.results()).filter((c) => c.roiPct !== null).sort((a, b) => (b.roiPct ?? 0) - (a.roiPct ?? 0));
+          if (!r.length) return { text: 'No campaign has a control group, so DI can’t measure lift yet.' };
+          const best = r[0]!;
+          const losers = r.filter((c) => (c.roiPct ?? 0) < 0);
+          const spend = r.reduce((s, c) => s + c.cost, 0);
+          const value = r.reduce((s, c) => s + (c.value ?? 0), 0);
+          const pct = (n: number | null) => (n === null ? '—' : `${n >= 0 ? '' : '−'}${Math.abs(Math.round(n)).toLocaleString('en-US')}%`);
+          return {
+            text: `Across ${r.length} campaigns, **${money(spend)}** of spend caused about **${money(value)}** of lifetime contribution, measured against each campaign’s held-back control group. **${best.name}** returned the most, ${pct(best.roiPct)} on ${money(best.cost)}: a lift of ${best.liftPts!.toFixed(2)} points (${best.responseRatePct.toFixed(2)}% responded against ${best.controlRatePct!.toFixed(2)}% of the control), so about ${best.incremental} of its ${best.applications} responses wouldn’t have happened without it.${losers.length ? ` ${losers.map((c) => c.name).join(' and ')} didn’t pay for ${losers.length === 1 ? 'itself' : 'themselves'}${losers.some((c) => /certificate/i.test(c.product)) ? '; certificates bought at a special rate cost more than their funding is worth' : ''}.` : ''} Value uses each product’s contribution per dollar from Profitability; the control group is 10% of each audience.`,
+            blocks: [
+              moduleTable(spec, 'Campaign lift and return', ctx.runId, 'campaign.roi', [{ field: 'name', headerName: 'Campaign', type: 'text' }, { field: 'channel', headerName: 'Channel', type: 'text' }, { field: 'rate', headerName: 'Responded', type: 'text' }, { field: 'control', headerName: 'Control', type: 'text' }, { field: 'lift', headerName: 'Lift (pts)', type: 'text' }, { field: 'incremental', headerName: 'Caused', type: 'count' }, { field: 'cost', headerName: 'Cost', type: 'currency' }, { field: 'value', headerName: 'Value caused', type: 'currency' }, { field: 'roi', headerName: 'Return', type: 'text' }], r.map((c) => ({ name: c.name, channel: c.channel, rate: `${c.responseRatePct.toFixed(2)}%`, control: `${c.controlRatePct!.toFixed(2)}%`, lift: c.liftPts!.toFixed(2), incremental: c.incremental ?? 0, cost: Math.round(c.cost), value: Math.round(c.value ?? 0), roi: pct(c.roiPct) }))),
+            ],
+            suggestions: ['Which campaigns produced the most loan dollars?', 'Build an audience of members with no auto loan'],
+          };
+        },
+      },
       {
         name: 'cmp_results',
         description: 'Campaigns by loan dollars, with channel, applications and sends.',
@@ -507,7 +533,7 @@ export function campaignModule(cmp: CampaignService): ModuleSpec {
           need(ctx);
           const r = await cmp.results();
           const [top] = r;
-          return { text: top ? `**${top.name}** produced the most loan dollars: **${money(top.dollars)}** from ${top.applications} applications by ${top.channel.toLowerCase()}. Attribution uses each campaign’s response window.` : 'No campaigns have run.', blocks: [moduleTable(spec, 'Campaign results', ctx.runId, 'campaign.results', [{ field: 'name', headerName: 'Campaign', type: 'text' }, { field: 'channel', headerName: 'Channel', type: 'text' }, { field: 'product', headerName: 'Product', type: 'text' }, { field: 'sent', headerName: 'Sent', type: 'count' }, { field: 'applications', headerName: 'Applications', type: 'count' }, { field: 'dollars', headerName: 'Loan dollars', type: 'currency' }], r)] };
+          return { text: top ? `**${top.name}** produced the most loan dollars: **${money(top.dollars)}** from ${top.applications} applications by ${top.channel.toLowerCase()}. Attribution uses each campaign’s response window.` : 'No campaigns have run.', blocks: [moduleTable(spec, 'Campaign results', ctx.runId, 'campaign.results', [{ field: 'name', headerName: 'Campaign', type: 'text' }, { field: 'channel', headerName: 'Channel', type: 'text' }, { field: 'product', headerName: 'Product', type: 'text' }, { field: 'sent', headerName: 'Sent', type: 'count' }, { field: 'applications', headerName: 'Applications', type: 'count' }, { field: 'dollars', headerName: 'Loan dollars', type: 'currency' }], r.map((c) => ({ name: c.name, channel: c.channel, product: c.product, sent: c.sent, applications: c.applications, dollars: c.dollars })))] };
         },
       },
       {

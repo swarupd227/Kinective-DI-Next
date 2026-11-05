@@ -43,7 +43,7 @@ export function createAppViews(deps: ViewDeps) {
   const { pool, blockId, ctx } = deps;
   const table = (title: string, operation: string, columns: ColumnSpec[], rows: Record<string, string | number>[]): Block => ({ id: blockId(), type: 'table', version: '1.0.0', title, provenance: { agent: 'DI', operations: [operation], sources: [] }, freshness: { kind: 'workflow_event' }, data: { columns, rows, rowCount: rows.length } });
   /** A bar chart for a page's main breakdown, so each page opens on a picture as well as figures. */
-  const bar = (title: string, operation: string, rows: [string, number][], unit: 'count' | 'currency', valueName: string, subtitle?: string): Block => ({ id: blockId(), type: 'chart', version: '2.0.0', title, ...(subtitle ? { subtitle } : {}), provenance: { agent: 'DI', operations: [operation], sources: [] }, freshness: { kind: 'workflow_event' }, data: { chartType: 'bar', dataset: { dimensions: [{ name: 'label', displayName: title, type: 'ordinal' }, { name: 'value', displayName: valueName, type: 'number' }], source: rows }, series: [{ name: valueName, encode: { x: 'label', y: 'value' } }], axes: { y: [{ unit }] }, legend: false } } as Block);
+  const bar = (title: string, operation: string, rows: [string, number][], unit: 'count' | 'currency' | 'percent', valueName: string, subtitle?: string): Block => ({ id: blockId(), type: 'chart', version: '2.0.0', title, ...(subtitle ? { subtitle } : {}), provenance: { agent: 'DI', operations: [operation], sources: [] }, freshness: { kind: 'workflow_event' }, data: { chartType: 'bar', dataset: { dimensions: [{ name: 'label', displayName: title, type: 'ordinal' }, { name: 'value', displayName: valueName, type: 'number' }], source: rows }, series: [{ name: valueName, encode: { x: 'label', y: 'value' } }], axes: { y: [{ unit }] }, legend: false } } as Block);
   /** Counts of items by a field, largest first. */
   const countBy = <T,>(items: T[], key: (t: T) => string): [string, number][] => [...items.reduce((m, t) => m.set(key(t), (m.get(key(t)) ?? 0) + 1), new Map<string, number>())].sort((a, b) => b[1] - a[1]);
   const operations = new OperationsService(pool);
@@ -425,6 +425,10 @@ export function createAppViews(deps: ViewDeps) {
         const cre = ['RCONF159', 'RCON1460', 'RCONF161'].reduce((s, c) => s + (v(c)?.current ?? 0), 0);
         return {
           title: `${form.form} Call Report · ${q.label}`,
+          downloads: [
+            { label: 'Download data file (CSV)', href: '/v1/callreport/files/data', detail: 'Each MDRM item and its value, in thousands, for your Call Report software or CDR.' },
+            { label: 'Download review workbook (Excel)', href: '/v1/callreport/files/review', detail: 'Every schedule with the prior quarter, the edits and the explanations, for sign-off.' },
+          ],
           lede: `${form.edition}, for the quarter ending ${new Date(`${q.current}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}. Due ${due} in ${form.filedIn}. DI prepares and checks it; a person submits it with the officer’s attestation.`,
           take: {
             headline: ready.ready && !ready.warnings.length ? `${q.label} is ready to review and submit by ${due}.` : `${q.label} isn’t ready: ${[...ready.errors, ...ready.warnings].map((c) => c.detail).join(' ')}`,
@@ -465,6 +469,10 @@ export function createAppViews(deps: ViewDeps) {
       const errors = ready.errors.length;
       return {
         title: `5300 Call Report · ${q.label}`,
+        downloads: [
+          { label: 'Download data file (CSV)', href: '/v1/callreport/files/data', detail: 'Each account code and its value, in dollars, for CUOnline or your Call Report software.' },
+          { label: 'Download review workbook (Excel)', href: '/v1/callreport/files/review', detail: 'Every schedule with the prior quarter, the edits and the explanations, for sign-off.' },
+        ],
         lede: `NCUA Form 5300, ${q.edition}, for the quarter ending ${new Date(`${q.current}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}. Due ${due} in CUOnline. DI prepares and checks it; a person files it.`,
         take: {
           headline: ready.ready && !ready.warnings.length ? `${q.label} is ready to review and file by ${due}.` : `${q.label} isn’t ready: ${[...ready.errors, ...ready.warnings].map((c) => c.detail).join(' ')}`,
@@ -551,14 +559,23 @@ export function createAppViews(deps: ViewDeps) {
       const cmp = new CampaignService(pool);
       const list = await cmp.results();
       const sum = (k: 'sent' | 'applications' | 'dollars') => list.reduce((n, c) => n + c[k], 0);
-      const best = [...list].sort((a, b) => b.applications / b.sent - a.applications / a.sent)[0];
+      const measured = list.filter((c) => c.roiPct !== null);
+      const byRoi = [...measured].sort((a, b) => (b.roiPct ?? 0) - (a.roiPct ?? 0));
+      const spend = measured.reduce((n, c) => n + c.cost, 0);
+      const caused = measured.reduce((n, c) => n + (c.value ?? 0), 0);
+      const losers = measured.filter((c) => (c.roiPct ?? 0) < 0);
+      const pctOf = (n: number | null) => (n === null ? '—' : `${n < 0 ? '−' : ''}${Math.abs(Math.round(n)).toLocaleString('en-US')}%`);
       return {
         title: 'Campaign Success',
-        lede: 'Campaigns by the loans they produced. Attribution uses each campaign’s response window.',
-        take: { headline: list[0] ? `${list[0].name} produced the most loan dollars, ${usd(list[0].dollars)}. ${best && best.name !== list[0].name ? `${best.name} had the best response, ${Math.round((best.applications / best.sent) * 1000) / 10}% of those sent applied.` : ''}` : 'No campaigns have run.', action: { label: 'Find members with no auto loan', ask: 'Build an audience of members with no auto loan' } },
-        tiles: [{ label: 'Campaigns', value: String(list.length) }, { label: 'Sent', value: sum('sent').toLocaleString('en-US') }, { label: 'Applications', value: sum('applications').toLocaleString('en-US') }, { label: 'Loan dollars', value: usd(sum('dollars')) }],
-        prompts: ['Which campaigns produced the most loan dollars?', 'Build an audience of members with no auto loan'],
-        blocks: [bar('Loan dollars by campaign', 'campaign.results', list.map((c) => [c.name, c.dollars]), 'currency', 'Loan dollars'), table('Campaigns', 'campaign.results', [text('name', 'Campaign'), text('channel', 'Channel'), text('product', 'Product'), { field: 'sent', headerName: 'Sent', type: 'count' }, { field: 'applications', headerName: 'Applications', type: 'count' }, text('response', 'Response'), { field: 'dollars', headerName: 'Loan dollars', type: 'currency' }], list.map((c) => ({ name: c.name, channel: c.channel, product: c.product, sent: c.sent, applications: c.applications, response: `${Math.round((c.applications / c.sent) * 1000) / 10}%`, dollars: c.dollars })))],
+        lede: 'Campaigns by what they caused: each one held back a random 10% control group, so lift is measured against members who weren’t contacted, and the return weighs the lifetime contribution of what it caused against its cost.',
+        take: { headline: byRoi[0] ? `${usd(spend)} of spend caused about ${usd(caused)} of lifetime contribution. ${byRoi[0].name} returned the most, ${pctOf(byRoi[0].roiPct)}.${losers.length ? ` ${losers.map((c) => c.name).join(', ')} didn’t pay for ${losers.length === 1 ? 'itself' : 'themselves'}.` : ''}` : list[0] ? `${list[0].name} produced the most loan dollars, ${usd(list[0].dollars)}.` : 'No campaigns have run.', action: { label: 'Which campaigns paid for themselves?', ask: 'Which campaigns paid for themselves?' } },
+        tiles: [{ label: 'Campaigns', value: String(list.length) }, { label: 'Spend', value: usd(spend) }, { label: 'Value caused', value: usd(caused) }, { label: 'Return on spend', value: spend ? pctOf(((caused - spend) / spend) * 100) : '—' }, { label: 'Loan dollars', value: usd(sum('dollars')) }],
+        prompts: ['Which campaigns paid for themselves?', 'Which campaigns produced the most loan dollars?', 'Build an audience of members with no auto loan'],
+        blocks: [
+          bar('Return on spend by campaign', 'campaign.roi', byRoi.map((c) => [c.name, Math.round(c.roiPct ?? 0)]), 'percent', 'Return'),
+          table('Lift and return', 'campaign.roi', [text('name', 'Campaign'), text('channel', 'Channel'), text('launched', 'Launched'), text('rate', 'Responded'), text('control', 'Control'), text('lift', 'Lift (pts)'), { field: 'caused', headerName: 'Caused', type: 'count' }, { field: 'cost', headerName: 'Cost', type: 'currency' }, { field: 'value', headerName: 'Value caused', type: 'currency' }, text('roi', 'Return')], byRoi.map((c) => ({ name: c.name, channel: c.channel, launched: c.launched ?? '', rate: `${c.responseRatePct.toFixed(2)}%`, control: `${c.controlRatePct!.toFixed(2)}%`, lift: c.liftPts!.toFixed(2), caused: c.incremental ?? 0, cost: Math.round(c.cost), value: Math.round(c.value ?? 0), roi: pctOf(c.roiPct) }))),
+          table('Campaigns', 'campaign.results', [text('name', 'Campaign'), text('channel', 'Channel'), text('product', 'Product'), { field: 'sent', headerName: 'Sent', type: 'count' }, { field: 'applications', headerName: 'Applications', type: 'count' }, text('response', 'Response'), { field: 'dollars', headerName: 'Loan dollars', type: 'currency' }, { field: 'deposits', headerName: 'Deposits raised', type: 'currency' }], list.map((c) => ({ name: c.name, channel: c.channel, product: c.product, sent: c.sent, applications: c.applications, response: `${Math.round((c.applications / c.sent) * 1000) / 10}%`, dollars: c.dollars, deposits: c.depositDollars }))),
+        ],
       };
     },
     async onboarding() {

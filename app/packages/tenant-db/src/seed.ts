@@ -16,7 +16,7 @@ import { generateGoals, GI_GOALS, GI_INCENTIVES, GI_TIERS, GOALS_DDL, GOALS_WRIT
 import { generatePipeline, LAP_APPLICATION_COLUMNS, LAP_HOLDS, LAP_STATUSES, PIPELINE_DDL, PIPELINE_WRITE_TABLES } from './pipeline.ts';
 import { generateRelationship, RELATIONSHIP_DDL } from './relationship.ts';
 import { generateMemberHistory } from './membership.ts';
-import { BENCHMARK_DDL, benchmarks } from './benchmarks.ts';
+import { BENCHMARK_DDL, BUDGET_WRITE_TABLES, benchmarks, budgetSeed } from './benchmarks.ts';
 import { reportSeed } from './reports.ts';
 import { CR_FILING, generateCallReport } from './callReport.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
@@ -48,10 +48,11 @@ async function main() {
     await insert(admin, 'cdm_location', ['int_id', 'name', 'region', 'opened_date'], t.locations);
     await insert(admin, 'cdm_employee', ['employee_id', 'display_name', 'role', 'branch_id'], t.employees);
     await insert(admin, 'cdm_party', ['party_id', 'first_name', 'last_name', 'birth_date', 'join_date', 'primary_branch_id', 'segment_code', 'household_id', 'is_member'], t.parties);
-    await insert(admin, 'cdm_loan', ['loan_id', 'party_id', 'branch_id', 'officer_id', 'loan_category', 'is_indirect', 'open_date', 'close_date', 'charge_off_date', 'original_amount', 'balance', 'rate', 'days_delinquent'], t.loans);
+    await insert(admin, 'cdm_loan', ['loan_id', 'party_id', 'branch_id', 'officer_id', 'loan_category', 'is_indirect', 'open_date', 'close_date', 'charge_off_date', 'original_amount', 'balance', 'rate', 'days_delinquent', 'credit_score', 'ltv', 'term_months', 'risk_rating'], t.loans);
     await insert(admin, 'cdm_deposit_account', ['account_id', 'party_id', 'branch_id', 'deposit_category', 'open_date', 'close_date', 'maturity_date', 'balance', 'rate'], t.deposits);
-    await insert(admin, 'hist_loan_month', ['month_end', 'branch_id', 'loan_category', 'is_indirect', 'balance', 'delinquent_60_balance', 'loan_count', 'new_loan_amount', 'new_loan_count'], t.histLoan);
-    await insert(admin, 'hist_deposit_month', ['month_end', 'branch_id', 'deposit_category', 'balance', 'account_count'], t.histDeposit);
+    await insert(admin, 'hist_loan_month', ['month_end', 'branch_id', 'loan_category', 'is_indirect', 'balance', 'delinquent_60_balance', 'loan_count', 'new_loan_amount', 'new_loan_count', 'new_rate_weighted'], t.histLoan);
+    await insert(admin, 'hist_deposit_month', ['month_end', 'branch_id', 'deposit_category', 'balance', 'account_count', 'rate_weighted'], t.histDeposit);
+    await insert(admin, 'mkt_rate_month', ['month_end', 'fed_funds'], t.marketRates);
     await insert(admin, 'hist_party_month', ['month_end', 'branch_id', 'member_count', 'new_member_count', 'closed_member_count'], t.histParty);
     await insert(admin, 'cdm_membership_exit', ['party_id', 'branch_id', 'join_date', 'close_date', 'birth_date', 'segment_code', 'reason'], t.exits);
     await insert(admin, 'hist_loan_dq_month', ['month_end', 'branch_id', 'loan_category', 'is_indirect', 'vintage_year', 'bucket', 'balance', 'loan_count'], t.histDq);
@@ -86,6 +87,9 @@ async function main() {
     await insert(admin, 'mod_gi_adjustment', ['employee_id', 'period_end', 'amount', 'reason_code', 'note', 'status', 'created_by'], gi.adjustments);
     for (const ddl of BENCHMARK_DDL) await admin.query(ddl);
     await insert(admin, 'fin_benchmark', ['kind', 'metric', 'value', 'source'], benchmarks(profile.institutionType));
+    const budget = budgetSeed(profile.institutionType);
+    await insert(admin, 'fin_budget', ['year', 'metric', 'value', 'status', 'note', 'updated_by', 'approval_id'], budget.lines);
+    await insert(admin, 'fin_budget_event', ['year', 'action', 'detail', 'by_name', 'at', 'approval_id'], budget.events);
     for (const ddl of MODULES_DDL) await admin.query(ddl);
     const mods = generateModules(t, profile.institutionType);
     await insert(admin, 'cpm_issue', ['issue_id', 'party_id', 'kind', 'source', 'category', 'summary', 'status', 'owner_employee_id', 'branch_id', 'opened', 'respond_by', 'resolve_by', 'closed', 'resolution', 'root_cause'], mods.issues);
@@ -119,7 +123,7 @@ async function main() {
       await insert(admin, 'seg_company', ['company_id', 'name', 'stage', 'members', 'new_members', 'loans', 'deposits', 'owner', 'sponsorship'], fx.companies);
       await insert(admin, 'seg_interaction', ['company_id', 'at', 'kind', 'note', 'by_name'], fx.interactions);
     }
-    await insert(admin, 'cmp_campaign', ['campaign_id', 'name', 'channel', 'product', 'sent', 'applications', 'loan_dollars'], fx.campaigns);
+    await insert(admin, 'cmp_campaign', ['campaign_id', 'name', 'channel', 'product', 'sent', 'applications', 'loan_dollars', 'control_size', 'control_responders', 'cost', 'deposit_dollars', 'launched'], fx.campaigns);
     for (const ddl of WORKFLOW_DDL) await admin.query(ddl);
     for (const ddl of GOVERNANCE_DDL) await admin.query(ddl);
     for (const ddl of GROWTH_DDL) await admin.query(ddl);
@@ -149,7 +153,7 @@ async function main() {
     // The application account reads tenant data only (spec 26.2: read-only on customer tables), and
     // writes only the workflow store, through approved DI Core operations.
     await admin.query(`GRANT SELECT ON \`${profile.schema}\`.* TO 'dinext'@'%'`);
-    for (const table of [...WORKFLOW_WRITE_TABLES, ...PIPELINE_WRITE_TABLES, ...GOALS_WRITE_TABLES, ...MODULES_WRITE_TABLES, ...GROWTH_WRITE_TABLES, ...TASKS_WRITE_TABLES, ...WORKFLOW_DEF_WRITE_TABLES, ...WORKSPACE_WRITE_TABLES, ...CALENDAR_SERIES_WRITE_TABLES, ...TABLES_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
+    for (const table of [...WORKFLOW_WRITE_TABLES, ...PIPELINE_WRITE_TABLES, ...GOALS_WRITE_TABLES, ...MODULES_WRITE_TABLES, ...GROWTH_WRITE_TABLES, ...TASKS_WRITE_TABLES, ...WORKFLOW_DEF_WRITE_TABLES, ...WORKSPACE_WRITE_TABLES, ...CALENDAR_SERIES_WRITE_TABLES, ...TABLES_WRITE_TABLES, ...BUDGET_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     // Add-only: a run record or a rating can't be changed once written (AI-GRD-090).
     for (const table of GOVERNANCE_APPEND_TABLES) await admin.query(`GRANT INSERT ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     // Direct core connections: DI's store for every tenant, and a Symitar-style replica for the credit union.

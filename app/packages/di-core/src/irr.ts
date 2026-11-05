@@ -126,7 +126,10 @@ export class IrrService {
     // The Call Report's RC-B has no maturity distribution in the 051's headline items, so a bank's ladder keeps the usual shape.
     const ladder = cr.length ? [v('NV0153'), v('NV0154'), v('NV0155'), v('NV0156'), v('NV0157')] : [0.21, 0.33, 0.26, 0.15, 0.05].map((x) => investments * x);
     const borrowings = fromFfiec ? f('RCON3190') : cr.length ? v('860C') : totalShares * 0.015;
-    out.push({ name: 'Cash and overnight funds', side: 'asset', balance: cash, rate: MARKET_RATE, flows: () => [cash, ...new Array<number>(HORIZON - 1).fill(0)], repriced: () => 1, beta: 1, discount: MARKET_RATE, floating: true });
+    // Cash earns about the overnight rate: the latest federal funds rate on file plus 10 bp, else the market rate.
+    const [mkt] = await rows<{ ff: number }>(this.pool, 'SELECT fed_funds AS ff FROM mkt_rate_month ORDER BY month_end DESC LIMIT 1').catch(() => []);
+    const overnight = mkt ? Number(mkt.ff) / 100 + 0.001 : MARKET_RATE;
+    out.push({ name: 'Cash and overnight funds', side: 'asset', balance: cash, rate: overnight, flows: () => [cash, ...new Array<number>(HORIZON - 1).fill(0)], repriced: () => 1, beta: 1, discount: MARKET_RATE, floating: true });
     // Each maturity band matures evenly across its range; the portfolio yields 3.05%.
     const bands: [number, number][] = [[1, 12], [13, 36], [37, 60], [61, 120], [121, 240]];
     const invFlows = new Array<number>(HORIZON).fill(0);

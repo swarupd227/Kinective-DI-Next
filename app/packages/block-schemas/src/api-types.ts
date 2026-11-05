@@ -235,6 +235,8 @@ export interface AppView {
   /** Plainly says what this page can't do yet. */
   notice?: string;
   links?: { label: string; to: string }[];
+  /** Files the person can take away, such as the Call Report for their filing software. */
+  downloads?: { label: string; href: string; detail?: string }[];
   events?: AppEvent[];
   today?: string;
   saved?: SavedQueryView[];

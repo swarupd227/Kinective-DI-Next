@@ -18,6 +18,7 @@ describe('Call Report questions at a bank', () => {
     expect(plan('Show RC-N')).toEqual({ tool: 'cr_schedule', args: { schedule: 'RC-N' } });
     expect(plan('Have you got the ability to create this Report?')).toEqual({ tool: 'cr_overview', args: {} });
     expect(plan('Can you prepare the FFIEC 051?')).toEqual({ tool: 'cr_overview', args: {} });
+    expect(plan('Can I download the Call Report for CDR?')).toEqual({ say: expect.stringMatching(/data file.*thousands.*review workbook/s) });
     expect(plan('Submit the Call Report')).toEqual({ say: expect.stringMatching(/stays a person’s action/) });
   });
 });

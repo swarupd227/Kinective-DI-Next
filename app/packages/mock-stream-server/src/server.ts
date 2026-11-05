@@ -611,6 +611,19 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         const r = await live?.runSchedules(persona());
         return r ? json(res, 200, { schedules: r }) : json(res, 404, { code: 'NOT_FOUND' });
       }
+      const crFile = /^\/v1\/callreport\/files\/(data|review)$/.exec(path);
+      if (method === 'GET' && crFile) {
+        try {
+          const f = await live?.callReportFile(persona(), crFile[1] as 'data' | 'review');
+          if (!f) return json(res, 404, { code: 'NOT_FOUND' });
+          res.writeHead(200, { 'content-type': f.contentType, 'content-disposition': `attachment; filename="${f.fileName}"`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+          res.end(f.body);
+          return;
+        } catch (err) {
+          if (err instanceof CoreError) return json(res, 404, { code: 'NOT_FOUND', message: 'No Call Report is loaded for this institution.' });
+          throw err;
+        }
+      }
       const exportFile = /^\/v1\/exports\/([^/]+)$/.exec(path);
       if (method === 'GET' && exportFile) {
         try {

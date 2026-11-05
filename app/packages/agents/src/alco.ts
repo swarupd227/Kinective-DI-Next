@@ -13,7 +13,7 @@ const p2 = (n: number) => `${n.toFixed(2)}%`;
 const signed = (n: number) => `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(1)}%`;
 const shock = (bp: number) => (bp === 0 ? 'Base' : `${bp > 0 ? '+' : ''}${bp} bp`);
 
-export const ALCO_SECTIONS = ['alco.policy', 'alco.earnings', 'alco.irr', 'alco.liquidity', 'alco.capital', 'alco.funding', 'alco.loans'] as const;
+export const ALCO_SECTIONS = ['alco.policy', 'alco.earnings', 'alco.irr', 'alco.liquidity', 'alco.capital', 'alco.funding', 'alco.pricing', 'alco.loans', 'alco.newloans'] as const;
 
 export function alcoAnalyses(svc: AlcoService): ReportAnalyses {
   const runs = new Map<string, ReturnType<AlcoService['analysis']>>();
@@ -97,6 +97,24 @@ export function alcoAnalyses(svc: AlcoService): ReportAnalyses {
           const c = l.concentration;
           return {
             block: t('Loans', 'alco.loans', [text('category', 'Loan type'), money('balance', 'Balance'), text('share', 'Share'), text('rate', 'Yield'), text('growth', '12-month growth'), text('dq', '60+ delinquent')], l.lines.map((x) => ({ category: x.category, balance: Math.round(x.balance), share: p1(x.sharePct), rate: p2(x.ratePct), growth: x.growthPct === null ? '—' : signed(x.growthPct), dq: p2(x.dq60Pct) })), `Loan yield ${p2(l.yieldPct)}; ${c.name.toLowerCase()} is ${c.unit === '%' ? `${Math.round(c.value)}%` : `${c.value.toFixed(2)}×`} (limit ${c.unit === '%' ? `${c.limit}%` : `${c.limit}×`}).`),
+          };
+        }
+        case 'alco.pricing':
+        case 'alco.newloans': {
+          const pr = await svc.pricing();
+          if (!pr) throw new Error('No market rate history is loaded.');
+          const when = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+          const bp = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n)} bp`;
+          const b2 = (n: number | null) => (n === null ? '—' : n.toFixed(2));
+          if (key === 'alco.pricing') {
+            const rows = [...pr.products.map((p) => ({ item: p.category, balance: Math.round(p.balance), then: p2(p.rateThen), now: p2(p.rateNow), change: bp(p.changeBp), beta: b2(p.beta) })), { item: `All ${deposits.toLowerCase()}`, balance: Math.round(pr.products.reduce((s, p) => s + p.balance, 0)), then: p2(pr.total.rateThen), now: p2(pr.total.rateNow), change: bp(pr.total.changeBp), beta: b2(pr.total.beta) }];
+            return {
+              block: t('Deposit pricing and beta', 'alco.pricing', [text('item', 'Product'), money('balance', 'Balance'), text('then', `Rate, ${when(pr.start)}`), text('now', `Rate, ${when(pr.end)}`), text('change', 'Change'), text('beta', 'Beta')], rows, `Fed funds ${bp(pr.marketMoveBp)} since ${when(pr.start)}. Rates paid repriced ${bp(pr.total.repricingBp)} (beta ${b2(pr.total.repricingBeta)}); the mix ${pr.total.mixBp > 0 ? 'took back' : 'added'} ${Math.abs(pr.total.mixBp)} bp, so cost moved ${bp(pr.total.changeBp)}.`),
+            };
+          }
+          const rows = pr.loans.filter((l) => l.newAmount > 0).map((l) => ({ item: l.category, amount: Math.round(l.newAmount), fresh: l.newYield === null ? '—' : p2(l.newYield), book: p2(l.bookYield), spread: l.spreadBp === null ? '—' : bp(l.spreadBp) }));
+          return {
+            block: t('New loans against the book', 'alco.newloans', [text('item', 'Loan type'), money('amount', 'Made, last 3 months'), text('fresh', 'Yield on new loans'), text('book', 'Yield on the book'), text('spread', 'Difference')], rows, pr.newYield === null || pr.likeForLikeBp === null ? 'No loans were made in the last three months.' : `New loans yield ${p2(pr.newYield)} against ${p2(pr.bookYield)} on the book, a gap that is mostly mix. Type for type, new loans price ${bp(pr.likeForLikeBp)} against the book.`),
           };
         }
         default:

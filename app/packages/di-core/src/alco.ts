@@ -60,6 +60,62 @@ export class AlcoService {
     private readonly institutionType: 'credit_union' | 'bank' = 'credit_union',
   ) {}
 
+  /**
+   * Deposit pricing through the rate cycle: each product's rate paid at the month before the market
+   * first moved and now, against the federal funds rate over the same months, and so its deposit beta
+   * (how much of the market's move it passed on). With the yield on the last three months' new loans
+   * against the book's, by loan type.
+   */
+  async pricing() {
+    const ff = await rows<{ me: unknown; ff: number }>(this.pool, 'SELECT month_end AS me, fed_funds AS ff FROM mkt_rate_month ORDER BY month_end').catch(() => []);
+    if (ff.length < 2) return null;
+    const day = (v: unknown) => (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10));
+    const path = ff.map((r) => ({ me: day(r.me), ff: Number(r.ff) }));
+    const last = path[path.length - 1]!;
+    // The cycle starts at the last month-end before the market first moved.
+    const firstMove = path.findIndex((p, i) => i > 0 && Math.abs(p.ff - path[i - 1]!.ff) >= 0.1);
+    const start = path[Math.max(0, firstMove - 1)]!;
+    const dep = await rows<{ me: unknown; category: string; bal: number; rw: number }>(this.pool, 'SELECT month_end AS me, deposit_category AS category, SUM(balance) AS bal, SUM(rate_weighted) AS rw FROM hist_deposit_month WHERE month_end IN (?, ?) GROUP BY month_end, deposit_category', [start.me, last.me]);
+    const at = (me: string, cat?: string) => {
+      const rs = dep.filter((r) => day(r.me) === me && (!cat || r.category === cat));
+      const bal = rs.reduce((s, r) => s + Number(r.bal), 0);
+      return { bal, rate: bal ? rs.reduce((s, r) => s + Number(r.rw), 0) / bal : 0 };
+    };
+    const marketMove = last.ff - start.ff;
+    const beta = (then: number, now: number) => (Math.abs(marketMove) >= 0.05 ? (now - then) / marketMove : null);
+    const categories = [...new Set(dep.map((r) => r.category))];
+    const products = categories
+      .map((c) => {
+        const then = at(start.me, c);
+        const now = at(last.me, c);
+        return { category: c, balance: now.bal, rateThen: then.rate, rateNow: now.rate, changeBp: Math.round((now.rate - then.rate) * 100), beta: beta(then.rate, now.rate) };
+      })
+      .sort((a, b) => b.balance - a.balance);
+    const t0 = at(start.me);
+    const t1 = at(last.me);
+    // Repricing holds today's mix: what each product's rate change alone did. The rest is the mix moving.
+    const repricing = t1.bal ? products.reduce((x, p) => x + (p.balance / t1.bal) * (p.rateNow - p.rateThen), 0) : 0;
+    const total = { rateThen: t0.rate, rateNow: t1.rate, changeBp: Math.round((t1.rate - t0.rate) * 100), beta: beta(t0.rate, t1.rate), repricingBp: Math.round(repricing * 100), repricingBeta: Math.abs(marketMove) >= 0.05 ? repricing / marketMove : null, mixBp: Math.round((t1.rate - t0.rate - repricing) * 100) };
+    // New production: the last three complete months, against the open book.
+    const fresh = await rows<{ category: string; amt: number; rw: number }>(this.pool, 'SELECT loan_category AS category, SUM(new_loan_amount) AS amt, SUM(new_rate_weighted) AS rw FROM hist_loan_month WHERE month_end > DATE_SUB(?, INTERVAL 3 MONTH) GROUP BY loan_category', [last.me]);
+    const book = await rows<{ category: string; bal: number; rw: number }>(this.pool, 'SELECT loan_category AS category, SUM(balance) AS bal, SUM(rate * balance) AS rw FROM cdm_loan WHERE close_date IS NULL AND charge_off_date IS NULL GROUP BY loan_category');
+    const loans = book
+      .map((b) => {
+        const f = fresh.find((x) => x.category === b.category);
+        const newYield = f && Number(f.amt) ? Number(f.rw) / Number(f.amt) : null;
+        const bookYield = Number(b.bal) ? Number(b.rw) / Number(b.bal) : 0;
+        return { category: b.category, newAmount: f ? Number(f.amt) : 0, newYield, bookYield, spreadBp: newYield === null ? null : Math.round((newYield - bookYield) * 100) };
+      })
+      .sort((a, b) => b.newAmount - a.newAmount);
+    const newAmt = loans.reduce((s, l) => s + l.newAmount, 0);
+    const newAll = newAmt ? loans.reduce((s, l) => s + (l.newYield ?? 0) * l.newAmount, 0) / newAmt : null;
+    const bookBal = book.reduce((s, b) => s + Number(b.bal), 0);
+    const bookAll = bookBal ? book.reduce((s, b) => s + Number(b.rw), 0) / bookBal : 0;
+    // Like for like: each type's new loans against its own book, weighted by what was made.
+    const likeForLikeBp = newAmt ? Math.round(loans.reduce((x, l) => x + (l.spreadBp ?? 0) * l.newAmount, 0) / newAmt) : null;
+    return { start: start.me, end: last.me, fedFundsThen: start.ff, fedFundsNow: last.ff, marketMoveBp: Math.round(marketMove * 100), products, total, loans, newYield: newAll, bookYield: bookAll, newAmount: newAmt, likeForLikeBp };
+  }
+
   async analysis() {
     const bank = this.institutionType === 'bank';
     const irrSvc = new IrrService(this.pool);

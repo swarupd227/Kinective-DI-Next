@@ -227,9 +227,29 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
         { id: 'a4', title: 'Liquidity: available funds and a deposit run', kind: 'analysis', analysis: 'alco.liquidity', metrics: [], size: 'half' },
         { id: 'a5', title: 'Capital', kind: 'analysis', analysis: 'alco.capital', metrics: [], size: 'half' },
         { id: 'a6', title: 'Funding: deposits and certificate maturities', kind: 'analysis', analysis: 'alco.funding', metrics: [], size: 'full' },
+        { id: 'a8', title: 'Deposit pricing: cost of funds and beta through the rate cycle', kind: 'analysis', analysis: 'alco.pricing', metrics: [], size: 'full' },
         { id: 'a7', title: 'Loans: mix, yields, growth and concentration', kind: 'analysis', analysis: 'alco.loans', metrics: [], size: 'full' },
+        { id: 'a9', title: 'New loans: yield on production against the book', kind: 'analysis', analysis: 'alco.newloans', metrics: [], size: 'full' },
         { id: 'c1', title: 'Loan balance by category, last 13 months', kind: 'chart', chart: 'stacked_bar', metrics: ['loan_balance'], by: 'loan_category', trend: 13, size: 'half' },
         { id: 'c2', title: 'Deposit balance by product, last 13 months', kind: 'chart', chart: 'stacked_bar', metrics: ['deposit_balance'], by: 'deposit_category', trend: 13, size: 'half' },
+      ],
+    },
+    // Which products and branches make money, by funds transfer pricing, and where the allowance sits.
+    {
+      templateId: 'profitability_monthly',
+      name: 'Profitability',
+      description: 'Contribution before overhead by product and by branch, by funds transfer pricing, and the allowance for credit losses by segment, reconciled to the latest Call Report.',
+      folder: 'Periodic / Monthly',
+      settings: { ...settings('month', ['Executive', 'Finance']), addHierarchyControls: false },
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        { id: 'a1', title: 'Contribution by product', kind: 'analysis', analysis: 'profit.products', metrics: [], size: 'full' },
+        { id: 'a2', title: 'Contribution by branch', kind: 'analysis', analysis: 'profit.branches', metrics: [], size: 'full' },
+        { id: 'a3', title: 'Allowance by segment', kind: 'analysis', analysis: 'profit.allowance', metrics: [], size: 'full' },
+        { ...kpi('k1', 'Weighted average loan rate', 'average_loan_rate'), size: 'third' as const },
+        { ...kpi('k2', 'Cost of deposits', 'cost_of_deposits'), size: 'third' as const },
+        { ...kpi('k3', 'Yield on new loans', 'new_loan_yield'), size: 'third' as const },
       ],
     },
     {
@@ -411,7 +431,7 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
     {
       templateId: 'lending_portfolio_monthly',
       name: 'Lending portfolio',
-      description: 'The loan book by category: balances, counts, the average rate and delinquency.',
+      description: 'The loan book by category: balances, counts, the average rate and delinquency, and its credit quality: credit score, loan-to-value, term and commercial risk rating.',
       folder: 'Lending',
       settings: settings('month', ['Executive', 'Lending', 'Finance']),
       layoutVersion: 1,
@@ -423,6 +443,14 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
         { id: 'c1', title: 'Loan balance by category', kind: 'chart', chart: 'donut', metrics: ['loan_balance'], by: 'loan_category', size: 'half' },
         { id: 't1', title: 'By category', kind: 'table', metrics: ['loan_balance', 'loan_count', 'delinquent_loan_balance', 'delinquency_ratio_60_plus'], by: 'loan_category', size: 'half' },
         { id: 'c2', title: 'Loan balance by category, last 13 months', kind: 'chart', chart: 'stacked_bar', metrics: ['loan_balance'], by: 'loan_category', trend: 13, size: 'full' },
+        // Credit quality at origination: what a credit committee asks first after the balances.
+        { ...kpi('k4', 'Weighted average credit score', 'average_credit_score'), size: 'third' },
+        { ...kpi('k5', 'Weighted average loan-to-value', 'average_ltv'), size: 'third' },
+        { ...kpi('k6', 'Subprime share of scored loans', 'subprime_share'), size: 'third' },
+        { id: 't2', title: 'By credit score band', kind: 'table', metrics: ['loan_balance', 'delinquency_ratio_60_plus', 'average_loan_rate'], by: 'credit_score_band', size: 'half' },
+        { id: 't3', title: 'By loan-to-value band', kind: 'table', metrics: ['loan_balance', 'delinquency_ratio_60_plus', 'average_loan_rate'], by: 'ltv_band', size: 'half' },
+        { id: 't4', title: 'Installment loans by term', kind: 'table', metrics: ['loan_balance', 'delinquency_ratio_60_plus', 'average_loan_rate'], by: 'term_band', size: 'half' },
+        { id: 't5', title: 'Commercial loans by risk rating', kind: 'table', metrics: ['loan_balance', 'delinquency_ratio_60_plus'], by: 'risk_rating', where: { dimension: 'risk_rating', values: ['2 Pass', '3 Pass', '4 Pass', '5 Pass', '6 Special mention', '7 Substandard', '8 Doubtful'] }, size: 'half' },
       ],
     },
     {

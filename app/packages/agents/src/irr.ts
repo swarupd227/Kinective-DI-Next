@@ -2,7 +2,7 @@
 // shocks, what drives them and the assumptions. Read-only, and honest that it is DI's estimate from
 // core data, not the ALM model of record.
 import { z } from 'zod';
-import { CoreError, SHOCKS_BP, type IrrService } from '@dinext/di-core';
+import { CoreError, SHOCKS_BP, type AlcoService, type IrrService } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 const NO_ACCESS = 'Interest rate risk isn’t part of your DI access. It is for the finance team and executives.';
@@ -23,12 +23,15 @@ export function shockFrom(text: string): number | null {
   return SHOCKS_BP.filter((s) => s).reduce((best, s) => (Math.abs(s - v) < Math.abs(best - v) ? s : best), 300);
 }
 
-export function irrModule(irr: IrrService): ModuleSpec {
+/** Deposit pricing through the rate cycle, from the ALCO service: betas and new-loan yield. */
+type Pricing = () => ReturnType<AlcoService['pricing']>;
+
+export function irrModule(irr: IrrService, pricing?: Pricing): ModuleSpec {
   const spec: ModuleSpec = {
     id: 'irr',
     prefix: 'irr',
     agent: 'Interest Rate Risk',
-    request: /\binterest rate risk\b|\birr\b|\bnev\b|\beve\b|economic value of equity|net economic value|\bnii at risk\b|net interest income at risk|rate shocks?|\bif rates (rise|fall|go up|go down|drop|increase|decrease)|repricing gap|\brate sensitivity\b|\b(alm|asset.liability)\b/i,
+    request: /\bdeposit betas?\b|\bbetas? on (deposits|shares)\b|\bdeposit pricing\b|\bpassed on (the|rate)|\byield on new loans\b|\bnew loan yield\b|\binterest rate risk\b|\birr\b|\bnev\b|\beve\b|economic value of equity|net economic value|\bnii at risk\b|net interest income at risk|rate shocks?|\bif rates (rise|fall|go up|go down|drop|increase|decrease)|repricing gap|\brate sensitivity\b|\b(alm|asset.liability)\b/i,
     noAccess: NO_ACCESS,
     sources: [{ kind: 'table', label: 'Loans, shares and certificates', ref: 'table:cdm_loan' }],
     prompt: ({ tenant, user, title }) => `You are the Interest Rate Risk agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) reviews interest rate risk for the ALCO. DI estimates it from core data: 12-month net interest income (NII) at risk, net economic value (NEV) and the NEV ratio under parallel shocks of ${SHOCKS_BP.filter((s) => s).join(', ')} bp, and the repricing gap. The ALM vendor's model remains the one of record; say so when asked about filing or exams.
@@ -38,9 +41,11 @@ export function irrModule(irr: IrrService): ModuleSpec {
 - "What drives our rate risk?", "why does NEV fall?": irr_drivers with shock_bp (default 300).
 - "Show the repricing gap": irr_gap.
 - "What assumptions does the model use?": irr_assumptions.
+- "What's our deposit beta?", "how much of the rate cuts did we pass on?", "what do new loans yield against the book?": irr_pricing.
 - You are read-only and do not give investment or hedging advice; describe the exposure and let the ALCO decide.`,
     plan: (text) => {
       const t = text.toLowerCase();
+      if (pricing && !/assum|model/.test(t) && /\bbetas?\b|deposit pricing|passed on|pass[- ]through|cost of (deposits|shares)|new loan yield|yield on new loans|new loans (yield|price)/.test(t)) return { tool: 'irr_pricing', args: {} };
       if (/assumption|how (is|does) (this|it|the model)|prepay|beta|decay/.test(t)) return { tool: 'irr_assumptions', args: {} };
       if (/\bgap\b|reprice|repricing|maturit/.test(t)) return { tool: 'irr_gap', args: {} };
       if (/drive|driver|why|which products|what causes/.test(t)) return { tool: 'irr_drivers', args: { shock_bp: shockFrom(t) ?? 300 } };
@@ -49,6 +54,29 @@ export function irrModule(irr: IrrService): ModuleSpec {
       return { tool: 'irr_summary', args: {} };
     },
     tools: [
+      ...(pricing
+        ? [
+            {
+              name: 'irr_pricing',
+              description: 'Deposit pricing through the rate cycle: each product’s rate paid then and now, its beta against the federal funds rate, the effect of the mix, and the yield on new loans against the book.',
+              input: z.object({}).strict(),
+              run: async (_: unknown, ctx: ModuleContext) => {
+                guard(ctx);
+                const pr = await pricing();
+                if (!pr) return { text: 'No market rate history is loaded, so DI can’t measure deposit betas yet.' };
+                const b2 = (n: number | null) => (n === null ? 'n/a' : n.toFixed(2));
+                const bps = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n)} bp`;
+                const when = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+                const top = [...pr.products].filter((p) => p.beta !== null).slice(0, 2);
+                return {
+                  text: `Since ${when(pr.start)} the federal funds rate has moved **${bps(pr.marketMoveBp)}**. Rates paid repriced **${bps(pr.total.repricingBp)}**, a deposit beta of **${b2(pr.total.repricingBeta)}**: ${top.map((p) => `${p.category.toLowerCase()} ${b2(p.beta)}`).join(', ')}. The shift toward higher-rate products ${pr.total.mixBp > 0 ? 'took back' : 'added'} ${Math.abs(pr.total.mixBp)} bp, so the all-in cost moved ${bps(pr.total.changeBp)}, to ${pr.total.rateNow.toFixed(2)}%.${pr.newYield !== null && pr.likeForLikeBp !== null ? ` New loans over the last three months yield ${pr.newYield.toFixed(2)}% against ${pr.bookYield.toFixed(2)}% on the book; type for type they price ${bps(pr.likeForLikeBp)} against it, so the gap is mix.` : ''} The market path is illustrative; the betas are DI’s measure from rates paid, not the ALM model’s assumptions.`,
+                  blocks: [moduleTable(spec, 'Deposit pricing and beta', ctx.runId, 'alco.pricing', [{ field: 'item', headerName: 'Product', type: 'text' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'then', headerName: `Rate, ${when(pr.start)}`, type: 'text' }, { field: 'now', headerName: `Rate, ${when(pr.end)}`, type: 'text' }, { field: 'beta', headerName: 'Beta', type: 'text' }], pr.products.map((p) => ({ item: p.category, balance: Math.round(p.balance), then: `${p.rateThen.toFixed(2)}%`, now: `${p.rateNow.toFixed(2)}%`, beta: b2(p.beta) })))],
+                  suggestions: ['What’s our interest rate risk?', 'What assumptions does the model use?'],
+                };
+              },
+            },
+          ]
+        : []),
       {
         name: 'irr_summary',
         description: 'NII at risk and NEV under every rate shock, against the board’s limits, with the worst case for each.',

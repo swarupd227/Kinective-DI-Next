@@ -325,12 +325,65 @@ export class CollectionsService {
 /** Removed from every audience by rule, and counted (AI-AGT-201). */
 const suppressed = (partyId: number) => (partyId % 9 === 0 ? 'opt_out' : partyId % 13 === 0 ? 'recent_contact' : null);
 
+/**
+ * What a campaign's incremental dollars are worth: the product's contribution per dollar a year (after
+ * funding, credit and servicing, as in Profitability), the years it typically stays on the books, and a
+ * fee per response for services. Certificates bought at a special rate cost more than their funding is worth.
+ */
+const CAMPAIGN_VALUE: Record<string, [marginPerYear: number, years: number, feePerResponse: number]> = {
+  HELOC: [0.034, 4, 0],
+  Auto: [0.0185, 2.5, 0],
+  'Credit Card': [0.077, 2, 0],
+  'First mortgage': [0.008, 6, 0],
+  'Personal Loan': [0.03, 2, 0],
+  Certificate: [-0.0027, 1, 0],
+  Checking: [0.028, 5, 0],
+};
+
 export class CampaignService {
   constructor(private readonly pool: Pool) {}
 
   async results() {
     const list = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM cmp_campaign ORDER BY loan_dollars DESC');
-    return list.map((c) => ({ name: c.name as string, channel: c.channel as string, product: c.product as string, sent: c.sent as number, applications: c.applications as number, dollars: Number(c.loan_dollars) }));
+    return list.map((c) => {
+      const sent = Number(c.sent);
+      const applications = Number(c.applications);
+      const control = Number(c.control_size ?? 0);
+      const controlResponders = Number(c.control_responders ?? 0);
+      const responseRate = sent ? applications / sent : 0;
+      const controlRate = control ? controlResponders / control : null;
+      // Lift: what the campaign caused, over what the held-back control group did anyway.
+      const incremental = controlRate === null ? null : Math.max(0, applications - sent * controlRate);
+      const share = incremental === null || !applications ? null : incremental / applications;
+      const dollars = Number(c.loan_dollars);
+      const depositDollars = Number(c.deposit_dollars ?? 0);
+      const product = String(c.product);
+      const [margin, years, fee] = CAMPAIGN_VALUE[product] ?? [0.02, 2, 0];
+      const incrementalDollars = share === null ? null : (dollars + depositDollars) * share;
+      // Lifetime contribution of what the campaign caused (or the fee, for a service like skip-a-payment), against its cost.
+      // A campaign that raises no balances (skip-a-payment) earns its service fee per response.
+      const perResponse = dollars + depositDollars === 0 ? 35 : fee;
+      const value = incrementalDollars === null ? null : incrementalDollars * margin * years + (incremental ?? 0) * perResponse;
+      const cost = Number(c.cost ?? 0);
+      return {
+        name: c.name as string,
+        channel: c.channel as string,
+        product,
+        sent,
+        applications,
+        dollars,
+        depositDollars,
+        launched: c.launched ? (c.launched instanceof Date ? c.launched.toISOString().slice(0, 10) : String(c.launched).slice(0, 10)) : null,
+        responseRatePct: responseRate * 100,
+        controlRatePct: controlRate === null ? null : controlRate * 100,
+        liftPts: controlRate === null ? null : (responseRate - controlRate) * 100,
+        incremental: incremental === null ? null : Math.round(incremental),
+        incrementalDollars,
+        cost,
+        value,
+        roiPct: value === null || !cost ? null : ((value - cost) / cost) * 100,
+      };
+    });
   }
 
   /** Members without a product, after suppression. The rule, not a model, decides who's removed. */

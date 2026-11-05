@@ -12,7 +12,7 @@ const KIND: Record<string, RecordKind> = { loan_current: 'loans', deposit_curren
 
 /** What each kind lists, beside the member and branch. */
 const COLUMNS: Record<RecordKind, { select: string; join: string; balance: string | null }> = {
-  loans: { select: 'l.loan_id AS id, l.loan_category AS category, l.balance AS balance, l.rate AS rate, l.days_delinquent AS days_past_due, l.open_date AS opened', join: 'JOIN cdm_party AS pm ON pm.party_id = l.party_id', balance: 'l.balance' },
+  loans: { select: 'l.loan_id AS id, l.loan_category AS category, l.balance AS balance, l.rate AS rate, l.days_delinquent AS days_past_due, l.open_date AS opened, l.credit_score AS credit_score, l.ltv AS ltv, l.term_months AS term_months, l.risk_rating AS risk_rating', join: 'JOIN cdm_party AS pm ON pm.party_id = l.party_id', balance: 'l.balance' },
   accounts: { select: 'd.account_id AS id, d.deposit_category AS category, d.balance AS balance, d.rate AS rate, d.maturity_date AS matures, d.open_date AS opened', join: 'JOIN cdm_party AS pm ON pm.party_id = d.party_id', balance: 'd.balance' },
   members: { select: 'p.party_id AS id, p.segment_code AS category, p.join_date AS opened', join: 'JOIN cdm_party AS pm ON pm.party_id = p.party_id', balance: null },
 };
@@ -85,7 +85,7 @@ export async function listRecords(pool: Pool, env: CompileEnv, req: { metric: st
   const rows = found.map((r) => {
     const member = ctx.memberDetails ? `${r.first_name} ${r.last_name} (…${String(r.member_id).padStart(4, '0').slice(-4)})` : `Member …${String(r.member_id).padStart(4, '0').slice(-4)}`;
     const base: Record<string, string | number | null> = { id: Number(r.id), member, branch: String(r.branch), category: String(r.category ?? '') };
-    if (kind === 'loans') return { ...base, balance: Number(r.balance), rate: Number(r.rate), days_past_due: Number(r.days_past_due), opened: day(r.opened) };
+    if (kind === 'loans') return { ...base, balance: Number(r.balance), rate: Number(r.rate), days_past_due: Number(r.days_past_due), opened: day(r.opened), credit: r.credit_score !== null && r.credit_score !== undefined ? String(r.credit_score) : r.risk_rating ? `Rated ${r.risk_rating}` : '', ltv: r.ltv !== null && r.ltv !== undefined ? `${Math.round(Number(r.ltv))}%` : '', term: r.term_months ? `${r.term_months} mo` : 'Revolving' };
     if (kind === 'accounts') return { ...base, balance: Number(r.balance), rate: Number(r.rate), matures: day(r.matures), opened: day(r.opened) };
     return { ...base, opened: day(r.opened) };
   });

@@ -181,7 +181,18 @@ async function widgetBlock(w: ReportWidget, def: ReportDefinition, c: { period: 
       results.set('r', await svc.query({ metrics: [metric], dimensions: w.by ? [w.by] : [], filters, time: timeFor(type, c.period, w.trend), limit: 500 }, ctx));
       spec = { type: 'chart', result: 'r', chart: w.chart ?? 'line', x: 'period', series_by: w.by, metric, title: w.title };
     } else {
-      const r = await svc.query({ metrics: w.kind === 'table' ? w.metrics.slice(0, 4) : [metric], dimensions: w.by ? [w.by] : [], filters, time: timeFor(type, c.period, 1), limit: 500 }, ctx);
+      const req = { metrics: w.kind === 'table' ? w.metrics.slice(0, 4) : [metric], dimensions: w.by ? [w.by] : [], filters, limit: 500 };
+      let r;
+      try {
+        r = await svc.query({ ...req, time: timeFor(type, c.period, 1) }, ctx);
+      } catch (e) {
+        // A breakdown that exists only on today's book (credit score, loan-to-value, term, risk rating)
+        // shows as of the build rather than not at all.
+        if (!(e instanceof SemanticError) || e.code === 'NO_ACCESS' || e.code === 'UNKNOWN_METRIC') throw e;
+        r = await svc.query(req, ctx).catch(() => {
+          throw e;
+        });
+      }
       results.set('r', r);
       spec = w.kind === 'table' ? { type: 'table', result: 'r', title: w.title } : { type: 'chart', result: 'r', chart: w.chart ?? 'bar', x: w.by ?? 'period', metric, title: w.title };
     }

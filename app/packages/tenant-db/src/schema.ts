@@ -43,6 +43,10 @@ export const TENANT_DDL = [
      balance DECIMAL(14,2) NOT NULL,
      rate DECIMAL(6,3) NOT NULL,
      days_delinquent INT NOT NULL,
+     credit_score SMALLINT NULL,
+     ltv DECIMAL(6,2) NULL,
+     term_months SMALLINT NULL,
+     risk_rating TINYINT NULL,
      KEY ix_loan_branch (branch_id),
      KEY ix_loan_party (party_id),
      KEY ix_loan_open (open_date)
@@ -70,7 +74,14 @@ export const TENANT_DDL = [
      loan_count INT NOT NULL,
      new_loan_amount DECIMAL(16,2) NOT NULL,
      new_loan_count INT NOT NULL,
+     new_rate_weighted DECIMAL(20,4) NOT NULL DEFAULT 0,
      PRIMARY KEY (month_end, branch_id, loan_category, is_indirect)
+   )`,
+  // The market rates deposit and loan pricing are read against: the effective federal funds rate at
+  // each month-end (illustrative path, not a published series).
+  `CREATE TABLE mkt_rate_month (
+     month_end DATE PRIMARY KEY,
+     fed_funds DECIMAL(6,3) NOT NULL
    )`,
   `CREATE TABLE hist_deposit_month (
      month_end DATE NOT NULL,
@@ -78,6 +89,7 @@ export const TENANT_DDL = [
      deposit_category VARCHAR(30) NOT NULL,
      balance DECIMAL(16,2) NOT NULL,
      account_count INT NOT NULL,
+     rate_weighted DECIMAL(20,4) NOT NULL DEFAULT 0,
      PRIMARY KEY (month_end, branch_id, deposit_category)
    )`,
   `CREATE TABLE hist_party_month (

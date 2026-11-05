@@ -213,6 +213,34 @@ dimensions:
     exprs:
       member_history: hm.age_band
     values: [18–24, 25–34, 35–49, 50–64, 65+]
+  credit_score_band:
+    label: Credit score band
+    description: The borrower's credit score when the loan was made, in the tiers lenders price by. Commercial loans and business credit aren't scored; they carry a risk rating.
+    synonyms: [credit score, fico, score band, credit tier, credit quality, prime, subprime, near prime, super prime, by score]
+    exprs:
+      loan_current: "CASE WHEN l.credit_score IS NULL THEN 'Not scored' WHEN l.credit_score >= 740 THEN 'Super prime (740+)' WHEN l.credit_score >= 680 THEN 'Prime (680–739)' WHEN l.credit_score >= 620 THEN 'Near prime (620–679)' ELSE 'Subprime (under 620)' END"
+    values: [Super prime (740+), Prime (680–739), Near prime (620–679), Subprime (under 620), Not scored]
+  ltv_band:
+    label: Loan-to-value band
+    description: The loan amount as a share of the collateral's value when the loan was made (combined for home equity lines). Unsecured loans have none.
+    synonyms: [ltv, loan to value, loan-to-value, cltv, collateral coverage, equity, underwater, by ltv]
+    exprs:
+      loan_current: "CASE WHEN l.ltv IS NULL THEN 'Unsecured' WHEN l.ltv <= 60 THEN '60% or less' WHEN l.ltv <= 80 THEN '61–80%' WHEN l.ltv <= 90 THEN '81–90%' WHEN l.ltv <= 100 THEN '91–100%' ELSE 'Over 100%' END"
+    values: ['60% or less', 61–80%, 81–90%, 91–100%, Over 100%, Unsecured]
+  term_band:
+    label: Loan term
+    description: The loan's contractual term when it was made. Credit cards and lines are revolving.
+    synonyms: [term, loan term, maturity, length, months, term length, by term, 84 month, 72 month]
+    exprs:
+      loan_current: "CASE WHEN l.term_months IS NULL THEN 'Revolving' WHEN l.term_months <= 36 THEN 'Up to 3 years' WHEN l.term_months <= 60 THEN '4–5 years' WHEN l.term_months <= 84 THEN '6–7 years' WHEN l.term_months <= 180 THEN '8–15 years' ELSE 'Over 15 years' END"
+    values: [Up to 3 years, 4–5 years, 6–7 years, 8–15 years, Over 15 years, Revolving]
+  risk_rating:
+    label: Risk rating
+    description: The commercial loan's internal risk grade. 1 to 5 are pass grades; 6 is special mention, 7 substandard. Consumer loans are scored instead.
+    synonyms: [risk rating, risk grade, loan grade, criticized, classified, special mention, substandard, watch list, by grade]
+    exprs:
+      loan_current: "CASE WHEN l.risk_rating IS NULL THEN 'Not rated' WHEN l.risk_rating <= 5 THEN CONCAT(l.risk_rating, ' Pass') WHEN l.risk_rating = 6 THEN '6 Special mention' WHEN l.risk_rating = 7 THEN '7 Substandard' ELSE '8 Doubtful' END"
+    values: [2 Pass, 3 Pass, 4 Pass, 5 Pass, 6 Special mention, 7 Substandard, 8 Doubtful, Not rated]
 
 # Aggregations per source. {{ setting.x }} reads a tenant setting; values are never user input.
 measures:
@@ -294,6 +322,46 @@ measures:
     unit: number
     exprs:
       loan_current: SUM(l.rate * l.balance)
+  credit_score_weighted:
+    unit: number
+    exprs:
+      loan_current: 'SUM(CASE WHEN l.credit_score IS NOT NULL THEN l.credit_score * l.balance ELSE 0 END)'
+  scored_balance_sum:
+    unit: usd
+    exprs:
+      loan_current: 'SUM(CASE WHEN l.credit_score IS NOT NULL THEN l.balance ELSE 0 END)'
+  ltv_weighted:
+    unit: number
+    exprs:
+      loan_current: 'SUM(CASE WHEN l.ltv IS NOT NULL THEN l.ltv * l.balance ELSE 0 END)'
+  secured_balance_sum:
+    unit: usd
+    exprs:
+      loan_current: 'SUM(CASE WHEN l.ltv IS NOT NULL THEN l.balance ELSE 0 END)'
+  subprime_balance_sum:
+    unit: usd
+    exprs:
+      loan_current: 'SUM(CASE WHEN l.credit_score < 620 THEN l.balance ELSE 0 END)'
+  high_ltv_balance_sum:
+    unit: usd
+    exprs:
+      loan_current: 'SUM(CASE WHEN l.ltv > 90 THEN l.balance ELSE 0 END)'
+  criticized_balance_sum:
+    unit: usd
+    exprs:
+      loan_current: 'SUM(CASE WHEN l.risk_rating >= 6 THEN l.balance ELSE 0 END)'
+  rated_balance_sum:
+    unit: usd
+    exprs:
+      loan_current: 'SUM(CASE WHEN l.risk_rating IS NOT NULL THEN l.balance ELSE 0 END)'
+  term_weighted:
+    unit: number
+    exprs:
+      loan_current: 'SUM(CASE WHEN l.term_months IS NOT NULL THEN l.term_months * l.balance ELSE 0 END)'
+  termed_balance_sum:
+    unit: usd
+    exprs:
+      loan_current: 'SUM(CASE WHEN l.term_months IS NOT NULL THEN l.balance ELSE 0 END)'
   new_loan_amount_sum:
     unit: usd
     flow: true
@@ -309,6 +377,16 @@ measures:
     exprs:
       deposit_current: SUM(d.balance)
       deposit_history: SUM(hd.balance)
+  deposit_rate_weighted:
+    unit: number
+    exprs:
+      deposit_current: SUM(d.rate * d.balance)
+      deposit_history: SUM(hd.rate_weighted)
+  new_loan_rate_weighted:
+    unit: number
+    flow: true
+    exprs:
+      loan_history: SUM(h.new_rate_weighted)
   deposit_account_count:
     unit: count
     exprs:
@@ -482,7 +560,7 @@ metrics:
     description: Sum of the current balance of every open loan. Closed and charged-off loans are excluded.
     synonyms: [loans, total loans, loans outstanding, loan portfolio, loan book, lending, loan growth, loan balances]
     owner: Finance data team
-    dimensions_allowed: [branch, region, loan_category, origination_channel, delinquency_bucket, vintage]
+    dimensions_allowed: [branch, region, loan_category, origination_channel, delinquency_bucket, vintage, credit_score_band, ltv_band, term_band, risk_rating]
   loan_count:
     label: Number of open loans
     type: simple
@@ -502,7 +580,7 @@ metrics:
     regulatory_basis: NCUA 5300 basis - loans 60 or more days delinquent divided by total loans and leases, at period end. Charged-off loans are excluded.
     synonyms: [delinquency, delinquency rate, dq, past due, 60+, late loans, delinquent loans, loans that are behind, behind on payments, behind]
     owner: Finance data team
-    dimensions_allowed: [branch, region, loan_category, origination_channel, delinquency_bucket, vintage]
+    dimensions_allowed: [branch, region, loan_category, origination_channel, delinquency_bucket, vintage, credit_score_band, ltv_band, term_band, risk_rating]
   delinquency_ratio_30_plus:
     label: Delinquency ratio (30+ days)
     type: ratio
@@ -513,7 +591,7 @@ metrics:
     synonyms: [30+, 30 plus, 30 day delinquency, thirty day delinquency, early delinquency, 30+ delinquency]
     requires_any: ['30']
     owner: Finance data team
-    dimensions_allowed: [branch, region, loan_category, origination_channel, vintage]
+    dimensions_allowed: [branch, region, loan_category, origination_channel, vintage, credit_score_band, ltv_band, term_band, risk_rating]
   delinquent_loan_balance:
     label: Delinquent loan balance (60+ days)
     type: simple
@@ -532,7 +610,73 @@ metrics:
     description: Interest rate of open loans, weighted by balance.
     synonyms: [loan yield, average rate, interest rate, loan rate, pricing]
     owner: Finance data team
-    dimensions_allowed: [branch, region, loan_category, origination_channel]
+    dimensions_allowed: [branch, region, loan_category, origination_channel, credit_score_band, ltv_band, term_band, risk_rating]
+    current_only: true
+  average_credit_score:
+    label: Weighted average credit score
+    type: ratio
+    numerator: credit_score_weighted
+    denominator: scored_balance_sum
+    format: count
+    description: The borrower's credit score when each consumer loan was made, weighted by today's balance. Commercial loans aren't scored.
+    synonyms: [average credit score, average fico, wa fico, weighted fico, credit score, fico, credit quality, average score]
+    owner: Credit risk team
+    dimensions_allowed: [branch, region, loan_category, origination_channel, vintage, credit_score_band, ltv_band, term_band, risk_rating]
+    current_only: true
+  average_ltv:
+    label: Weighted average loan-to-value
+    type: ratio
+    numerator: ltv_weighted
+    denominator: secured_balance_sum
+    format: rate
+    description: Loan amount as a share of the collateral's value when each secured loan was made, weighted by today's balance.
+    synonyms: [average ltv, wa ltv, weighted ltv, ltv, loan to value, loan-to-value, cltv]
+    owner: Credit risk team
+    dimensions_allowed: [branch, region, loan_category, origination_channel, vintage, credit_score_band, ltv_band, term_band, risk_rating]
+    current_only: true
+  subprime_share:
+    label: Subprime share of scored loans
+    type: ratio
+    numerator: subprime_balance_sum
+    denominator: scored_balance_sum
+    format: percent_1
+    description: Balance of consumer loans made to borrowers scoring under 620, as a share of all scored consumer loans.
+    synonyms: [subprime, subprime share, subprime exposure, below 620, weak credit, low credit score]
+    owner: Credit risk team
+    dimensions_allowed: [branch, region, loan_category, origination_channel, vintage, ltv_band, term_band]
+    current_only: true
+  high_ltv_share:
+    label: High-LTV share of secured loans
+    type: ratio
+    numerator: high_ltv_balance_sum
+    denominator: secured_balance_sum
+    format: percent_1
+    description: Balance of secured loans made above 90% loan-to-value, as a share of all secured loans.
+    synonyms: [high ltv, over 90% ltv, high loan to value, thin equity, high ltv share]
+    owner: Credit risk team
+    dimensions_allowed: [branch, region, loan_category, origination_channel, vintage, credit_score_band, term_band]
+    current_only: true
+  criticized_loan_ratio:
+    label: Criticized commercial loans
+    type: ratio
+    numerator: criticized_balance_sum
+    denominator: rated_balance_sum
+    format: percent_2
+    description: Commercial loans rated special mention or worse (6 and over), as a share of all rated commercial loans.
+    synonyms: [criticized, criticized loans, classified, classified loans, special mention, substandard, watch list, criticized assets]
+    owner: Credit risk team
+    dimensions_allowed: [branch, region, loan_category, vintage, ltv_band, term_band, risk_rating]
+    current_only: true
+  average_term:
+    label: Weighted average term (months)
+    type: ratio
+    numerator: term_weighted
+    denominator: termed_balance_sum
+    format: count
+    description: Contractual term of installment loans when they were made, in months, weighted by today's balance. Revolving credit has none.
+    synonyms: [average term, wa term, loan term, term, average maturity, months]
+    owner: Credit risk team
+    dimensions_allowed: [branch, region, loan_category, origination_channel, vintage, credit_score_band, ltv_band, term_band, risk_rating]
     current_only: true
   new_loan_amount:
     label: New loan dollars
@@ -745,10 +889,31 @@ metrics:
     denominator: funding_sum
     format: percent_2
     description: Annualized dividends and interest expense over shares, deposits and borrowings, from the 5300.
-    synonyms: [cost of funds, funding cost, cost of deposits, cost of shares, dividend cost]
-    requires_any: [cost of funds, funding cost, cost of deposits, cost of shares, dividend cost]
+    synonyms: [cost of funds, funding cost, dividend cost, total cost of funds]
+    requires_any: [cost of funds, funding cost, dividend cost]
     owner: Finance data team
     dimensions_allowed: []
+  cost_of_deposits:
+    label: Cost of deposits
+    labels_by_type: { credit_union: Cost of shares and deposits }
+    type: ratio
+    numerator: deposit_rate_weighted
+    denominator: deposit_balance_sum
+    format: rate
+    description: Rate paid on deposits, weighted by balance, at each month-end. Falls as products reprice after the market moves; how far, against the federal funds rate, is the deposit beta.
+    synonyms: [cost of deposits, deposit cost, cost of shares, share cost, rate paid, deposit rate, dividend rate, interest paid on deposits, deposit pricing, what we pay on deposits]
+    owner: Finance data team
+    dimensions_allowed: [branch, region, deposit_category]
+  new_loan_yield:
+    label: Yield on new loans
+    type: ratio
+    numerator: new_loan_rate_weighted
+    denominator: new_loan_amount_sum
+    format: rate
+    description: Rate on loans made in the period, weighted by amount. Against the portfolio's average rate, it shows whether new lending lifts or dilutes the book's yield. Complete months only.
+    synonyms: [new loan yield, yield on new loans, new production yield, production yield, rate on new loans, new loan rate, origination rate, pricing on new loans]
+    owner: Lending data team
+    dimensions_allowed: [branch, region, loan_category, origination_channel]
   loan_to_share_ratio:
     label: Loan-to-share ratio
     labels_by_type: { bank: Loan-to-deposit ratio }

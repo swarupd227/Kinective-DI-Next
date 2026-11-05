@@ -176,7 +176,7 @@ describe.skipIf(!up)('more modules against the warehouse', () => {
       const { r } = await run(cr, turn('Show schedule A changes over 10% from last quarter', 'thr_r3'));
       expect(r.texts[0]).toContain('schedule A');
       const write = await run(cr, turn('Export the Q3 5300 for upload', 'thr_r4'));
-      expect(write.r.texts[0]).toContain('person’s action');
+      expect(write.r.texts[0]).toContain('Filing in CUOnline stays with you');
       expect(cr.tools.every((t) => !t.apply)).toBe(true);
     });
 

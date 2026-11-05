@@ -48,5 +48,7 @@ export { boardAnalyses, boardScorecard } from './scorecard.ts';
 export { combineAnalyses } from './report.ts';
 export { branchAnalyses } from './branchScorecard.ts';
 export { lendingAnalyses } from './lendingProduction.ts';
+export { PROFIT_SECTIONS, profitAnalyses, profitabilityModule } from './profitability.ts';
+export { budgetModule, proposeTarget } from './budget.ts';
 export { parseRecordsRequest, recordsModule, RECORDS_REQUEST } from './records.ts';
 export { ffiecModule } from './ffiec.ts';

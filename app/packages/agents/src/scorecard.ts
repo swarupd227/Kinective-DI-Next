@@ -52,6 +52,9 @@ const quarterStart = (monthEnd: string, back: number) => {
 };
 
 export interface ScorecardRow {
+  /** The benchmark key, such as return_on_assets or loan_growth. */
+  key: string;
+  good: 'up' | 'down' | 'target';
   label: string;
   actual: number | null;
   plan: number | null;
@@ -105,7 +108,7 @@ export async function boardScorecard(svc: SemanticService, pool: Pool, instituti
     const peer = ref('peer', l.key);
     const p = versus(actual, plan, l.good, l.places);
     const q = versus(actual, peer, l.good, l.places);
-    rows.push({ label: l.label, actual, plan, peer, trend, places: l.places, vsPlan: actual === null || plan === null ? '—' : p > 0 ? 'Ahead' : p < 0 ? 'Behind' : 'On plan', vsPeer: actual === null || peer === null ? '—' : l.good === 'target' ? (q === 0 ? 'In line' : actual > peer ? 'Higher' : 'Lower') : q > 0 ? 'Better' : q < 0 ? 'Worse' : 'In line' });
+    rows.push({ key: l.key, good: l.good, label: l.label, actual, plan, peer, trend, places: l.places, vsPlan: actual === null || plan === null ? '—' : p > 0 ? 'Ahead' : p < 0 ? 'Behind' : 'On plan', vsPeer: actual === null || peer === null ? '—' : l.good === 'target' ? (q === 0 ? 'In line' : actual > peer ? 'Higher' : 'Lower') : q > 0 ? 'Better' : q < 0 ? 'Worse' : 'In line' });
   }
   const ahead = rows.filter((r) => r.vsPlan === 'Ahead' || r.vsPlan === 'On plan').length;
   const judged = rows.filter((r) => r.vsPlan !== '—').length;

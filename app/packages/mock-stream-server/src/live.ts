@@ -3,6 +3,8 @@
 // key the Concierge runs its deterministic offline planner (spec 23.6.4).
 import { randomBytes } from 'node:crypto';
 import type { ApprovalCardBlock, ApprovalDecisionRequest, Block, KpiGroupBlock, ListBlock, Member360Block, SearchResult, StreamEvent, StreamingEnvelope, TableData } from '@dinext/block-schemas';
+import { budgetModule, profitAnalyses, profitabilityModule } from '@dinext/agents';
+import { BudgetService, ProfitabilityService } from '@dinext/di-core';
 import { AnthropicModelClient, AuditLog, delinquencyModule, irrModule, liquidityModule, membershipModule, alcoAnalyses, boardAnalyses, branchAnalyses, combineAnalyses, ffiecModule, lendingAnalyses, recordsModule, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, tasksModule, formLayoutModule, workflowBuilderModule, indirectModule, prospectingModule, calendarModule, callReportModule, filesModule, governanceModule, lineageModule, campaignModule, collectionsModule, complianceModule, dataLogsModule, goalsTake, ModuleGateway, onboardingModule, operationsModule, pipelineTake, segModule, referralTake, reportsTake, todayList, describeSchedule, hasClaudeCredentials, member360, memberTake, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
 import { ApprovalStore, AlcoService, BranchScorecardService, DelinquencyService, LendingProductionService, IrrService, LiquidityService, MembershipService, WorksheetService, CalendarStore, FileStore, foldersFor, TaskService, WorkflowDefService, IndirectService, ProspectService, QueryService, GovernanceService, LineageService, CallReportService, CampaignService, CollectionsService, CoreError, DataLogService, GoalsService, IssueService, OnboardingService, OperationsService, RetentionService, SegService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type CoreContext, type InboxItem, type Scorecard, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
 import type { JumpCard, AppNotification, AppView, AppViewId, QueryRun, DiTake, GoalsIndex, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
@@ -12,6 +14,7 @@ import { IngestService, SourceService, coreSystem, secretKeyFrom, TableService, 
 import { readWorkbook } from './spreadsheet.ts';
 import type { TableSavedItem, TableWorkbench } from '@dinext/block-schemas';
 import { renderExport } from './exports.ts';
+import { callReportFile, type CallReportFileKind } from './callReportExport.ts';
 import type { AppId } from '@dinext/block-schemas';
 import type { ModuleContext } from '@dinext/agents';
 import { SemanticService } from '@dinext/semantic';
@@ -165,6 +168,8 @@ export interface LiveRuntime {
   editReport(persona: PersonaId, templateId: string, op: Parameters<ReportGateway['edit']>[1], controls: ReportControls): Promise<ReportCanvasBlock | null>;
   /** An approved export, rendered under the user's purview when downloaded (spec 18.6). */
   exportFile(persona: PersonaId, exportId: string): Promise<{ fileName: string; contentType: string; body: Buffer } | null>;
+  /** The Call Report as files for the preparer: the item-and-value data file, or the review workbook. */
+  callReportFile(persona: PersonaId, kind: CallReportFileKind): Promise<{ fileName: string; contentType: string; body: Buffer } | null>;
   /** Keeps an upload as Staged for its uploader; nothing is in a folder until a save is approved (spec 8.15). */
   stageFile(persona: PersonaId, f: { name: string; body: Buffer }): Promise<{ fileId: number; name: string; type: string; sizeKb: number } | null>;
   /** Saves a core login for the person; the password never comes back. Null without the access. */
@@ -374,7 +379,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     const outbox = hasOutbox ? new EmailOutbox(pool, tenantDomain(name)) : null;
     if (outbox) tablesModules.unshift(notificationsModule(outbox, today));
     const growthModules = growth ? [indirectModule(new IndirectService(pool), growth.dealers, today), prospectingModule(new ProspectService(pool), growth.companies, growth.stages, today)] : [];
-    const modules = hasModules ? new ModuleGateway(new ApprovalStore(pool), [...tablesModules, ...governanceModules, ...growthModulesExtra, calendarModule((ctx) => calendarFor(pool, institutionType, ctx, hasWorkspace), hasWorkspace ? new CalendarStore(pool) : null, colleagues, today), filesModule(files, today), ...growthModules, complianceModule(new IssueService(pool), pool), onboardingModule(new OnboardingService(pool)), dataLogsModule(new DataLogService(pool)), operationsModule(new OperationsService(pool)), institutionType === 'bank' ? ffiecModule(new CallReportService(pool)) : callReportModule(new CallReportService(pool)), irrModule(new IrrService(pool)), delinquencyModule(new DelinquencyService(pool)), liquidityModule(new LiquidityService(pool, institutionType)), membershipModule(new MembershipService(pool)), recordsModule(semantic), collectionsModule(new CollectionsService(pool)), campaignModule(new CampaignService(pool)), segModule(new SegService(pool), () => new Date().toISOString().slice(0, 10))]) : null;
+    const modules = hasModules ? new ModuleGateway(new ApprovalStore(pool), [...tablesModules, ...governanceModules, ...growthModulesExtra, calendarModule((ctx) => calendarFor(pool, institutionType, ctx, hasWorkspace), hasWorkspace ? new CalendarStore(pool) : null, colleagues, today), filesModule(files, today), ...growthModules, complianceModule(new IssueService(pool), pool), onboardingModule(new OnboardingService(pool)), dataLogsModule(new DataLogService(pool)), operationsModule(new OperationsService(pool)), institutionType === 'bank' ? ffiecModule(new CallReportService(pool)) : callReportModule(new CallReportService(pool)), irrModule(new IrrService(pool), () => new AlcoService(pool, institutionType).pricing()), profitabilityModule(new ProfitabilityService(pool, institutionType)), budgetModule(new BudgetService(pool), async () => semantic, pool, institutionType), delinquencyModule(new DelinquencyService(pool)), liquidityModule(new LiquidityService(pool, institutionType)), membershipModule(new MembershipService(pool)), recordsModule(semantic), collectionsModule(new CollectionsService(pool)), campaignModule(new CampaignService(pool)), segModule(new SegService(pool), () => new Date().toISOString().slice(0, 10))]) : null;
     // Goals & Incentives exists once the tenant was seeded with Slice 14 or later.
     const hasGoals = await pool.query('SELECT 1 FROM mod_gi_goal LIMIT 1').then(
       () => true,
@@ -389,7 +394,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     );
     // A report published to a class reaches its active members; the directory says how many.
     const classSize = async (userClass: string) => (await new OperationsService(pool).users().catch(() => [])).filter((u) => u.userClass === userClass && u.status === 'Active').length;
-    const reports = hasReports ? { gateway: new ReportGateway({ store: new ReportStore(pool), semantic, approvals: new ApprovalStore(pool), classSize, analyses: combineAnalyses(alcoAnalyses(new AlcoService(pool, institutionType)), boardAnalyses(semantic, pool, institutionType), branchAnalyses(new BranchScorecardService(pool), hasGoals ? new GoalsService(pool) : null, institutionType === 'bank' ? 'customers' : 'members'), lendingAnalyses(new LendingProductionService(pool), hasGoals ? new GoalsService(pool) : null)) }) } : null;
+    const reports = hasReports ? { gateway: new ReportGateway({ store: new ReportStore(pool), semantic, approvals: new ApprovalStore(pool), classSize, analyses: combineAnalyses(alcoAnalyses(new AlcoService(pool, institutionType)), profitAnalyses(new ProfitabilityService(pool, institutionType)), boardAnalyses(semantic, pool, institutionType), branchAnalyses(new BranchScorecardService(pool), hasGoals ? new GoalsService(pool) : null, institutionType === 'bank' ? 'customers' : 'members'), lendingAnalyses(new LendingProductionService(pool), hasGoals ? new GoalsService(pool) : null)) }) } : null;
     const [staff] = await pool.query('SELECT DISTINCT display_name FROM cdm_employee');
     const dims = semantic.dimensionValues;
     // The recogniser is biased toward the words people say here: metric and report names, employer
@@ -704,6 +709,15 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       await gw.store.countDownload(exportId);
       void audit.event({ eventType: 'report.export.downloaded', tenant: tenantFor(persona)!.runtime.key, userId: s.user.id, threadId: '', runId: '', approvalId: '', exportId, templateId: e.templateId, format: e.format, controls: e.controls });
       return renderExport(canvas, e.format, { tenant: tenantFor(persona)!.runtime.name, user: s.user.name });
+    },
+
+    async callReportFile(persona, kind) {
+      const t = tenantFor(persona);
+      const s = PERSONAS[persona].session;
+      if (!t || !s.apps.includes('callreport')) return null;
+      const f = await callReportFile(new CallReportService(t.pool), t.runtime.name, kind);
+      void audit.event({ eventType: 'callreport.file.downloaded', tenant: t.runtime.key, userId: s.user.id, threadId: '', runId: '', approvalId: '', file: kind, fileName: f.fileName });
+      return f;
     },
 
     async runSchedules(persona) {
