@@ -216,9 +216,11 @@ export class CallReportService {
     const named = l.formula ? [...new Set(l.formula.match(/\b[A-Z]{0,2}\d{3,4}[A-Z]?\d?\b/g) ?? [])].filter((c) => c !== l.code) : [];
     const parts = named.map((c) => all.find((x) => x.code === c)).filter((x): x is CallReportLine => !!x);
     // Totals without a printed formula add Schedule A's rows by loan type (025B, 041B, 550), or their section's inputs.
+    // Loans granted year to date sit in Section 1 but are activity, not part of the balance.
+    const granted = (x: CallReportLine) => /Granted Year-to-Date/i.test(x.name);
     const byType: Record<string, (x: CallReportLine) => boolean> = {
-      '025B': (x) => x.section.startsWith('Section 1') && x.name.endsWith(' - Amount') && x.kind === 'input',
-      '025A': (x) => x.section.startsWith('Section 1') && x.name.endsWith(' - Number of Loans') && x.kind === 'input',
+      '025B': (x) => x.section.startsWith('Section 1') && x.name.endsWith(' - Amount') && x.kind === 'input' && !granted(x),
+      '025A': (x) => x.section.startsWith('Section 1') && x.name.endsWith(' - Number of Loans') && x.kind === 'input' && !granted(x),
       '041B': (x) => x.section.startsWith('Section 2') && x.name.endsWith('Total Amount of Loans Delinquent 60+ Days') && x.code !== '041B',
       '041A': (x) => x.section.startsWith('Section 2') && x.name.endsWith('Total Number of Loans Delinquent 60+ Days') && x.code !== '041A',
       '550': (x) => x.section.startsWith('Section 3') && x.name.endsWith(' - Charge Offs YTD'),

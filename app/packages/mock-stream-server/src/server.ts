@@ -25,7 +25,7 @@ import type { VoiceGateway } from '@dinext/voice';
 import { CoreError } from '@dinext/di-core';
 
 /** Words the recogniser should expect without live data: banking terms and branch names (spec 7.8). */
-const BASE_VOCABULARY = ['HELOC', 'HELOAN', 'SEG', 'NCUA 5300', 'call report', 'share draft', 'share certificate', 'IRA', 'money market', 'indirect', 'delinquency', 'charge-off', 'loan-to-share', 'cross-sell', 'attrition', 'purview', 'nightly build', 'referral', 'member 360', 'household', 'eStatements', 'direct deposit', 'Westport', 'Northgate', 'Riverside', 'Lakeshore', 'Downtown', 'Eastgate',
+const BASE_VOCABULARY = ['HELOC', 'HELOAN', 'SEG', 'NCUA 5300', 'call report', 'share draft', 'share certificate', 'IRA', 'money market', 'indirect', 'delinquency', 'charge-off', 'loan-to-share', 'loan-to-deposit', 'NEV', 'NII', 'net interest margin', 'net worth ratio', 'CCULR', 'PCA', 'FHLB', 'CLF', 'discount window', 'roll rate', 'vintage', 'allowance', 'ACL', 'basis points', 'ALCO', 'ALM', 'cross-sell', 'attrition', 'purview', 'nightly build', 'referral', 'member 360', 'household', 'eStatements', 'direct deposit', 'Westport', 'Northgate', 'Riverside', 'Lakeshore', 'Downtown', 'Eastgate',
   // Words the demos and finance teams use that a general recogniser mishears.
   'ALCO', 'ALCO meeting', 'FFIEC', 'NCUA', 'CUSO', 'GL account', 'uncategorized', 'underwriting', 'stalled', 'payouts', 'incentives', 'Goals and Incentives', 'scorecard', 'early-warning list', 'certificates', 'share balance', 'deposit mix', 'loan pipeline', 'month-end', 'basis points', 'regulatory issues', 'Report Builder', 'brief me', 'talking points', 'prepare me'];
 
