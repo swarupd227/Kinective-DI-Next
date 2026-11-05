@@ -48,7 +48,7 @@ describe('Jump back in', () => {
     // Northgate is in Worth a look with its own Why?, so delinquency gets no second card.
     const cards = jumpCards('executive', { kpis, lookAt: [flag] }, [], { open: 9, overdue: 3 });
     expect(cards.map((c) => c.title)).toEqual(['Executive dashboard']);
-    expect(cards[0]).toMatchObject({ reason: expect.stringContaining('per-member averages'), action: { label: 'Brief me' } });
+    expect(cards[0]).toMatchObject({ reason: expect.stringContaining('per-member averages'), action: { label: 'What changed?' } });
     expect(cards.every((c) => !c.figure && !c.change)).toBe(true);
     // Without a flag, the delinquency card says where to go, not the strip's number again.
     const calm = jumpCards('executive', { kpis, lookAt: [] }, [], null);

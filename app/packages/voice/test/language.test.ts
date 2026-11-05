@@ -20,6 +20,16 @@ describe('spoken banking language (spec 7.7)', () => {
     expect(n('show the five three hundred')).toBe('Show the 5300 Call Report');
   });
 
+  it('rejoins acronyms the recogniser splits', () => {
+    expect(n('get me ready for the next al co meeting')).toBe('Get me ready for the next ALCO meeting');
+    expect(n('refer her for a he lock')).toBe('Refer her for a HELOC');
+    expect(n('which he locks are stalled')).toBe('Which HELOCs are stalled');
+    expect(n('what does F F I E C require')).toBe('What does FFIEC require');
+    expect(n('the due from C U S O account')).toBe('The due from CUSO account');
+    // Ordinary words that happen to start the same way are left alone.
+    expect(n('help lock the card')).toBe('Help lock the card');
+  });
+
   it('leaves ordinary words alone', () => {
     expect(n('show me the one at Westport')).toBe('Show me the one at Westport');
     expect(n('refer Suzanne Jackson for a HELOC she prefers email')).toBe('Refer Suzanne Jackson for a HELOC she prefers email');

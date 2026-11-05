@@ -37,8 +37,8 @@ const PLAYBACK_RATE = 16000;
 
 /** RMS level of a 100 ms frame that counts as speech (float samples; quiet rooms sit near 0.003). */
 const SPEECH_LEVEL = 0.02;
-/** 1.5 s of quiet after speech ends a tap-to-talk utterance. */
-const QUIET_FRAMES = 15;
+/** 1.8 s of quiet after speech ends a tap-to-talk utterance: long enough for a pause to think. */
+const QUIET_FRAMES = 18;
 /** Nothing said in 8 s ends it. */
 const NO_SPEECH_FRAMES = 80;
 /** One utterance is at most 60 s. */
@@ -159,7 +159,9 @@ export class VoiceClient {
     this.cancelSpeech(true);
     this.capturing = true;
     this.vad = opts.autoStop ? { heard: 0, quiet: 0, frames: 0 } : null;
-    this.set({ phase: 'listening', partial: '', noisy: false, error: null, level: 0 });
+    // "Listening" shows once the microphone is open and the session has started, so the first words
+    // aren't spoken into a microphone that is still opening.
+    this.set({ partial: '', noisy: false, error: null, level: 0 });
     this.unlockPlayback();
     try {
       if (!this.capture) {
@@ -187,6 +189,7 @@ export class VoiceClient {
       }
       this.send({ type: 'session.start', mode: 'push_to_talk', language: this.opts.language ?? 'en-US', audio: { encoding: 'pcm_s16le', sampleRate: 16000, channels: 1, frameMs: 100 }, threadId: opts.threadId, tts: { enabled: opts.speak, rate: opts.rate } });
       this.started = true;
+      this.set({ phase: 'listening' });
       if (this.releasePending) {
         this.releasePending = false;
         this.stopCapture(true);
@@ -233,7 +236,7 @@ export class VoiceClient {
 
   /**
    * Ends a tap-to-talk utterance on silence. Frames arrive every 100 ms with their RMS level; speech
-   * starts after two loud frames, and 1.5 s of quiet after it ends the utterance. Nothing said within
+   * starts after two loud frames, and 1.8 s of quiet after it ends the utterance. Nothing said within
    * 8 s ends it too, and the transcript comes back empty, which the bar explains.
    */
   private endOnSilence(level: number) {

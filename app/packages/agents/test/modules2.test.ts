@@ -143,8 +143,8 @@ describe.skipIf(!up)('more modules against the warehouse', () => {
       expect(r.texts[0]).toContain('**3 GL accounts have** no 5300 line yet, totalling **$18,400**');
       const table = r.blocks[0] as Extract<Block, { type: 'table' }>;
       expect(validateBlock(table).ok).toBe(true);
-      expect(table.data.rows.map((x) => x.gl)).toEqual(['1795', '2310', '1188']);
-      expect(table.data.rows[0]).toMatchObject({ likely: 'Prepaid and other assets', balance: 9850 });
+      expect(table.data.rows!.map((x) => x.gl)).toEqual(['1795', '2310', '1188']);
+      expect(table.data.rows![0]).toMatchObject({ likely: 'Prepaid and other assets', balance: 9850 });
     });
 
     it('builds a line from its entry types, with the signs applied', async () => {

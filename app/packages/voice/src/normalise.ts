@@ -105,6 +105,14 @@ export function normaliseTranscript(raw: string): Normalised {
   // Report names spoken as digits, before the number words are summed.
   t = t.replace(/\b(?:five three hundred|fifty three hundred|5\s*300|5,300|53 hundred)\b(?:\s*call report)?/gi, '5300 Call Report');
 
+  // Acronyms a recogniser splits into words or letters ("al co", "he lock", "F F I E C").
+  t = t
+    .replace(/\b(?:a\.?\s+l\.?\s+c\.?\s+o\.?|al\s?co|alko|alcoa)\b/gi, 'ALCO')
+    .replace(/\b(?:he\s?locks?|he\s?loks?|h\.?\s+e\.?\s+l\.?\s+o\.?\s+c\.?)\b/gi, (m) => (/s$/i.test(m) ? 'HELOCs' : 'HELOC'))
+    .replace(/\bf\.?\s+f\.?\s+i\.?\s+e\.?\s+c\.?\b/gi, 'FFIEC')
+    .replace(/\b(?:c\.?\s+u\.?\s+s\.?\s+o\.?|cuso|kuso)\b/gi, 'CUSO')
+    .replace(/\bn\.?\s+c\.?\s+u\.?\s+a\.?\b/gi, 'NCUA');
+
   // Number words to numerals, when they are clearly a quantity.
   t = t.replace(/\b[a-z]+(?:[\s-]+[a-z]+)*\b/gi, (phrase) => {
     const words = phrase.split(/([\s-]+)/);

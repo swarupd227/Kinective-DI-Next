@@ -38,15 +38,19 @@ export function ReportsPage() {
     return [...by].sort(([a], [b]) => (a === 'My drafts' ? 1 : b === 'My drafts' ? -1 : a.localeCompare(b)));
   }, [q.data, filter]);
 
-  // The composer gets a starting sentence to finish; nothing is sent until the user does.
-  const build = () => useUi.getState().setPrefill('Build me a monthly report with ');
+  // Building happens in a new task, where the composer is the page: the starting sentence waits there
+  // to be finished, and nothing is sent until the user does. (In the bar at the foot of this long page,
+  // it was easy to miss and type into "Find a report" instead.)
+  const navigate = useNavigate();
+  // The draft travels with the navigation, so this page's own bar doesn't take it on the way out.
+  const build = (what = '') => navigate('/c/new', { state: { draft: `Build me a monthly report with ${what}` } });
 
   return (
     <div className={page.page}>
       <header className={page.header}>
         <div className={page.headerRow}>
           <h1 className={page.title}>Reports</h1>
-          <Button variant="primary" icon={<Sparkles size={16} aria-hidden />} onClick={build}>
+          <Button variant="primary" icon={<Sparkles size={16} aria-hidden />} onClick={() => build()}>
             Build a report
           </Button>
         </div>
@@ -75,8 +79,27 @@ export function ReportsPage() {
 
       {q.data && tab === 'library' && (
         <>
-          <TextInput label="Find a report" hideLabel placeholder="Find a report" leading={<Search size={14} aria-hidden />} value={filter} onChange={(e) => setFilter(e.target.value)} className={styles.filter} />
-          {folders.length === 0 && <p className={styles.message}>No reports match. Try other words, or ask DI to build one.</p>}
+          <TextInput
+            label="Find a report"
+            hideLabel
+            placeholder="Find a report"
+            leading={<Search size={14} aria-hidden />}
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            // Enter on a search that finds nothing is someone describing a report: offer to build it.
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !folders.length && filter.trim()) build(filter.trim());
+            }}
+            className={styles.filter}
+          />
+          {folders.length === 0 && (
+            <p className={styles.message}>
+              No reports match “{filter.trim()}”.{' '}
+              <button type="button" className={styles.linkButton} onClick={() => build(filter.trim())}>
+                Build a report with {filter.trim()}
+              </button>
+            </p>
+          )}
           {folders.map(([folder, items]) => (
             <section key={folder} className={styles.folder} aria-labelledby={`f-${folder}`}>
               <h2 id={`f-${folder}`} className={styles.folderTitle}>
@@ -106,7 +129,7 @@ export function ReportsPage() {
             </section>
           ))}
           <p className={styles.hint}>
-            <button type="button" className={styles.linkButton} onClick={build}>
+            <button type="button" className={styles.linkButton} onClick={() => build()}>
               Describe a report to build
             </button>{' '}
             or try “Build me a monthly ALCO pack with loan balance trend, deposit mix and delinquency ratio”.

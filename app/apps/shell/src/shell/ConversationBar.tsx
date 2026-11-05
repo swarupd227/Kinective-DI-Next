@@ -42,7 +42,7 @@ const HOLD_MS = 450;
 /** Below this, the transcript waits for the user to check it (FE-VOICE-080). */
 const MIN_CONFIDENCE = 0.6;
 
-export function ConversationBar({ threadId, collapsedByDefault, hero = false }: { threadId?: string; collapsedByDefault: boolean; hero?: boolean }) {
+export function ConversationBar({ threadId, collapsedByDefault, hero = false, draft }: { threadId?: string; collapsedByDefault: boolean; hero?: boolean; draft?: string }) {
   const { session, api, send, startThread, stream, connState, terms } = useSession();
   const { announce } = useAnnouncer();
   const navigate = useNavigate();
@@ -50,7 +50,7 @@ export function ConversationBar({ threadId, collapsedByDefault, hero = false }: 
   const key = threadId ?? 'new';
   const chips = useUi((s) => s.contexts[key] ?? EMPTY);
   const { removeContext, addContext, moveContext } = useUi.getState();
-  const [text, setText] = useState('');
+  const [text, setText] = useState(draft ?? '');
   const [expanded, setExpanded] = useState(!collapsedByDefault);
   const [active, setActive] = useState(0);
   // Results are kept with the text they answer, so a slow reply never shows under a newer query.
@@ -58,7 +58,8 @@ export function ConversationBar({ threadId, collapsedByDefault, hero = false }: 
   const [sending, setSending] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   /** Set when an action expands the bar and wants the input focused once it renders. */
-  const focusNext = useRef(false);
+  // A draft handed over by a page is there to finish, so the cursor goes to its end.
+  const focusNext = useRef(Boolean(draft));
   const listId = useId();
 
   const running = useStore(stream.store, (s) => {
@@ -119,18 +120,19 @@ export function ConversationBar({ threadId, collapsedByDefault, hero = false }: 
     setExpanded(!collapsedByDefault);
   }
 
-  // The palette can hand over a slash command or a draft question.
-  useEffect(
-    () =>
-      useUi.subscribe((s) => {
-        if (s.prefill === null) return;
-        setText(s.prefill);
-        setExpanded(true);
-        useUi.getState().setPrefill(null);
-        focusNext.current = true;
-      }),
-    [],
-  );
+  // The palette or a page can hand over a slash command or a draft question, including one set just
+  // before this bar mounted (Reports opens a new task with "Build me a monthly report with ").
+  useEffect(() => {
+    const take = (prefill: string | null) => {
+      if (prefill === null) return;
+      setText(prefill);
+      setExpanded(true);
+      useUi.getState().setPrefill(null);
+      focusNext.current = true;
+    };
+    take(useUi.getState().prefill);
+    return useUi.subscribe((s) => take(s.prefill));
+  }, []);
 
   // "/" focuses the conversation bar when focus is not already in a field (spec 10.7).
   useEffect(() => {
@@ -152,6 +154,8 @@ export function ConversationBar({ threadId, collapsedByDefault, hero = false }: 
     if (focusNext.current) {
       focusNext.current = false;
       el.focus();
+      // A handed-over sentence is finished at its end.
+      el.setSelectionRange(el.value.length, el.value.length);
     }
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 168)}px`;

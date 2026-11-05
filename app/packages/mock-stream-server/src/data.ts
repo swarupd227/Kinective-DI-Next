@@ -71,7 +71,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     approvesIncentives: true,
     retention: true,
     modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'ai-admin', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'callreport', 'collections', 'campaigns', 'seg', 'tables'],
-    suggestions: ['What should I do today?', 'Show the October payouts', 'Which regulatory issues are open more than 3 weeks?', 'Where does delinquency come from?', 'Are we ready to file Q3?', 'Show the early-warning list', 'Get me ready for the next ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'Brief me'],
+    suggestions: ['What should I do today?', 'Show the October payouts', 'Which regulatory issues are open more than 3 weeks?', 'Where does delinquency come from?', 'Are we ready to file Q3?', 'Show the early-warning list', 'Get me ready for the next ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'What changed since last month-end?'],
   },
   analyst: {
     userClass: 'Analyst',
@@ -142,7 +142,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     approvesIncentives: true,
     retention: true,
     modules: ['governance', 'tasks', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'datalogs', 'datalogs-approve', 'collections', 'campaigns', 'tables'],
-    suggestions: ['Get me ready for the next ALCO meeting', 'Brief me', 'Show loan growth by branch for Q3 vs Q2', 'Show the October payouts'],
+    suggestions: ['Get me ready for the next ALCO meeting', 'What changed since last month-end?', 'Show loan growth by branch for Q3 vs Q2', 'Show the October payouts'],
   },
   admin: {
     userClass: 'Administrator',

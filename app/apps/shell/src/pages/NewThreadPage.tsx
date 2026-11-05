@@ -1,7 +1,7 @@
 // /c/new starts a task. With ?q= (links from Home, search and lists) it asks at once and replaces
 // the URL with the new thread's.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@dinext/ui';
 import { useSession } from '../session/SessionProvider.tsx';
@@ -12,6 +12,8 @@ import page from './Page.module.css';
 export function NewThreadPage() {
   const [params] = useSearchParams();
   const q = params.get('q');
+  /** A sentence to finish, from a page such as Reports ("Build me a monthly report with "). */
+  const draft = (useLocation().state as { draft?: string } | null)?.draft;
   const { api, startThread } = useSession();
   const navigate = useNavigate();
   const started = useRef(false);
@@ -46,7 +48,7 @@ export function NewThreadPage() {
             </Button>
           </>
         )}
-        {!q && <ConversationBar collapsedByDefault={false} hero />}
+        {!q && <ConversationBar collapsedByDefault={false} hero draft={draft} />}
         {!q && (
           <ul className={page.prompts} aria-label="Try asking">
             {(home.data?.suggestions ?? []).slice(0, 4).map((s) => (

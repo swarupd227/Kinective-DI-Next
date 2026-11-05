@@ -392,7 +392,12 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     const reports = hasReports ? { gateway: new ReportGateway({ store: new ReportStore(pool), semantic, approvals: new ApprovalStore(pool), classSize }) } : null;
     const [staff] = await pool.query('SELECT DISTINCT display_name FROM cdm_employee');
     const dims = semantic.dimensionValues;
-    const vocabulary = [...new Set([...(dims.branch ?? []), ...(dims.region ?? []), ...(dims.loan_category ?? []), ...(dims.deposit_category ?? []), ...(staff as { display_name: string }[]).map((s) => s.display_name).filter((s) => !/^\w\. /.test(s))])];
+    // The recogniser is biased toward the words people say here: metric and report names, employer
+    // groups and dealers as well as branches, categories and staff. Never members (FE-VOICE-061).
+    const names = async (sql: string) => ((await pool.query(sql).catch(() => [[]]))[0] as { name: string }[]).map((r) => r.name);
+    const [reportNames, segNames, dealerNames] = await Promise.all([names('SELECT DISTINCT name FROM esp_report_templates'), names('SELECT name FROM seg_company'), names('SELECT name FROM ind_dealer')]);
+    const metricNames = Object.values(semantic.model.metrics).map((m) => m.label.replace(/\s*\(.*\)$/, ''));
+    const vocabulary = [...new Set([...(dims.branch ?? []), ...(dims.region ?? []), ...(dims.loan_category ?? []), ...(dims.deposit_category ?? []), ...(staff as { display_name: string }[]).map((s) => s.display_name).filter((s) => !/^\w\. /.test(s)), ...metricNames, ...reportNames, ...segNames, ...dealerNames])];
     tenants.set(tenantId, { pool, pipeline, goals, vocabulary, governance, files, tables, outbox, sources, replica, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules } });
   }
   if (!tenants.size) return null;
@@ -1026,11 +1031,11 @@ export function jumpCards(persona: PersonaId, b: { kpis: KpiGroupBlock; lookAt: 
     const first = p.canvas.data.widgets.find((w) => w.view.type === 'kpi')?.view;
     const k = first?.type === 'kpi' ? (first.data as unknown as KpiItem) : undefined;
     const fresh = onStrip(k) ? undefined : k;
-    cards.push({ id: `pin-${p.templateId}`, title: p.name, kind: 'pinned', figure: figureOf(fresh), change: changeOf(fresh), reason: p.audience === 'me' ? 'Pinned to your Home.' : `Published to the ${p.audience} class by ${p.pinnedBy}.`, link: `/home/pin-${p.templateId}`, action: { label: 'Brief me', ask: `Brief me on the ${p.name} report` } });
+    cards.push({ id: `pin-${p.templateId}`, title: p.name, kind: 'pinned', figure: figureOf(fresh), change: changeOf(fresh), reason: p.audience === 'me' ? 'Pinned to your Home.' : `Published to the ${p.audience} class by ${p.pinnedBy}.`, link: `/home/pin-${p.templateId}`, action: { label: 'What changed?', ask: `Brief me on the ${p.name} report` } });
   }
   const role = ROLE_REPORT[persona];
   if (role && apps.includes('reports') && !cards.some((c) => c.link.endsWith(role.id))) {
-    cards.push({ id: 'role', title: role.title, kind: 'report', reason: role.reason, link: `/reports/${role.id}`, action: { label: 'Brief me', ask: `Brief me on the ${role.title} report` } });
+    cards.push({ id: 'role', title: role.title, kind: 'report', reason: role.reason, link: `/reports/${role.id}`, action: { label: 'What changed?', ask: `Brief me on the ${role.title} report` } });
   }
   return cards.slice(0, 4);
 }
