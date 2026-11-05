@@ -18,6 +18,15 @@ const TURN_BUDGET_MS = 90_000;
 const MAX_TOOL_CALLS = 8;
 
 /** Asks about goals or incentives, as opposed to a goal handed to DI or the Branch scorecard report. */
+/** "How is J. Ortiz doing?" about a colleague: a scorecard question, not a member lookup, when the name is staff. */
+export function asksAboutStaff(text: string, staff: string[]) {
+  const m = /\bhow (?:is|are|'?s) (.+?) (?:doing|tracking|getting on|going)\b/i.exec(text);
+  if (!m) return false;
+  const norm = (s: string) => s.toLowerCase().replace(/[.’']/g, '').replace(/\s+/g, ' ').trim();
+  const asked = norm(m[1]!);
+  return staff.some((n) => norm(n) === asked || (asked.split(' ').length === 1 && norm(n).split(' ').at(-1) === asked));
+}
+
 export const GI_REQUEST = /\bpayouts?\b|\bincentives?\b|\bhow am i (doing|tracking)\b|\bmy (goals?|score ?card)\b|\bteam'?s? (goals?|score ?card)\b|\bbehind on\b|\bnext tier\b|\btier \d\b|\badjustments?\b|\b[Aa]djust [A-Z]|\b(tell|message|nudge|remind)\b.*\bbehind\b/i;
 
 export interface IncentivesInput {

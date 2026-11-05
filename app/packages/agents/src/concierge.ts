@@ -27,7 +27,7 @@ import type { RunSink, StepUpdate } from './sink.ts';
 import { runToday, TODAY_REQUEST, type TodayOutcome } from './today.ts';
 import { RETENTION_AGENT, RETENTION_REQUEST, runRetention, runRetentionOffline, type RetentionInput, type RetentionOutcome } from './retention.ts';
 import { runModule, runModuleOffline, type ModuleContext, type ModuleGateway, type ModuleOutcome, type ModuleSpec } from './moduleAgent.ts';
-import { GI_AGENT, GI_REQUEST, incentivesSources, runIncentives, runIncentivesOffline, type IncentivesInput, type IncentivesOutcome } from './incentives.ts';
+import { asksAboutStaff, GI_AGENT, GI_REQUEST, incentivesSources, runIncentives, runIncentivesOffline, type IncentivesInput, type IncentivesOutcome } from './incentives.ts';
 
 /** Agents the Concierge can route to. Scripted ones are placeholders until their slices land. */
 export const ROUTES = [
@@ -71,6 +71,8 @@ export interface TenantRuntime {
   modules?: ModuleGateway | null;
   /** Interest rate risk and liquidity, for ALCO preparation. */
   alm?: AlmDeps | null;
+  /** Staff names, so a question about a colleague isn't taken for a member with the same name. */
+  staff?: string[];
 }
 
 export interface ConciergeTurn {
@@ -418,7 +420,11 @@ export class Concierge {
 
       // A plain goal, inbox or pipeline request needs no model to recognise, and must not land on a one-step specialist.
       const memberChip = turn.context.some((c) => c.type === 'member');
-      classification = this.deps.model && !GI_REQUEST.test(screened.text) && !RETENTION_REQUEST.test(screened.text) && !GOAL_REQUEST.test(screened.text) && !INBOX_REQUEST.test(screened.text) && !PIPELINE_REQUEST.test(screened.text) ? await this.classify(turn, screened.text, usage) : keywordClassify(screened.text, memberChip);
+      // "How is J. Ortiz doing?" from someone with Goals & Incentives means the colleague, not a member called Ortiz.
+      const aboutStaff = turn.apps.includes('gi') && !memberChip && asksAboutStaff(screened.text, turn.tenant.staff ?? []);
+      classification = aboutStaff
+        ? { intent: 'module_task', agent: 'goals_incentives', confidence: 1, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' }
+        : this.deps.model && !GI_REQUEST.test(screened.text) && !RETENTION_REQUEST.test(screened.text) && !GOAL_REQUEST.test(screened.text) && !INBOX_REQUEST.test(screened.text) && !PIPELINE_REQUEST.test(screened.text) ? await this.classify(turn, screened.text, usage) : keywordClassify(screened.text, memberChip);
       // A vague "Build me a report" goes to the Report Builder, which asks what the report should show.
       if (classification.agent === 'report_builder' && BUILD_REPORT.test(screened.text)) classification = { ...classification, needs_clarification: false, confidence: Math.max(classification.confidence, CONFIDENCE_THRESHOLD) };
       if (classification.needs_clarification || classification.confidence < CONFIDENCE_THRESHOLD) {

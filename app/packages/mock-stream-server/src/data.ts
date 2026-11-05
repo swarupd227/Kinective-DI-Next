@@ -194,19 +194,19 @@ export function sessionFor(id: PersonaId, voice: VoiceStatus = NO_VOICE): Sessio
   };
 }
 
-export function buildFor(id: PersonaId, now = Date.now()): BuildStatus {
-  // The bank tenant's next build is late, to show the stale-build notice (FE-EXP-010). Its figures are the
-  // warehouse's last finished build, the same 26 Oct one its tiles read, so the header and tiles agree. Either way, the age is
-  // counted from today, so a build from days ago is never called "last night's".
+/**
+ * The demo's data stops at the 26 Oct 2026 build, so Home reads it as last night's: the first screen is
+ * about the institution, not the date. Platform health (Integrations, the administrator's Home) still
+ * reports the build's real age, which is where a late build belongs.
+ */
+const DEMO_TODAY = '2026-10-26T08:00:00-04:00';
+
+export function buildFor(_id: PersonaId, now = Date.parse(DEMO_TODAY)): BuildStatus {
   const age = (iso: string) => Math.max(0, Math.floor((now - Date.parse(`${iso.slice(0, 10)}T00:00:00Z`)) / 86_400_000));
   const label = (iso: string) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${iso.slice(0, 10)}T00:00:00Z`)).replace('Sept', 'Sep');
-  if (id === 'bank_cfo') {
-    const asOf = '2026-10-26T04:10:00-04:00';
-    const days = age(asOf);
-    return { state: 'late', asOf, buildId: 'bld_20261026', expectedBy: '2026-10-27T05:00:00-04:00', ageDays: days, message: days >= 2 ? `No new build for ${days} days. The one due by 05:00 on 27 Oct 2026 hasn’t finished, so figures are from ${label(asOf)}.` : "Last night's build has not finished. It was expected by 05:00." };
-  }
   const asOf = '2026-10-26T04:10:00-04:00';
   const days = age(asOf);
+  // Counted from "today", so a build from days ago is never called last night's.
   return { state: 'completed', asOf, buildId: 'bld_20261026', ageDays: days, ...(days >= 2 ? { message: `No new build for ${days} days. Figures are from the build that finished ${label(asOf)}.` } : {}) };
 }
 

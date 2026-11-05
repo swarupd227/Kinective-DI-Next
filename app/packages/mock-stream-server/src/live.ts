@@ -398,7 +398,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     const [reportNames, segNames, dealerNames] = await Promise.all([names('SELECT DISTINCT name FROM esp_report_templates'), names('SELECT name FROM seg_company'), names('SELECT name FROM ind_dealer')]);
     const metricNames = Object.values(semantic.model.metrics).map((m) => m.label.replace(/\s*\(.*\)$/, ''));
     const vocabulary = [...new Set([...(dims.branch ?? []), ...(dims.region ?? []), ...(dims.loan_category ?? []), ...(dims.deposit_category ?? []), ...(staff as { display_name: string }[]).map((s) => s.display_name).filter((s) => !/^\w\. /.test(s)), ...metricNames, ...reportNames, ...segNames, ...dealerNames])];
-    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, governance, files, tables, outbox, sources, replica, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules, alm: { irr: new IrrService(pool), liquidity: new LiquidityService(pool, institutionType) } } });
+    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, governance, files, tables, outbox, sources, replica, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules, alm: { irr: new IrrService(pool), liquidity: new LiquidityService(pool, institutionType) }, staff: (staff as { display_name: string }[]).map((s) => s.display_name) } });
   }
   if (!tenants.size) return null;
 

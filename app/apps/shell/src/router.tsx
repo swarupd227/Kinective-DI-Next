@@ -3,6 +3,7 @@
 // Routes other than Home load on demand to keep the initial bundle within budget (spec 11.1, 11.10).
 import { lazy, Suspense, type ReactNode } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router';
+import { RouteError } from './shell/RouteError.tsx';
 import { Root } from './Root.tsx';
 import { AppShell } from './shell/AppShell.tsx';
 import { HomePage } from './pages/HomePage.tsx';
@@ -36,6 +37,8 @@ const guarded = (app: AppId, el: ReactNode) => page(<RequireApp app={app}>{el}</
 export const router = createBrowserRouter([
   {
     element: <Root />,
+    // Never the router's developer screen: a page from an older release reloads onto the new one.
+    errorElement: <RouteError />,
     children: [
       {
         element: <AppShell />,
