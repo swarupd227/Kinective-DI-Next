@@ -54,7 +54,19 @@ export interface Scorecard {
   total: number;
   /** Below target on at least one scored goal. */
   behind: boolean;
+  /** What the goals already reached would pay once every qualifier is met. */
+  potential: number;
+  /** The same person last period, for the trend. */
+  prior?: { period: string; total: number; goals: { goalId: string; pct: number }[] } | null;
+  /** Colleagues in the same role at the same branch: where this person stands on average percent of goal. */
+  peers?: { role: string; branch: string; count: number; rank: number; avgPct: number; ownPct: number } | null;
 }
+
+/** Average percent of goal across the scored goals, the measure a manager compares people on. */
+export const averagePct = (c: Pick<Scorecard, 'goals'>) => {
+  const m = c.goals.filter((g) => !g.qualifier);
+  return m.length ? Math.round(m.reduce((n, g) => n + g.pct, 0) / m.length) : 0;
+};
 
 export interface PayoutLine {
   employeeId: number;
@@ -183,7 +195,7 @@ export class GoalsService {
       const measured = scored.filter((g) => !g.qualifier);
       // A missed qualifier takes every other incentive for the period to zero (spec 17.4).
       const goalsOut = qualified ? scored : scored.map((g) => ({ ...g, earned: 0 }));
-      return { employeeId: s.employeeId, name: s.name, role: s.role, branch: s.branch, periodEnd: period, period: label, asOf, goals: goalsOut, qualified, total: money2(goalsOut.reduce((n, g) => n + g.earned, 0)), behind: measured.some((g) => g.pct < 100) || !qualified };
+      return { employeeId: s.employeeId, name: s.name, role: s.role, branch: s.branch, periodEnd: period, period: label, asOf, goals: goalsOut, qualified, total: money2(goalsOut.reduce((n, g) => n + g.earned, 0)), behind: measured.some((g) => g.pct < 100) || !qualified, potential: money2(scored.reduce((n, g) => n + g.earned, 0)) };
     });
   }
 
@@ -209,10 +221,21 @@ export class GoalsService {
 
   /** gi.scorecard.get: only goals the person is eligible for (FE-GI-001). */
   async scorecard(name: string | undefined, who: GoalsWho, ctx: CoreContext): Promise<Scorecard> {
-    const { current } = await this.periods();
+    const { current, prior } = await this.periods();
     const staff = await this.staff();
     const s = this.find(staff, name, who, ctx);
-    return (await this.cards(current.end, staff)).find((c) => c.employeeId === s.employeeId)!;
+    const cards = await this.cards(current.end, staff);
+    const card = cards.find((c) => c.employeeId === s.employeeId)!;
+    const before = prior ? (await this.cards(prior.end, staff)).find((c) => c.employeeId === s.employeeId) : undefined;
+    // Peers only for someone who manages: a person asking about themselves isn't shown colleagues' scores.
+    const manages = (who.leads || who.approves) && who.employeeId !== s.employeeId;
+    const team = manages ? cards.filter((c) => c.role === s.role && c.branch === s.branch) : [];
+    const ranked = [...team].sort((a, b) => averagePct(b) - averagePct(a));
+    return {
+      ...card,
+      prior: before ? { period: before.period, total: before.total, goals: before.goals.map((g) => ({ goalId: g.goalId, pct: g.pct })) } : null,
+      peers: team.length > 1 ? { role: s.role, branch: s.branch, count: team.length, rank: ranked.findIndex((c) => c.employeeId === s.employeeId) + 1, avgPct: Math.round(team.reduce((n, c) => n + averagePct(c), 0) / team.length), ownPct: averagePct(card) } : null,
+    };
   }
 
   /** A branch's scorecards, those behind first. */

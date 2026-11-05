@@ -58,26 +58,49 @@ function table(title: string, runId: string, operation: string, columns: TableBl
   return { id: newBlockId('gin'), type: 'table', version: '1.0.0', title, provenance: provenance(runId, operation), freshness: asOf ? { kind: 'nightly_build', asOf: `${asOf}T00:00:00Z` } : { kind: 'workflow_event' }, data: { columns, rows, rowCount: rows.length } };
 }
 
+const ordinal = (n: number) => `${n}${n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th'}`;
+const joinAnd = (xs: string[]) => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`);
+
+/** The read a manager wants first: ahead or behind, what stops the pay, and what fixing it is worth. */
+export function scorecardLead(c: Scorecard, own: boolean) {
+  const who = own ? 'You' : c.name;
+  const has = own ? 'have' : 'has';
+  const goals = measured(c);
+  const ahead = goals.filter((g) => g.pct >= 100);
+  const short = goals.filter((g) => g.pct < 100).sort((a, b) => a.pct - b.pct);
+  const gate = c.goals.find((g) => g.qualifier && g.actual < g.target);
+  const list = (gs: GoalScore[]) => gs.map((g) => `${g.name.toLowerCase()} ${amount(g, g.actual)} of ${amount(g, g.target)}, ${g.pct}%`).join('; ');
+  const sales = ahead.length === goals.length && goals.length ? `${who} beat ${goals.length === 1 ? 'the' : goals.length === 2 ? 'both' : 'all'} ${goals.length === 1 ? 'goal' : 'goals'} (${list(ahead)})` : ahead.length ? `${who} ${has} beaten ${list(ahead)}, but ${own ? 'are' : 'is'} short on ${list(short)}` : `${who} ${own ? 'are' : 'is'} short on every goal (${list(short)})`;
+  if (gate) {
+    const gap = gate.target - gate.actual;
+    return `${sales}, but ${own ? 'earn' : 'earns'} **nothing** for ${shortPeriod(c.period)} yet: ${gate.name.toLowerCase()} is **${gate.actual}**, ${gap} ${gap === 1 ? gate.unitLabel.replace(/s$/, '') : gate.unitLabel} under the ${gate.target} needed to qualify.${c.potential ? ` Reaching ${gate.target} would pay **${dollars(c.potential)}** for what ${own ? 'you have' : 'they have'} already done.` : ''}`;
+  }
+  return `${sales}, earning **${dollars(c.total)}** for ${shortPeriod(c.period)}.`;
+}
+
 /** Top goals with percent of goal, the money so far and what the next tier takes (spec 8.26). */
 export function scorecardText(c: Scorecard, own: boolean) {
-  const who = own ? 'You' : c.name;
-  const lines = measured(c).map((g) => `**${g.name}**: ${amount(g, g.actual)} of ${amount(g, g.target)} (${g.pct}%)${g.earned ? `, earning **${dollars(g.earned)}**` : ''}.`);
   const next = measured(c).find((g) => g.next && g.rule?.kind === 'tiered');
   // Once the month has ended there's no next tier to chase: the figures wait on the build that covers its last days.
   const closed = periodClosed(c);
   const closer = next && !closed ? ` ${own ? 'You need' : `${c.name} needs`} **${amount(next, next.next!.need)}** more on ${next.name.toLowerCase()} to reach the next tier, worth ${dollars(next.next!.amount)}.` : '';
   const waiting = measured(c).find((g) => g.pending);
   const pending = waiting ? (closed ? ` ${waiting.pending} more ${waiting.pending === 1 ? 'was' : 'were'} active when the data was taken; any sold before the month ended count once the next build runs.` : ` ${waiting.pending} more ${waiting.pending === 1 ? 'is' : 'are'} active and will count if sold by the end of the period.`) : '';
+  // Against last month, on the goals both periods share.
+  const moves = c.prior ? measured(c).flatMap((g) => { const p = c.prior!.goals.find((x) => x.goalId === g.goalId); return p && p.pct !== g.pct ? [`${g.name.toLowerCase()} ${p.pct}% to ${g.pct}%`] : []; }) : [];
+  const trend = c.prior ? ` Against ${shortPeriod(c.prior.period)}: ${moves.length ? joinAnd(moves) : 'the same percent of goal'}, and ${dollars(c.prior.total)} earned then.` : '';
+  const p = c.peers;
+  const peers = p && !own ? ` Among ${p.branch}’s ${p.count} ${p.role === 'MSR' ? 'MSRs' : `${p.role.toLowerCase()}s`}, ${c.name} ranks **${ordinal(p.rank)}** on average percent of goal (${p.ownPct}% against ${p.avgPct}%).` : '';
   const gate = c.goals.find((g) => g.qualifier && g.actual < g.target);
-  const qualifier = gate ? ` ${gate.name} is ${gate.actual}, under the ${gate.target} needed, so no incentive pays this period.` : '';
-  const lead = closed
-    ? `${c.period} has ended, but the data stops at ${dataDay(c.asOf)}. By then ${own ? 'you had' : `${c.name} had`} earned **${dollars(c.total)}**; final figures come after the next build.`
-    : `${c.period}: ${who} ${own ? 'have' : 'has'} earned **${dollars(c.total)}** so far.`;
-  return `${lead} ${lines.join(' ')}${closer}${pending}${qualifier}`;
+  const coach = gate && !own ? ` The coaching point is ${gate.name.toLowerCase()}, not sales.` : '';
+  const asOf = closed ? ` Figures run to ${dataDay(c.asOf)}; ${c.period}’s final numbers come after the next build.` : '';
+  return `${scorecardLead(c, own)}${closer}${pending}${trend}${peers}${coach}${asOf}`;
 }
 
 export function scorecardBlock(c: Scorecard, runId: string): Block {
-  return table(`${c.name}: ${c.period}`, runId, 'gi.scorecard.get', [{ field: 'goal', headerName: 'Goal', type: 'text' }, { field: 'actual', headerName: 'Actual', type: 'text' }, { field: 'target', headerName: 'Target', type: 'text' }, { field: 'pct', headerName: 'Of goal', type: 'text' }, { field: 'earned', headerName: 'Earned', type: 'currency' }], c.goals.map((g) => ({ goal: g.name, actual: amount(g, g.actual), target: amount(g, g.target), pct: `${g.pct}%`, earned: g.earned })), c.asOf);
+  const last = (g: GoalScore) => c.prior?.goals.find((x) => x.goalId === g.goalId);
+  const status = (g: GoalScore) => (g.qualifier ? (g.actual >= g.target ? 'Qualifies' : 'Below the qualifier: no pay') : g.pct >= 100 ? 'Met' : 'Behind');
+  return table(`${c.name}: ${c.period}`, runId, 'gi.scorecard.get', [{ field: 'goal', headerName: 'Goal', type: 'text' }, { field: 'actual', headerName: 'Actual', type: 'text' }, { field: 'target', headerName: 'Target', type: 'text' }, { field: 'pct', headerName: 'Of goal', type: 'text' }, ...(c.prior ? [{ field: 'last', headerName: shortPeriod(c.prior.period), type: 'text' as const }] : []), { field: 'status', headerName: 'Status', type: 'text' }, { field: 'earned', headerName: 'Earned', type: 'currency' }], c.goals.map((g) => ({ goal: g.name, actual: amount(g, g.actual), target: amount(g, g.target), pct: `${g.pct}%`, ...(c.prior ? { last: last(g) ? `${last(g)!.pct}%` : '—' } : {}), status: status(g), earned: g.earned })), c.asOf);
 }
 
 /** What someone is short on, most serious first: a missed qualifier, then goals under 100%. */

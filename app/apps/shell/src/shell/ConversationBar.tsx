@@ -163,20 +163,26 @@ export function ConversationBar({ threadId, collapsedByDefault, hero = false, dr
 
   // Slash commands at the start of the input; "@word" at the caret looks up context references.
   const slashQuery = /^\/(\w*)$/.exec(text)?.[1];
-  const mentionQuery = /(?:^|\s)@([\w'-]{1,40})$/.exec(text)?.[1];
+  // A bare "@" opens the picker at once, on the branches the person can see; letters narrow it.
+  // A first and last name can follow the @: "@Suzanne Jackson".
+  const mentionQuery = /(?:^|\s)@((?:[\w'-]{2,30} )?[\w'-]{0,30})$/.exec(text)?.[1];
+  const bareMention = mentionQuery === '';
 
   useEffect(() => {
-    if (!mentionQuery) return;
+    if (mentionQuery === undefined) return;
     const ctrl = new AbortController();
-    const t = setTimeout(() => {
-      // Names that start with the text rank first, then names containing it, then detail matches.
-      const q = mentionQuery.toLowerCase();
-      const rank = (r: SearchResult) => (r.label.toLowerCase().startsWith(q) ? 0 : r.label.toLowerCase().includes(q) ? 1 : 2);
-      api.search(mentionQuery, ctrl.signal).then(
-        (r) => setMention({ q: mentionQuery, results: r.filter((x) => resultToContext(x)).sort((a, b) => rank(a) - rank(b)).slice(0, 8) }),
-        () => {},
-      );
-    }, 120);
+    const t = setTimeout(
+      () => {
+        // Names that start with the text rank first, then names containing it, then detail matches.
+        const q = mentionQuery.toLowerCase();
+        const rank = (r: SearchResult) => (r.label.toLowerCase().startsWith(q) ? 0 : r.label.toLowerCase().includes(q) ? 1 : 2);
+        api.search(mentionQuery || 'branch', ctrl.signal).then(
+          (r) => setMention({ q: mentionQuery, results: r.filter((x) => resultToContext(x) && (mentionQuery || x.kind === 'branch')).sort((a, b) => rank(a) - rank(b)).slice(0, 8) }),
+          () => setMention({ q: mentionQuery, results: [] }),
+        );
+      },
+      mentionQuery ? 120 : 0,
+    );
     return () => {
       clearTimeout(t);
       ctrl.abort();
@@ -195,8 +201,8 @@ export function ConversationBar({ threadId, collapsedByDefault, hero = false, dr
           apply: () => setText(`${c} `),
         }));
     }
-    if (mentionQuery && mention.q === mentionQuery) {
-      return mention.results.map((r) => ({
+    if (mentionQuery !== undefined && mention.q === mentionQuery) {
+      const found: Suggestion[] = mention.results.map((r) => ({
         id: `${r.kind}:${r.id}`,
         label: r.label,
         detail: r.detail,
@@ -207,9 +213,19 @@ export function ConversationBar({ threadId, collapsedByDefault, hero = false, dr
             addContext(key, c);
             announce(`Added context ${c.label}`);
           }
-          setText((t) => t.replace(/@[\w'-]{1,40}$/, ''));
+          setText((t) => t.replace(/@(?:[\w'-]{2,30} )?[\w'-]{0,30}$/, ''));
         },
       }));
+      // Says what "@" is for before anything is typed, and when a name finds nothing.
+      const hint: Suggestion = {
+        id: 'mention:hint',
+        label: bareMention ? 'Type a name: a member, branch, report or table' : `Nothing matches “${mentionQuery}”`,
+        detail: bareMention ? 'Adds it to the question as context, so DI knows who or what you mean' : 'Try a last name, a member number or a branch',
+        icon: <AtSign size={14} aria-hidden />,
+        // Choosing it changes nothing: the caret stays after the @, ready for a name.
+        apply: () => undefined,
+      };
+      return bareMention || !found.length ? [...found, hint] : found;
     }
     return [];
   })();
