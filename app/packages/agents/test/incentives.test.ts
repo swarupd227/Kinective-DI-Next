@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateBlock, type Block } from '@dinext/block-schemas';
 import { ApprovalStore, CoreError, furthestBehind, GoalsService, payFor, PipelineService, ReferralService, ruleText, type IncentiveRule } from '@dinext/di-core';
 import { createPool, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
-import { AuditLog, Concierge, GI_REQUEST, asksSomething, incentiveNextSteps, shortfalls, teamBlock, teamText, ToolGateway, parseIncentivesRequest, runIncentivesOffline, type IncentivesInput, type RunSink, type TenantRuntime } from '../src/index.ts';
+import { AuditLog, Concierge, GI_REQUEST, asksSomething, incentiveNextSteps, shortfalls, teamBlock, teamText, ToolGateway, parseIncentivesRequest, runIncentivesOffline, type IncentivesInput, type RunSink, type TenantRuntime , asksAboutStaff } from '../src/index.ts';
 
 const SCHEMA = 'dinext_t_test_cu';
 const up = await warehouseAvailable(SCHEMA);
@@ -311,5 +311,16 @@ describe.skipIf(!up)('incentives against the warehouse', () => {
     const stale = { branch: 'Westport', periodEnd: after.periodEnd, lines: [{ employeeId: 1, name: 'Ana Ruiz', amount: 1 }] };
     await expect(goals.approve(stale, { approvalId: 'apr_stale', userId: 'user:5120' }, marcus, westport)).rejects.toMatchObject({ code: 'INVALID' });
     await expect(goals.approve({ ...stale, lines: [{ employeeId: 6, name: 'Marcus Reed', amount: 300 }] }, { approvalId: 'apr_own', userId: 'user:5120' }, marcus, westport)).rejects.toMatchObject({ code: 'NO_ACCESS' });
+  });
+});
+
+describe('a question about a colleague', () => {
+  const staff = ['J. Ortiz', 'Ana Ruiz', 'Sofia Ruiz', 'Marcus Reed'];
+  it('is a scorecard question when the name is staff, not a member lookup', () => {
+    expect(asksAboutStaff('How is J. Ortiz doing?', staff)).toBe(true);
+    expect(asksAboutStaff('how is j ortiz doing', staff)).toBe(true);
+    expect(asksAboutStaff('How is Ana Ruiz tracking this month?', staff)).toBe(true);
+    expect(asksAboutStaff('How is Suzanne Jackson doing?', staff)).toBe(false);
+    expect(asksAboutStaff('Show J. Ortiz’s scorecard', staff)).toBe(false);
   });
 });

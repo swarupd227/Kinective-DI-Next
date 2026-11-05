@@ -245,8 +245,8 @@ describe.skipIf(!available)('a referral end to end through an approval card', ()
 
     await c.api.sendMessage(t, { clientMessageId: 'cm_lv2', input: { kind: 'text', text: 'How am I doing on my goals this month?' }, inputChannel: 'voice', context: [] });
     await until(() => /Based on the latest build/.test(spoken()), 20_000);
-    // October has ended by the calendar, so DI says the data stops short of it.
-    expect(spoken()).toMatch(/You have earned 300 dollars so far\.|By then you had earned 300 dollars/);
+    // The lead says ahead or behind and the pay; October has ended, so it also says the data stops short of it.
+    expect(spoken()).toMatch(/You beat .*earning 300 dollars for October/);
     expect(spoken()).not.toContain('**');
 
     await c.api.sendMessage(t, { clientMessageId: 'cm_lv3', input: { kind: 'text', text: 'Show the October payouts for Westport for approval' }, inputChannel: 'voice', context: [] });
