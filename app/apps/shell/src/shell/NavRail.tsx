@@ -11,7 +11,7 @@ import { IconButton, Tooltip } from '@dinext/ui';
 import type { AppId, ThreadSummary } from '@dinext/block-schemas';
 import type { ThreadState } from '@dinext/stream-client';
 import { useSession } from '../session/SessionProvider.tsx';
-import { APP_META } from './apps.tsx';
+import { APP_META, appLabel } from './apps.tsx';
 import { BrandMark } from './BrandMark.tsx';
 import { NotificationsButton } from './NotificationsPanel.tsx';
 import { UserMenu } from './TopBar.tsx';
@@ -70,7 +70,7 @@ export function NavRail() {
   const grouped = GROUPS.map((g) => ({ ...g, apps: apps.filter((a) => APP_META[a]!.group === g.id) })).filter((g) => g.apps.length);
 
   const item = (a: AppId) => {
-    const meta = APP_META[a]!;
+    const meta = { ...APP_META[a]!, label: appLabel(a, bank) };
     const link = (
       // A plain className: Tooltip's Slot would stringify NavLink's function form. NavLink sets
       // aria-current="page" on the active app, which the CSS styles.

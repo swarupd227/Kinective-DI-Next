@@ -291,7 +291,7 @@ export function createAppViews(deps: ViewDeps) {
       const youngest = p.ages[0];
       const peak = [...p.ages].sort((a, b) => b.productsPerMember - a.productsPerMember)[0];
       const flows = {
-        id: blockId(), type: 'chart', version: '2.0.0', title: `Joined and left by month`, subtitle: `${Who} who joined and ${who} whose memberships closed, each month${scopeWord ? `, ${scopeWord}` : ''}.`,
+        id: blockId(), type: 'chart', version: '2.0.0', title: `Joined and left by month`, subtitle: `${Who} who joined and ${who} whose ${deps.person === 'customer' ? 'relationships' : 'memberships'} closed, each month${scopeWord ? `, ${scopeWord}` : ''}.`,
         provenance: { agent: 'DI', operations: ['mem.growth'], sources: [] }, freshness: { kind: 'workflow_event' },
         data: { chartType: 'bar', dataset: { dimensions: [{ name: 'label', displayName: 'Month', type: 'ordinal' }, { name: 'joined', displayName: 'Joined', type: 'number' }, { name: 'left', displayName: 'Left', type: 'number' }], source: g.months.slice(-12).map((m) => [m.label, m.joined, m.left]) }, series: [{ name: 'Joined', encode: { x: 'label', y: 'joined' } }, { name: 'Left', encode: { x: 'label', y: 'left' } }], axes: { y: [{ unit: 'count' }] }, legend: true },
         a11y: { summary: `Bar chart of ${who} joining and leaving each month: ${n0(g.joined)} joined and ${n0(g.left)} left over twelve months.` },
@@ -305,8 +305,8 @@ export function createAppViews(deps: ViewDeps) {
       const depthCols: ColumnSpec[] = [{ field: 'members', headerName: Who, type: 'count' }, text('checking', 'Checking'), text('loan', 'A loan'), text('dd', 'Direct deposit'), text('digital', 'Digital, active'), text('ppm', 'Products each')];
       const depthRow = (d: { members: number; checking: number; loan: number; directDeposit: number; digital: number; productsPerMember: number }) => ({ members: d.members, checking: p1(d.checking), loan: p1(d.loan), dd: p1(d.directDeposit), digital: p1(d.digital), ppm: d.productsPerMember.toFixed(2) });
       return {
-        title: `Membership growth & penetration${scopeWord ? ` · ${scopeWord}` : ''}`,
-        lede: `Who joined, who left and why, and how deep ${deps.person === 'customer' ? 'customer' : 'member'} relationships are, from the month-end ${deps.person === 'customer' ? 'customer' : 'member'} history and the core’s closed-membership extract (latest ${g.latest.label}).`,
+        title: `${deps.person === 'customer' ? 'Customer' : 'Membership'} growth & penetration${scopeWord ? ` · ${scopeWord}` : ''}`,
+        lede: `Who joined, who left and why, and how deep ${deps.person === 'customer' ? 'customer' : 'member'} relationships are, from the month-end ${deps.person === 'customer' ? 'customer' : 'member'} history and the core’s ${deps.person === 'customer' ? 'closed-relationship' : 'closed-membership'} extract (latest ${g.latest.label}).`,
         take: {
           headline: `${Who} grew ${p1(g.netGrowthPct)} over the year to ${n0(g.members)}: ${n0(g.joined)} joined and ${n0(g.left)} left, an attrition rate of ${p1(g.attritionPct)}${g.attritionPct >= lo && g.attritionPct <= hi ? `, within the usual ${lo}–${hi}%` : ''}. ${p1(x.firstYearPct)} of those who left had joined within a year. ${youngest && peak ? `${who[0]!.toUpperCase()}${who.slice(1)} aged ${youngest.band} hold ${youngest.productsPerMember.toFixed(2)} products against ${peak.productsPerMember.toFixed(2)} at ${peak.band}.` : ''}`,
           action: { label: `Why are ${who} leaving?`, ask: `Why are ${who} leaving?` },

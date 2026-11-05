@@ -270,7 +270,8 @@ export function generateFfiecCallReport(t: GeneratedTenant) {
   const cre = (nonOwnerCre / capitalBase) * 100;
   // Every line that needs an explanation: large balance-sheet moves, and the items whose quality edit failed.
   const needs = [...new Set([...moved, ...(Math.abs(uninsuredMove) >= 15 ? ['RCON5597'] : []), ...(Math.abs(nonaccrualMove) >= 25 ? ['RCON1403'] : [])])];
-  const open = needs.filter((c) => !explained.has(c));
+  const openMoved = moved.filter((c) => !explained.has(c));
+  const openQuality = needs.filter((c) => !moved.includes(c) && !explained.has(c));
   const checks: [string, string, string, string, string | null, string | null][] = [
     ['RC: total assets equal the asset items', 'Pass', `RCON2170 is ${money(g('RCON2170'))}.`, 'Error', 'V-RC-01', 'RCON2170'],
     ['RC: total liabilities and equity equal total assets', 'Pass', `RCON3300 and RCON2170 are both ${money(g('RCON2170'))}.`, 'Error', 'V-RC-02', 'RCON3300,RCON2170'],
@@ -283,9 +284,10 @@ export function generateFfiecCallReport(t: GeneratedTenant) {
     ['RC-E: transaction and nontransaction add up to total deposits', 'Pass', `RCON2215 ${money(g('RCON2215'))} plus RCON2385 ${money(g('RCON2385'))}.`, 'Error', 'V-RCE-01', 'RCON2215,RCON2385,RCON2200'],
     ['RC-R: the leverage ratio meets the community bank leverage ratio', 'Pass', `${g('RCON7204').toFixed(2)}% against the 8% required from July 1, 2026.`, 'Error', 'V-RCR-01', 'RCON7204,RCONLE74'],
     ['GL accounts categorized', 'Fail', `${UNMAPPED_GL.length} uncategorized GL accounts, totalling ${money(unmapped)}.`, 'Error', null, null],
-    ['Nonaccrual loans moved less than 25% from Q2 2026', Math.abs(nonaccrualMove) < 25 ? 'Pass' : 'Fail', `RCON1403 ${money(g('RCON1403'))}, ${nonaccrualMove >= 0 ? 'up' : 'down'} ${Math.abs(nonaccrualMove).toFixed(1)}% from ${money(p('RCON1403'))}.`, 'Warning', 'Q-RCN-01', 'RCON1403'],
-    ['Uninsured deposits moved less than 15% from Q2 2026', Math.abs(uninsuredMove) < 15 ? 'Pass' : 'Fail', `RCON5597 ${money(g('RCON5597'))}, ${uninsuredMove >= 0 ? 'up' : 'down'} ${Math.abs(uninsuredMove).toFixed(1)}%.`, 'Warning', 'Q-RCO-01', 'RCON5597'],
-    ['Large balance changes are explained', open.length ? 'Fail' : 'Pass', open.length ? `${open.length} of ${needs.length} items that moved enough to need an explanation still have none: ${open.join(', ')}.` : `All ${needs.length} items that moved enough to need an explanation have one.`, 'Warning', null, needs.join(',')],
+    ['Nonaccrual loans moved less than 25% from Q2 2026', Math.abs(nonaccrualMove) < 25 ? 'Pass' : 'Fail', `Nonaccrual loans (RCON1403) are ${money(g('RCON1403'))}, ${nonaccrualMove >= 0 ? 'up' : 'down'} ${Math.abs(nonaccrualMove).toFixed(1)}% from ${money(p('RCON1403'))}${Math.abs(nonaccrualMove) >= 25 ? ', so they need an explanation' : ''}.`, 'Warning', 'Q-RCN-01', 'RCON1403'],
+    ['Uninsured deposits moved less than 15% from Q2 2026', Math.abs(uninsuredMove) < 15 ? 'Pass' : 'Fail', `Uninsured deposits (RCON5597) are ${money(g('RCON5597'))}, ${uninsuredMove >= 0 ? 'up' : 'down'} ${Math.abs(uninsuredMove).toFixed(1)}% from ${money(p('RCON5597'))}${Math.abs(uninsuredMove) >= 15 ? ', so they need an explanation' : ''}.`, 'Warning', 'Q-RCO-01', 'RCON5597'],
+    // Balance-sheet moves only: items flagged by a quality edit are counted there, not twice.
+    ['Large balance changes are explained', openMoved.length ? 'Fail' : 'Pass', `${openMoved.length ? `${openMoved.length} of ${moved.length} balance-sheet lines that moved more than 10% and $1M still need an explanation: ${openMoved.join(', ')}.` : `Every balance-sheet line that moved more than 10% and $1M has an explanation${moved.length ? '' : ' (none did)'}.`}${openQuality.length ? ` ${openQuality.join(' and ')} also ${openQuality.length === 1 ? 'needs one for its quality edit' : 'need one for their quality edits'}.` : ''}`, 'Warning', null, needs.join(',')],
     ['CRE concentration under 300% of capital', cre < 300 ? 'Pass' : 'Fail', `Non-owner-occupied commercial real estate ${money(nonOwnerCre)} is ${cre.toFixed(0)}% of Tier 1 capital plus the allowance (interagency guidance: 300%).`, 'Warning', null, 'RCONF159,RCON1460,RCONF161,RCON8274,RCON3123'],
   ];
   const explanations = needs.map((code) => [code, FFIEC_FILING.periodEnd, explained.get(code) ?? null, explained.has(code) ? 'Written' : 'Needed', explained.has(code) ? 'Elena Ortiz' : null]);

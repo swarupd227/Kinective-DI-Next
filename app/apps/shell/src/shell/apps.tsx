@@ -46,6 +46,10 @@ export interface AppMeta {
 
 const i = (Icon: typeof Home) => <Icon size={18} aria-hidden />;
 
+/** A bank has customers, not members: the few page names that say so. */
+const BANK_LABELS: Record<string, string> = { membership: 'Customer Growth' };
+export const appLabel = (app: string, bank: boolean) => (bank ? BANK_LABELS[app] : undefined) ?? APP_META[app]?.label ?? app;
+
 export const APP_META: Record<string, AppMeta> = {
   home: { label: 'Home', icon: i(Home), path: '/home', group: 'core' },
   conversations: { label: 'All tasks', icon: i(MessagesSquare), path: '/c', group: 'core' },

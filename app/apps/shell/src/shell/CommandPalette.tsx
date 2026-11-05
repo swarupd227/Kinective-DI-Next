@@ -8,7 +8,7 @@ import { Building2, FileBarChart, Landmark, LayoutDashboard, LayoutGrid, MapPin,
 import { usePreferences } from '@dinext/ui';
 import type { SearchResult, SearchResultKind } from '@dinext/block-schemas';
 import { useSession } from '../session/SessionProvider.tsx';
-import { APP_META } from './apps.tsx';
+import { APP_META, appLabel } from './apps.tsx';
 import { SLASH_HELP } from './commands.ts';
 import { looksLikeQuestion, startsWords } from './searchMatch.ts';
 import { useUi } from './uiStore.ts';
@@ -33,7 +33,7 @@ const PAGE_WORDS: Partial<Record<string, string>> = {
   gi: 'payouts incentives goals scorecards',
   callreport: 'ncua call report 5300 ffiec 051 041 rcon riad regulatory report cdr',
   delinquency: 'delinquency past due aging roll rates vintage collections charge-offs 30+ 60+',
-  membership: 'membership growth member penetration attrition churn members left net growth products per member cross-sell checking direct deposit digital adoption age',
+  membership: 'membership growth customer growth customers member penetration attrition churn members left net growth products per member cross-sell checking direct deposit digital adoption age',
   liquidity: 'liquidity borrowing capacity fhlb discount window contingency funding cash flow ladder deposit run clf',
   irr: 'interest rate risk alm alco nev eve nii at risk rate shock repricing gap sensitivity',
   lap: 'pipeline applications loans mortgages',
@@ -105,7 +105,8 @@ export function CommandPalette() {
   const grouped = KIND_ORDER.map((k) => [k, results.filter((r) => r.kind === k)] as const).filter(([, items]) => items.length > 0);
   const question = looksLikeQuestion(query);
   // Until the person picks, Enter opens the best match, or asks DI when it's a question or nothing matches.
-  const apps = session.apps.filter((a) => APP_META[a] && match(`${APP_META[a]!.label} ${PAGE_WORDS[a] ?? ''}`));
+  const bank = session.tenant.institutionType === 'bank';
+  const apps = session.apps.filter((a) => APP_META[a] && match(`${appLabel(a, bank)} ${PAGE_WORDS[a] ?? ''}`));
   const dashboards = match('all dashboards browse');
   // Pages come first once something is typed: "5300" opens the Call Report, not a member whose number ends 5300.
   const best = q && apps[0] ? `app:${apps[0]}` : grouped[0] ? `${grouped[0][1][0]!.kind}:${grouped[0][1][0]!.id}` : q && dashboards ? 'app:dashboards' : null;
@@ -118,7 +119,7 @@ export function CommandPalette() {
       {apps.map((a) => (
         <Command.Item key={a} value={`app:${a}`} onSelect={() => go(APP_META[a]!.path)} className={styles.item}>
           <span className={styles.icon}>{APP_META[a]!.icon}</span>
-          <span className={styles.label}>{APP_META[a]!.label}</span>
+          <span className={styles.label}>{appLabel(a, bank)}</span>
         </Command.Item>
       ))}
       {dashboards && (
