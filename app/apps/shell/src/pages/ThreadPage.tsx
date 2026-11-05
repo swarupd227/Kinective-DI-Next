@@ -178,7 +178,7 @@ export function ThreadPage() {
           <h1 className={styles.title}>{summary.data.title}</h1>
           {hasPlan && (
             <Button size="sm" variant="ghost" icon={<ListChecks size={14} aria-hidden />} onClick={openTask}>
-              Progress
+              Show steps
             </Button>
           )}
         </header>

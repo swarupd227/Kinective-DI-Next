@@ -35,7 +35,7 @@ describe('asking for the day', () => {
 
   it('puts the overdue referral first, and says how late it is', () => {
     const item = (over: Partial<InboxItem>) => ({ comId: 1, name: 'Nora Chen', typeLabel: 'Retention follow-up', overdue: true, dueAt: new Date(Date.now() - 2.5 * 86_400_000).toISOString(), priority: 'High', assignee: { employeeId: 4, name: 'Sofia Ruiz' }, ...over }) as InboxItem;
-    expect(referralTake([item({}), item({ comId: 2, name: 'Grace Okafor', priority: 'Normal', dueAt: new Date().toISOString() })], true)).toEqual({ headline: 'Nora Chen’s retention follow-up comes first: overdue by 3 days. 2 are overdue in all.', action: { label: 'Prepare me', ask: 'Prepare me for my meeting with Nora Chen' } });
+    expect(referralTake([item({}), item({ comId: 2, name: 'Grace Okafor', priority: 'Normal', dueAt: new Date().toISOString() })], true)).toEqual({ headline: 'Nora Chen’s retention follow-up comes first: overdue by 3 days. 2 are overdue in all.', action: { label: 'Prepare me for the meeting', ask: 'Prepare me for my meeting with Nora Chen' } });
     expect(referralTake([item({})], false).headline).toContain('with Sofia Ruiz');
     expect(referralTake([], true).action).toBeUndefined();
   });
@@ -47,7 +47,7 @@ describe('DI’s view of a record', () => {
 
   it('leads with the most serious alert, then what to raise first', () => {
     const p = profile({ alerts: [{ code: 'closed_accounts', label: '1 account closed', tone: 'info' }, { code: 'balance_drop', label: 'Deposits down 30% in 30 days', tone: 'warning' }] });
-    expect(memberTake(p, [topic('pending_application', 'HELOC application is pending')])).toEqual({ headline: 'Deposits down 30% in 30 days. Suzanne’s HELOC application is pending.', action: { label: 'Prepare me', ask: 'Prepare me for my meeting with Suzanne Jackson' } });
+    expect(memberTake(p, [topic('pending_application', 'HELOC application is pending')])).toEqual({ headline: 'Deposits down 30% in 30 days. Suzanne’s HELOC application is pending.', action: { label: 'Prepare me for the meeting', ask: 'Prepare me for my meeting with Suzanne Jackson' } });
   });
 
   it('says a risk once, with the reason behind it', () => {
@@ -83,7 +83,7 @@ describe('DI’s view of a record', () => {
     const s = (report: string, lastResult: 'ok' | 'failed' | null, lastRunAt: string | null) => ({ report, lastResult, lastRunAt });
     expect(reportsTake([{ name: 'Mine', status: 'draft' }], [s('ALCO', 'failed', '2026-10-30')]).headline).toBe('Your ALCO schedule failed on its last run.');
     expect(reportsTake([{ name: 'Mine', status: 'draft' }], [s('ALCO', 'ok', '2026-10-30')]).headline).toBe('Your draft Mine is waiting to be finished.');
-    expect(reportsTake([], [s('ALCO', 'ok', '2026-10-29'), s('Scorecard', 'ok', '2026-10-30')])).toEqual({ headline: 'All 2 of your scheduled reports ran. Scorecard is the latest.', action: { label: 'Open it', ask: 'Open the Scorecard report' } });
+    expect(reportsTake([], [s('ALCO', 'ok', '2026-10-29'), s('Scorecard', 'ok', '2026-10-30')])).toEqual({ headline: 'All 2 of your scheduled reports ran. Scorecard is the latest.', action: { label: 'Open the report', ask: 'Open the Scorecard report' } });
     expect(reportsTake([], []).action).toBeUndefined();
   });
 });
@@ -184,7 +184,7 @@ describe.skipIf(!up)('the day against the warehouse', () => {
     expect(own.headline).toMatch(/have stalled\. .+ matters most: \d+ days/);
     expect(own.action?.ask).toMatch(/^Why is application #\d+ stuck\?$/);
     const lead = pipelineTake(await pipeline.find({ view: 'location', stalledOnly: true }, { employeeId: 6, leads: true, details: true }, { purviewBranches: westport }), false);
-    expect(lead.action).toMatchObject({ label: 'Create follow-ups for the top 3' });
+    expect(lead.action).toMatchObject({ label: 'Create follow-ups for the 3 most stalled' });
     expect(parsePipelineRequest(lead.action!.ask)).toMatchObject({ intent: 'tasks' });
     const totals = pipelineTake(await pipeline.find({ view: 'institution', stalledOnly: true }, { details: false }, {}), false);
     expect(totals.headline).toMatch(/applications have stalled, worth/);

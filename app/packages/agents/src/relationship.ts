@@ -422,14 +422,14 @@ function withReferActions<T extends ReturnType<typeof memberCard>>(card: T, prof
   return {
     ...card,
     actions: [
-      { id: 'open', kind: 'open_record', label: 'Open 360', params: { memberRef: profile.token, label: profile.name } },
+      { id: 'open', kind: 'open_record', label: 'Open full record', params: { memberRef: profile.token, label: profile.name } },
       ...refer.map((o) => ({ id: `refer_${o.referralTypeId}`, kind: 'run_operation' as const, label: `Refer: ${o.product}`.slice(0, 40), operation: 'referral.create', riskTier: 'medium' as const, params: { memberRef: profile.token, label: profile.name, question: `Open a ${o.product} referral for ${profile.name}` } })),
     ],
   };
 }
 
 function chooseActions<T extends ReturnType<typeof matchCard>>(card: T, name: string): T {
-  return { ...card, actions: [{ id: 'choose', kind: 'open_record', label: 'Choose', params: { memberRef: card.data.memberRef, label: name } }] };
+  return { ...card, actions: [{ id: 'choose', kind: 'open_record', label: 'Open this record', params: { memberRef: card.data.memberRef, label: name } }] };
 }
 
 // ---- offline planner (spec 23.6.4) ------------------------------------------------------------

@@ -205,7 +205,7 @@ export function reportsTake(templates: { name: string; status: string }[], sched
   const draft = templates.find((t) => t.status === 'draft');
   if (draft) return { headline: `Your draft ${draft.name} is waiting to be finished.`, action: { label: 'Open the draft', ask: `Open the ${draft.name} report` } };
   const ran = schedules.filter((s) => s.lastRunAt).sort((a, b) => b.lastRunAt!.localeCompare(a.lastRunAt!));
-  if (ran[0]) return { headline: `${ran.length === 1 ? 'Your scheduled report' : `All ${ran.length} of your scheduled reports`} ran. ${ran[0].report} is the latest.`, action: { label: 'Open it', ask: `Open the ${ran[0].report} report` } };
+  if (ran[0]) return { headline: `${ran.length === 1 ? 'Your scheduled report' : `All ${ran.length} of your scheduled reports`} ran. ${ran[0].report} is the latest.`, action: { label: 'Open the report', ask: `Open the ${ran[0].report} report` } };
   if (schedules.length) return { headline: `${schedules.length === 1 ? 'Your scheduled report runs' : `Your ${schedules.length} scheduled reports run`} after tonight’s build.` };
   return { headline: 'Nothing is scheduled for you yet. Open a report and ask DI to send it to you.' };
 }
@@ -789,7 +789,7 @@ export class ReportGateway {
               runId: ctx.runId,
               user: ctx.user,
               title: 'Schedule report',
-              summary: `Send “${t.name}” ${when.toLowerCase()}, after the nightly build, to ${count} ${count === 1 ? 'recipient' : 'recipients'}`,
+              summary: `Send “${t.name}” ${when.replace(/^./, (c) => c.toLowerCase())}, after the nightly build, to ${count} ${count === 1 ? 'recipient' : 'recipients'}`,
               fields: [
                 { label: 'Report', value: t.name },
                 { label: 'When', value: `${when}, after the nightly build completes` },
@@ -816,7 +816,7 @@ export class ReportGateway {
           if (s.ownerUserId !== ctx.user.id || s.status !== 'active') return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: 'No active schedule of yours with that ID.' } };
           const payload: CancelPayload = { scheduleId: s.scheduleId, templateName: s.templateName };
           const { approval, superseded } = await approve(payload, tierOf());
-          const c = card({ approval, runId: ctx.runId, user: ctx.user, title: 'Stop schedule', summary: `Stop sending “${s.templateName}” ${describeSchedule(s).toLowerCase()}`, fields: [{ label: 'Report', value: s.templateName }, { label: 'Schedule', value: `${describeSchedule(s)}, ${FORMAT_LABEL[s.format]}` }, { label: 'Recipients', value: `${s.recipientCount}` }], records: 1, users: s.recipientCount, external: 0 }, def.operation);
+          const c = card({ approval, runId: ctx.runId, user: ctx.user, title: 'Stop schedule', summary: `Stop sending “${s.templateName}” ${describeSchedule(s).replace(/^./, (c) => c.toLowerCase())}`, fields: [{ label: 'Report', value: s.templateName }, { label: 'Schedule', value: `${describeSchedule(s)}, ${FORMAT_LABEL[s.format]}` }, { label: 'Recipients', value: `${s.recipientCount}` }], records: 1, users: s.recipientCount, external: 0 }, def.operation);
           return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId }, card: c, approval, superseded };
         }
         case 'report.share': {

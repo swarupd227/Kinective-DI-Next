@@ -15,6 +15,8 @@ export function DiTake({ take, more }: { take: Take; more?: string[] }) {
       more={more}
       busy={busy}
       onAct={(ask) => {
+        // A half sentence ("Create a task to ") is for the user to finish, so it opens as a draft.
+        if (/\s$/.test(ask)) return void navigate('/c/new', { state: { draft: ask } });
         setBusy(true);
         void startThread(ask).then((t) => navigate(`/c/${t}`), () => setBusy(false));
       }}

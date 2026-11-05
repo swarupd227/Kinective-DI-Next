@@ -118,7 +118,7 @@ export function createAppViews(deps: ViewDeps) {
       return {
         title: 'Tables',
         lede: 'Curated tables from the nightly build, and the saved views and snapshots made from them.',
-        take: { headline: saved.length ? `${count(saved.length, 'saved view, snapshot or uploaded table', 'saved views, snapshots and uploaded tables')} you can open${bin.length ? `, and ${count(bin.length, 'item')} in your Recycle Bin` : ''}.` : 'No saved views, snapshots or uploaded tables yet. Ask DI to snapshot a table, merge two into a saved view, or load a file on Integrations.', action: { label: 'Profile Loan Accounts', ask: 'Profile the Loan Accounts table' } },
+        take: { headline: saved.length ? `${count(saved.length, 'saved view, snapshot or uploaded table', 'saved views, snapshots and uploaded tables')} you can open${bin.length ? `, and ${count(bin.length, 'item')} in your Recycle Bin` : ''}.` : 'No saved views, snapshots or uploaded tables yet. Ask DI to snapshot a table, merge two into a saved view, or load a file on Integrations.', action: { label: 'Summarise Loan Accounts', ask: 'Profile the Loan Accounts table' } },
         tiles: [{ label: 'Curated tables', value: String(svc.catalog.length) }, { label: 'Saved views', value: String(views) }, { label: 'Snapshots', value: String(saved.filter((o) => o.kind === 'Snapshot').length) }, ...(saved.some((o) => o.kind === 'Upload') ? [{ label: 'Uploaded tables', value: String(saved.filter((o) => o.kind === 'Upload').length) }] : []), { label: 'Recycle Bin', value: String(bin.length) }],
         prompts: ['Which tables link to Loan Accounts?', 'Snapshot the Loan Accounts table', 'Show my saved views and snapshots', ...bin.slice(0, 3).map((o) => (o.kind === 'View' ? `Restore the ${o.name} view` : `Restore ${o.name}`))],
         notice: 'Curated tables come from the core system in each nightly build, so their rows can’t be added or edited here. Uploaded tables are your own data, loaded from a file on Integrations. Comparing two snapshots isn’t built yet.',
@@ -154,7 +154,7 @@ export function createAppViews(deps: ViewDeps) {
       return {
         title: 'Queries',
         lede: 'Run read-only SQL over curated tables. Up to 500 rows.',
-        take: { headline: `${count(SAVED_QUERIES.length, 'saved query', 'saved queries')} ready to run. For most questions, asking DI is quicker.`, action: { label: 'Ask DI instead', ask: 'Show loan growth by branch for Q3 vs Q2' } },
+        take: { headline: `${count(SAVED_QUERIES.length, 'saved query', 'saved queries')} ready to run. For most questions, asking DI is quicker.`, action: { label: 'Ask: loan growth by branch', ask: 'Show loan growth by branch for Q3 vs Q2' } },
         tiles: [],
         prompts: [],
         blocks: [],
@@ -175,7 +175,7 @@ export function createAppViews(deps: ViewDeps) {
         lede: 'Everyone with DI access, their class and their purview. Ask DI to add, change or offboard someone; access changes need a second approver.',
         take: {
           headline: `${count(all.length, 'user')} in ${count(classes.size, 'class', 'classes')}${locked.length ? `, ${locked.length} locked` : ', none locked'}.${shared.length ? ` ${shared.map((n) => `“${n}”`).join(' and ')} ${shared.length === 1 ? 'is' : 'are'} shared by more than one person, so check the user ID before you change one.` : ''}`,
-          action: { label: 'Offboard a leaver', ask: 'Sofia Ruiz has left the credit union. Remove her access' },
+          action: { label: 'Remove Sofia Ruiz’s access', ask: 'Sofia Ruiz has left the credit union. Remove her access' },
         },
         tiles: [{ label: 'Users', value: String(all.length) }, { label: 'Classes', value: String(classes.size) }, { label: 'Locked', value: String(locked.length), tone: locked.length ? 'danger' : 'neutral' }],
         prompts: ['Why can’t Tom Walsh see the Westport referrals?', 'Change Ana Ruiz at Westport to the Manager class', 'Who hasn’t signed in for 90 days?', 'Create a user for Maria Gomez as a Westport MSR'],
@@ -225,7 +225,7 @@ export function createAppViews(deps: ViewDeps) {
       return {
         title: 'SEG Management',
         lede: 'Select employee groups and their progress.',
-        take: { headline: top ? `${top.name} added the most members, with ${top.newMembers} new.` : 'No SEGs are set up.', action: { label: 'Prepare a SEG meeting', ask: 'Prepare me for my SEG meeting with Albany Medical' } },
+        take: { headline: top ? `${top.name} added the most members, with ${top.newMembers} new.` : 'No SEGs are set up.', action: { label: 'Prepare for Albany Medical', ask: 'Prepare me for my SEG meeting with Albany Medical' } },
         tiles: [{ label: 'Companies', value: String(list.length) }, { label: 'SEG members', value: list.reduce((n, c) => n + c.members, 0).toLocaleString('en-US') }, { label: 'New members', value: String(list.reduce((n, c) => n + c.newMembers, 0)) }, { label: 'Loans', value: usd(list.reduce((n, c) => n + c.loans, 0)) }],
         prompts: ['Which SEGs had the most new members?', 'Prepare me for my SEG meeting with Albany Medical'],
         blocks: [table('SEG companies', 'seg.performance', [text('name', 'Company'), text('stage', 'Stage'), { field: 'members', headerName: 'Members', type: 'count' }, { field: 'newMembers', headerName: 'New', type: 'count' }, { field: 'loans', headerName: 'Loans', type: 'currency' }, { field: 'deposits', headerName: 'Deposits', type: 'currency' }], list.map(({ name, stage, members, newMembers, loans, deposits }) => ({ name, stage, members, newMembers, loans, deposits })))],
@@ -279,7 +279,7 @@ export function createAppViews(deps: ViewDeps) {
       return {
         title: 'Indirect Lending',
         lede: `Dealer performance for ${p.label}, against ${p.priorLabel}.`,
-        take: { headline: p.partial ? `${count(sum('funded'), 'loan')} funded through dealers in ${p.label}, against ${prior} in all of ${p.priorLabel}. ${p.dealers.sort((x, y) => y.funded - x.funded)[0]?.name ?? ''} leads so far.` : `${count(sum('funded'), 'loan')} funded through dealers in ${p.label}, ${sum('funded') >= prior ? 'up' : 'down'} from ${prior}.${drop ? ` ${drop.name} fell most, to ${drop.funded} from ${drop.prior.funded}.` : ''}`, action: { label: 'Plan dealer visits', ask: `Plan visits for my top five dealers near ${p.dealers[0]?.branch ?? ''}` } },
+        take: { headline: p.partial ? `${count(sum('funded'), 'loan')} funded through dealers in ${p.label}, against ${prior} in all of ${p.priorLabel}. ${p.dealers.sort((x, y) => y.funded - x.funded)[0]?.name ?? ''} leads so far.` : `${count(sum('funded'), 'loan')} funded through dealers in ${p.label}, ${sum('funded') >= prior ? 'up' : 'down'} from ${prior}.${drop ? ` ${drop.name} fell most, to ${drop.funded} from ${drop.prior.funded}.` : ''}`, action: { label: 'Plan visits to my top 5 dealers', ask: `Plan visits for my top five dealers near ${p.dealers[0]?.branch ?? ''}` } },
         tiles: [{ label: 'Dealers', value: String(p.dealers.length) }, { label: 'Received', value: sum('received').toLocaleString('en-US') }, { label: 'Funded', value: sum('funded').toLocaleString('en-US') }, { label: 'Funded $', value: usd(sum('fundedAmount')) }],
         prompts: ['Which dealers had the biggest drop in funded loans this month?', 'How did Smith Ford do this quarter compared with last?', ...(deps.modules.includes('indirect-direct') ? ['How many indirect borrowers became direct members this year?'] : [])],
         notice: 'Dealer locations are shown as a visit list with miles between stops. A map isn’t built yet.',
@@ -294,7 +294,7 @@ export function createAppViews(deps: ViewDeps) {
       return {
         title: 'Prospecting',
         lede: 'Business prospects through the funnel.',
-        take: { headline: `${count(list.length, 'prospect')} in the funnel${due.length ? `, ${due.length} with a follow-up due` : ''}.${biggest ? ` The largest is ${biggest.company}, in ${biggest.stage}.` : ''}`, action: { label: 'Plan a route', ask: `Plan a route to prospects within 10 miles of ${biggest?.branch ?? ''}` } },
+        take: { headline: `${count(list.length, 'prospect')} in the funnel${due.length ? `, ${due.length} with a follow-up due` : ''}.${biggest ? ` The largest is ${biggest.company}, in ${biggest.stage}.` : ''}`, action: { label: 'Route to nearby prospects', ask: `Plan a route to prospects within 10 miles of ${biggest?.branch ?? ''}` } },
         tiles: funnel.map((f) => ({ label: f.stage, value: String(f.count) })),
         prompts: ['Show my prospects in Qualified with assets over $5 million', 'What’s our conversion from Prospect to Application this quarter?'],
         notice: 'Routes are shown as a list with miles and a directions link. A map isn’t built yet.',
@@ -309,7 +309,7 @@ export function createAppViews(deps: ViewDeps) {
       return {
         title: 'Campaign Success',
         lede: 'Campaigns by the loans they produced. Attribution uses each campaign’s response window.',
-        take: { headline: list[0] ? `${list[0].name} produced the most loan dollars, ${usd(list[0].dollars)}. ${best && best.name !== list[0].name ? `${best.name} had the best response, ${Math.round((best.applications / best.sent) * 1000) / 10}% of those sent applied.` : ''}` : 'No campaigns have run.', action: { label: 'Build an audience', ask: 'Build an audience of members with no auto loan' } },
+        take: { headline: list[0] ? `${list[0].name} produced the most loan dollars, ${usd(list[0].dollars)}. ${best && best.name !== list[0].name ? `${best.name} had the best response, ${Math.round((best.applications / best.sent) * 1000) / 10}% of those sent applied.` : ''}` : 'No campaigns have run.', action: { label: 'Find members with no auto loan', ask: 'Build an audience of members with no auto loan' } },
         tiles: [{ label: 'Campaigns', value: String(list.length) }, { label: 'Sent', value: sum('sent').toLocaleString('en-US') }, { label: 'Applications', value: sum('applications').toLocaleString('en-US') }, { label: 'Loan dollars', value: usd(sum('dollars')) }],
         prompts: ['Which campaigns produced the most loan dollars?', 'Build an audience of members with no auto loan'],
         blocks: [bar('Loan dollars by campaign', 'campaign.results', list.map((c) => [c.name, c.dollars]), 'currency', 'Loan dollars'), table('Campaigns', 'campaign.results', [text('name', 'Campaign'), text('channel', 'Channel'), text('product', 'Product'), { field: 'sent', headerName: 'Sent', type: 'count' }, { field: 'applications', headerName: 'Applications', type: 'count' }, text('response', 'Response'), { field: 'dollars', headerName: 'Loan dollars', type: 'currency' }], list.map((c) => ({ name: c.name, channel: c.channel, product: c.product, sent: c.sent, applications: c.applications, response: `${Math.round((c.applications / c.sent) * 1000) / 10}%`, dollars: c.dollars })))],
@@ -399,7 +399,7 @@ export function createAppViews(deps: ViewDeps) {
       return {
         title: 'Integrations',
         lede: `Where the data comes from, and how the latest loads went. Data as of ${day(build.asOf)}.`,
-        take: { headline: (build.stale ? `No new build for ${build.ageDays} days; the latest finished ${day(build.finishedOn)}, with data as of ${day(build.asOf)}. ` : '') + (late.length ? `${count(late.length, 'source')} arrived late: ${late.map((u) => `${u.source}, due ${u.dueBy}, arrived ${u.arrived}`).join('; ')}. The build ${build.state} with what was there.` : `Every source arrived on time, and the build ${build.state}.`), action: { label: 'Which uploaders were late?', ask: 'Which uploaders missed their late-file time?' } },
+        take: { headline: (build.stale ? `No new build for ${build.ageDays} days; the latest finished ${day(build.finishedOn)}, with data as of ${day(build.asOf)}. ` : '') + (late.length ? `${count(late.length, 'source')} arrived late: ${late.map((u) => `${u.source}, due ${u.dueBy}, arrived ${u.arrived}`).join('; ')}. The build ${build.state} with what was there.` : `Every source arrived on time, and the build ${build.state}.`), action: { label: 'Which data files arrived late?', ask: 'Which uploaders missed their late-file time?' } },
         tiles: [{ label: 'Sources', value: String(build.uploads.length) }, { label: 'Late', value: String(late.length), tone: late.length ? 'warning' : 'neutral' }, build.stale ? { label: 'Since the last build', value: `${build.ageDays} days`, detail: `Finished ${day(build.finishedOn)}`, tone: 'danger' as const } : { label: 'Last build', value: title(build.state), detail: day(build.asOf) }],
         prompts: ['Which uploaders missed their late-file time?', build.stale ? 'Why hasn’t a new build run?' : 'Did last night’s build finish?'],
         notice: `Connect the core’s reporting replica below with a read-only login: DI tests it, maps its tables and checks every row before anything changes. Or load a CSV or Excel file into a table of your own.${feeding ? ` Members, deposits and loans load from the ${feeding.name} from the next build.` : ''}`,
@@ -438,7 +438,7 @@ export function createAppViews(deps: ViewDeps) {
       return {
         title: 'Workflow Builder',
         lede: 'Workflow definitions: fields, stages and routing. Describe a workflow or a change; it becomes a draft, and nothing is live until it’s published.',
-        take: { headline: `${count(live.length, 'live workflow')}${drafts.length ? ` and ${count(drafts.length, 'draft')}: ${drafts.map((d) => d.name).join(', ')}` : ''}. ${live.reduce((n, d) => n + d.openItems, 0)} open items run on them.`, action: { label: 'Describe a new workflow', ask: 'Create a workflow for branch maintenance requests with category, location, urgency and photo, routed to Facilities by location' } },
+        take: { headline: `${count(live.length, 'live workflow')}${drafts.length ? ` and ${count(drafts.length, 'draft')}: ${drafts.map((d) => d.name).join(', ')}` : ''}. ${live.reduce((n, d) => n + d.openItems, 0)} open items run on them.`, action: { label: 'Try a sample workflow', ask: 'Create a workflow for branch maintenance requests with category, location, urgency and photo, routed to Facilities by location' } },
         tiles: [{ label: 'Live', value: String(live.length) }, { label: 'Drafts', value: String(drafts.length), tone: drafts.length ? 'warning' : 'neutral' }, { label: 'Open items', value: String(live.reduce((n, d) => n + d.openItems, 0)) }],
         prompts: ['Create a workflow for branch maintenance requests with category, location, urgency and photo, routed to Facilities by location', 'Add a "Waiting on member" stage between Active and Sold for referrals', 'Show the referral form', 'Move Best time to contact above Preferred contact method on the referral form', 'Show the worksheet for HELOC', ...drafts.map((d) => `Test the routing for the ${d.name} workflow`)],
         notice: 'Publishing records the definition and creates its queue. A stage published on the Referral workflow appears on every referral’s stage bar. Form layouts change by asking DI, with a preview of the form before you approve.',

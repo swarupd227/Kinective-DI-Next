@@ -153,7 +153,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       permissions: { queryBrowser: true, dashboardAdmin: true },
     },
     modules: ['governance', 'tasks', 'mytime', 'workflow-builder', 'form-layout', 'calendar', 'files', 'files-board', 'lineage', 'ai-admin', 'datalogs', 'datalogs-approve', 'operations', 'admin', 'tables', 'dataload', 'sources'],
-    suggestions: ['Did last night\'s build finish?', 'Create a user for Maria Gomez as a Westport MSR', 'Which uploaders missed their late-file time?', 'Who can approve incentives?', 'Show AI cost by agent for October', 'Show every high-risk approval made through agents', 'Run the protocol resilience test'],
+    suggestions: ['Did last night\'s build finish?', 'Create a user for Maria Gomez as a Westport MSR', 'Which uploaders missed their late-file time?', 'Who can approve incentives?', 'Show AI cost by agent for October', 'Show every high-risk approval made through agents'],
   },
 };
 

@@ -15,7 +15,7 @@ const GROUPS: { id: NotificationGroup | 'all'; label: string }[] = [
   { id: 'approvals', label: 'Approvals' },
   { id: 'workflow', label: 'Workflow' },
   { id: 'system', label: 'System' },
-  { id: 'agent_runs', label: 'Agent runs' },
+  { id: 'agent_runs', label: 'DI activity' },
 ];
 
 const icon: Record<NotificationGroup, typeof Bell> = { approvals: ShieldAlert, workflow: Inbox, system: TriangleAlert, agent_runs: Bot };

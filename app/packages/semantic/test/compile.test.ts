@@ -131,6 +131,12 @@ describe('catalog search (spec 23.5.3)', () => {
     expect(r.dimensions[0]!.name).toBe('branch');
   });
 
+  it('finds certificates maturing for ALCO, but not from "certificate" alone', () => {
+    expect(searchCatalog(cu, 'certificates maturing in the next 90 days', env.dimensionValues).metrics[0]!.name).toBe('certificates_maturing_90_days');
+    expect(searchCatalog(cu, 'upcoming CD maturities', env.dimensionValues).metrics[0]!.name).toBe('certificates_maturing_90_days');
+    expect(searchCatalog(cu, 'certificate share', env.dimensionValues).metrics.map((m) => m.name)).not.toContain('certificates_maturing_90_days');
+  });
+
   it('finds delinquency from everyday words', () => {
     expect(searchCatalog(cu, 'which branches have the most loans that are behind?', env.dimensionValues).metrics[0]!.name).toBe('delinquency_ratio_60_plus');
   });

@@ -201,13 +201,13 @@ export function goalsTake(mine: Scorecard | null, batches: PayoutBatch[] | null)
 
 export function pipelineTake(f: PipelineFound, own: boolean): DiTake {
   if (!f.count) return { headline: 'Nothing has stalled. The pipeline is moving.' };
-  if (f.detailsHidden) return { headline: `${f.count} applications have stalled, worth ${money(f.dollars)}. ${f.byProduct[0]!.product} is the largest group, with ${f.byProduct[0]!.count}.${mostWaitOn(f)}`, action: { label: 'Ask about the funnel', ask: 'Show the pipeline by product' } };
+  if (f.detailsHidden) return { headline: `${f.count} applications have stalled, worth ${money(f.dollars)}. ${f.byProduct[0]!.product} is the largest group, with ${f.byProduct[0]!.count}.${mostWaitOn(f)}`, action: { label: 'Show the pipeline by product', ask: 'Show the pipeline by product' } };
   const ranked = [...f.items].sort((a, b) => applicationWeight(b) - applicationWeight(a));
   const top = ranked[0]!;
   const n = Math.min(FOLLOW_UPS, ranked.length);
   const headline = `${f.count} ${f.count === 1 ? 'has' : 'have'} stalled. ${top.name}’s ${money(top.amount)} ${lower(top.product)} matters most: ${days(top.daysInStatus)} ${inStatus(top.status)}, over the ${top.threshold}-day threshold.${top.hold ? ` ${top.hold.label}.` : ''}${mostWaitOn(f)}`;
   if (own) return { headline, action: { label: 'Why is it stuck?', ask: `Why is application #${top.applicationId} stuck?` } };
-  return { headline, action: { label: `Create follow-ups for the top ${n}`, ask: `Create follow-up tasks for applications ${ranked.slice(0, n).map((a) => `#${a.applicationId}`).join(', ')}` } };
+  return { headline, action: { label: `Create follow-ups for the ${n} most stalled`, ask: `Create follow-up tasks for applications ${ranked.slice(0, n).map((a) => `#${a.applicationId}`).join(', ')}` } };
 }
 
 export function referralTake(items: InboxItem[], own: boolean, now = Date.now()): DiTake {
@@ -216,7 +216,7 @@ export function referralTake(items: InboxItem[], own: boolean, now = Date.now())
   if (!top) return { headline: items.length ? 'Nothing is overdue. Oldest work is first.' : 'Nothing is waiting.' };
   const who = own || !top.assignee ? '' : ` with ${top.assignee.name}`;
   const more = late.length > 1 ? ` ${late.length} are overdue in all.` : '';
-  return { headline: `${top.name}’s ${lower(top.typeLabel)}${who} comes first: overdue by ${days(overdueDays(top, now))}.${more}`, action: own ? { label: 'Prepare me', ask: `Prepare me for my meeting with ${top.name}${top.last4 ? `, ending ${top.last4}` : ''}` } : { label: 'Show what’s overdue', ask: 'Show my team’s overdue referrals' } };
+  return { headline: `${top.name}’s ${lower(top.typeLabel)}${who} comes first: overdue by ${days(overdueDays(top, now))}.${more}`, action: own ? { label: 'Prepare me for the meeting', ask: `Prepare me for my meeting with ${top.name}${top.last4 ? `, ending ${top.last4}` : ''}` } : { label: 'Show what’s overdue', ask: 'Show my team’s overdue referrals' } };
 }
 
 export interface TodayOutcome {

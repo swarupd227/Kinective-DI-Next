@@ -276,9 +276,9 @@ const traceAction = (sources: Block['provenance']['sources']): NonNullable<Block
 };
 
 const blockActions = (sources: Block['provenance']['sources']): Block['actions'] => [
-  { id: 'explain', kind: 'explain', label: 'Explain' },
-  { id: 'open', kind: 'open_workspace', label: 'Open grid' },
-  { id: 'pin', kind: 'pin', label: 'Pin', riskTier: 'low' },
+  { id: 'explain', kind: 'explain', label: 'How it’s calculated' },
+  { id: 'open', kind: 'open_workspace', label: 'See the rows' },
+  { id: 'pin', kind: 'pin', label: 'Pin to Home', riskTier: 'low' },
   { id: 'export', kind: 'export', label: 'Export' },
   ...traceAction(sources),
 ];
@@ -356,7 +356,7 @@ export function buildBlock(spec: BlockSpec, results: Map<string, SemanticResult>
       title: spec.title,
       provenance: prov,
       freshness: freshness(result),
-      actions: [{ id: 'explain', kind: 'explain', label: 'Explain' }, { id: 'pin', kind: 'pin', label: 'Pin', riskTier: 'low' }, ...traceAction(prov.sources)],
+      actions: [{ id: 'explain', kind: 'explain', label: 'How it’s calculated' }, { id: 'pin', kind: 'pin', label: 'Pin to Home', riskTier: 'low' }, ...traceAction(prov.sources)],
       data: { label: col.label, value, unit: unitOf(col.format), format: col.format === 'currency' ? { compact: true, decimals: 2 } : { decimals: col.format === 'percent_1' ? 1 : 2 }, comparison, metricRef: `metric:${spec.metric}` },
     };
     return block;

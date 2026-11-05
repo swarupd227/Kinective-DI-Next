@@ -99,7 +99,7 @@ describe.skipIf(!available)('Relationship agent, offline planner', () => {
     expect(card.data).toMatchObject({ displayName: 'Suzanne Jackson', maskedNumber: '…4521', selected: true, nextBest: ['Checking', 'Credit card'] });
     expect(JSON.stringify(card)).not.toMatch(/10004521|2004-02-20/);
     // "Refer" exists only for products with a referral type (FE-RM-004).
-    expect(card.actions?.map((a) => a.label)).toEqual(['Open 360', 'Refer: Credit card']);
+    expect(card.actions?.map((a) => a.label)).toEqual(['Open full record', 'Refer: Credit card']);
     expect(views).toContain(1);
   });
 

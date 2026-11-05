@@ -34,7 +34,7 @@ export function KpiGroupView({ block, loading }: { block: KpiGroupBlock; loading
             data={item}
             onExplain={
               item.metricRef
-                ? () => host.onAction?.(block, { id: `explain:${item.metricRef}`, kind: 'explain', label: 'Explain', params: { metricRef: item.metricRef ?? null } })
+                ? () => host.onAction?.(block, { id: `explain:${item.metricRef}`, kind: 'explain', label: 'How it’s calculated', params: { metricRef: item.metricRef ?? null } })
                 : undefined
             }
             onOpen={item.metricRef && host.onAction ? () => host.onAction?.(block, openFigure(item.label)) : undefined}

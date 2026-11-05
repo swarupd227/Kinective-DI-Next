@@ -145,7 +145,7 @@ function Links({ bench }: { bench: TableWorkbench }) {
             </span>
           </span>
           <button type="button" className={page.prompt} onClick={() => ask(`Merge ${bench.label} with ${r.table} on ${r.key} as a saved view called ${bench.label} with ${r.table}`)}>
-            Merge…
+            Combine with a linked table…
           </button>
         </li>
       ))}
@@ -155,7 +155,7 @@ function Links({ bench }: { bench: TableWorkbench }) {
 
 function Saved({ bench }: { bench: TableWorkbench }) {
   const ask = useAsk();
-  if (!bench.saved.length) return <p className={styles.detail}>Nothing is saved from this table yet. Use Snapshot or Merge… to ask DI for one.</p>;
+  if (!bench.saved.length) return <p className={styles.detail}>Nothing is saved from this table yet. Use Save a copy or Combine with a linked table… to ask DI for one.</p>;
   return (
     <ul className={styles.rows} aria-label="Saved views and snapshots">
       {bench.saved.map((s) => (
@@ -171,7 +171,7 @@ function Saved({ bench }: { bench: TableWorkbench }) {
           {s.mine && (
             <span className={styles.rowActions}>
               <button type="button" className={page.prompt} onClick={() => ask(s.kind !== 'Saved view' ? `Make ${s.name} public` : `Make the ${s.name} view public`)}>
-                Make public
+                Share with everyone
               </button>
               <button type="button" className={page.prompt} onClick={() => ask(s.kind !== 'Saved view' ? `Delete ${s.name}` : `Delete the ${s.name} view`)}>
                 Delete
@@ -215,7 +215,7 @@ export function TablePage() {
             onChange={setTab}
             options={[
               { value: 'records', label: 'Records' },
-              { value: 'stats', label: 'Column stats' },
+              { value: 'stats', label: 'Column summary' },
               { value: 'links', label: 'Linked tables' },
               { value: 'saved', label: `Saved views & snapshots (${b.saved.length})` },
             ]}

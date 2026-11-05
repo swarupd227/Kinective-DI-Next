@@ -724,7 +724,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
           else if (empty) await gw.store.recordRun(sch.scheduleId, sch.sendIfEmpty ? 'ok' : 'empty', sch.sendIfEmpty ? 'Sent with no data, as asked.' : 'No data for the period, so nothing was sent.');
           else await gw.store.recordRun(sch.scheduleId, 'ok', `Ran for ${canvas.data.periodLabel} after build ${gw.semantic.build.buildId}; ${canvas.data.widgets.length} sections, ${sch.format.toUpperCase()} to ${sch.recipientCount} ${sch.recipientCount === 1 ? 'recipient' : 'recipients'} (delivery simulated locally).`);
           // The owner's copy lands in their outbox, once per schedule and build: a name and a link only.
-          if (!failed.length && (!empty || sch.sendIfEmpty)) await tenantFor(persona)?.outbox?.queue({ userId: sch.ownerUserId, toName: owner.session.user.name, kind: 'report_schedule', title: `${sch.templateName} for ${canvas.data.periodLabel} is ready`, detail: `Schedule #${sch.scheduleId}, ${describeSchedule(sch).toLowerCase()}.`, link: `/reports/${sch.templateId}`, sourceRef: `schedule:${sch.scheduleId}:${gw.semantic.build.buildId}` }).catch(() => null);
+          if (!failed.length && (!empty || sch.sendIfEmpty)) await tenantFor(persona)?.outbox?.queue({ userId: sch.ownerUserId, toName: owner.session.user.name, kind: 'report_schedule', title: `${sch.templateName} for ${canvas.data.periodLabel} is ready`, detail: `Schedule #${sch.scheduleId}, ${describeSchedule(sch).replace(/^./, (c) => c.toLowerCase())}.`, link: `/reports/${sch.templateId}`, sourceRef: `schedule:${sch.scheduleId}:${gw.semantic.build.buildId}` }).catch(() => null);
         } catch (err) {
           await gw.store.recordRun(sch.scheduleId, 'failed', err instanceof Error ? err.message : String(err));
         }
@@ -960,7 +960,7 @@ async function tablesWorkbench(tenant: Tenant, persona: PersonaId, tableId: stri
   // An uploaded table has no curated table behind it: its rows, and the asks that fit a file's data.
   if (object?.kind === 'Upload') {
     const item = savedItem(t, object, who.userId);
-    return { tableId, label: object.name, stats: [], personal: [], relationships: [], saved: [item], actions: [{ label: 'Add rows from a file', ask: null, why: 'Upload the file on Integrations, then ask DI to add it to this table.' }, item.mine ? { label: 'Make public', ask: `Make ${object.name} public` } : { label: 'Make public', ask: null, why: `${object.ownerName} owns this table.` }] };
+    return { tableId, label: object.name, stats: [], personal: [], relationships: [], saved: [item], actions: [{ label: 'Add rows from a file', ask: null, why: 'Upload the file on Integrations, then ask DI to add it to this table.' }, item.mine ? { label: 'Share with everyone', ask: `Make ${object.name} public` } : { label: 'Share with everyone', ask: null, why: `${object.ownerName} owns this table.` }] };
   }
   const base = t.catalog.find((c) => c.id === (object?.tableId ?? tableId));
   if (!base) return null;
@@ -977,10 +977,10 @@ async function tablesWorkbench(tenant: Tenant, persona: PersonaId, tableId: stri
     relationships: links,
     saved: items,
     actions: [
-      { label: 'Column stats', ask: `Profile the ${base.label} table` },
-      { label: 'Snapshot', ask: `Snapshot the ${base.label} table` },
-      links[0] ? { label: 'Merge…', ask: `Merge ${base.label} with ${links[0].table} on ${links[0].key} as a saved view called ${base.label} with ${links[0].table}` } : { label: 'Merge…', ask: null, why: 'No other table links to this one.' },
-      target?.mine ? { label: 'Make public', ask: target.kind !== 'Saved view' ? `Make ${target.name} public` : `Make the ${target.name} view public` } : { label: 'Make public', ask: null, why: 'Save a view or snapshot of your own first.' },
+      { label: 'Column summary', ask: `Profile the ${base.label} table` },
+      { label: 'Save a copy', ask: `Snapshot the ${base.label} table` },
+      links[0] ? { label: 'Combine with a linked table…', ask: `Merge ${base.label} with ${links[0].table} on ${links[0].key} as a saved view called ${base.label} with ${links[0].table}` } : { label: 'Combine with a linked table…', ask: null, why: 'No other table links to this one.' },
+      target?.mine ? { label: 'Share with everyone', ask: target.kind !== 'Saved view' ? `Make ${target.name} public` : `Make the ${target.name} view public` } : { label: 'Share with everyone', ask: null, why: 'Save a view or snapshot of your own first.' },
     ],
   };
 }
@@ -1024,18 +1024,18 @@ export function jumpCards(persona: PersonaId, b: { kpis: KpiGroupBlock; lookAt: 
   const flag = b.lookAt.find((l) => /delinquen/i.test(l.title));
   const onStrip = (k: KpiItem | undefined) => Boolean(k && items.some((i) => i.label === k.label && i.value === k.value));
   if (apps.includes('reports') && !flag) {
-    cards.push({ id: 'dq', title: 'Loan delinquency', kind: 'report', reason: `Loans 60 or more days past due ${scope}, by category and branch.`, link: '/reports/loan_delinquency_monthly', action: { label: 'Ask why', ask: 'Where does delinquency come from?' } });
+    cards.push({ id: 'dq', title: 'Loan delinquency', kind: 'report', reason: `Loans 60 or more days past due ${scope}, by category and branch.`, link: '/reports/loan_delinquency_monthly', action: { label: 'Where does it come from?', ask: 'Where does delinquency come from?' } });
   }
   // Referrals live in Your work; a second card for them would say the same thing twice.
   for (const p of pinned.slice(0, 2)) {
     const first = p.canvas.data.widgets.find((w) => w.view.type === 'kpi')?.view;
     const k = first?.type === 'kpi' ? (first.data as unknown as KpiItem) : undefined;
     const fresh = onStrip(k) ? undefined : k;
-    cards.push({ id: `pin-${p.templateId}`, title: p.name, kind: 'pinned', figure: figureOf(fresh), change: changeOf(fresh), reason: p.audience === 'me' ? 'Pinned to your Home.' : `Published to the ${p.audience} class by ${p.pinnedBy}.`, link: `/home/pin-${p.templateId}`, action: { label: 'What changed?', ask: `Brief me on the ${p.name} report` } });
+    cards.push({ id: `pin-${p.templateId}`, title: p.name, kind: 'pinned', figure: figureOf(fresh), change: changeOf(fresh), reason: p.audience === 'me' ? 'Pinned to your Home.' : `Published to the ${p.audience} class by ${p.pinnedBy}.`, link: `/home/pin-${p.templateId}`, action: { label: 'What moved?', ask: `Open the ${p.name} report and tell me what moved` } });
   }
   const role = ROLE_REPORT[persona];
   if (role && apps.includes('reports') && !cards.some((c) => c.link.endsWith(role.id))) {
-    cards.push({ id: 'role', title: role.title, kind: 'report', reason: role.reason, link: `/reports/${role.id}`, action: { label: 'What changed?', ask: `Brief me on the ${role.title} report` } });
+    cards.push({ id: 'role', title: role.title, kind: 'report', reason: role.reason, link: `/reports/${role.id}`, action: { label: 'What moved?', ask: `Open the ${role.title} report and tell me what moved` } });
   }
   return cards.slice(0, 4);
 }

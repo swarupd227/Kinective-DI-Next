@@ -138,6 +138,11 @@ const naming = (text: string, label: string) => (THE_RECORD.test(text) ? text.re
 const REFERRAL_FOLLOW_UP = /\b(change|make it|instead|switch|use|add|set|update|remove|send it|cancel|never ?mind|email|phone|call|text|evening|morning|afternoon|note)\b/i;
 
 const REPORT_WORDS = /\breports?\b|\bpack\b|scorecard|\bschedul|\bexport\b|\bdownload\b|executive summary|executive dashboard|\b(pin|publish)\b.*\bhome\b|\boff (my |the )?home\b/;
+/**
+ * Asking to build a report is a report request whatever it contains: "a quarterly ALCO report with
+ * certificates maturing" is for the Report Builder, not the certificate agent its words also match.
+ */
+export const BUILD_REPORT = /\b(build|create|make|design|draft|put together|set up)\b(?:(?![.?!]).){0,100}?\b(reports?|pack|scorecard|dashboard)\b/i;
 /** A thread with a report on screen keeps routing there for "make the chart a donut", "save it" and the like. */
 const REPORT_FOLLOW_UP = /^(make|add|move|remove|delete|drop|save|export|download|schedule|send|change|put|run it|show it|switch|pin|unpin|publish|take|restore)\b/i;
 
@@ -148,6 +153,7 @@ const ABOUT_MEMBER = /\b(her|him|his|their|she|he|they|this (member|customer)|at
 function keywordClassify(text: string, memberInContext = false): Classification {
   const t = text.toLowerCase();
   const base = { confidence: 0.7, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' as const };
+  if (BUILD_REPORT.test(text)) return { ...base, intent: 'report_request', agent: 'report_builder' };
   if (GI_REQUEST.test(text)) return { ...base, intent: 'module_task', agent: 'goals_incentives' };
   if (RETENTION_REQUEST.test(text)) return { ...base, intent: 'module_task', agent: 'deposit_retention' };
   if (GOAL_REQUEST.test(text)) return { ...base, intent: 'goal_request', agent: 'goal' };
@@ -404,9 +410,12 @@ export class Concierge {
       // A plain goal, inbox or pipeline request needs no model to recognise, and must not land on a one-step specialist.
       const memberChip = turn.context.some((c) => c.type === 'member');
       classification = this.deps.model && !GI_REQUEST.test(screened.text) && !RETENTION_REQUEST.test(screened.text) && !GOAL_REQUEST.test(screened.text) && !INBOX_REQUEST.test(screened.text) && !PIPELINE_REQUEST.test(screened.text) ? await this.classify(turn, screened.text, usage) : keywordClassify(screened.text, memberChip);
+      // A vague "Build me a report" goes to the Report Builder, which asks what the report should show.
+      if (classification.agent === 'report_builder' && BUILD_REPORT.test(screened.text)) classification = { ...classification, needs_clarification: false, confidence: Math.max(classification.confidence, CONFIDENCE_THRESHOLD) };
       if (classification.needs_clarification || classification.confidence < CONFIDENCE_THRESHOLD) {
         sink.routing('DI Concierge', 'Clarifying');
-        const options = classification.options.map((o) => o.trim()).filter(Boolean).slice(0, 3);
+        // An option longer than a notice allows would fail the whole card, so it is left out.
+        const options = classification.options.map((o) => o.trim()).filter((o) => o && o.length <= 80).slice(0, 3);
         // An empty "Which of these?" is a dead end: say what would help instead.
         await sink.block(
           options.length
@@ -949,7 +958,7 @@ export class Concierge {
           const rs = this.reportThreads.get(d.threadId);
           if (x.operation === 'report.template.create' && rs?.current) rs.current = { templateId: x.template.templateId, controls: rs.current.controls };
           if (x.operation === 'report.template.create') await sink.text(`Saved **${x.template.name}** in ${x.template.folder}. [Open it](/reports/${x.template.templateId}) any time from Reports.`, REPORT_AGENT, source);
-          else if (x.operation === 'report.schedule.create') await sink.text(`Scheduled **${x.schedule.templateName}**: ${describeSchedule(x.schedule).toLowerCase()}, after the nightly build, ${x.schedule.format.toUpperCase()} to ${x.schedule.recipientCount} ${x.schedule.recipientCount === 1 ? 'recipient' : 'recipients'}. It’s schedule #${x.schedule.scheduleId} under [Reports › Schedules](/reports?tab=schedules).`, REPORT_AGENT, source);
+          else if (x.operation === 'report.schedule.create') await sink.text(`Scheduled **${x.schedule.templateName}**: ${describeSchedule(x.schedule).replace(/^./, (c) => c.toLowerCase())}, after the nightly build, ${x.schedule.format.toUpperCase()} to ${x.schedule.recipientCount} ${x.schedule.recipientCount === 1 ? 'recipient' : 'recipients'}. It’s schedule #${x.schedule.scheduleId} under [Reports › Schedules](/reports?tab=schedules).`, REPORT_AGENT, source);
           else if (x.operation === 'report.share') {
             closeGoal({ state: 'done', resultSummary: `Sent to ${x.recipientCount} ${x.recipientCount === 1 ? 'person' : 'people'}` });
             await sink.text(`Sent the **${x.templateName}** and your note to ${x.recipientCount} ${x.recipientCount === 1 ? 'person' : 'people'}. Each of them opens it in DI under their own access. Delivery is simulated in this demo.`, GOAL_AGENT, source);

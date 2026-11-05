@@ -58,6 +58,8 @@ const StockSchema = z.object({
       owner: z.string(),
       dimensions_allowed: z.array(ident),
       current_only: z.boolean().default(false),
+      /** Words one of which the question must contain, so a shared word alone doesn't match it. */
+      requires_any: z.array(z.string()).default([]),
     }),
   ),
 });
@@ -87,6 +89,7 @@ export interface Metric {
   owner: string;
   dimensionsAllowed: string[];
   currentOnly: boolean;
+  requiresAny: string[];
 }
 
 export interface Dimension {
@@ -158,6 +161,7 @@ export function loadModel(tenant: string, institutionType: InstitutionType, dir 
           owner: m.owner,
           dimensionsAllowed: m.dimensions_allowed,
           currentOnly: m.current_only,
+          requiresAny: m.requires_any,
         } satisfies Metric,
       ];
     }),

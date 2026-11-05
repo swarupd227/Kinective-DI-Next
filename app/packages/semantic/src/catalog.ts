@@ -73,7 +73,8 @@ export function searchCatalog(model: SemanticModel, query: string, dimensionValu
       name: m.name,
       label: m.label,
       description: m.description,
-      score: scoreItem(qt, query, m),
+      // "Certificate share" isn't "certificates maturing": a metric that names its key words needs one.
+      score: m.requiresAny.length && !m.requiresAny.some((w) => query.toLowerCase().includes(w)) ? 0 : scoreItem(qt, query, m),
       dimensionsAllowed: m.dimensionsAllowed,
       trendable: !m.currentOnly,
     }))
