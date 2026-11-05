@@ -131,7 +131,7 @@ describe.skipIf(!up)('goal work against the warehouse', () => {
     expect(r.plans[0]!.steps.map((s) => s.id)).toEqual(['review', 'why', 'alm', 'pack', 'note', 'send']);
     const said = r.texts.join('\n');
     expect(said).toMatch(/At \+300 bp, net interest income (falls|rises) \d+\.\d%/);
-    expect(said).toMatch(/Available liquidity is \$\d+\.\dM, \d+\.\d% of shares/);
+    expect(said).toMatch(/Available liquidity is \$\d+\.\d+[MB], \d+\.\d% of shares/);
     expect(state.findings.some((f) => f.startsWith('At +300 bp'))).toBe(true);
 
     // Without IRR access the step isn't there.

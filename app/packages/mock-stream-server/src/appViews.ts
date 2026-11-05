@@ -279,7 +279,7 @@ export function createAppViews(deps: ViewDeps) {
     },
     async liquidity() {
       const a = await new LiquidityService(pool, deps.person === 'customer' ? 'bank' : 'credit_union').analysis();
-      const m = (n: number) => `$${(n / 1e6).toFixed(1)}M`;
+      const m = (n: number) => (Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : `$${(n / 1e6).toFixed(1)}M`);
       const p1 = (n: number) => `${n.toFixed(1)}%`;
       const la = a.ratios[0]!;
       const s20 = a.stress.find((x) => x.pct === 20)!;

@@ -512,7 +512,7 @@ export interface AlmDeps {
 /** One short read of interest rate risk and liquidity, every figure from the two analyses. */
 export async function almSummary(alm: AlmDeps) {
   const [irr, liq] = await Promise.all([alm.irr.analysis(), alm.liquidity.analysis()]);
-  const m = (n: number) => `$${(Math.abs(n) / 1e6).toFixed(1)}M`;
+  const m = (n: number) => (Math.abs(n) >= 1e9 ? `$${(Math.abs(n) / 1e9).toFixed(2)}B` : `$${(Math.abs(n) / 1e6).toFixed(1)}M`);
   const up = irr.scenarios.find((s) => s.shockBp === 300)!;
   const down = irr.scenarios.find((s) => s.shockBp === -300)!;
   const breaches = irr.scenarios.filter((s) => !s.withinLimits);

@@ -8,7 +8,7 @@ const NO_ACCESS = 'Liquidity isn’t part of your DI access. It is for the finan
 const guard = (ctx: ModuleContext) => {
   if (!ctx.modules.includes('liquidity')) throw new CoreError('NO_ACCESS', NO_ACCESS);
 };
-const m = (n: number) => `$${(n / 1e6).toFixed(1)}M`;
+const m = (n: number) => (Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : `$${(n / 1e6).toFixed(1)}M`);
 const p1 = (n: number) => `${n.toFixed(1)}%`;
 
 /** "a 20% run", "if 30 percent of shares leave": the runoff, nearest modelled (10, 20 or 30). */
