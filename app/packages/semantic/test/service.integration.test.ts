@@ -52,6 +52,33 @@ describe.skipIf(!available)('semantic service on the synthetic credit union', ()
     expect(r.rows[0]!.delinquency_ratio_60_plus).toBeCloseTo((num / den) * 100, 6);
   });
 
+  it('reads the net worth ratio from the latest 5300, as Schedule G reports it', async () => {
+    const reported = await one("SELECT amount FROM cr_value WHERE code = '998' AND quarter_end = (SELECT MAX(quarter_end) FROM cr_value)");
+    const r = await svc.query({ metrics: ['net_worth_ratio'] }, all);
+    expect(r.rows[0]!.net_worth_ratio).toBeCloseTo(reported, 1);
+    // Institution-wide: a branch's purview doesn't see it.
+    const branch = await svc.query({ metrics: ['net_worth_ratio'] }, { canViewSql: false, purviewBranches: ['Westport'] }).catch(() => null);
+    expect(branch?.rows[0]?.net_worth_ratio ?? null).toBeNull();
+  });
+
+  it('annualizes year-to-date net income over total assets for ROA', async () => {
+    const ni = await one("SELECT amount FROM cr_value WHERE code = '661A' AND quarter_end = (SELECT MAX(quarter_end) FROM cr_value)");
+    const assets = await one("SELECT amount FROM cr_value WHERE code = '010' AND quarter_end = (SELECT MAX(quarter_end) FROM cr_value)");
+    const r = await svc.query({ metrics: ['return_on_assets'] }, all);
+    expect(r.rows[0]!.return_on_assets).toBeCloseTo(((ni * 12) / 9 / assets) * 100, 4);
+    expect(r.rows[0]!.return_on_assets).toBeGreaterThan(0.5);
+  });
+
+  it('annualizes year-to-date net interest income over total assets for NIM', async () => {
+    const nii = await one("SELECT amount FROM cr_value WHERE code = 'IS0010' AND quarter_end = (SELECT MAX(quarter_end) FROM cr_value)");
+    const assets = await one("SELECT amount FROM cr_value WHERE code = '010' AND quarter_end = (SELECT MAX(quarter_end) FROM cr_value)");
+    const r = await svc.query({ metrics: ['net_interest_margin'] }, all);
+    expect(r.rows[0]!.net_interest_margin).toBeCloseTo(((nii * 12) / 9 / assets) * 100, 4);
+    // Typical of a credit union: between 2.5% and 4.5%.
+    expect(r.rows[0]!.net_interest_margin).toBeGreaterThan(2.5);
+    expect(r.rows[0]!.net_interest_margin).toBeLessThan(4.5);
+  });
+
   it('limits rows to the purview (GQ-PERM-004)', async () => {
     const r = await svc.query({ metrics: ['loan_balance'], dimensions: ['branch'] }, { canViewSql: false, purviewBranches: ['Eastgate'] });
     expect(r.rows.map((x) => x.branch)).toEqual(['Eastgate']);

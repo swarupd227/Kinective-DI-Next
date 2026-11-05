@@ -68,6 +68,14 @@ sources:
     time_column: ha.month_end
     purview_column: ha.branch_id
     lineage: [hist_lap_month, cdm_loan_application, cdm_location]
+  call_report:
+    # The latest 5300 the credit union prepared: institution-wide figures, so branch purview sees none.
+    kind: current
+    table: cr_value
+    alias: cv
+    filters: ['cv.quarter_end = (SELECT MAX(q.quarter_end) FROM cr_value AS q)']
+    purview_column: '0'
+    lineage: [cr_value, cr_line]
 
 dimensions:
   branch:
@@ -173,6 +181,27 @@ measures:
     exprs:
       deposit_current: COUNT(*)
       deposit_history: SUM(hd.account_count)
+  net_worth_sum:
+    unit: usd
+    exprs:
+      call_report: "SUM(CASE WHEN cv.code = '997' THEN cv.amount ELSE 0 END)"
+  net_worth_assets_sum:
+    unit: usd
+    exprs:
+      call_report: "SUM(CASE WHEN cv.code = 'NW0010' THEN cv.amount ELSE 0 END)"
+  net_income_annualized_sum:
+    unit: usd
+    exprs:
+      # Year-to-date net income scaled to a full year: nine months at Q3 count 12/9.
+      call_report: "SUM(CASE WHEN cv.code = '661A' THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
+  net_interest_income_annualized_sum:
+    unit: usd
+    exprs:
+      call_report: "SUM(CASE WHEN cv.code = 'IS0010' THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
+  call_report_assets_sum:
+    unit: usd
+    exprs:
+      call_report: "SUM(CASE WHEN cv.code = '010' THEN cv.amount ELSE 0 END)"
   maturing_90_balance_sum:
     unit: usd
     exprs:
@@ -303,6 +332,44 @@ metrics:
     dimensions_allowed: [branch, region, deposit_category]
     current_only: true
     requires_any: [matur, renew, rolling off]
+  net_worth_ratio:
+    label: Net worth ratio
+    type: ratio
+    numerator: net_worth_sum
+    denominator: net_worth_assets_sum
+    format: percent_2
+    description: Total net worth (5300 account 997) divided by total assets (NW0010), from the latest 5300. Seven percent or more is well capitalized.
+    regulatory_basis: NCUA 5300 Schedule G account 998; PCA categories under 12 CFR 702.102.
+    synonyms: [net worth, capital ratio, capital, well capitalized, capitalization, pca, prompt corrective action, leverage ratio, cculr]
+    owner: Finance data team
+    dimensions_allowed: []
+    current_only: true
+  return_on_assets:
+    label: Return on assets (ROA)
+    type: ratio
+    numerator: net_income_annualized_sum
+    denominator: call_report_assets_sum
+    format: percent_2
+    description: Year-to-date net income (5300 account 661A), annualized, divided by total assets (010), from the latest 5300.
+    regulatory_basis: NCUA Financial Performance Report earnings ratio, from 5300 accounts 661A and 010.
+    synonyms: [roa, return on assets, profitability, earnings ratio, net income ratio]
+    requires_any: [roa, return, profitab, earning]
+    owner: Finance data team
+    dimensions_allowed: []
+    current_only: true
+  net_interest_margin:
+    label: Net interest margin (NIM)
+    type: ratio
+    numerator: net_interest_income_annualized_sum
+    denominator: call_report_assets_sum
+    format: percent_2
+    description: Year-to-date net interest income (5300 account IS0010, interest income less dividends and interest expense), annualized, divided by total assets (010), from the latest 5300.
+    regulatory_basis: NCUA Financial Performance Report net interest margin, from 5300 accounts IS0010 and 010.
+    synonyms: [nim, net interest margin, margin, interest margin, spread, net interest income ratio]
+    requires_any: [nim, margin, spread]
+    owner: Finance data team
+    dimensions_allowed: []
+    current_only: true
   loan_to_share_ratio:
     label: Loan-to-share ratio
     labels_by_type: { bank: Loan-to-deposit ratio }

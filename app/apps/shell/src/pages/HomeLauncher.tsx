@@ -37,6 +37,7 @@ const MODULE_KINDS: Record<string, Kind[]> = {
   predictive: ['Report'],
   seg: ['Report'],
   callreport: ['Report'],
+  irr: ['Report'],
   dq: ['Report'],
 };
 const FIRST = 12;

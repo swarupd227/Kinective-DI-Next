@@ -2,7 +2,7 @@
 // and records to check. They read the same DI Core services the agents use, under the same purview,
 // so a page and an answer always agree. Changes happen in a task, behind an approval card.
 import type { AppTile, AppView, AppViewId, Block, ListBlock, TableBlock } from '@dinext/block-schemas';
-import { memberNumber, WorkflowDefService, WorksheetService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
+import { memberNumber, WorkflowDefService, WorksheetService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, IrrService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 import { SourceService, TableService, secretKeyFrom } from '@dinext/di-core';
 import { EmailOutbox } from '@dinext/di-core';
@@ -229,6 +229,43 @@ export function createAppViews(deps: ViewDeps) {
         tiles: [{ label: 'Companies', value: String(list.length) }, { label: 'SEG members', value: list.reduce((n, c) => n + c.members, 0).toLocaleString('en-US') }, { label: 'New members', value: String(list.reduce((n, c) => n + c.newMembers, 0)) }, { label: 'Loans', value: usd(list.reduce((n, c) => n + c.loans, 0)) }],
         prompts: ['Which SEGs had the most new members?', 'Prepare me for my SEG meeting with Albany Medical'],
         blocks: [table('SEG companies', 'seg.performance', [text('name', 'Company'), text('stage', 'Stage'), { field: 'members', headerName: 'Members', type: 'count' }, { field: 'newMembers', headerName: 'New', type: 'count' }, { field: 'loans', headerName: 'Loans', type: 'currency' }, { field: 'deposits', headerName: 'Deposits', type: 'currency' }], list.map(({ name, stage, members, newMembers, loans, deposits }) => ({ name, stage, members, newMembers, loans, deposits })))],
+      };
+    },
+    async irr() {
+      const a = await new IrrService(pool).analysis();
+      const m = (n: number) => `${n < 0 ? '−' : ''}$${(Math.abs(n) / 1e6).toFixed(1)}M`;
+      const pc = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(1)}%`;
+      const bp = (s: number) => (s === 0 ? 'Base' : `${s > 0 ? '+' : ''}${s} bp`);
+      const up = a.scenarios.find((x) => x.shockBp === 300)!;
+      const down = a.scenarios.find((x) => x.shockBp === -300)!;
+      const worstNii = [...a.scenarios].sort((x, y) => x.niiPct - y.niiPct)[0]!;
+      const worstNev = [...a.scenarios].sort((x, y) => x.nevPct - y.nevPct)[0]!;
+      const breaches = a.scenarios.filter((x) => !x.withinLimits);
+      const oneYear = a.gap.find((g) => g.label === '3–12 months')!;
+      const asOf = new Date(`${a.asOf}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+      const topNev = [...a.drivers].sort((x, y) => x.nevChange - y.nevChange)[0]!;
+      return {
+        title: 'Interest Rate Risk',
+        lede: `Net interest income at risk over the next 12 months, net economic value (NEV) and the repricing gap under parallel rate shocks, from the balances as of ${asOf}. DI’s estimate from core data; the ALM vendor’s model remains the one of record.`,
+        take: {
+          headline: `At +300 bp, net interest income ${up.niiPct < 0 ? 'falls' : 'rises'} ${Math.abs(up.niiPct).toFixed(1)}% and NEV ${up.nevPct < 0 ? 'falls' : 'rises'} ${Math.abs(up.nevPct).toFixed(1)}%, mostly from ${topNev.name.toLowerCase()}. ${breaches.length ? `${breaches.map((b) => bp(b.shockBp)).join(' and ')} ${breaches.length === 1 ? 'breaches' : 'breach'} the board’s limits.` : 'Every scenario is within the board’s limits.'}`,
+          action: { label: 'What drives our rate risk?', ask: 'What drives our interest rate risk at plus 300 basis points?' },
+        },
+        tiles: [
+          { label: 'NII at +300 bp', value: pc(up.niiPct), detail: `limit −${a.limits.niiDeclinePct}%`, tone: up.niiPct < -a.limits.niiDeclinePct ? 'danger' : 'neutral' },
+          { label: 'NEV at +300 bp', value: pc(up.nevPct), detail: `limit −${a.limits.nevDeclinePct}%`, tone: up.nevPct < -a.limits.nevDeclinePct ? 'danger' : 'neutral' },
+          { label: 'NEV ratio at +300 bp', value: `${up.nevRatio.toFixed(1)}%`, detail: `minimum ${a.limits.nevRatioMinPct}%` },
+          { label: '1-year cumulative gap', value: `${oneYear.cumulativePct.toFixed(1)}%`, detail: 'of total assets' },
+        ],
+        prompts: ['What happens to NII if rates rise 200 bp?', 'What drives our interest rate risk at plus 300 basis points?', 'Show the repricing gap', 'What assumptions does the model use?'],
+        blocks: [
+          bar('Change in 12-month net interest income', 'irr.nii', a.scenarios.filter((x) => x.shockBp).map((x) => [bp(x.shockBp), Math.round(x.niiChange)] as [string, number]), 'currency', 'Change in NII', `Base ${m(a.base.nii)}. Worst: ${bp(worstNii.shockBp)}, ${pc(worstNii.niiPct)}.`),
+          table('Rate shocks', 'irr.scenarios', [text('shock', 'Rate shock'), { field: 'nii', headerName: 'NII, next 12 months', type: 'currency' }, text('niiPct', 'NII change'), { field: 'nev', headerName: 'NEV', type: 'currency' }, text('nevPct', 'NEV change'), text('ratio', 'NEV ratio'), text('limits', 'Board limits')], a.scenarios.map((x) => ({ shock: bp(x.shockBp), nii: Math.round(x.nii), niiPct: x.shockBp ? pc(x.niiPct) : '', nev: Math.round(x.nev), nevPct: x.shockBp ? pc(x.nevPct) : '', ratio: `${x.nevRatio.toFixed(2)}%`, limits: x.withinLimits ? 'Within' : 'Breach' }))),
+          bar('Change in NEV', 'irr.nev', a.scenarios.filter((x) => x.shockBp).map((x) => [bp(x.shockBp), Math.round(x.nevChange)] as [string, number]), 'currency', 'Change in NEV', `Base ${m(a.base.nev)}. Worst: ${bp(worstNev.shockBp)}, ${pc(worstNev.nevPct)}; at −300 bp, ${pc(down.nevPct)}.`),
+          table('What drives the change at +300 bp', 'irr.drivers', [text('name', 'Product'), text('side', 'Side'), { field: 'balance', headerName: 'Balance', type: 'currency' }, text('rate', 'Rate'), { field: 'nii', headerName: 'NII change', type: 'currency' }, { field: 'nev', headerName: 'NEV change', type: 'currency' }], [...a.drivers].sort((x, y) => Math.abs(y.nevChange) - Math.abs(x.nevChange)).map((d) => ({ name: d.name, side: d.side === 'asset' ? 'Asset' : 'Liability', balance: Math.round(d.balance), rate: `${d.rate.toFixed(2)}%`, nii: Math.round(d.niiChange), nev: Math.round(d.nevChange) }))),
+          table('Repricing gap', 'irr.gap', [text('band', 'Reprices or matures in'), { field: 'assets', headerName: 'Assets', type: 'currency' }, { field: 'liabilities', headerName: 'Liabilities', type: 'currency' }, { field: 'gap', headerName: 'Gap', type: 'currency' }, { field: 'cumulative', headerName: 'Cumulative gap', type: 'currency' }, text('pct', 'Cumulative, % of assets')], a.gap.map((g) => ({ band: g.label, assets: Math.round(g.assets), liabilities: Math.round(g.liabilities), gap: Math.round(g.gap), cumulative: Math.round(g.cumulative), pct: `${g.cumulativePct.toFixed(1)}%` }))),
+          table('Assumptions', 'irr.assumptions', [text('item', 'Assumption'), text('detail', 'What DI uses')], a.assumptions.map(([item, detail]) => ({ item, detail }))),
+        ],
       };
     },
     async callreport() {

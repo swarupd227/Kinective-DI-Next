@@ -137,6 +137,16 @@ describe('catalog search (spec 23.5.3)', () => {
     expect(searchCatalog(cu, 'certificate share', env.dimensionValues).metrics.map((m) => m.name)).not.toContain('certificates_maturing_90_days');
   });
 
+  it('finds the capital and earnings ratios by their everyday names', () => {
+    const top = (q: string) => searchCatalog(cu, q, env.dimensionValues).metrics[0]!.name;
+    expect(top('What is our net worth ratio?')).toBe('net_worth_ratio');
+    expect(top('Are we well capitalized?')).toBe('net_worth_ratio');
+    expect(top('What is our ROA?')).toBe('return_on_assets');
+    expect(top('return on assets')).toBe('return_on_assets');
+    expect(top('What is our net interest margin?')).toBe('net_interest_margin');
+    expect(top('NIM this year')).toBe('net_interest_margin');
+  });
+
   it('finds delinquency from everyday words', () => {
     expect(searchCatalog(cu, 'which branches have the most loans that are behind?', env.dimensionValues).metrics[0]!.name).toBe('delinquency_ratio_60_plus');
   });

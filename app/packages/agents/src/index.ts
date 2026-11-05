@@ -37,3 +37,4 @@ export type { RunSink, StepUpdate } from './sink.ts';
 export { classesNamed, fieldsFrom, parseSettingsRequest, settingsDiff, settingsView, SETTINGS_FOLLOW_UP, whoCanOpen, type SettingsAsk, type SettingsInput } from './reportSettings.ts';
 export { kindNamed, notificationsModule, NOTIFICATIONS_AGENT, NOTIFICATIONS_REQUEST } from './notifications.ts';
 export { scheduleFrom, sourcesModule } from './sources.ts';
+export { irrModule, shockFrom } from './irr.ts';

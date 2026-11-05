@@ -32,6 +32,7 @@ const kindIcon: Record<SearchResultKind, ReactNode> = {
 const PAGE_WORDS: Partial<Record<string, string>> = {
   gi: 'payouts incentives goals scorecards',
   callreport: 'ncua call report 5300',
+  irr: 'interest rate risk alm alco nev eve nii at risk rate shock repricing gap sensitivity',
   lap: 'pipeline applications loans mortgages',
   rm: 'members customers member 360',
   indirect: 'dealers auto dealer',

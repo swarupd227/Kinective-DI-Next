@@ -27,6 +27,7 @@ const OWNERS: [RegExp, AppId][] = [
   [/^ind_/, 'indirect'],
   [/^seg_/, 'seg'],
   [/^cr_/, 'callreport'],
+  [/^irr_/, 'irr'],
   [/^tsk_/, 'tasks'],
   [/^wf_/, 'workflows'],
   [/^esp_files/, 'files'],

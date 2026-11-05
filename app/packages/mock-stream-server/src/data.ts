@@ -63,14 +63,14 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     session: {
       user: user('user:9229', 'Dana Lee', 'President and CEO', 'Executive'),
       tenant: CU,
-      apps: ['home', 'conversations', 'tasks', 'reports', 'tables', 'workflows', 'calendar', 'files', 'rm', 'referrals', 'lap', 'gi', 'indirect', 'prospecting', 'campaigns', 'onboarding', 'compliance', 'predictive', 'dq', 'seg', 'callreport'],
+      apps: ['home', 'conversations', 'tasks', 'reports', 'tables', 'workflows', 'calendar', 'files', 'rm', 'referrals', 'lap', 'gi', 'indirect', 'prospecting', 'campaigns', 'onboarding', 'compliance', 'predictive', 'dq', 'seg', 'callreport', 'irr'],
       permissions: { queryBrowser: false, dashboardAdmin: true },
     },
     lapDetails: true,
     lendingAdmin: true,
     approvesIncentives: true,
     retention: true,
-    modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'ai-admin', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'callreport', 'collections', 'campaigns', 'seg', 'tables'],
+    modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'ai-admin', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'callreport', 'collections', 'campaigns', 'seg', 'tables', 'irr'],
     suggestions: ['What should I do today?', 'Show the October payouts', 'Which regulatory issues are open more than 3 weeks?', 'Where does delinquency come from?', 'Are we ready to file Q3?', 'Show the early-warning list', 'Get me ready for the next ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'What changed since last month-end?'],
   },
   analyst: {
@@ -78,11 +78,11 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     session: {
       user: user('user:4410', 'Priya Shah', 'BI Manager', 'Analyst'),
       tenant: CU,
-      apps: ['home', 'conversations', 'tasks', 'reports', 'tables', 'queries', 'datalogs', 'dq', 'integrations', 'workflows', 'calendar', 'files', 'rm', 'referrals', 'lap', 'campaigns', 'compliance', 'predictive'],
+      apps: ['home', 'conversations', 'tasks', 'reports', 'tables', 'queries', 'datalogs', 'dq', 'integrations', 'workflows', 'calendar', 'files', 'rm', 'referrals', 'lap', 'campaigns', 'compliance', 'predictive', 'irr'],
       permissions: { queryBrowser: true, dashboardAdmin: false },
     },
     retention: true,
-    modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-finance', 'lineage', 'compliance', 'datalogs', 'operations', 'callreport', 'campaigns', 'tables'],
+    modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-finance', 'lineage', 'compliance', 'datalogs', 'operations', 'callreport', 'campaigns', 'tables', 'irr'],
     suggestions: ['/query loans opened last week by branch', 'Which campaigns produced the most loan dollars?', 'Which checks failed?', 'Is the data current?', 'Show loan growth by branch for Q3 vs Q2', 'Find certificates at risk of leaving'],
   },
   branch: {
@@ -136,12 +136,12 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       user: user('user:7001', 'Elena Ortiz', 'Chief Financial Officer', 'Finance leader'),
       tenant: BANK,
       // Bank tenants never see 5300 Call Report or SEG Management (FE-EXP-003).
-      apps: ['home', 'conversations', 'tasks', 'reports', 'tables', 'workflows', 'calendar', 'files', 'rm', 'lap', 'gi', 'indirect', 'prospecting', 'campaigns', 'compliance', 'predictive', 'dq'],
+      apps: ['home', 'conversations', 'tasks', 'reports', 'tables', 'workflows', 'calendar', 'files', 'rm', 'lap', 'gi', 'indirect', 'prospecting', 'campaigns', 'compliance', 'predictive', 'dq', 'irr'],
       permissions: { queryBrowser: false, dashboardAdmin: false },
     },
     approvesIncentives: true,
     retention: true,
-    modules: ['governance', 'tasks', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'datalogs', 'datalogs-approve', 'collections', 'campaigns', 'tables'],
+    modules: ['governance', 'tasks', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'datalogs', 'datalogs-approve', 'collections', 'campaigns', 'tables', 'irr'],
     suggestions: ['Get me ready for the next ALCO meeting', 'What changed since last month-end?', 'Show loan growth by branch for Q3 vs Q2', 'Show the October payouts'],
   },
   admin: {
