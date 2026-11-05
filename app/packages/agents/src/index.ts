@@ -47,3 +47,4 @@ export { asksAboutStaff } from './incentives.ts';
 export { boardAnalyses, boardScorecard } from './scorecard.ts';
 export { combineAnalyses } from './report.ts';
 export { branchAnalyses } from './branchScorecard.ts';
+export { lendingAnalyses } from './lendingProduction.ts';

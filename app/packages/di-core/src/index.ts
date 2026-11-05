@@ -41,3 +41,4 @@ export { LIQUIDITY_POLICY, LiquidityService, pctAgainst } from './liquidity.ts';
 export { MEMBER_AGE_BANDS, MEMBERSHIP_BENCHMARKS, MembershipService, type MembershipScope } from './membership.ts';
 export { ALCO_POLICY, AlcoService, type PolicyLine, type PolicyStatus } from './alco.ts';
 export { BranchScorecardService, type BranchLine } from './branchScorecard.ts';
+export { LendingProductionService, WINDOW_DAYS as PRODUCTION_WINDOW_DAYS, type OfficerLine } from './lendingProduction.ts';

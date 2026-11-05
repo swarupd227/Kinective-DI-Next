@@ -300,6 +300,26 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
         { id: 't2', title: 'Growth and penetration by branch', kind: 'table', metrics: ['net_member_growth', 'member_attrition_rate', 'checking_penetration', 'loan_penetration', 'products_per_member'], by: 'branch', size: 'full' },
       ],
     },
+    // What a loan officer and their manager run production on: applications, approvals and dollars,
+    // days to decision, the open pipeline, the funded-dollars goal, the book's credit, and stage times.
+    {
+      templateId: 'loan_officer_production_monthly',
+      name: 'Loan officer production',
+      description: 'Each loan officer’s last 90 days: applications, approvals and dollars, approval rate, days to decision, the open pipeline, the funded-dollars goal and the delinquency of the book they originated; and time in each stage.',
+      folder: 'Lending',
+      settings: settings('month', ['Executive', 'Branch Manager', 'Lending']),
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        { id: 'a1', title: 'Loan officer production', kind: 'analysis', analysis: 'lending.officers', metrics: [], size: 'full' },
+        kpi('k1', 'New loan applications', 'new_loan_applications'),
+        kpi('k2', 'Approval rate', 'approval_rate'),
+        kpi('k3', 'New loan dollars', 'new_loan_amount'),
+        kpi('k4', 'Delinquency 60+', 'delinquency_ratio_60_plus'),
+        { id: 'a2', title: 'Time in each stage', kind: 'analysis', analysis: 'lending.stages', metrics: [], size: 'half' },
+        { id: 'c1', title: 'New loan dollars by loan type, last 13 months', kind: 'chart', chart: 'stacked_bar', metrics: ['new_loan_amount'], by: 'loan_category', trend: 13, size: 'half' },
+      ],
+    },
     // The named reports today's DI shows on its Dashboards home.
     {
       templateId: 'checking_growth_monthly',

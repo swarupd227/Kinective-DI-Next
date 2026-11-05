@@ -107,7 +107,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     session: {
       user: user('user:6101', 'Ana Ruiz', 'Loan Officer, Westport', 'Lender'),
       tenant: CU,
-      apps: ['home', 'conversations', 'tasks', 'workflows', 'calendar', 'files', 'rm', 'referrals', 'lap', 'gi', 'indirect', 'delinquency'],
+      apps: ['home', 'conversations', 'tasks', 'reports', 'workflows', 'calendar', 'files', 'rm', 'referrals', 'lap', 'gi', 'indirect', 'delinquency'],
       permissions: { queryBrowser: false, dashboardAdmin: false },
     },
     purview: ['Westport'],
