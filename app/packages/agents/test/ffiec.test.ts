@@ -16,6 +16,8 @@ describe('Call Report questions at a bank', () => {
     expect(plan('What is our CRE concentration?')).toEqual({ tool: 'cr_concentration', args: {} });
     expect(plan('Show capital')).toEqual({ tool: 'cr_capital', args: {} });
     expect(plan('Show RC-N')).toEqual({ tool: 'cr_schedule', args: { schedule: 'RC-N' } });
+    expect(plan('Have you got the ability to create this Report?')).toEqual({ tool: 'cr_overview', args: {} });
+    expect(plan('Can you prepare the FFIEC 051?')).toEqual({ tool: 'cr_overview', args: {} });
     expect(plan('Submit the Call Report')).toEqual({ say: expect.stringMatching(/stays a person’s action/) });
   });
 });
@@ -76,6 +78,7 @@ describe.skipIf(!up)('the FFIEC 051 on the warehouse', () => {
       return ((await spec.tools.find((t) => t.name === p.tool)!.run(p.args, ctx as never)) as { text: string }).text;
     };
     expect(await run('Are we ready to file the Call Report?')).toMatch(/FFIEC 051 \*\*isn’t ready yet\*\*.*1295.*Central Data Repository/s);
+    expect(await run('Have you got the ability to create this Report?')).toMatch(/^Yes\. DI prepares the Q3 2026 FFIEC 051 .*\*\*\d+ items on \d+ schedules\*\*.*isn’t ready yet.*stays with you\.$/s);
     expect(await run('Show capital')).toMatch(/community bank leverage ratio.*well capitalized/s);
     expect(await run('What is our CRE concentration?')).toMatch(/of Tier 1 capital plus the allowance.*300%/s);
   });

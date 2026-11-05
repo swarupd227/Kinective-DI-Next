@@ -342,6 +342,15 @@ function nextStatus(state: string, a: number, u: number) {
       return u < 0.25 ? 'Current' : '360+ days';
   }
 }
+/** A loan can't be further behind than it is old: the first payment falls due a month after opening. */
+const BUCKETS: [string, number][] = [['Current', 0], ['30–59 days', 30], ['60–89 days', 60], ['90–179 days', 90], ['180–359 days', 180], ['360+ days', 360]];
+const capByAge = (state: string, open: Date, at: Date) => {
+  const behind = (at.getTime() - open.getTime()) / 86_400_000 - 30;
+  let i = BUCKETS.findIndex(([b]) => b === state);
+  if (i < 0) return state;
+  while (i > 0 && BUCKETS[i]![1] > behind) i -= 1;
+  return BUCKETS[i]![0];
+};
 const SIXTY_PLUS = new Set(['60–89 days', '90–179 days', '180–359 days', '360+ days']);
 /** Where a loan starts when history begins, from its draw: about its delinquency rate is 60+. */
 const startStatus = (r: number) => (r < 0.065 ? '360+ days' : r < 0.3 ? '180–359 days' : r < 0.7 ? '90–179 days' : r < 1 ? '60–89 days' : r < 2.32 ? '30–59 days' : 'Current');
@@ -549,8 +558,8 @@ export function generate(profile: TenantProfile): GeneratedTenant {
         const p = dqProb(l, monthsAgo);
         const toChargeOff = l.chargeOff ? monthsBetween(at, l.chargeOff) : 99;
         // Loans that will be charged off are seriously behind in their last months.
-        if (toChargeOff <= 3 && toChargeOff >= 0) state = toChargeOff <= 1 ? '180–359 days' : '90–179 days';
-        else state = prev ? nextStatus(prev, p / 1.35, unit(l.id, 1000 + mi)) : startStatus(unit(l.id, 0) / p);
+        if (toChargeOff <= 3 && toChargeOff >= 0) state = capByAge(toChargeOff <= 1 ? '180–359 days' : '90–179 days', l.open, at);
+        else state = capByAge(prev ? nextStatus(prev, p / 1.35, unit(l.id, 1000 + mi)) : startStatus(unit(l.id, 0) / p), l.open, at);
         if (SIXTY_PLUS.has(state)) agg[1]! += bal;
       } else if (l.chargeOff && l.chargeOff > monthStart && l.chargeOff <= at && prev) {
         state = 'Charged off';
@@ -623,7 +632,8 @@ export function generate(profile: TenantProfile): GeneratedTenant {
     const toChargeOff = l.chargeOff ? monthsBetween(asOf, l.chargeOff) : 99;
     const state = toChargeOff <= 3 && toChargeOff >= 0 ? (toChargeOff <= 1 ? '180–359 days' : '90–179 days') : (dqState.get(l.id) ?? 'Current');
     // Within its bucket: cures and new misses in the part-month aren't known until the next month-end.
-    row[12] = state === 'Current' ? 0 : Math.min(BUCKET_END[state] ?? 9999, pastDueDays(l.id, state) + sinceMonthEnd);
+    const behind = Math.max(0, Math.floor((asOf.getTime() - l.open.getTime()) / 86_400_000) - 30);
+    row[12] = state === 'Current' ? 0 : Math.min(BUCKET_END[state] ?? 9999, pastDueDays(l.id, state) + sinceMonthEnd, behind);
   });
 
   return {

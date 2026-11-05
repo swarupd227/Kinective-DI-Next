@@ -268,6 +268,9 @@ export function generateFfiecCallReport(t: GeneratedTenant) {
   const nonOwnerCre = g('RCONF159') + g('RCON1460') + g('RCONF161');
   const capitalBase = g('RCON8274') + g('RCON3123');
   const cre = (nonOwnerCre / capitalBase) * 100;
+  // Every line that needs an explanation: large balance-sheet moves, and the items whose quality edit failed.
+  const needs = [...new Set([...moved, ...(Math.abs(uninsuredMove) >= 15 ? ['RCON5597'] : []), ...(Math.abs(nonaccrualMove) >= 25 ? ['RCON1403'] : [])])];
+  const open = needs.filter((c) => !explained.has(c));
   const checks: [string, string, string, string, string | null, string | null][] = [
     ['RC: total assets equal the asset items', 'Pass', `RCON2170 is ${money(g('RCON2170'))}.`, 'Error', 'V-RC-01', 'RCON2170'],
     ['RC: total liabilities and equity equal total assets', 'Pass', `RCON3300 and RCON2170 are both ${money(g('RCON2170'))}.`, 'Error', 'V-RC-02', 'RCON3300,RCON2170'],
@@ -282,10 +285,10 @@ export function generateFfiecCallReport(t: GeneratedTenant) {
     ['GL accounts categorized', 'Fail', `${UNMAPPED_GL.length} uncategorized GL accounts, totalling ${money(unmapped)}.`, 'Error', null, null],
     ['Nonaccrual loans moved less than 25% from Q2 2026', Math.abs(nonaccrualMove) < 25 ? 'Pass' : 'Fail', `RCON1403 ${money(g('RCON1403'))}, ${nonaccrualMove >= 0 ? 'up' : 'down'} ${Math.abs(nonaccrualMove).toFixed(1)}% from ${money(p('RCON1403'))}.`, 'Warning', 'Q-RCN-01', 'RCON1403'],
     ['Uninsured deposits moved less than 15% from Q2 2026', Math.abs(uninsuredMove) < 15 ? 'Pass' : 'Fail', `RCON5597 ${money(g('RCON5597'))}, ${uninsuredMove >= 0 ? 'up' : 'down'} ${Math.abs(uninsuredMove).toFixed(1)}%.`, 'Warning', 'Q-RCO-01', 'RCON5597'],
-    ['Large balance changes are explained', moved.every((c) => explained.has(c)) ? 'Pass' : 'Fail', `${moved.filter((c) => !explained.has(c)).length} of ${moved.length} lines that moved more than 10% from ${FFIEC_FILING.priorQuarter} still need an explanation.`, 'Warning', null, moved.join(',')],
+    ['Large balance changes are explained', open.length ? 'Fail' : 'Pass', open.length ? `${open.length} of ${needs.length} items that moved enough to need an explanation still have none: ${open.join(', ')}.` : `All ${needs.length} items that moved enough to need an explanation have one.`, 'Warning', null, needs.join(',')],
     ['CRE concentration under 300% of capital', cre < 300 ? 'Pass' : 'Fail', `Non-owner-occupied commercial real estate ${money(nonOwnerCre)} is ${cre.toFixed(0)}% of Tier 1 capital plus the allowance (interagency guidance: 300%).`, 'Warning', null, 'RCONF159,RCON1460,RCONF161,RCON8274,RCON3123'],
   ];
-  const explanations = [...new Set([...moved, ...(Math.abs(uninsuredMove) >= 15 ? ['RCON5597'] : []), ...(Math.abs(nonaccrualMove) >= 25 ? ['RCON1403'] : [])])].map((code) => [code, FFIEC_FILING.periodEnd, explained.get(code) ?? null, explained.has(code) ? 'Written' : 'Needed', explained.has(code) ? 'Elena Ortiz' : null]);
+  const explanations = needs.map((code) => [code, FFIEC_FILING.periodEnd, explained.get(code) ?? null, explained.has(code) ? 'Written' : 'Needed', explained.has(code) ? 'Elena Ortiz' : null]);
   const form = [['FFIEC 051', FFIEC_FILING.edition, FFIEC_FILING.filedIn, FFIEC_FILING.quarter, FFIEC_FILING.dueDate, FFIEC_FILING.preparer]];
   return { lines: lineRows, values: valueRows, gl: glRows, checks, explanations, form };
 }

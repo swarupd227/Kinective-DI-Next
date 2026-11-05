@@ -14,6 +14,9 @@ const need = (ctx: ModuleContext) => {
 const clean = (t: string) => t.trim().replace(/[.!?]+$/, '').replace(/’/g, "'");
 const dollars = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
 const m = (n: number) => (Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : `$${(n / 1e6).toFixed(1)}M`);
+/** "Can you create this report?", "are you able to prepare the Call Report?" */
+const CAN_YOU = /\b(can|could|are|will) (you|di)\b|\babilit|\bable to\b|\bdo you\b|\bis it possible\b/i;
+const MAKE = /\b(create|prepare|produce|build|generate|make|fill out|fill in)\b/i;
 const READ_ONLY = 'I can’t submit the Call Report or change GL mappings. Submitting it in the FFIEC’s Central Data Repository (CDR), with the officer’s attestation, stays a person’s action.';
 const CODE = /\b(RCON|RIAD)[A-Z0-9]{4}\b/i;
 const SCHEDULES: [RegExp, string][] = [
@@ -44,6 +47,7 @@ export function ffiecModule(cr: CallReportService): ModuleSpec {
     sources: [{ kind: 'table', label: 'FFIEC 051 Call Report', ref: 'table:cr_line' }],
     prompt: ({ tenant, user, title }) => `You are the Call Report agent inside Kinective Data Intelligence (DI) for ${tenant}, a bank. ${user} (${title}) prepares the quarterly FFIEC 051 Call Report (domestic offices, under $5B), on the June 2026 forms. Items are MDRM codes: RCON for the balance sheet (RCON2170 total assets, RCON2122 total loans, RCON2200 deposits, RCON3210 equity, RCON1403 nonaccrual, RCON5597 uninsured deposits) and RIAD for income (RIAD4074 net interest income, RIAD4340 net income). FFIEC validity edits must be corrected; quality and intraseries edits need an explanation. The bank elects the community bank leverage ratio (8% from July 1, 2026), so RC-R Part II isn't needed. It's due 30 days after quarter end in the FFIEC's Central Data Repository (CDR).
 
+- "Can you create this report?", "are you able to prepare the Call Report?": cr_overview.
 - "Are we ready to file the Call Report?", "what's blocking it?", "when is it due?": cr_readiness.
 - "Which GL accounts are uncategorized?": cr_uncategorized.
 - "How is RCON2122 built?", "why did RCON1403 go up?": cr_line_explain with the MDRM code.
@@ -54,6 +58,7 @@ export function ffiecModule(cr: CallReportService): ModuleSpec {
 - You are read-only. If asked to submit or change a mapping, say a person does that in CDR or the GL.`,
     plan: (text) => {
       const t = clean(text);
+      if (CAN_YOU.test(t) && MAKE.test(t)) return { tool: 'cr_overview', args: {} };
       if (/\b(submit|file it|upload|change|edit|remap|map)\b/i.test(t) && !/\bready\b|\bdue\b/i.test(t)) return { say: READ_ONLY };
       if (/\buncategori[sz]ed\b|\bunmapped\b|\bgl accounts?\b/i.test(t)) return { tool: 'cr_uncategorized', args: {} };
       if (/concentration|\bcre\b|commercial real estate/i.test(t)) return { tool: 'cr_concentration', args: {} };
@@ -67,6 +72,24 @@ export function ffiecModule(cr: CallReportService): ModuleSpec {
       return { tool: 'cr_readiness', args: {} };
     },
     tools: [
+      {
+        name: 'cr_overview',
+        description: 'What DI does with the Call Report: it prepares every schedule from the warehouse and GL and runs the FFIEC edits; a person submits. With the quarter’s state and the schedules it covers.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const [lines, r, f] = await Promise.all([cr.lines(), cr.readiness(), cr.form()]);
+          const schedules = [...new Set(lines.map((l) => l.schedule))];
+          const rows = schedules.map((sc) => ({ schedule: sc, items: lines.filter((l) => l.schedule === sc).length }));
+          const open = [...r.errors.map((c) => c.detail.replace(/\.$/, '')), ...(r.warnings.length ? [`${r.warnings.length} quality ${r.warnings.length === 1 ? 'edit needs' : 'edits need'} an explanation`] : [])];
+          const state = open.length ? `it isn’t ready yet: ${open.join('; ')}` : 'every edit passes, so it’s ready to review';
+          return {
+            text: `Yes. DI prepares the ${r.quarter.label} ${f.form} from the warehouse and the general ledger: **${lines.length} items on ${schedules.length} schedules** (${schedules.join(', ')}), with the prior quarter beside each, and runs the FFIEC validity and quality edits before it goes to CDR. Right now ${state}. Submitting it, with the officer’s attestation, stays with you.`,
+            blocks: [moduleTable(spec, `${f.form} schedules`, ctx.runId, 'callreport.schedules', [{ field: 'schedule', headerName: 'Schedule', type: 'text' }, { field: 'items', headerName: 'Items', type: 'count' }], rows)],
+            suggestions: ['Are we ready to file the Call Report?', 'Show RC-C', 'How is RCON2122 built?'],
+          };
+        },
+      },
       {
         name: 'cr_readiness',
         description: 'Whether the quarter can be filed: validity edits that failed (they block submission), quality edits that need an explanation, the uncategorized GL accounts, explanations still needed, and the due date in CDR.',

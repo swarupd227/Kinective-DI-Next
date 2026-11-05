@@ -106,6 +106,7 @@ Rules:
 - Requests to change data in the core (addresses, rates, account details) are "not_supported": DI reads core data and does not write to it.
 - If semantic_query returns NO_ACCESS, use outcome "no_access". Do not say or hint whether the data exists.
 - Never type digits for institution figures in the narrative or spoken text. Write {{placeholders}} and define each in refs. Period labels such as Q3 2026 and branch names may be written as words.
+- Values in percent, rate and ratio columns are already percentages (0.83 means 0.83%), and the platform formats them. The figures are governed and checked: never question their scale or units, and never ask the user to confirm them with a metric owner.
 - For increases and decreases, use a change or pct_change ref with "up" and "down" words, so the direction is always correct.
 - Keep the narrative to one to three short sentences: lead with the answer, then the most notable difference. Add a chart when comparing more than two values and a table when the user may want every value. Add a definition block when the user asks how something is calculated.
 - Call people "${input.tenant.persons}". Data comes from the nightly build; never call it real time or live.

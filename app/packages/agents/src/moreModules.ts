@@ -270,6 +270,7 @@ export function callReportModule(cr: CallReportService): ModuleSpec {
 - You are read-only. If asked to submit, export for upload or change a mapping, say a person does that.`,
     plan: (text) => {
       const t = clean(text);
+      if (/\b(can|could|are|will) (you|di)\b|\babilit|\bable to\b|\bdo you\b|\bis it possible\b/i.test(t) && /\b(create|prepare|produce|build|generate|make|fill out|fill in)\b/i.test(t)) return { tool: 'cr_overview', args: {} };
       if (/\b(submit|file it|upload|change|edit|remap|map)\b/i.test(t) && !/\bready\b|\bdue\b/i.test(t)) return { say: READ_ONLY };
       if (/\buncategori[sz]ed\b|\bunmapped\b|\bgl accounts?\b/i.test(t)) return { tool: 'cr_uncategorized', args: {} };
       if (/net worth|capital|\bpca\b|cculr|leverage/i.test(t)) return { tool: 'cr_capital', args: {} };
@@ -282,6 +283,24 @@ export function callReportModule(cr: CallReportService): ModuleSpec {
       return { tool: 'cr_readiness', args: {} };
     },
     tools: [
+      {
+        name: 'cr_overview',
+        description: 'What DI does with the 5300: it prepares every schedule from the warehouse and GL and runs the NCUA edits; a person files. With the quarter’s state and the schedules it covers.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const [lines, r] = await Promise.all([cr.lines(), cr.readiness()]);
+          const schedules = [...new Set(lines.map((l) => l.schedule))];
+          const rows = schedules.map((sc) => ({ schedule: sc, items: lines.filter((l) => l.schedule === sc).length }));
+          const open = [...r.errors.map((c) => c.detail.replace(/\.$/, '')), ...(r.warnings.length ? [`${r.warnings.length} ${r.warnings.length === 1 ? 'warning needs' : 'warnings need'} an explanation`] : [])];
+          const state = open.length ? `it isn’t ready yet: ${open.join('; ')}` : 'every edit passes, so it’s ready to review';
+          return {
+            text: `Yes. DI prepares the ${r.quarter.label} NCUA Form 5300 from the warehouse and the general ledger: **${lines.length} lines on ${schedules.length} schedules** (${schedules.join(', ')}), with the prior quarter beside each, and runs NCUA’s edits before it goes to CUOnline. Right now ${state}. Filing it stays with you.`,
+            blocks: [moduleTable(spec, '5300 schedules', ctx.runId, 'callreport.schedules', [{ field: 'schedule', headerName: 'Schedule', type: 'text' }, { field: 'items', headerName: 'Lines', type: 'count' }], rows)],
+            suggestions: ['Are we ready to file the 5300?', 'Show schedule A delinquency', 'How is 025B calculated?'],
+          };
+        },
+      },
       {
         name: 'cr_readiness',
         description: 'Whether the quarter can be filed: the edits that failed (Errors block submission, Warnings need an explanation), the uncategorized GL accounts, the explanations still needed and the due date.',
