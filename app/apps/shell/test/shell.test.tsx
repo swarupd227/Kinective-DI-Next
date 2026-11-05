@@ -98,11 +98,11 @@ describe('navigation rail (FE-EXP-003)', () => {
     await noSeriousViolations(container);
   });
 
-  it('never shows SEG or 5300 to a bank tenant, whatever the session lists', () => {
+  it('never shows SEG to a bank tenant, whatever the session lists, and shows its Call Report (the FFIEC 051)', () => {
     renderShell(<NavRail />, makeSession({ tenant: { ...baseSession.tenant, institutionType: 'bank' }, apps: ['home', 'reports', 'seg', 'callreport'] }));
     const nav = screen.getByRole('navigation', { name: 'Apps' });
     expect(within(nav).queryByRole('link', { name: 'SEG Management' })).toBeNull();
-    expect(within(nav).queryByRole('link', { name: '5300 Call Report' })).toBeNull();
+    expect(within(nav).getByRole('link', { name: 'Call Report' })).toBeTruthy();
   });
 
   it('marks the active app for assistive technology', () => {

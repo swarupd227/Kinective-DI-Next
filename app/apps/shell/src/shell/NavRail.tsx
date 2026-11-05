@@ -63,9 +63,10 @@ export function NavRail() {
   const inTask = Boolean(useMatch('/c/:threadId/*')) && !newTask;
   if (drawer && !mobileNavOpen) return null;
 
-  // Banks never see credit-union-only modules, even if a licence record lists them (FE-EXP-003).
+  // Banks never see credit-union-only modules, even if a licence record lists them (FE-EXP-003). The
+  // Call Report isn't one: a bank's is the FFIEC 051, a credit union's the 5300.
   const bank = session.tenant.institutionType === 'bank';
-  const apps = session.apps.filter((a): a is AppId => a in APP_META && a !== 'conversations' && !(bank && (a === 'seg' || a === 'callreport')));
+  const apps = session.apps.filter((a): a is AppId => a in APP_META && a !== 'conversations' && !(bank && a === 'seg'));
   const grouped = GROUPS.map((g) => ({ ...g, apps: apps.filter((a) => APP_META[a]!.group === g.id) })).filter((g) => g.apps.length);
 
   const item = (a: AppId) => {
