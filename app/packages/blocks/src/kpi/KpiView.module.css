@@ -118,3 +118,33 @@
     border-left: 0;
   }
 }
+
+/* The whole tile opens the figure. A transparent button covers it; the ⓘ sits above the cover. */
+.openable {
+  position: relative;
+  border-radius: var(--radius-md);
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+
+/* The tint reaches a little past the tile's edges, so the text doesn't move or touch the edge. */
+.openable:hover {
+  background: var(--color-bg-hover);
+  box-shadow: 0 0 0 var(--space-2) var(--color-bg-hover);
+}
+
+.cover {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.openable .labelRow > :not(.label) {
+  position: relative;
+  z-index: 1;
+}

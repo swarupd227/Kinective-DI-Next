@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, ty
 import { useNavigate } from 'react-router';
 import { useStore } from 'zustand';
 import clsx from 'clsx';
-import { ArrowUp, AtSign, FileBarChart, Landmark, MapPin, MessageSquare, Mic, MicOff, Paperclip, Slash, Sparkles, Square, Table2, UserRound, WifiOff } from 'lucide-react';
+import { ArrowUp, AtSign, AudioLines, FileBarChart, Landmark, MapPin, MessageSquare, Mic, MicOff, Paperclip, Slash, Sparkles, Square, Table2, UserRound, WifiOff } from 'lucide-react';
 import { Chip, IconButton, useAnnouncer } from '@dinext/ui';
 import type { ApprovalCardBlock, ContextRef, SearchResult, SearchResultKind } from '@dinext/block-schemas';
 import { classifyConfirmation } from '@dinext/voice/language';
@@ -37,6 +37,8 @@ type Suggestion = { id: string; label: string; detail?: string; icon: ReactNode;
 
 /** Push-to-talk shows the understood text for 1.5 s before sending it (FE-VOICE-050). */
 const AUTO_SEND_MS = 1500;
+/** A press on the mic longer than this is hold-to-talk; a shorter one is a tap. */
+const HOLD_MS = 450;
 /** Below this, the transcript waits for the user to check it (FE-VOICE-080). */
 const MIN_CONFIDENCE = 0.6;
 
@@ -77,6 +79,13 @@ export function ConversationBar({ threadId, collapsedByDefault, hero = false }: 
   const autoSend = useRef<{ timer: ReturnType<typeof setInterval> } | null>(null);
   const pttHeld = useRef(false);
   const listening = phase === 'listening';
+  // Hands-free talk: DI listens, answers aloud, then listens again, until it's turned off.
+  const [talkMode, setTalkMode] = useState(false);
+  /** Talk mode's turn: 'sent' once DI has the question, 'answering' while it works. */
+  const talkAwaiting = useRef<'no' | 'sent' | 'answering'>('no');
+  const talkMisses = useRef(0);
+  /** When the mic was pressed: a long press is hold-to-talk, a short one is a tap that ends on silence. */
+  const pressedAt = useRef(0);
 
   const clearAutoSend = useCallback(() => {
     if (autoSend.current) clearInterval(autoSend.current.timer);
@@ -85,16 +94,17 @@ export function ConversationBar({ threadId, collapsedByDefault, hero = false }: 
 
   // Spoken answers follow the conversation on screen.
   useEffect(() => {
-    if (threadId) voice.client?.subscribe(threadId, voice.speak, voice.rate);
-  }, [threadId, voice.client, voice.speak, voice.rate]);
+    if (threadId) voice.client?.subscribe(threadId, voice.speak || talkMode, voice.rate);
+  }, [threadId, voice.client, voice.speak, voice.rate, talkMode]);
 
-  const startListening = () => {
-    if (!voice.client || pttHeld.current) return;
+  const startListening = (autoStop = false, speak = voice.speak) => {
+    // A tap ends on its own, so "already listening" is the client's state, not whether a key is held.
+    if (!voice.client || voice.client.isCapturing) return;
     pttHeld.current = true;
     clearAutoSend();
     setReview(null);
     setVoiceNotice(null);
-    void voice.client.startCapture({ threadId, speak: voice.speak, rate: voice.rate });
+    void voice.client.startCapture({ threadId, speak, rate: voice.rate, autoStop });
   };
   const stopListening = () => {
     if (!pttHeld.current) return;
@@ -266,10 +276,14 @@ export function ConversationBar({ threadId, collapsedByDefault, hero = false }: 
 
   const onFinal = (f: FinalTranscript) => {
     clearAutoSend();
+    pttHeld.current = false;
     if (!f.text.trim()) {
-      setVoiceNotice('I didn’t hear anything. Hold the microphone and speak, then release.');
+      if (talkMode && ++talkMisses.current < 2) return listenAgain();
+      if (talkMode) setTalkMode(false);
+      setVoiceNotice(talkMode ? 'I didn’t hear anything, so talk mode is off. Tap the microphone to speak.' : 'I didn’t hear anything. Tap the microphone and speak.');
       return;
     }
+    talkMisses.current = 0;
     const card = pendingCard();
     const kind = card ? classifyConfirmation(f.text) : null;
     if (card && kind) {
@@ -303,9 +317,50 @@ export function ConversationBar({ threadId, collapsedByDefault, hero = false }: 
       left -= 100;
       if (left > 0) return setReview((r) => (r ? { ...r, secondsLeft: Math.ceil(left / 1000) } : r));
       clearAutoSend();
+      if (talkModeRef.current) talkAwaiting.current = 'sent';
       void submitRef.current('voice', f.normalised);
     }, 100);
     autoSend.current = { timer };
+  };
+
+  // Talk mode listens again once the answer has finished and finished being read aloud.
+  const talkModeRef = useRef(talkMode);
+  const listenAgain = () => {
+    window.setTimeout(() => {
+      if (talkModeRef.current && voice.client && !voice.client.isCapturing && !voice.client.isSpeaking) startListening(true, true);
+    }, 600);
+  };
+  useEffect(() => {
+    talkModeRef.current = talkMode;
+  });
+  useEffect(() => {
+    if (!talkMode || talkAwaiting.current === 'no') return;
+    if (working) {
+      talkAwaiting.current = 'answering';
+      return;
+    }
+    // Listen again only after the answer has run and finished being read aloud.
+    if (talkAwaiting.current !== 'answering' || phase !== 'idle') return;
+    talkAwaiting.current = 'no';
+    listenAgain();
+  });
+  const toggleTalk = () => {
+    if (talkMode) {
+      setTalkMode(false);
+      talkAwaiting.current = 'no';
+      if (voice.client?.isCapturing) {
+        pttHeld.current = false;
+        voice.client.stopCapture(false);
+      }
+      voice.client?.cancelSpeech();
+      announce('Talk mode off');
+      return;
+    }
+    setTalkMode(true);
+    talkMisses.current = 0;
+    setExpanded(true);
+    announce('Talk mode on. Speak when you’re ready; DI answers aloud and listens again.');
+    startListening(true, true);
   };
 
   // Handlers change every render; the subscription calls the latest ones.
@@ -355,6 +410,7 @@ export function ConversationBar({ threadId, collapsedByDefault, hero = false }: 
     if (e.key === 'Escape' && (voice.client?.isSpeaking || listening)) {
       // Esc stops speech first, then a running run (FE-VOICE-020).
       e.preventDefault();
+      if (talkMode) setTalkMode(false);
       if (listening) {
         pttHeld.current = false;
         voice.client?.stopCapture(false);
@@ -398,36 +454,57 @@ export function ConversationBar({ threadId, collapsedByDefault, hero = false }: 
     }
   };
 
+  // Tap to talk: a tap starts listening and DI stops when you pause, or tap again to stop. Holding the
+  // button still works as push-to-talk, for people who prefer it.
   const micButton = voice.available ? (
-    <button
-      type="button"
-      className={clsx(styles.mic, listening && styles.micLive)}
-      aria-label={listening ? 'Listening. Release to send' : 'Hold to talk'}
-      aria-pressed={listening}
-      aria-keyshortcuts="Control+Shift+Space"
-      title="Hold to talk (or hold Space in an empty box, or Ctrl+Shift+Space)"
-      onPointerDown={(e) => {
-        e.preventDefault();
-        (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-        startListening();
-      }}
-      onPointerUp={stopListening}
-      onPointerCancel={stopListening}
-      onKeyDown={(e) => {
-        if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) {
+    <>
+      <button
+        type="button"
+        className={clsx(styles.mic, listening && !talkMode && styles.micLive)}
+        aria-label={listening && !talkMode ? 'Listening. Tap to stop' : 'Tap to talk'}
+        aria-pressed={listening && !talkMode}
+        aria-keyshortcuts="Control+Shift+Space"
+        title="Tap to talk: DI stops when you pause. You can also hold it, or hold Space in an empty box."
+        onPointerDown={(e) => {
           e.preventDefault();
-          startListening();
-        }
-      }}
-      onKeyUp={(e) => {
-        if (e.key === ' ' || e.key === 'Enter') {
-          e.preventDefault();
-          stopListening();
-        }
-      }}
-    >
-      <Mic size={18} aria-hidden />
-    </button>
+          if (talkMode) return;
+          if (voice.client?.isCapturing) {
+            pressedAt.current = 0;
+            return stopListening();
+          }
+          (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+          pressedAt.current = Date.now();
+          startListening(true);
+        }}
+        onPointerUp={() => {
+          // Released after a long press: that was hold-to-talk, so the utterance ends now.
+          if (pressedAt.current && Date.now() - pressedAt.current > HOLD_MS) stopListening();
+          pressedAt.current = 0;
+        }}
+        onPointerCancel={() => {
+          pressedAt.current = 0;
+        }}
+        onKeyDown={(e) => {
+          if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) {
+            e.preventDefault();
+            if (voice.client?.isCapturing) stopListening();
+            else startListening(true);
+          }
+        }}
+      >
+        <Mic size={18} aria-hidden />
+      </button>
+      <button
+        type="button"
+        className={clsx(styles.mic, talkMode && styles.micLive)}
+        aria-label={talkMode ? 'Talk mode on. Tap to end' : 'Talk mode: a hands-free conversation'}
+        aria-pressed={talkMode}
+        title={talkMode ? 'End talk mode' : 'Talk mode: speak, DI answers aloud and listens again'}
+        onClick={toggleTalk}
+      >
+        <AudioLines size={18} aria-hidden />
+      </button>
+    </>
   ) : (
     <IconButton label={voice.reason ?? 'Voice is not available'} icon={<MicOff size={18} aria-hidden />} disabled />
   );

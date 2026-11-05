@@ -133,6 +133,18 @@ describe.skipIf(!up)('more modules against the warehouse', () => {
       const { r } = await run(cr, turn('Are we ready to file Q3?', 'thr_r1'));
       expect(r.texts[0]).toContain('isn’t ready yet');
       expect(r.texts[0]).toContain('uncategorized GL accounts');
+      // The failed check names the accounts behind it, with a table to drill into.
+      expect(r.texts[0]).toContain('**1795** Prepaid software licences');
+      expect(r.blocks.map((b) => b.title)).toContain('Uncategorized GL accounts');
+    });
+
+    it('lists the uncategorized GL accounts, largest first, with where each likely belongs', async () => {
+      const { r } = await run(cr, turn('Which GL accounts are uncategorized?', 'thr_r5'));
+      expect(r.texts[0]).toContain('**3 GL accounts have** no 5300 line yet, totalling **$18,400**');
+      const table = r.blocks[0] as Extract<Block, { type: 'table' }>;
+      expect(validateBlock(table).ok).toBe(true);
+      expect(table.data.rows.map((x) => x.gl)).toEqual(['1795', '2310', '1188']);
+      expect(table.data.rows[0]).toMatchObject({ likely: 'Prepaid and other assets', balance: 9850 });
     });
 
     it('builds a line from its entry types, with the signs applied', async () => {

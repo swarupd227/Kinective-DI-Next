@@ -35,6 +35,15 @@ export interface VoiceClientOptions {
 
 const PLAYBACK_RATE = 16000;
 
+/** RMS level of a 100 ms frame that counts as speech (float samples; quiet rooms sit near 0.003). */
+const SPEECH_LEVEL = 0.02;
+/** 1.5 s of quiet after speech ends a tap-to-talk utterance. */
+const QUIET_FRAMES = 15;
+/** Nothing said in 8 s ends it. */
+const NO_SPEECH_FRAMES = 80;
+/** One utterance is at most 60 s. */
+const MAX_FRAMES = 600;
+
 export class VoiceClient {
   readonly store = createStore<VoiceState>(() => ({ phase: 'off', partial: '', level: 0, caption: '', error: null, noisy: false, readBacks: [] }));
   private ws: WebSocket | null = null;
@@ -63,6 +72,8 @@ export class VoiceClient {
   private cancelled = new Set<string>();
   /** A timer, not requestAnimationFrame: background tabs pause animation frames but not audio. */
   private clock: ReturnType<typeof setTimeout> | null = null;
+
+  private vad: { heard: number; quiet: number; frames: number } | null = null;
 
   constructor(private readonly opts: VoiceClientOptions) {}
 
@@ -139,11 +150,15 @@ export class VoiceClient {
 
   // ---- capture ----------------------------------------------------------------------------------
 
-  /** Press: start listening. Starting to talk interrupts any answer that is playing (barge-in). */
-  async startCapture(opts: { threadId?: string; speak: boolean; rate: number }) {
+  /**
+   * Start listening. Starting to talk interrupts any answer that is playing (barge-in). With autoStop,
+   * the utterance ends by itself once the speaker has been quiet for a moment, as in tap-to-talk.
+   */
+  async startCapture(opts: { threadId?: string; speak: boolean; rate: number; autoStop?: boolean }) {
     if (this.capturing || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     this.cancelSpeech(true);
     this.capturing = true;
+    this.vad = opts.autoStop ? { heard: 0, quiet: 0, frames: 0 } : null;
     this.set({ phase: 'listening', partial: '', noisy: false, error: null, level: 0 });
     this.unlockPlayback();
     try {
@@ -157,6 +172,7 @@ export class VoiceClient {
           if (!this.capturing) return;
           this.ws?.send(e.data.pcm);
           this.set({ level: e.data.level });
+          this.endOnSilence(e.data.level);
         };
         this.capture = { ctx, stream, node };
       } else {
@@ -197,6 +213,7 @@ export class VoiceClient {
     }
     this.capturing = false;
     this.started = false;
+    this.vad = null;
     if (send) {
       this.send({ type: 'utterance.end' });
       this.set({ phase: 'processing', level: 0 });
@@ -212,6 +229,27 @@ export class VoiceClient {
 
   get isCapturing() {
     return this.capturing;
+  }
+
+  /**
+   * Ends a tap-to-talk utterance on silence. Frames arrive every 100 ms with their RMS level; speech
+   * starts after two loud frames, and 1.5 s of quiet after it ends the utterance. Nothing said within
+   * 8 s ends it too, and the transcript comes back empty, which the bar explains.
+   */
+  private endOnSilence(level: number) {
+    const v = this.vad;
+    if (!v || !this.started) return;
+    v.frames += 1;
+    if (level >= SPEECH_LEVEL) {
+      v.heard += 1;
+      v.quiet = 0;
+    } else if (v.heard >= 2 && level < SPEECH_LEVEL * 0.6) {
+      v.quiet += 1;
+    }
+    if ((v.heard >= 2 && v.quiet >= QUIET_FRAMES) || (v.heard < 2 && v.frames >= NO_SPEECH_FRAMES) || v.frames >= MAX_FRAMES) {
+      this.vad = null;
+      this.stopCapture(true);
+    }
   }
 
   // ---- playback ---------------------------------------------------------------------------------

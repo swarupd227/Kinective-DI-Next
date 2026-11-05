@@ -20,6 +20,8 @@ type Resolution = NonNullable<ApprovalCardBlock['data']['resolution']>;
 /** The narrative marks key figures with **bold**; nothing else in it is markup. */
 /** Enough to start from. The list below is what matters; a wall of prompts pushes it off the screen. */
 const MAX_PROMPTS = 4;
+/** The day planner's own phrasings ("What should I do today?", "What's on my plate today?"). */
+const TODAY_PROMPT = /\bwhat should (i|we) do today\b|\bwhat[’']?s on my plate\b/i;
 
 /** The server greets in the institution's time; this is the time where the person is reading. */
 const greetingNow = (greeting: string) => {
@@ -102,6 +104,8 @@ export function HomePage() {
   );
   // Desktop reads like a briefing: what needs you on the left, what changed and your own work on the right.
   // An administrator's Platform health sits beside "Needs you", where an executive sees what changed.
+  // Home already is the answer to "what should I do today?", so that prompt would only retell the page.
+  const prompts = h.suggestions.filter((s) => !TODAY_PROMPT.test(s));
   const main = h.sections.filter((s) => !['what_changed', 'your_work', 'scheduled_reports', 'platform'].includes(s.id));
   const side = [section('platform'), yourWork, scheduled].filter((s): s is HomeSection => !!s);
 
@@ -123,9 +127,9 @@ export function HomePage() {
             </p>
           </div>
           <ConversationBar collapsedByDefault={false} hero />
-          {h.suggestions.length > 0 && (
+          {prompts.length > 0 && (
             <ul className={styles.prompts} aria-label="Try asking">
-              {h.suggestions.slice(0, MAX_PROMPTS).map((s) => (
+              {prompts.slice(0, MAX_PROMPTS).map((s) => (
                 <li key={s}>
                   <button type="button" className={styles.prompt} onClick={() => void ask(s)}>
                     {s}
@@ -137,11 +141,14 @@ export function HomePage() {
         </header>
 
         {kpis.length > 0 && (
-          <section className={styles.kpis} aria-label="Key figures">
-            {kpis.map((b) => (
-              <BlockRenderer key={b.id} block={{ ...b, title: undefined }} />
-            ))}
-          </section>
+          // Each tile opens on click and explains itself with its ⓘ, so the source chips would only repeat the names.
+          <BlockHostProvider value={{ ...host, pageBuildId: h.build.buildId, hideSources: true }}>
+            <section className={styles.kpis} aria-label="Key figures">
+              {kpis.map((b) => (
+                <BlockRenderer key={b.id} block={{ ...b, title: undefined }} />
+              ))}
+            </section>
+          </BlockHostProvider>
         )}
 
         <div className={styles.columns}>

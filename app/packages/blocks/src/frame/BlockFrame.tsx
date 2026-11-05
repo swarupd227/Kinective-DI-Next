@@ -156,7 +156,7 @@ export function BlockFrame({ block, status = 'complete', progressText, bare, hea
 
 function Footer({ block, status }: { block: Block; status: FrameStatus }) {
   const host = useBlockHost();
-  const { sources } = block.provenance;
+  const sources = host.hideSources ? [] : block.provenance.sources;
   const showFreshness = block.freshness.kind === 'nightly_build' && block.type !== 'notice' && block.freshness.buildId !== host.pageBuildId;
   if (status === 'loading' || (!sources.length && !showFreshness)) return null;
   return (

@@ -79,6 +79,8 @@ export const MODULES_DDL = [
   `CREATE TABLE cr_line (code VARCHAR(8) PRIMARY KEY, schedule VARCHAR(4) NOT NULL, name VARCHAR(80) NOT NULL)`,
   `CREATE TABLE cr_entry (code VARCHAR(8) NOT NULL, entry_type VARCHAR(60) NOT NULL, source VARCHAR(60) NOT NULL, multiplier INT NOT NULL, prior_value DECIMAL(16,2) NOT NULL, current_value DECIMAL(16,2) NOT NULL, PRIMARY KEY (code, entry_type))`,
   `CREATE TABLE cr_check (name VARCHAR(80) PRIMARY KEY, status VARCHAR(8) NOT NULL, detail VARCHAR(160) NOT NULL)`,
+  // The general ledger accounts the 5300 maps from. An account with no line is what fails the check.
+  `CREATE TABLE cr_gl_account (gl_number VARCHAR(8) PRIMARY KEY, name VARCHAR(80) NOT NULL, balance DECIMAL(14,2) NOT NULL, line_code VARCHAR(8) NULL, opened DATE NOT NULL, last_posted DATE NOT NULL, likely_line VARCHAR(80) NULL, note VARCHAR(160) NULL)`,
   `CREATE TABLE col_outreach (loan_id INT PRIMARY KEY, status VARCHAR(12) NOT NULL, queued_by VARCHAR(80) NOT NULL, approval_id VARCHAR(40) NOT NULL)`,
   `CREATE TABLE cmp_campaign (campaign_id INT PRIMARY KEY, name VARCHAR(80) NOT NULL, channel VARCHAR(20) NOT NULL, product VARCHAR(40) NOT NULL, sent INT NOT NULL, applications INT NOT NULL, loan_dollars DECIMAL(14,2) NOT NULL)`,
   `CREATE TABLE cmp_audience (audience_id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(80) NOT NULL, category VARCHAR(40) NOT NULL, size INT NOT NULL, created_by VARCHAR(40) NOT NULL, approval_id VARCHAR(40) NOT NULL UNIQUE)`,
@@ -132,6 +134,17 @@ export const MODULE_FIXTURES = {
     ['041B', '180 days or more', 'Core: loans', 1, 240_000, 225_000],
     ['115', 'Interest income', 'GL 4000-4199', 1, 3_920_000, 4_180_000],
     ['115', 'Operating expenses', 'GL 7000-7999', -1, 2_870_000, 3_010_000],
+  ],
+  // Three have no 5300 line yet, totalling $18,400: the failed check names them.
+  glAccounts: [
+    ['1010', 'Vault cash', 4_480_000, '010', '2002-03-01', '2026-10-24', null, null],
+    ['1210', 'Certificates at other institutions', 17_900_000, '013', '2009-06-15', '2026-10-22', null, null],
+    ['1225', 'US Treasury notes', 31_250_000, '013', '2011-01-10', '2026-10-20', null, null],
+    ['1188', 'Due from CUSO, card program', 2_430, null, '2026-08-19', '2026-10-17', 'Other assets', 'Opened in August for the new card program; no 5300 line chosen yet.'],
+    ['1795', 'Prepaid software licences', 9_850, null, '2026-07-02', '2026-10-01', 'Prepaid and other assets', 'Annual licence prepaid in July and amortised monthly; mapping not set.'],
+    ['2310', 'Suspense, card settlement', 6_120, null, '2026-09-28', '2026-10-24', 'Accrued liabilities', 'Settlement timing differences; should clear or be mapped before filing.'],
+    ['4010', 'Interest on loans', 4_180_000, '115', '2002-03-01', '2026-10-24', null, null],
+    ['7010', 'Salaries and benefits', 1_840_000, '115', '2002-03-01', '2026-10-24', null, null],
   ],
   crChecks: [['Accounts balance', 'Pass', 'Assets equal liabilities and equity.'], ['GL accounts categorized', 'Fail', '3 uncategorized GL accounts, totalling $18,400.'], ['Delinquency agrees with the core', 'Pass', 'Within tolerance.'], ['Net income agrees with the GL', 'Pass', 'Within tolerance.']],
   campaigns: [[1, 'HELOC fall', 'Email', 'HELOC', 18400, 212, 8_400_000], [2, 'New auto', 'Postcard', 'Auto', 26100, 188, 5_100_000], [3, 'Card balance transfer', 'Email', 'Credit Card', 31200, 340, 1_260_000], [4, 'First home', 'Branch', 'First mortgage', 2200, 41, 9_800_000], [5, 'Refi your auto', 'Email', 'Auto', 14300, 96, 2_350_000], [6, 'Holiday loan', 'Email', 'Personal Loan', 22800, 154, 1540000], [7, 'Certificate special', 'Email', 'Certificate', 19600, 233, 0], [8, 'Teen checking', 'Branch', 'Checking', 3100, 87, 0], [9, 'Boat and RV', 'Postcard', 'Auto', 8700, 39, 1420000], [10, 'Spring HELOC', 'Email', 'HELOC', 17500, 168, 6900000], [11, 'Skip a payment', 'Email', 'Auto', 24400, 412, 0], [12, 'Mortgage pre-approval', 'Digital', 'First mortgage', 12900, 64, 7600000]],

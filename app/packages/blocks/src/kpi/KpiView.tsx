@@ -10,6 +10,8 @@ export interface KpiTileProps {
   data: KpiData;
   loading?: boolean;
   onExplain?: () => void;
+  /** Clicking anywhere on the tile opens the figure: the whole tile is the target, not a link below it. */
+  onOpen?: () => void;
 }
 
 function deltaTone(c: NonNullable<KpiData['comparison']>): 'good' | 'bad' | 'neutral' {
@@ -18,7 +20,7 @@ function deltaTone(c: NonNullable<KpiData['comparison']>): 'good' | 'bad' | 'neu
 }
 
 /** One KPI: value, change with direction in icon + words (never colour alone), sparkline, definition link. */
-export function KpiTile({ data, loading, onExplain }: KpiTileProps) {
+export function KpiTile({ data, loading, onExplain, onOpen }: KpiTileProps) {
   const labelId = useId();
   if (loading) {
     return (
@@ -39,7 +41,9 @@ export function KpiTile({ data, loading, onExplain }: KpiTileProps) {
     : '';
 
   return (
-    <div className={styles.tile} role="group" aria-labelledby={labelId}>
+    <div className={clsx(styles.tile, onOpen && styles.openable)} role="group" aria-labelledby={labelId}>
+      {/* One button covers the tile, so a click anywhere opens it; the ⓘ sits above it and still explains. */}
+      {onOpen && <button type="button" className={styles.cover} aria-label={`Open ${data.label} by branch`} onClick={onOpen} />}
       <div className={styles.labelRow}>
         <span id={labelId} className={styles.label}>
           {data.label}

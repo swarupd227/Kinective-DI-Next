@@ -36,6 +36,8 @@ export interface BlockHost {
   now?: () => number;
   /** The build the page already names in its header: blocks from it don't repeat "Data as of". */
   pageBuildId?: string;
+  /** The page shows each block's source another way (Home's figure tiles carry their own ⓘ). */
+  hideSources?: boolean;
 }
 
 const BlockHostContext = createContext<BlockHost>({});

@@ -240,18 +240,20 @@ export function callReportModule(cr: CallReportService): ModuleSpec {
     id: 'callreport',
     prefix: 'cr',
     agent: 'Call Report',
-    request: /\b5300\b|\bcall report\b|\bready to file\b|\bschedule [A-Z]\b|\bline \d{3}[A-Z]?\b|\b(how is|why did) \d{3}[A-Z]?\b/i,
+    request: /\b5300\b|\bcall report\b|\bready to file\b|\buncategori[sz]ed gl\b|\bgl accounts? (are|is) (uncategori[sz]ed|unmapped)\b|\bschedule [A-Z]\b|\bline \d{3}[A-Z]?\b|\b(how is|why did) \d{3}[A-Z]?\b/i,
     noAccess,
     sources: [{ kind: 'table', label: '5300 Call Report', ref: 'table:cr_line' }],
     prompt: ({ tenant, user, title }) => `You are the Call Report agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) prepares the quarterly 5300.
 
-- "Are we ready to file Q3?": cr_readiness.
+- "Are we ready to file Q3?": cr_readiness. It names any uncategorized GL accounts.
+- "Which GL accounts are uncategorized?": cr_uncategorized.
 - "How is 025B calculated?", "why did 025B go up?": cr_line_explain.
 - "Show schedule A changes over 10% from last quarter": cr_variance.
 - You are read-only. If asked to export, submit or change a mapping, say a person does that in the 5300 workspace.`,
     plan: (text) => {
       const t = clean(text);
       if (/\b(export|submit|file it|upload|change|edit|remap)\b/i.test(t) && !/\bready\b/i.test(t)) return { say: READ_ONLY };
+      if (/\buncategori[sz]ed\b|\bunmapped\b|\bgl accounts?\b/i.test(t)) return { tool: 'cr_uncategorized', args: {} };
       if (/\bready\b/i.test(t)) return { tool: 'cr_readiness', args: {} };
       const line = code.exec(t)?.[1];
       if (line && line !== '5300') return { tool: 'cr_line_explain', args: { code: line } };
@@ -265,7 +267,27 @@ export function callReportModule(cr: CallReportService): ModuleSpec {
         run: async (_: unknown, ctx) => {
           need(ctx);
           const r = await cr.readiness();
-          return { text: r.ready ? 'The Q3 5300 is **ready to review**: every check passed. Export for upload stays with you in the 5300 workspace.' : `The Q3 5300 **isn’t ready yet**: ${r.failed.length} of ${r.checks.length} checks failed. ${r.failed.map((c) => `${c.name}: ${c.detail}`).join(' ')}`, blocks: [moduleTable(spec, 'Checks', ctx.runId, 'dq.status_report', [{ field: 'name', headerName: 'Check', type: 'text' }, { field: 'result', headerName: 'Result', type: 'text' }, { field: 'detail', headerName: 'Detail', type: 'text' }], r.checks.map((c) => ({ name: c.name, result: c.passed ? 'Passed' : 'Failed', detail: c.detail })))] };
+          const gl = r.uncategorized;
+          // A failed mapping check names the accounts, so nobody has to go looking for them.
+          const glText = gl.length ? ` The uncategorized GL accounts are ${gl.map((g) => `**${g.glNumber}** ${g.name} (${dollars(g.balance)})`).join(', ')}.` : '';
+          const checks = moduleTable(spec, 'Checks', ctx.runId, 'dq.status_report', [{ field: 'name', headerName: 'Check', type: 'text' }, { field: 'result', headerName: 'Result', type: 'text' }, { field: 'detail', headerName: 'Detail', type: 'text' }], r.checks.map((c) => ({ name: c.name, result: c.passed ? 'Passed' : 'Failed', detail: c.detail })));
+          const accounts = gl.length ? [moduleTable(spec, 'Uncategorized GL accounts', ctx.runId, 'callreport.gl_uncategorized', [{ field: 'gl', headerName: 'GL account', type: 'text' }, { field: 'name', headerName: 'Name', type: 'text' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'lastPosted', headerName: 'Last posted', type: 'text' }, { field: 'likely', headerName: 'Likely 5300 line', type: 'text' }, { field: 'note', headerName: 'Why it is open', type: 'text' }], gl.map((g) => ({ gl: g.glNumber, name: g.name, balance: g.balance, lastPosted: g.lastPosted, likely: g.likelyLine ?? 'Not suggested', note: g.note ?? '' })))] : [];
+          return { text: r.ready ? 'The Q3 5300 is **ready to review**: every check passed. Export for upload stays with you in the 5300 workspace.' : `The Q3 5300 **isn’t ready yet**: ${r.failed.length} of ${r.checks.length} checks failed. ${r.failed.map((c) => `${c.name}: ${c.detail}`).join(' ')}${glText}`, blocks: [checks, ...accounts], ...(gl.length ? { suggestions: ['Which GL accounts are uncategorized?'] } : {}) };
+        },
+      },
+      {
+        name: 'cr_uncategorized',
+        description: 'The GL accounts with no 5300 line yet: balance, last posting, the line they most likely belong on, and why they are open.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const gl = await cr.uncategorized();
+          if (!gl.length) return { text: 'Every GL account is mapped to a 5300 line.' };
+          const total = gl.reduce((n, g) => n + g.balance, 0);
+          return {
+            text: `**${gl.length} GL ${gl.length === 1 ? 'account has' : 'accounts have'}** no 5300 line yet, totalling **${dollars(total)}**. The largest is **${gl[0]!.glNumber}** ${gl[0]!.name} at ${dollars(gl[0]!.balance)}. Mapping them is a person’s change in the 5300 workspace; DI only reads them.`,
+            blocks: [moduleTable(spec, 'Uncategorized GL accounts', ctx.runId, 'callreport.gl_uncategorized', [{ field: 'gl', headerName: 'GL account', type: 'text' }, { field: 'name', headerName: 'Name', type: 'text' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'lastPosted', headerName: 'Last posted', type: 'text' }, { field: 'likely', headerName: 'Likely 5300 line', type: 'text' }, { field: 'note', headerName: 'Why it is open', type: 'text' }], gl.map((g) => ({ gl: g.glNumber, name: g.name, balance: g.balance, lastPosted: g.lastPosted, likely: g.likelyLine ?? 'Not suggested', note: g.note ?? '' })))],
+          };
         },
       },
       {

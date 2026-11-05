@@ -92,6 +92,7 @@ async function main() {
       await insert(admin, 'cr_line', ['code', 'schedule', 'name'], fx.lines);
       await insert(admin, 'cr_entry', ['code', 'entry_type', 'source', 'multiplier', 'prior_value', 'current_value'], fx.entries);
       await insert(admin, 'cr_check', ['name', 'status', 'detail'], fx.crChecks);
+      await insert(admin, 'cr_gl_account', ['gl_number', 'name', 'balance', 'line_code', 'opened', 'last_posted', 'likely_line', 'note'], fx.glAccounts);
       await insert(admin, 'seg_company', ['company_id', 'name', 'stage', 'members', 'new_members', 'loans', 'deposits', 'owner', 'sponsorship'], fx.companies);
       await insert(admin, 'seg_interaction', ['company_id', 'at', 'kind', 'note', 'by_name'], fx.interactions);
     }

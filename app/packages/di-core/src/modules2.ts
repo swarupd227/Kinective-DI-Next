@@ -116,6 +116,17 @@ export class OperationsService {
 
 // ---- 5300 Call Report -------------------------------------------------------------------------
 
+export interface UncategorizedGl {
+  glNumber: string;
+  name: string;
+  balance: number;
+  opened: string;
+  lastPosted: string;
+  /** Where it most likely belongs on the 5300, for the person who maps it. */
+  likelyLine: string | null;
+  note: string | null;
+}
+
 export class CallReportService {
   constructor(private readonly pool: Pool) {}
 
@@ -159,7 +170,14 @@ export class CallReportService {
 
   async readiness() {
     const checks = (await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM cr_check ORDER BY name')).map((c) => ({ name: c.name as string, passed: c.status === 'Pass', detail: c.detail as string }));
-    return { checks, failed: checks.filter((c) => !c.passed), ready: checks.every((c) => c.passed) };
+    return { checks, failed: checks.filter((c) => !c.passed), ready: checks.every((c) => c.passed), uncategorized: await this.uncategorized() };
+  }
+
+  /** GL accounts with no 5300 line: what the "GL accounts categorized" check counts. */
+  async uncategorized(): Promise<UncategorizedGl[]> {
+    // A tenant seeded before the table existed has no accounts to show, not an error.
+    const found = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM cr_gl_account WHERE line_code IS NULL ORDER BY balance DESC').catch(() => []);
+    return found.map((g) => ({ glNumber: g.gl_number as string, name: g.name as string, balance: Number(g.balance), opened: day(g.opened), lastPosted: day(g.last_posted), likelyLine: (g.likely_line as string | null) ?? null, note: (g.note as string | null) ?? null }));
   }
 }
 
