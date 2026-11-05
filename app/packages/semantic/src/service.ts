@@ -1,6 +1,7 @@
 // Semantic Layer service (spec 13.3 service 7, 16.8 Execute and return). Runs compiled parts
 // through the read-only tenant pool with a statement timeout and row cap, merges them, and returns
 // rows plus the model version, build, lineage, plain-English explanation and SQL hash.
+import { listRecords, recordKindFor, type RecordKind, type RecordsResult } from './records.ts';
 import { createHash } from 'node:crypto';
 import type { Pool } from 'mysql2/promise';
 import { searchCatalog, type CatalogResult } from './catalog.ts';
@@ -37,6 +38,8 @@ export interface SemanticResult {
   truncated: boolean;
   periods: Period[] | null;
   filtersApplied: string[];
+  /** For each metric, the kind of record behind it (loans, accounts, members), or null. */
+  records?: Record<string, RecordKind | null>;
   lineage: { metric: string; measures: string[]; tables: string[] }[];
   explanation: string;
   /** Present only for users with Query Browser or Show Queries (BE-SEM-020). */
@@ -91,6 +94,16 @@ export class SemanticService {
 
   private get env(): CompileEnv {
     return { model: this.model, dimensionValues: this.dimensionValues, branchIds: this.branchIds, latestMonthEnd: this.build.latestMonthEnd };
+  }
+
+  /** The loans, accounts or members behind a metric, under the same filters and purview. */
+  records(req: { metric: string; filters?: { dimension: string; values: string[] }[]; limit?: number }, ctx: { purviewBranches?: string[]; memberDetails?: boolean }): Promise<RecordsResult> {
+    return listRecords(this.pool, this.env, req, ctx);
+  }
+
+  /** Whether a metric is counted from loans, accounts or members, so its records can be listed. */
+  recordKind(metric: string): RecordKind | null {
+    return recordKindFor(this.env, metric);
   }
 
   search(query: string): CatalogResult {
@@ -180,6 +193,7 @@ export class SemanticService {
       truncated: rowCount > rows.length,
       periods: compiled.periods,
       filtersApplied: compiled.filtersApplied,
+      records: Object.fromEntries(request.metrics.map((m) => [m, recordKindFor(this.env, m)])),
       lineage: compiled.lineage,
       explanation: explain(compiled.metrics, request, compiled.periods, this.model, this.build),
       sql: ctx.canViewSql ? sqlText : undefined,

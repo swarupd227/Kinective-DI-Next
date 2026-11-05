@@ -3,3 +3,4 @@ export { SemanticQueryRequest, SemanticError, type SemanticQueryInput, type Quer
 export { compile, resolvePeriods, type CompiledQuery, type Period } from './compile.ts';
 export { searchCatalog, MATCH_THRESHOLD, type CatalogResult, type CatalogHit } from './catalog.ts';
 export { SemanticService, type SemanticResult, type ResultColumn, type ResultRow, type MetricDefinition, type BuildInfo } from './service.ts';
+export type { RecordKind, RecordsResult } from './records.ts';

@@ -313,7 +313,8 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
       widgets: [
         { id: 'a1', title: 'Loan officer production', kind: 'analysis', analysis: 'lending.officers', metrics: [], size: 'full' },
         kpi('k1', 'New loan applications', 'new_loan_applications'),
-        kpi('k2', 'Approval rate', 'approval_rate'),
+        // The latest month's applications are still being decided, so its rate isn't compared with the last.
+        { ...kpi('k2', 'Approval rate', 'approval_rate'), compare: false },
         kpi('k3', 'New loan dollars', 'new_loan_amount'),
         kpi('k4', 'Delinquency 60+', 'delinquency_ratio_60_plus'),
         { id: 'a2', title: 'Time in each stage', kind: 'analysis', analysis: 'lending.stages', metrics: [], size: 'half' },

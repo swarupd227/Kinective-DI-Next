@@ -187,7 +187,7 @@ async function widgetBlock(w: ReportWidget, def: ReportDefinition, c: { period: 
     }
     const block = buildBlock(spec, results, new Map(), REPORT_AGENT, runId);
     // Pin and export belong to the whole report; a widget keeps Explain and Open grid.
-    const actions = (block.actions ?? []).filter((a) => a.kind === 'explain' || a.kind === 'open_workspace');
+    const actions = (block.actions ?? []).filter((a) => a.kind === 'explain' || a.kind === 'open_workspace' || a.id === 'records');
     return { block: { ...block, title: `${w.title}${scope && w.kind !== 'kpi' ? scope : ''}`, actions } as Block, sql: results.get('r')?.sql };
   } catch (e) {
     if (!(e instanceof SemanticError)) throw e;

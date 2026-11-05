@@ -95,7 +95,7 @@ function closest(value: string, options: string[]): string[] {
   return options.filter((o) => o.toLowerCase().includes(v) || v.includes(o.toLowerCase())).slice(0, 3);
 }
 
-function setting(sql: string, model: SemanticModel) {
+export function setting(sql: string, model: SemanticModel) {
   return sql.replace(/\{\{\s*setting\.([a-z_]+)\s*\}\}/g, (_, k: string) => {
     const v = model.settings[k];
     if (v === undefined || !Number.isInteger(v)) throw new Error(`Unknown setting ${k}`);

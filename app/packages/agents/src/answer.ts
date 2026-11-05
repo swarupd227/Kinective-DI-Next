@@ -277,8 +277,18 @@ const traceAction = (sources: Block['provenance']['sources']): NonNullable<Block
   return metric ? [{ id: 'lineage', kind: 'ask_followup', label: 'Where does this number come from?', params: { question: `Where does ${metric.label.replace(/ \(definition\)$/, '')} come from?` } }] : [];
 };
 
-const blockActions = (sources: Block['provenance']['sources']): Block['actions'] => [
+/** "Show the loans behind delinquency 60+ at Eastgate": the records a figure counts, under its filters. */
+export const recordsAction = (result: SemanticResult, metric: string, label: string): NonNullable<Block['actions']> => {
+  const kind = result.records?.[metric];
+  if (!kind) return [];
+  const where = (result.request.filters ?? []).filter((f) => f.op !== 'not_in').flatMap((f) => f.values);
+  const noun = kind === 'members' ? 'members' : kind;
+  return [{ id: 'records', kind: 'ask_followup', label: `Show the ${noun} behind it`, params: { question: `Show the ${noun} behind ${label.replace(/\s*\(.*\)$/, '').toLowerCase()}${where.length ? ` for ${where.join(', ')}` : ''}` } }];
+};
+
+const blockActions = (sources: Block['provenance']['sources'], records: NonNullable<Block['actions']> = []): Block['actions'] => [
   { id: 'explain', kind: 'explain', label: 'How it’s calculated' },
+  ...records,
   { id: 'open', kind: 'open_workspace', label: 'See the rows' },
   { id: 'pin', kind: 'pin', label: 'Pin to Home', riskTier: 'low' },
   { id: 'export', kind: 'export', label: 'Export' },
@@ -317,7 +327,7 @@ export function buildBlock(spec: BlockSpec, results: Map<string, SemanticResult>
       title: spec.title,
       provenance: prov,
       freshness: freshness(result),
-      actions: blockActions(prov.sources),
+      actions: blockActions(prov.sources, metricCols[0] ? recordsAction(result, metricCols[0].key, metricCols[0].label) : []),
       data: {
         columns: shown.map((c, i) => ({
           field: c.key,
@@ -348,7 +358,8 @@ export function buildBlock(spec: BlockSpec, results: Map<string, SemanticResult>
         value: Math.round(change * 10) / 10,
         unit: pct ? 'bp' : 'percent',
         direction: change > 0 ? 'up' : change < 0 ? 'down' : 'flat',
-        goodWhen: /delinquen/.test(spec.metric) ? 'down' : 'up',
+        // Lower is better for credit losses, costs and people leaving.
+        goodWhen: /delinquen|charge_off|efficiency|cost_of|expense|provision|attrition|members_left/.test(spec.metric) ? 'down' : 'up',
       };
     }
     const block: KpiBlock = {
@@ -358,7 +369,7 @@ export function buildBlock(spec: BlockSpec, results: Map<string, SemanticResult>
       title: spec.title,
       provenance: prov,
       freshness: freshness(result),
-      actions: [{ id: 'explain', kind: 'explain', label: 'How it’s calculated' }, { id: 'pin', kind: 'pin', label: 'Pin to Home', riskTier: 'low' }, ...traceAction(prov.sources)],
+      actions: [{ id: 'explain', kind: 'explain', label: 'How it’s calculated' }, ...recordsAction(result, spec.metric, col.label), { id: 'pin', kind: 'pin', label: 'Pin to Home', riskTier: 'low' }, ...traceAction(prov.sources)],
       data: { label: col.label, value, unit: unitOf(col.format), format: col.format === 'currency' ? { compact: true, decimals: 2 } : { decimals: col.format === 'percent_1' ? 1 : 2 }, comparison, metricRef: `metric:${spec.metric}` },
     };
     return block;
@@ -396,7 +407,7 @@ export function buildBlock(spec: BlockSpec, results: Map<string, SemanticResult>
     subtitle: spec.subtitle,
     provenance: prov,
     freshness: freshness(result),
-    actions: blockActions(prov.sources),
+    actions: blockActions(prov.sources, recordsAction(result, metric, col.label)),
     a11y: {
       summary: `${spec.chart === 'line' ? 'Line' : spec.chart === 'donut' ? 'Donut' : 'Bar'} chart of ${col.label.toLowerCase()} by ${xCol.label.toLowerCase()}${spec.series_by ? `, split by ${spec.series_by}` : ''}. Values range from ${formatMetric(Math.min(...values), col.format)} to ${formatMetric(Math.max(...values), col.format)}. Switch to the table view for every value.`.slice(0, 600),
     },

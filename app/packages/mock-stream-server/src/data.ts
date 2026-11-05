@@ -70,7 +70,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     lendingAdmin: true,
     approvesIncentives: true,
     retention: true,
-    modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'ai-admin', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'callreport', 'collections', 'campaigns', 'seg', 'tables', 'irr', 'delinquency', 'liquidity', 'membership'],
+    modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'ai-admin', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'callreport', 'collections', 'campaigns', 'seg', 'tables', 'irr', 'delinquency', 'liquidity', 'membership', 'records', 'records-members'],
     suggestions: ['What should I do today?', 'Show the October payouts', 'Which regulatory issues are open more than 3 weeks?', 'Where does delinquency come from?', 'What’s our interest rate risk?', 'How much could we borrow tomorrow?', 'Are we ready to file Q3?', 'Show the early-warning list', 'Get me ready for the next ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'What changed since last month-end?'],
   },
   analyst: {
@@ -82,7 +82,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       permissions: { queryBrowser: true, dashboardAdmin: false },
     },
     retention: true,
-    modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-finance', 'lineage', 'compliance', 'datalogs', 'operations', 'callreport', 'campaigns', 'tables', 'irr', 'delinquency', 'liquidity', 'membership'],
+    modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-finance', 'lineage', 'compliance', 'datalogs', 'operations', 'callreport', 'campaigns', 'tables', 'irr', 'delinquency', 'liquidity', 'membership', 'records'],
     suggestions: ['/query loans opened last week by branch', 'Which campaigns produced the most loan dollars?', 'Which checks failed?', 'Is the data current?', 'Show loan growth by branch for Q3 vs Q2', 'What’s our interest rate risk?', 'How much could we borrow tomorrow?', 'Find certificates at risk of leaving'],
   },
   branch: {
@@ -99,7 +99,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     lapDetails: true,
     approvesIncentives: true,
     retention: true,
-    modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-lending', 'lineage', 'indirect', 'prospecting', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'collections', 'seg', 'delinquency', 'membership'],
+    modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-lending', 'lineage', 'indirect', 'prospecting', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'collections', 'seg', 'delinquency', 'membership', 'records', 'records-members'],
     suggestions: ['What should I do today?', 'Who on my team is behind on goals?', 'Approve the October payouts for Westport', 'What’s on my team’s plate?', 'Show the pipeline by product for my branch', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups', 'Refer Suzanne Jackson for a HELOC, she prefers a call after 5 pm', 'Show my overdue onboarding touch points', 'Show Westport loans by category'],
   },
   lender: {
@@ -113,7 +113,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     purview: ['Westport'],
     employeeId: 1,
     lapDetails: true,
-    modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-lending', 'indirect', 'delinquency'],
+    modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-lending', 'indirect', 'delinquency', 'records', 'records-members'],
     suggestions: ['What should I do today?', 'How am I doing on my goals this month?', 'Which of my apps have sat in underwriting more than five days?', 'Show my stalled applications', 'Create follow-up tasks for my stalled applications', 'What’s on my plate today?'],
   },
   msr: {
@@ -141,7 +141,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     },
     approvesIncentives: true,
     retention: true,
-    modules: ['governance', 'tasks', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'datalogs', 'datalogs-approve', 'collections', 'campaigns', 'tables', 'irr', 'delinquency', 'liquidity', 'membership'],
+    modules: ['governance', 'tasks', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'datalogs', 'datalogs-approve', 'collections', 'campaigns', 'tables', 'irr', 'delinquency', 'liquidity', 'membership', 'records', 'records-members'],
     suggestions: ['Get me ready for the next ALCO meeting', 'What’s our interest rate risk?', 'How much could we borrow tomorrow?', 'What changed since last month-end?', 'Show loan growth by branch for Q3 vs Q2', 'Show the October payouts'],
   },
   admin: {

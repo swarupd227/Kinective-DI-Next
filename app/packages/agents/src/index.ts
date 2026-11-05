@@ -48,3 +48,4 @@ export { boardAnalyses, boardScorecard } from './scorecard.ts';
 export { combineAnalyses } from './report.ts';
 export { branchAnalyses } from './branchScorecard.ts';
 export { lendingAnalyses } from './lendingProduction.ts';
+export { parseRecordsRequest, recordsModule, RECORDS_REQUEST } from './records.ts';
