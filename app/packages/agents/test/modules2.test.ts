@@ -147,12 +147,29 @@ describe.skipIf(!up)('more modules against the warehouse', () => {
       expect(table.data.rows![0]).toMatchObject({ likely: 'Prepaid and other assets', balance: 9850 });
     });
 
-    it('builds a line from its entry types, with the signs applied', async () => {
+    it('builds total loans from Schedule A’s loan types, tying to the warehouse', async () => {
       const { r } = await run(cr, turn('How is 025B calculated?', 'thr_r2'));
-      // Sized to the open loan balances, so the figure matches Home's.
-      expect(r.texts[0]).toMatch(/\$\d{1,3}(,\d{3}){2,}/);
-      expect(r.texts[0]).toContain('Auto loans');
-      expect(validateBlock(r.blocks[0]!).ok).toBe(true);
+      expect(r.texts[0]).toMatch(/Line \*\*025B\*\*, TOTAL LOANS & LEASES - Amount, is \*\*\$1,2\d{2},\d{3},\d{3}\*\* at Q3 2026/);
+      const table = r.blocks[0] as Extract<Block, { type: 'table' }>;
+      expect(validateBlock(table).ok).toBe(true);
+      // New and used vehicle, first and junior liens, cards, unsecured and commercial.
+      expect(table.data.rows!.map((x) => x.code)).toEqual(expect.arrayContaining(['385', '370', '703A', '386A', '396', '397', '718A5', '400P']));
+    });
+
+    it('shows delinquency by days past due, reportable from 60 days, and the GL behind shares', async () => {
+      const dq = await run(cr, turn('Show schedule A delinquency', 'thr_r6'));
+      const rows = (dq.r.blocks[0] as Extract<Block, { type: 'table' }>).data.rows!.map((x) => x.code);
+      expect(rows).toEqual(expect.arrayContaining(['020B', 'DL0141', '021B', '022B', '023B', '041B', '041A']));
+      const shares = await run(cr, turn('How is 013 calculated?', 'thr_r7'));
+      expect(shares.r.texts[0]).toContain('It comes from the general ledger: GL 25');
+      expect(shares.r.texts[0]).toContain('Member shares, certificates');
+    });
+
+    it('reports net worth, the PCA category and the CCULR, as Schedules G and H do', async () => {
+      const { r } = await run(cr, turn('What’s our net worth ratio?', 'thr_r8'));
+      expect(r.texts[0]).toMatch(/The net worth ratio is \*\*10\.\d{2}%\*\* at Q3 2026, up \d+ bp from Q2 2026/);
+      expect(r.texts[0]).toContain('**Well Capitalized**');
+      expect(r.texts[0]).toContain('it has elected the CCULR, which needs a net worth ratio of 9% or more, so it qualifies');
     });
 
     it('lists what moved, and stays read-only', async () => {

@@ -127,50 +127,139 @@ export interface UncategorizedGl {
   note: string | null;
 }
 
+export interface CallReportLine {
+  code: string;
+  schedule: string;
+  scheduleName: string;
+  section: string;
+  order: number;
+  name: string;
+  kind: 'input' | 'total' | 'memo';
+  formula: string | null;
+  /** Where the figure comes from: the general ledger, the core loan or share system, the member file. */
+  source: string;
+  current: number | null;
+  prior: number | null;
+  text: string | null;
+  change: number | null;
+  pct: number | null;
+}
+
+export interface CallReportCheck {
+  name: string;
+  passed: boolean;
+  detail: string;
+  /** NCUA's two kinds: an Error blocks submission; a Warning needs an explanation. */
+  severity: 'Error' | 'Warning';
+  editCode: string | null;
+  codes: string[];
+}
+
+/** Version 2025.1 of Form 5300, effective March 31, 2025 until superseded. */
+export const CALL_REPORT_EDITION = 'Version 2025.1 (effective March 31, 2025)';
+
+/** Year-to-date lines grow every quarter by design, so they are never a change to explain. */
+const YEAR_TO_DATE = (l: { schedule: string; section: string; code: string }) => l.schedule === 'SIE' || l.section.startsWith('Section 3') || l.code === '031A' || l.code === '031B';
+
+const quarterLabel = (end: string) => `Q${Math.ceil(Number(end.slice(5, 7)) / 3)} ${end.slice(0, 4)}`;
+
 export class CallReportService {
   constructor(private readonly pool: Pool) {}
 
-  /**
-   * The 5300 worksheet's entries are a fixed template; the institution's own balances size it. Each entry
-   * is scaled so the deposit lines add up to the open deposit balances and the loan lines to the open
-   * loans, the same figures Home and the reports show. GL lines follow the balance sheet's size.
-   * Each quarter keeps its own shape, so changes between quarters are the template's.
-   */
-  private async scales(entries: Record<string, unknown>[]) {
-    const total = (source: string) => entries.filter((e) => e.source === source).reduce((n, e) => n + Number(e.current_value) * Number(e.multiplier), 0);
-    const sum = async (sql: string) => Number((await rows<{ n: unknown }>(this.pool, sql).catch(() => []))[0]?.n ?? 0);
-    const deposits = await sum('SELECT SUM(balance) AS n FROM cdm_deposit_account WHERE close_date IS NULL');
-    const loans = await sum('SELECT SUM(balance) AS n FROM cdm_loan WHERE close_date IS NULL AND charge_off_date IS NULL');
-    const dep = deposits > 0 && total('Core: deposits') > 0 ? deposits / total('Core: deposits') : 1;
-    return { 'Core: deposits': dep, 'Core: loans': loans > 0 && total('Core: loans') > 0 ? loans / total('Core: loans') : 1, other: dep } as Record<string, number>;
+  /** The quarter being prepared and the one before it, from the values on file. */
+  async quarters() {
+    const q = (await rows<{ q: unknown }>(this.pool, 'SELECT DISTINCT quarter_end AS q FROM cr_value ORDER BY quarter_end DESC')).map((r) => day(r.q));
+    if (!q.length) throw new CoreError('NOT_FOUND', 'No 5300 is loaded for this institution.');
+    const [current, prior] = q as [string, string | undefined];
+    // Due the 30th of the month after quarter end, by 11:59:59 p.m. Eastern, in CUOnline.
+    const due = new Date(Date.UTC(Number(current.slice(0, 4)), Number(current.slice(5, 7)), 30));
+    return { current, prior: prior ?? null, label: quarterLabel(current), priorLabel: prior ? quarterLabel(prior) : null, dueDate: due.toISOString().slice(0, 10), edition: CALL_REPORT_EDITION };
   }
 
-  async lines() {
-    const lines = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM cr_line ORDER BY schedule, code');
-    const entries = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM cr_entry ORDER BY code, entry_type');
-    const scale = await this.scales(entries);
-    const sized = (v: unknown, source: string) => Math.round((Number(v) * (scale[source] ?? scale.other!)) / 1000) * 1000;
+  async lines(): Promise<CallReportLine[]> {
+    const { current, prior } = await this.quarters();
+    const lines = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM cr_line ORDER BY sort_order');
+    const values = await rows<Record<string, unknown>>(this.pool, 'SELECT code, quarter_end, amount, text_value FROM cr_value');
+    const at = new Map(values.map((v) => [`${v.code as string}|${day(v.quarter_end)}`, v]));
+    const num = (v: Record<string, unknown> | undefined) => (v?.amount === null || v?.amount === undefined ? null : Number(v.amount));
     return lines.map((l) => {
-      const own = entries.filter((e) => e.code === l.code).map((e) => ({ entryType: e.entry_type as string, source: e.source as string, multiplier: e.multiplier as number, prior: sized(e.prior_value, e.source as string), current: sized(e.current_value, e.source as string) }));
-      const prior = own.reduce((n, e) => n + e.prior * e.multiplier, 0);
-      const current = own.reduce((n, e) => n + e.current * e.multiplier, 0);
-      return { code: l.code as string, schedule: l.schedule as string, name: l.name as string, prior, current, change: current - prior, pct: prior ? Math.round(((current - prior) / Math.abs(prior)) * 1000) / 10 : 0, entries: own };
+      const cur = at.get(`${l.code as string}|${current}`);
+      const was = prior ? at.get(`${l.code as string}|${prior}`) : undefined;
+      const c = num(cur);
+      const p = num(was);
+      const change = c !== null && p !== null ? c - p : null;
+      return {
+        code: l.code as string,
+        schedule: l.schedule as string,
+        scheduleName: l.schedule_name as string,
+        section: l.section as string,
+        order: Number(l.sort_order),
+        name: l.name as string,
+        kind: l.kind as CallReportLine['kind'],
+        formula: (l.formula as string | null) ?? null,
+        source: l.source as string,
+        current: c,
+        prior: p,
+        text: (cur?.text_value as string | null) ?? null,
+        change,
+        pct: change !== null && p ? Math.round((change / Math.abs(p)) * 1000) / 10 : null,
+      };
     });
   }
 
+  /** One line, with what makes it up: its GL accounts, or for a total the lines its formula names. */
   async line(code: string) {
-    const l = (await this.lines()).find((x) => x.code.toLowerCase() === code.toLowerCase());
-    if (!l) throw new CoreError('NOT_FOUND', `There’s no 5300 line ${code}.`);
-    return l;
+    const all = await this.lines();
+    const l = all.find((x) => x.code.toLowerCase() === code.toLowerCase());
+    if (!l) throw new CoreError('NOT_FOUND', `There’s no 5300 line ${code}. Lines are NCUA account codes such as 025B, 018 or 041B.`);
+    const gl = (await rows<Record<string, unknown>>(this.pool, 'SELECT gl_number, name, balance, prior_balance FROM cr_gl_account WHERE line_code = ? ORDER BY gl_number', [l.code]).catch(() => [])).map((g) => ({ glNumber: g.gl_number as string, name: g.name as string, current: Number(g.balance), prior: Number(g.prior_balance) }));
+    const named = l.formula ? [...new Set(l.formula.match(/\b[A-Z]{0,2}\d{3,4}[A-Z]?\d?\b/g) ?? [])].filter((c) => c !== l.code) : [];
+    const parts = named.map((c) => all.find((x) => x.code === c)).filter((x): x is CallReportLine => !!x);
+    // Totals without a printed formula add Schedule A's rows by loan type (025B, 041B, 550), or their section's inputs.
+    const byType: Record<string, (x: CallReportLine) => boolean> = {
+      '025B': (x) => x.section.startsWith('Section 1') && x.name.endsWith(' - Amount') && x.kind === 'input',
+      '025A': (x) => x.section.startsWith('Section 1') && x.name.endsWith(' - Number of Loans') && x.kind === 'input',
+      '041B': (x) => x.section.startsWith('Section 2') && x.name.endsWith('Total Amount of Loans Delinquent 60+ Days') && x.code !== '041B',
+      '041A': (x) => x.section.startsWith('Section 2') && x.name.endsWith('Total Number of Loans Delinquent 60+ Days') && x.code !== '041A',
+      '550': (x) => x.section.startsWith('Section 3') && x.name.endsWith(' - Charge Offs YTD'),
+      '551': (x) => x.section.startsWith('Section 3') && x.name.endsWith(' - Recoveries YTD'),
+    };
+    const key = ({ '025B1': '025B', '025A1': '025A' } as Record<string, string>)[l.code] ?? l.code;
+    const typed = byType[key] ? all.filter((x) => x.schedule === 'A' && byType[key]!(x) && x.current) : [];
+    const section = !parts.length && !typed.length && l.kind === 'total' ? all.filter((x) => x.schedule === l.schedule && x.section === l.section && x.kind === 'input' && x.current) : typed;
+    return { ...l, gl, parts: parts.length ? parts : section };
   }
 
+  async schedule(id: string) {
+    return (await this.lines()).filter((l) => l.schedule.toLowerCase() === id.toLowerCase() || l.scheduleName.toLowerCase().includes(id.toLowerCase()));
+  }
+
+  /** Lines that moved at least minPct (and $100,000) since last quarter, largest first, with their explanation. */
   async variance(minPct: number, schedule?: string) {
-    return (await this.lines()).filter((l) => Math.abs(l.pct) >= minPct && (!schedule || l.schedule.toLowerCase() === schedule.toLowerCase())).sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct));
+    const explained = await this.explanations();
+    return (await this.lines())
+      .filter((l) => l.change !== null && l.pct !== null && Math.abs(l.pct) >= minPct && Math.abs(l.change) >= 100_000 && (schedule ? l.schedule.toLowerCase() === schedule.toLowerCase() : !YEAR_TO_DATE(l)))
+      .sort((a, b) => Math.abs(b.pct!) - Math.abs(a.pct!))
+      .map((l) => ({ ...l, explanation: explained.find((e) => e.code === l.code) ?? null }));
+  }
+
+  /** The explanations a large change needs before filing: written, or still needed. */
+  async explanations() {
+    return (await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM cr_explanation ORDER BY status, code').catch(() => [])).map((e) => ({ code: e.code as string, explanation: (e.explanation as string | null) ?? null, status: e.status as 'Written' | 'Needed', by: (e.written_by as string | null) ?? null }));
+  }
+
+  /** Net worth, the ratio and the classification (Schedule G), and the CCULR election (Schedule H). */
+  async capital() {
+    const all = await this.lines();
+    const v = (code: string) => all.find((l) => l.code === code);
+    return { netWorth: v('997')!.current!, assets: v('NW0010')!.current!, ratio: v('998')!.current!, priorRatio: v('998')!.prior, classification: v('700')!.text ?? '', cculr: v('LR0001')!.text === 'Yes', complex: (v('010')!.current ?? 0) > 500_000_000 };
   }
 
   async readiness() {
-    const checks = (await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM cr_check ORDER BY name')).map((c) => ({ name: c.name as string, passed: c.status === 'Pass', detail: c.detail as string }));
-    return { checks, failed: checks.filter((c) => !c.passed), ready: checks.every((c) => c.passed), uncategorized: await this.uncategorized() };
+    const checks: CallReportCheck[] = (await rows<Record<string, unknown>>(this.pool, "SELECT * FROM cr_check ORDER BY status = 'Pass', severity, name")).map((c) => ({ name: c.name as string, passed: c.status === 'Pass', detail: c.detail as string, severity: (c.severity as 'Error' | 'Warning') ?? 'Error', editCode: (c.edit_code as string | null) ?? null, codes: String(c.codes ?? '').split(',').filter(Boolean) }));
+    const failed = checks.filter((c) => !c.passed);
+    const errors = failed.filter((c) => c.severity === 'Error');
+    return { quarter: await this.quarters(), checks, failed, errors, warnings: failed.filter((c) => c.severity === 'Warning'), ready: !errors.length, uncategorized: await this.uncategorized(), explanations: await this.explanations() };
   }
 
   /** GL accounts with no 5300 line: what the "GL accounts categorized" check counts. */

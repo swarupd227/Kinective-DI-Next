@@ -233,17 +233,43 @@ export function createAppViews(deps: ViewDeps) {
     },
     async callreport() {
       const cr = new CallReportService(pool);
-      const [lines, ready] = await Promise.all([cr.lines(), cr.readiness()]);
-      const moved = lines.filter((l) => Math.abs(l.pct) >= 10).length;
+      const [lines, ready, capital, moved] = await Promise.all([cr.lines(), cr.readiness(), cr.capital(), cr.variance(25)]);
+      const q = ready.quarter;
+      const due = new Date(`${q.dueDate}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+      const v = (code: string) => lines.find((l) => l.code === code);
+      const needed = ready.explanations.filter((e) => e.status === 'Needed');
+      const cols = [text('code', 'Account'), text('name', 'Line'), { field: 'prior', headerName: q.priorLabel ?? 'Prior', type: 'currency' as const }, { field: 'current', headerName: q.label, type: 'currency' as const }, text('pct', 'Change')];
+      const rowsOf = (ls: typeof lines) => ls.map((l) => ({ code: l.code, name: l.name, prior: l.prior ?? 0, current: l.current ?? 0, pct: l.text ?? (l.pct === null ? '' : `${l.pct}%`) }));
+      const filed = (ls: typeof lines) => ls.filter((l) => l.kind === 'total' || (l.current ?? 0) !== 0 || l.text);
+      const sched = (id: string, section?: string) => filed(lines.filter((l) => l.schedule === id && (!section || l.section.startsWith(section))));
+      const errors = ready.errors.length;
       return {
-        title: '5300 Call Report',
-        lede: 'Q3 lines against last quarter. DI reads this report and never changes it.',
-        take: { headline: ready.ready ? 'Q3 is ready to review.' : `Q3 isn’t ready: ${ready.failed.map((c) => c.detail).join(' ')}`, action: { label: 'Are we ready to file?', ask: 'Are we ready to file Q3?' } },
-        tiles: [{ label: 'Checks passed', value: `${ready.checks.length - ready.failed.length} of ${ready.checks.length}`, tone: ready.failed.length ? 'danger' : 'neutral' }, { label: 'Lines', value: String(lines.length) }, { label: 'Moved 10% or more', value: String(moved), tone: moved ? 'warning' : 'neutral' }],
-        prompts: ['Are we ready to file Q3?', ...(ready.uncategorized.length ? ['Which GL accounts are uncategorized?'] : []), 'Show schedule A changes over 10% from last quarter', 'How is 025B calculated?'],
-        blocks: [table('Q3 lines', 'callreport.lines', [text('code', 'Account'), text('schedule', 'Schedule'), text('name', 'Line'), { field: 'prior', headerName: 'Q2', type: 'currency' }, { field: 'current', headerName: 'Q3', type: 'currency' }, text('pct', 'Change')], lines.map((l) => ({ code: l.code, schedule: l.schedule, name: l.name, prior: l.prior, current: l.current, pct: `${l.pct}%` }))), table('Checks', 'dq.status_report', [text('name', 'Check'), text('result', 'Result'), text('detail', 'Detail')], ready.checks.map((c) => ({ name: c.name, result: c.passed ? 'Passed' : 'Failed', detail: c.detail }))),
+        title: `5300 Call Report · ${q.label}`,
+        lede: `NCUA Form 5300, ${q.edition}, for the quarter ending ${new Date(`${q.current}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}. Due ${due} in CUOnline. DI prepares and checks it; a person files it.`,
+        take: {
+          headline: ready.ready && !ready.warnings.length ? `${q.label} is ready to review and file by ${due}.` : `${q.label} isn’t ready: ${[...ready.errors, ...ready.warnings].map((c) => c.detail).join(' ')}`,
+          action: { label: 'Are we ready to file?', ask: `Are we ready to file ${q.label.split(' ')[0]}?` },
+        },
+        tiles: [
+          { label: 'Due in CUOnline', value: due },
+          { label: 'Errors blocking filing', value: String(errors), tone: errors ? 'danger' : 'neutral' },
+          { label: 'Explanations needed', value: String(needed.length), tone: needed.length ? 'warning' : 'neutral' },
+          { label: 'Net worth ratio', value: `${capital.ratio.toFixed(2)}%`, detail: capital.classification },
+          { label: 'Total assets', value: `$${((v('010')?.current ?? 0) / 1e9).toFixed(2)}B` },
+        ],
+        prompts: ['Are we ready to file Q3?', ...(ready.uncategorized.length ? ['Which GL accounts are uncategorized?'] : []), ...(needed.length ? ['Which lines need an explanation?'] : []), 'Show schedule A delinquency', 'How is 025B calculated?', 'What’s our net worth ratio?'],
+        blocks: [
+          table('Edits', 'dq.status_report', [text('name', 'Edit'), text('severity', 'Type'), text('result', 'Result'), text('detail', 'Detail')], ready.checks.map((c) => ({ name: c.editCode ? `${c.editCode}: ${c.name}` : c.name, severity: c.severity, result: c.passed ? 'Passed' : 'Failed', detail: c.detail }))),
           // The accounts behind a failed mapping check sit right under it.
           ...(ready.uncategorized.length ? [table('Uncategorized GL accounts', 'callreport.gl_uncategorized', [text('gl', 'GL account'), text('name', 'Name'), { field: 'balance', headerName: 'Balance', type: 'currency' }, text('lastPosted', 'Last posted'), text('likely', 'Likely 5300 line'), text('note', 'Why it is open')], ready.uncategorized.map((g) => ({ gl: g.glNumber, name: g.name, balance: g.balance, lastPosted: g.lastPosted, likely: g.likelyLine ?? 'Not suggested', note: g.note ?? '' })))] : []),
+          ...(moved.length ? [table(`Moved more than 25% since ${q.priorLabel}`, 'callreport.variance', [...cols, text('explanation', 'Explanation')], moved.map((l) => ({ ...rowsOf([l])[0]!, explanation: l.explanation ? (l.explanation.explanation ?? 'Needed') : '' })))] : []),
+          table('Net worth (Schedule G)', 'callreport.capital', cols, rowsOf(filed(lines.filter((l) => l.schedule === 'G' || l.schedule === 'H')))),
+          table('Statement of Financial Condition', 'callreport.sfc', cols, rowsOf(sched('SFC'))),
+          table('Statement of Income and Expense (year to date)', 'callreport.sie', cols, rowsOf(sched('SIE'))),
+          table('Schedule A: loans and leases', 'callreport.loans', cols, rowsOf(sched('A', 'Section 1'))),
+          table('Schedule A: delinquent loans', 'callreport.delinquency', cols, rowsOf(filed(lines.filter((l) => l.schedule === 'A' && l.section.startsWith('Section 2') && (l.kind === 'total' || l.section.endsWith('(continued)')) && ((l.current ?? 0) !== 0 || l.section.endsWith('Total')))))),
+          table('Schedule A: charge-offs and recoveries (year to date)', 'callreport.chargeoffs', cols, rowsOf(sched('A', 'Section 3'))),
+          table('Schedules B and D: investments, shares and members', 'callreport.other', cols, rowsOf([...sched('B'), ...sched('D')])),
         ],
       };
     },

@@ -3,7 +3,7 @@
 // Each states its limits: the Call Report agent is read-only, the Admin agent can't change its own
 // user or impersonate anyone, and DI never contacts a borrower or changes a loan.
 import { z } from 'zod';
-import { CAPABILITIES, CLASSES, CoreError, SEG_STAGES, USER_CLASSES, type CallReportService, type CampaignService, type CollectionsService, type OperationsService, type SegService } from '@dinext/di-core';
+import { CALL_REPORT_EDITION, CAPABILITIES, CLASSES, CoreError, SEG_STAGES, USER_CLASSES, type CallReportLine, type CallReportService, type CampaignService, type CollectionsService, type OperationsService, type SegService } from '@dinext/di-core';
 import { money } from './pipelineAgent.ts';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
@@ -234,45 +234,75 @@ export function operationsModule(ops: OperationsService): ModuleSpec {
 export function callReportModule(cr: CallReportService): ModuleSpec {
   const noAccess = 'The 5300 Call Report is for credit unions with the module. A bank call report is scoped separately by Kinective.';
   const need = (ctx: ModuleContext) => guard(ctx, 'callreport', noAccess);
-  const READ_ONLY = 'I can’t export, submit or change mappings on the 5300. Export for upload stays a person’s action in the 5300 workspace, and mappings are changed in its grid by authorised staff.';
-  const code = /\b(\d{3}[A-Z]?)\b/;
+  const READ_ONLY = 'I can’t submit, export for upload or change mappings on the 5300. Filing in CUOnline stays a person’s action, and GL mappings are changed in the 5300 workspace by authorised staff.';
+  const code = /\b(\d{3}[A-Z]?\d?|[A-Z]{2}\d{4}|\d{4}[A-Z])\b/;
+  const SCHEDULES: [RegExp, string, string?][] = [
+    [/balance sheet|financial condition|\bassets\b|liabilit/i, 'SFC'],
+    [/income|expense|net income|earnings/i, 'SIE'],
+    [/delinquen|past due/i, 'A', 'Section 2 - Delinquent Loans & Leases: Total'],
+    [/charge[- ]?offs?|recover/i, 'A', 'Section 3'],
+    [/schedule a\b|loans by type|loan types/i, 'A', 'Section 1'],
+    [/schedule b\b|investment/i, 'B'],
+    [/schedule d\b|members|insured/i, 'D'],
+  ];
+  const money = (n: number | null) => (n === null ? '' : dollars(n));
+  const change = (l: CallReportLine) => (l.change === null ? '' : `${l.change >= 0 ? 'up' : 'down'} ${dollars(Math.abs(l.change))}${l.pct !== null ? ` (${Math.abs(l.pct)}%)` : ''}`);
+  const lineRows = (ls: CallReportLine[]) => ls.map((l) => ({ code: l.code, name: l.name, prior: l.prior ?? 0, current: l.current ?? 0, change: l.pct === null ? '' : `${l.pct}%` }));
+  const lineCols = (prior: string, current: string) => [{ field: 'code', headerName: 'Account', type: 'text' as const }, { field: 'name', headerName: 'Line', type: 'text' as const }, { field: 'prior', headerName: prior, type: 'currency' as const }, { field: 'current', headerName: current, type: 'currency' as const }, { field: 'change', headerName: 'Change', type: 'text' as const }];
+  const glCols = [{ field: 'gl', headerName: 'GL account', type: 'text' as const }, { field: 'name', headerName: 'Name', type: 'text' as const }, { field: 'balance', headerName: 'Balance', type: 'currency' as const }, { field: 'lastPosted', headerName: 'Last posted', type: 'text' as const }, { field: 'likely', headerName: 'Likely 5300 line', type: 'text' as const }, { field: 'note', headerName: 'Why it is open', type: 'text' as const }];
+  const glRows = (gl: Awaited<ReturnType<CallReportService['uncategorized']>>) => gl.map((g) => ({ gl: g.glNumber, name: g.name, balance: g.balance, lastPosted: g.lastPosted, likely: g.likelyLine ?? 'Not suggested', note: g.note ?? '' }));
   const spec: ModuleSpec = {
     id: 'callreport',
     prefix: 'cr',
     agent: 'Call Report',
-    request: /\b5300\b|\bcall report\b|\bready to file\b|\buncategori[sz]ed gl\b|\bgl accounts? (are|is) (uncategori[sz]ed|unmapped)\b|\bschedule [A-Z]\b|\bline \d{3}[A-Z]?\b|\b(how is|why did) \d{3}[A-Z]?\b/i,
+    request: /\b5300\b|\bcall report\b|\bready to file\b|\bschedule [A-I]\b|\bline \d{3}[A-Z]?\b|\b(how is|why did) \d{3}[A-Z]?\b|\buncategori[sz]ed gl\b|\bgl accounts? (are|is) (uncategori[sz]ed|unmapped)\b|\bnet worth ratio\b|\bwell capitali[sz]ed\b|\bcculr\b|\bpca\b/i,
     noAccess,
     sources: [{ kind: 'table', label: '5300 Call Report', ref: 'table:cr_line' }],
-    prompt: ({ tenant, user, title }) => `You are the Call Report agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) prepares the quarterly 5300.
+    prompt: ({ tenant, user, title }) => `You are the Call Report agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) prepares the quarterly NCUA Form 5300, ${CALL_REPORT_EDITION}. Lines are NCUA account codes (025B total loans and leases, 018 total shares and deposits, 041B loans 60+ days delinquent, 010 total assets, 997 net worth, 998 net worth ratio). NCUA edits are Errors, which block submission, and Warnings, which need an explanation in the comments.
 
-- "Are we ready to file Q3?": cr_readiness. It names any uncategorized GL accounts.
+- "Are we ready to file Q3?", "what's blocking the 5300?", "when is it due?": cr_readiness. It names any uncategorized GL accounts.
 - "Which GL accounts are uncategorized?": cr_uncategorized.
-- "How is 025B calculated?", "why did 025B go up?": cr_line_explain.
-- "Show schedule A changes over 10% from last quarter": cr_variance.
-- You are read-only. If asked to export, submit or change a mapping, say a person does that in the 5300 workspace.`,
+- "How is 025B calculated?", "why did 041B go up?", "what's in line 013?": cr_line_explain with the account code.
+- "What moved more than 10% since last quarter?", "which lines need an explanation?": cr_variance.
+- "Show schedule A delinquency", "show the balance sheet", "show charge-offs": cr_schedule with the schedule (SFC, SIE, A, B, D, G) and, for Schedule A, a section word.
+- "What's our net worth ratio?", "are we well capitalized?", "are we on the CCULR?": cr_capital.
+- "Draft explanations for the lines that moved": cr_variance, then write one short draft per line from its figures in your message, saying a person adds them in the 5300 workspace.
+- You are read-only. If asked to submit, export for upload or change a mapping, say a person does that.`,
     plan: (text) => {
       const t = clean(text);
-      if (/\b(export|submit|file it|upload|change|edit|remap)\b/i.test(t) && !/\bready\b/i.test(t)) return { say: READ_ONLY };
+      if (/\b(submit|file it|upload|change|edit|remap|map)\b/i.test(t) && !/\bready\b|\bdue\b/i.test(t)) return { say: READ_ONLY };
       if (/\buncategori[sz]ed\b|\bunmapped\b|\bgl accounts?\b/i.test(t)) return { tool: 'cr_uncategorized', args: {} };
-      if (/\bready\b/i.test(t)) return { tool: 'cr_readiness', args: {} };
-      const line = code.exec(t)?.[1];
+      if (/net worth|capital|\bpca\b|cculr|leverage/i.test(t)) return { tool: 'cr_capital', args: {} };
+      if (/\bready\b|\bdue\b|\bblock|\bfiling\b/i.test(t)) return { tool: 'cr_readiness', args: {} };
+      const line = code.exec(text)?.[1];
       if (line && line !== '5300') return { tool: 'cr_line_explain', args: { code: line } };
-      return { tool: 'cr_variance', args: { min_pct: Number(/(\d+(?:\.\d+)?)\s*%/.exec(t)?.[1] ?? 10), ...(/\bschedule ([A-Z])\b/i.exec(t)?.[1] ? { schedule: /\bschedule ([A-Z])\b/i.exec(t)![1] } : {}) } };
+      if (/\bmoved|\bchanged?|\bvariance|\bexplanation|\b\d+(\.\d+)?\s*%/i.test(t)) return { tool: 'cr_variance', args: { min_pct: Number(/(\d+(?:\.\d+)?)\s*%/.exec(t)?.[1] ?? 10), ...(/\bschedule ([A-Z])\b/i.exec(t)?.[1] ? { schedule: /\bschedule ([A-Z])\b/i.exec(t)![1]!.toUpperCase() } : {}) } };
+      const s = SCHEDULES.find(([re]) => re.test(t));
+      if (s) return { tool: 'cr_schedule', args: { schedule: s[1], ...(s[2] ? { section: s[2] } : {}) } };
+      return { tool: 'cr_readiness', args: {} };
     },
     tools: [
       {
         name: 'cr_readiness',
-        description: 'Whether the quarter is ready to review, with any failed checks.',
+        description: 'Whether the quarter can be filed: the edits that failed (Errors block submission, Warnings need an explanation), the uncategorized GL accounts, the explanations still needed and the due date.',
         input: z.object({}).strict(),
         run: async (_: unknown, ctx) => {
           need(ctx);
           const r = await cr.readiness();
+          const q = r.quarter;
+          const due = new Date(`${q.dueDate}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
           const gl = r.uncategorized;
           // A failed mapping check names the accounts, so nobody has to go looking for them.
           const glText = gl.length ? ` The uncategorized GL accounts are ${gl.map((g) => `**${g.glNumber}** ${g.name} (${dollars(g.balance)})`).join(', ')}.` : '';
-          const checks = moduleTable(spec, 'Checks', ctx.runId, 'dq.status_report', [{ field: 'name', headerName: 'Check', type: 'text' }, { field: 'result', headerName: 'Result', type: 'text' }, { field: 'detail', headerName: 'Detail', type: 'text' }], r.checks.map((c) => ({ name: c.name, result: c.passed ? 'Passed' : 'Failed', detail: c.detail })));
-          const accounts = gl.length ? [moduleTable(spec, 'Uncategorized GL accounts', ctx.runId, 'callreport.gl_uncategorized', [{ field: 'gl', headerName: 'GL account', type: 'text' }, { field: 'name', headerName: 'Name', type: 'text' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'lastPosted', headerName: 'Last posted', type: 'text' }, { field: 'likely', headerName: 'Likely 5300 line', type: 'text' }, { field: 'note', headerName: 'Why it is open', type: 'text' }], gl.map((g) => ({ gl: g.glNumber, name: g.name, balance: g.balance, lastPosted: g.lastPosted, likely: g.likelyLine ?? 'Not suggested', note: g.note ?? '' })))] : [];
-          return { text: r.ready ? 'The Q3 5300 is **ready to review**: every check passed. Export for upload stays with you in the 5300 workspace.' : `The Q3 5300 **isn’t ready yet**: ${r.failed.length} of ${r.checks.length} checks failed. ${r.failed.map((c) => `${c.name}: ${c.detail}`).join(' ')}${glText}`, blocks: [checks, ...accounts], ...(gl.length ? { suggestions: ['Which GL accounts are uncategorized?'] } : {}) };
+          const errText = r.errors.length ? ` ${r.errors.length} ${r.errors.length === 1 ? 'error blocks' : 'errors block'} submission: ${r.errors.map((c) => `${c.name}: ${c.detail}`).join(' ')}${glText}` : '';
+          const warnText = r.warnings.length ? ` ${r.warnings.length} ${r.warnings.length === 1 ? 'warning needs' : 'warnings need'} an explanation: ${r.warnings.map((c) => c.detail).join(' ')}` : '';
+          const checks = moduleTable(spec, 'Edits', ctx.runId, 'dq.status_report', [{ field: 'name', headerName: 'Edit', type: 'text' }, { field: 'severity', headerName: 'Type', type: 'text' }, { field: 'result', headerName: 'Result', type: 'text' }, { field: 'detail', headerName: 'Detail', type: 'text' }], r.checks.map((c) => ({ name: c.editCode ? `${c.editCode}: ${c.name}` : c.name, severity: c.severity, result: c.passed ? 'Passed' : 'Failed', detail: c.detail })));
+          const accounts = gl.length ? [moduleTable(spec, 'Uncategorized GL accounts', ctx.runId, 'callreport.gl_uncategorized', glCols, glRows(gl))] : [];
+          return {
+            text: r.ready && !r.warnings.length ? `The ${q.label} 5300 is **ready to review**: every edit passed. It’s due **${due}** in CUOnline, and filing stays with you.` : r.ready ? `The ${q.label} 5300 has no blocking errors.${warnText} It’s due **${due}** in CUOnline.` : `The ${q.label} 5300 **isn’t ready yet**.${errText}${warnText} It’s due **${due}** in CUOnline.`,
+            blocks: [checks, ...accounts],
+            suggestions: [...(gl.length ? ['Which GL accounts are uncategorized?'] : []), ...(r.warnings.length ? ['Which lines need an explanation?'] : []), 'What’s our net worth ratio?'],
+          };
         },
       },
       {
@@ -286,30 +316,79 @@ export function callReportModule(cr: CallReportService): ModuleSpec {
           const total = gl.reduce((n, g) => n + g.balance, 0);
           return {
             text: `**${gl.length} GL ${gl.length === 1 ? 'account has' : 'accounts have'}** no 5300 line yet, totalling **${dollars(total)}**. The largest is **${gl[0]!.glNumber}** ${gl[0]!.name} at ${dollars(gl[0]!.balance)}. Mapping them is a person’s change in the 5300 workspace; DI only reads them.`,
-            blocks: [moduleTable(spec, 'Uncategorized GL accounts', ctx.runId, 'callreport.gl_uncategorized', [{ field: 'gl', headerName: 'GL account', type: 'text' }, { field: 'name', headerName: 'Name', type: 'text' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'lastPosted', headerName: 'Last posted', type: 'text' }, { field: 'likely', headerName: 'Likely 5300 line', type: 'text' }, { field: 'note', headerName: 'Why it is open', type: 'text' }], gl.map((g) => ({ gl: g.glNumber, name: g.name, balance: g.balance, lastPosted: g.lastPosted, likely: g.likelyLine ?? 'Not suggested', note: g.note ?? '' })))],
+            blocks: [moduleTable(spec, 'Uncategorized GL accounts', ctx.runId, 'callreport.gl_uncategorized', glCols, glRows(gl))],
           };
         },
       },
       {
         name: 'cr_line_explain',
-        description: 'How a 5300 line is built from its entry types and multipliers, compared with last quarter.',
-        input: z.object({ code: z.string().min(3).max(6) }).strict(),
+        description: 'One 5300 line by its NCUA account code: this quarter against last, and what makes it up (its GL accounts, or for a total the lines its formula adds).',
+        input: z.object({ code: z.string().min(3).max(8) }).strict(),
         run: async (a: { code: string }, ctx) => {
           need(ctx);
-          const l = await cr.line(a.code);
-          const top = [...l.entries].sort((x, y) => Math.abs((y.current - y.prior) * y.multiplier) - Math.abs((x.current - x.prior) * x.multiplier))[0];
-          return { text: `Line **${l.code}**, ${l.name}, is **${dollars(l.current)}**, ${l.change >= 0 ? 'up' : 'down'} ${dollars(Math.abs(l.change))} (${Math.abs(l.pct)}%) from ${dollars(l.prior)} last quarter.${top ? ` **${top.entryType}** moved most, by ${dollars(Math.abs(top.current - top.prior))}.` : ''}`, blocks: [moduleTable(spec, `How ${l.code} is built`, ctx.runId, 'callreport.line.explain', [{ field: 'entry', headerName: 'Entry type', type: 'text' }, { field: 'source', headerName: 'Source', type: 'text' }, { field: 'multiplier', headerName: 'Sign', type: 'text' }, { field: 'prior', headerName: 'Q2', type: 'currency' }, { field: 'current', headerName: 'Q3', type: 'currency' }], l.entries.map((e) => ({ entry: e.entryType, source: e.source, multiplier: e.multiplier > 0 ? '+1' : '−1', prior: e.prior, current: e.current })))] };
+          const q = await cr.quarters();
+          const l = await cr.line(a.code.toUpperCase());
+          const value = l.text ?? (l.code === '998' ? `${l.current}%` : money(l.current));
+          const how = l.gl.length ? ` It comes from the general ledger: ${l.gl.map((g) => `GL ${g.glNumber} ${g.name}`).join(', ')}.` : l.parts.length ? ` It adds ${l.parts.length} ${l.parts.length === 1 ? 'line' : 'lines'}${l.formula ? ` (${l.formula})` : ''}.` : ` It comes from the ${l.source.toLowerCase()}.`;
+          const top = [...l.parts].filter((p) => p.change !== null).sort((x, y) => Math.abs(y.change!) - Math.abs(x.change!))[0];
+          const block = l.gl.length
+            ? moduleTable(spec, `GL accounts in ${l.code}`, ctx.runId, 'callreport.line.explain', [{ field: 'gl', headerName: 'GL account', type: 'text' }, { field: 'name', headerName: 'Name', type: 'text' }, { field: 'prior', headerName: q.priorLabel ?? 'Prior', type: 'currency' }, { field: 'current', headerName: q.label, type: 'currency' }], l.gl.map((g) => ({ gl: g.glNumber, name: g.name, prior: g.prior, current: g.current })))
+            : l.parts.length
+              ? moduleTable(spec, `How ${l.code} is built`, ctx.runId, 'callreport.line.explain', lineCols(q.priorLabel ?? 'Prior', q.label), lineRows(l.parts))
+              : null;
+          return {
+            text: `Line **${l.code}**, ${l.name}, is **${value}** at ${q.label}${l.change !== null && l.code !== '998' ? `, ${change(l)} from ${q.priorLabel}` : ''}.${how}${top && top.change ? ` **${top.code}** ${top.name} moved most, ${change(top)}.` : ''}`,
+            ...(block ? { blocks: [block] } : {}),
+          };
         },
       },
       {
         name: 'cr_variance',
-        description: 'Lines that moved by at least a percentage from last quarter, largest first.',
+        description: 'Lines that moved by at least a percentage (and $100,000) since last quarter, largest first, with whether each has the explanation NCUA asks for. Excludes the year-to-date income statement unless schedule SIE is asked for.',
         input: z.object({ min_pct: z.number().min(0).max(1000).default(10), schedule: z.string().max(4).optional() }).strict(),
         run: async (a: { min_pct: number; schedule?: string }, ctx) => {
           need(ctx);
+          const q = await cr.quarters();
           const v = await cr.variance(a.min_pct, a.schedule);
-          if (!v.length) return { text: `No lines moved ${a.min_pct}% or more from last quarter.` };
-          return { text: `**${v.length} ${v.length === 1 ? 'line' : 'lines'}** moved ${a.min_pct}% or more from Q2${a.schedule ? ` in schedule ${a.schedule.toUpperCase()}` : ''}. The largest is **${v[0]!.code}**, ${v[0]!.name}, at ${v[0]!.pct}%.`, blocks: [moduleTable(spec, 'Changes from Q2', ctx.runId, 'callreport.variance', [{ field: 'code', headerName: 'Account', type: 'text' }, { field: 'name', headerName: 'Line', type: 'text' }, { field: 'prior', headerName: 'Q2', type: 'currency' }, { field: 'current', headerName: 'Q3', type: 'currency' }, { field: 'change', headerName: 'Change', type: 'text' }], v.map((l) => ({ code: l.code, name: l.name, prior: l.prior, current: l.current, change: `${l.pct}%` })))], suggestions: [`How is ${v[0]!.code} calculated?`] };
+          if (!v.length) return { text: `No lines moved ${a.min_pct}% or more from ${q.priorLabel}${a.schedule ? ` in schedule ${a.schedule.toUpperCase()}` : ''}.` };
+          const needed = v.filter((l) => l.explanation?.status === 'Needed');
+          return {
+            text: `**${v.length} ${v.length === 1 ? 'line' : 'lines'}** moved ${a.min_pct}% or more from ${q.priorLabel}${a.schedule ? ` in schedule ${a.schedule.toUpperCase()}` : ''}. The largest is **${v[0]!.code}**, ${v[0]!.name}, ${change(v[0]!)}.${needed.length ? ` ${needed.length} still ${needed.length === 1 ? 'needs' : 'need'} an explanation before filing: ${needed.map((l) => `**${l.code}**`).join(', ')}.` : ''}`,
+            blocks: [moduleTable(spec, `Changes from ${q.priorLabel}`, ctx.runId, 'callreport.variance', [...lineCols(q.priorLabel ?? 'Prior', q.label), { field: 'explanation', headerName: 'Explanation', type: 'text' }], v.map((l) => ({ ...lineRows([l])[0]!, explanation: l.explanation ? (l.explanation.explanation ?? 'Needed') : '' })))],
+            suggestions: [`How is ${v[0]!.code} calculated?`],
+          };
+        },
+      },
+      {
+        name: 'cr_schedule',
+        description: 'The lines of one schedule (SFC balance sheet, SIE income statement, A loans, B investments, D shares and members, G net worth), optionally one section by a word of its name, this quarter against last.',
+        input: z.object({ schedule: z.string().min(1).max(4), section: z.string().max(80).optional() }).strict(),
+        run: async (a: { schedule: string; section?: string }, ctx) => {
+          need(ctx);
+          const q = await cr.quarters();
+          const all = (await cr.schedule(a.schedule)).filter((l) => !a.section || l.section.toLowerCase().includes(a.section.toLowerCase()));
+          // Zero lines are filed but not worth reading; totals always show.
+          const shown = all.filter((l) => l.kind === 'total' || (l.current ?? 0) !== 0 || l.text);
+          if (!shown.length) return { text: `There’s no schedule ${a.schedule} on this 5300.` };
+          const head = shown.find((l) => l.kind === 'total') ?? shown[0]!;
+          return {
+            text: `${shown[0]!.scheduleName}${a.section ? `, ${shown[0]!.section}` : ''}: **${shown.length} lines** with a balance at ${q.label}${all.length > shown.length ? `, of ${all.length} on the form` : ''}. **${head.code}** ${head.name} is ${head.text ?? money(head.current)}${head.change !== null ? `, ${change(head)}` : ''}.`,
+            blocks: [moduleTable(spec, `${shown[0]!.scheduleName}${a.section ? ` · ${shown[0]!.section.replace(/^Section \d+ - /, '')}` : ''}`, ctx.runId, 'callreport.schedule', lineCols(q.priorLabel ?? 'Prior', q.label), lineRows(shown).map((r, i) => (shown[i]!.text ? { ...r, change: shown[i]!.text! } : r)))],
+          };
+        },
+      },
+      {
+        name: 'cr_capital',
+        description: 'Net worth (997), total assets for the ratio (NW0010), the net worth ratio (998) and its PCA classification (700), and whether the credit union is complex and on the CCULR.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const q = await cr.quarters();
+          const c = await cr.capital();
+          const moved = c.priorRatio !== null ? Math.round((c.ratio - c.priorRatio) * 100) : null;
+          return {
+            text: `The net worth ratio is **${c.ratio.toFixed(2)}%** at ${q.label}${moved !== null ? `, ${moved >= 0 ? 'up' : 'down'} ${Math.abs(moved)} bp from ${q.priorLabel}` : ''}: net worth of ${dollars(c.netWorth)} on total assets of ${dollars(c.assets)}. That is **${c.classification}** (7% or more under 12 CFR 702.102).${c.complex ? ` With assets over $500 million the credit union is complex, and ${c.cculr ? `it has elected the CCULR, which needs a net worth ratio of 9% or more, so ${c.ratio >= 9 ? 'it qualifies' : 'it falls short'}` : 'it files the risk-based capital ratio'}.` : ''}`,
+          };
         },
       },
     ],

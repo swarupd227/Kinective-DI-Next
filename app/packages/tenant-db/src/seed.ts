@@ -15,6 +15,7 @@ import { generateGoals, GI_GOALS, GI_INCENTIVES, GI_TIERS, GOALS_DDL, GOALS_WRIT
 import { generatePipeline, LAP_APPLICATION_COLUMNS, LAP_HOLDS, LAP_STATUSES, PIPELINE_DDL, PIPELINE_WRITE_TABLES } from './pipeline.ts';
 import { generateRelationship, RELATIONSHIP_DDL } from './relationship.ts';
 import { reportSeed } from './reports.ts';
+import { generateCallReport } from './callReport.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
 import { createSourceTables, seedCoreReplica } from './sources.ts';
@@ -89,10 +90,12 @@ async function main() {
     await insert(admin, 'ops_dq_check', ['domain', 'dimension', 'name', 'status', 'rows_failed'], fx.checks);
     await insert(admin, 'iam_user', ['user_id', 'name', 'user_class', 'branch', 'status'], [...fx.classes.map((c) => [...c, 'Active']), ...(t.employees as [number, string, string, number][]).filter((e) => e[0] > 6).map((e) => [`emp:${e[0]}`, e[1], e[2] === 'Loan officer' ? 'Lender' : e[2] === 'Branch manager' ? 'Manager' : 'MSR', String(t.locations[e[3] - 1]![1]), 'Active']), ['emp:2', 'Tom Walsh', 'Lender', 'Westport', 'Active']]);
     if (profile.institutionType === 'credit_union') {
-      await insert(admin, 'cr_line', ['code', 'schedule', 'name'], fx.lines);
-      await insert(admin, 'cr_entry', ['code', 'entry_type', 'source', 'multiplier', 'prior_value', 'current_value'], fx.entries);
-      await insert(admin, 'cr_check', ['name', 'status', 'detail'], fx.crChecks);
-      await insert(admin, 'cr_gl_account', ['gl_number', 'name', 'balance', 'line_code', 'opened', 'last_posted', 'likely_line', 'note'], fx.glAccounts);
+      const cr = generateCallReport(t);
+      await insert(admin, 'cr_line', ['code', 'schedule', 'schedule_name', 'section', 'sort_order', 'name', 'kind', 'formula', 'source'], cr.lines);
+      await insert(admin, 'cr_value', ['code', 'quarter_end', 'amount', 'text_value'], cr.values);
+      await insert(admin, 'cr_check', ['name', 'status', 'detail', 'severity', 'edit_code', 'codes'], cr.checks);
+      await insert(admin, 'cr_explanation', ['code', 'quarter_end', 'explanation', 'status', 'written_by'], cr.explanations);
+      await insert(admin, 'cr_gl_account', ['gl_number', 'name', 'balance', 'prior_balance', 'line_code', 'opened', 'last_posted', 'likely_line', 'note'], cr.gl);
       await insert(admin, 'seg_company', ['company_id', 'name', 'stage', 'members', 'new_members', 'loans', 'deposits', 'owner', 'sponsorship'], fx.companies);
       await insert(admin, 'seg_interaction', ['company_id', 'at', 'kind', 'note', 'by_name'], fx.interactions);
     }
