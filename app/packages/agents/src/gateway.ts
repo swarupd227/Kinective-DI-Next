@@ -618,7 +618,7 @@ export class ToolGateway {
             }
             const route = await this.deps.referrals.route(LAP_TASK_TYPE, x.partyId);
             const reason = `${x.hold ? `${x.hold.label}. ` : ''}${x.daysInStatus} days ${inStatus(x.status)}${x.threshold !== null ? `, threshold ${x.threshold}` : ''}`;
-            items.push({ typeId: LAP_TASK_TYPE, partyId: x.partyId, assigneeEmployeeId: x.owner.employeeId, fields: { application_id: String(x.applicationId) }, notes: `Application #${x.applicationId}, ${x.product}: ${reason}, as of the last LOS load. ${x.hold?.nextStep ?? 'Check what’s holding it.'}`, priority: x.stalled ? 'High' : 'Normal', toQueueId: route.queueId, applicationId: x.applicationId, label: `#${x.applicationId} ${x.lastName}, ${x.product}`, to: x.owner.name, reason, branch: x.branch });
+            items.push({ typeId: LAP_TASK_TYPE, partyId: x.partyId, assigneeEmployeeId: x.owner.employeeId, fields: { application_id: String(x.applicationId) }, notes: `Application #${x.applicationId}, ${x.product}: ${reason}, as of the last loan system load. ${x.hold?.nextStep ?? 'Check what’s holding it.'}`, priority: x.stalled ? 'High' : 'Normal', toQueueId: route.queueId, applicationId: x.applicationId, label: `#${x.applicationId} ${x.lastName}, ${x.product}`, to: x.owner.name, reason, branch: x.branch });
           }
           if (!items.length) return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: 'Those applications already have an open follow-up task.', skipped } };
           const payload: LapTaskPayload = { items };

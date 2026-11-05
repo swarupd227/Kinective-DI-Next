@@ -435,7 +435,7 @@ export function filesModule(store: FileStore | null, today: () => string): Modul
     prefix: 'fil',
     agent: 'Files',
     // Reports have their own folders and saves.
-    request: /\bfile manager\b|\bboard packs?\b|\bdealer (agreement|docs?)\b|\bwhich files\b|^(?!.*\breports?\b).*\brecycle bin\b|\bfind the\b.*\b(policy|agreement|minutes|checklist|procedure|file)\b|^(?!.*\breports?\b).*\b(save|move|delete|remove|download|upload|recycle|trash|restore|recover|undelete)\b.*(\b(this|the|that|my) file\b|\bfolder\b|\bmy files\b|\.(pdf|docx?|xlsx?|pptx?|csv|txt|png|jpe?g|gif|webp)\b)/i,
+    request: /\bfile manager\b|\bboard packs? folder\b|\bin (the )?board packs?\b|\bdealer (agreement|docs?)\b|\bwhich files\b|^(?!.*\breports?\b).*\brecycle bin\b|\bfind the\b.*\b(policy|agreement|minutes|checklist|procedure|file)\b|^(?!.*\breports?\b).*\b(save|move|delete|remove|download|upload|recycle|trash|restore|recover|undelete)\b.*(\b(this|the|that|my) file\b|\bfolder\b|\bmy files\b|\.(pdf|docx?|xlsx?|pptx?|csv|txt|png|jpe?g|gif|webp)\b)/i,
     noAccess,
     sources: [{ kind: 'table', label: 'File Manager', ref: 'table:fil_file' }],
     prompt: ({ tenant, user, title }) => `You are the Files agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) is working with documents.
@@ -489,7 +489,9 @@ export function filesModule(store: FileStore | null, today: () => string): Modul
         run: async (a: { folder: string }, ctx) => {
           need(ctx);
           const folder = folderNamed(a.folder);
-          if (!folder) throw new CoreError('NOT_FOUND', `There’s no folder called ${a.folder}. They are: ${Object.keys(FILE_FOLDERS).join(', ')}.`);
+          // Only folders this person can see are named or described; a hidden one isn't confirmed to exist.
+          const visible = foldersFor(ctx.modules);
+          if (!folder || !visible.includes(folder)) throw new CoreError('NOT_FOUND', `You don’t have a folder called ${a.folder}. Yours are: ${visible.join(', ')}.`);
           return { text: `**${folder}**: ${FILE_FOLDERS[folder]}.` };
         },
       },

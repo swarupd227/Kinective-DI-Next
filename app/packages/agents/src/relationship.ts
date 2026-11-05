@@ -91,7 +91,8 @@ Rules for talking points:
 - Use only figures from tool results. Round money when you mention it.
 
 Other rules:
-- Never write full account numbers, member numbers, SSNs or dates of birth.
+- Never write full account numbers, member numbers, SSNs or dates of birth, and never write a member_ref such as MBR_1: say the person's name.
+- Write dates as people say them: "since June 2008", "15 Nov 2026", never 2008-06 or 2026-11-15.
 - To refer the ${p} for a product, the user uses the Refer button or asks for a referral; you do not create referrals.
 - Requests that are not about a ${p}: outcome "not_supported", briefly.
 - Refer to people by name, never he, she, him or her: their gender isn't in the data.
@@ -174,6 +175,16 @@ function track(r: GatewayResult, loaded: Loaded) {
   if (r.explained) loaded.explained = r.explained;
   if (r.decline) loaded.decline = r.decline;
   loaded.corpus.push(JSON.stringify(r.content));
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** The model's words, made safe to show: no internal member_ref, and dates as people write them. */
+export function readable(text: string, name?: string) {
+  return text
+    .replace(/\bMBR_\d+\b('s)?/g, (_m, s: string | undefined) => (name ? `${name}${s ? '’s' : ''}` : 'this member'))
+    .replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (m, y: string, mo: string, d: string) => (Number(mo) >= 1 && Number(mo) <= 12 ? `${Number(d)} ${MONTHS[Number(mo) - 1]!.slice(0, 3)} ${y}` : m))
+    .replace(/\b(\d{4})-(\d{2})\b/g, (m, y: string, mo: string) => (Number(mo) >= 1 && Number(mo) <= 12 ? `${MONTHS[Number(mo) - 1]} ${y}` : m));
 }
 
 export async function runRelationship(input: RelationshipInput, deps: { model: ModelClient; gateway: ToolGateway; relationship: RelationshipService }, state: RelationshipThread, sink: RunSink): Promise<RelationshipOutcome> {
@@ -336,7 +347,7 @@ async function show(s: Show, c: { input: RelationshipInput; rm: RelationshipServ
     case 'member': {
       const profile = loaded.profile!;
       const intro = s.message || `Here’s **${profile.name}** at ${profile.branch}.`;
-      await sink.text(intro, agent);
+      await sink.text(readable(intro, loaded.profile?.name), agent);
       await sink.block(withReferActions(memberCard(profile, input.runId), profile));
       if (s.points.length) await sink.block(talkingPoints(s.points, profile, input.runId));
       remember(`${intro}${s.points.length ? ` Talking points: ${s.points.map((x) => x.text).join(' / ')}` : ''}`);
@@ -348,7 +359,7 @@ async function show(s: Show, c: { input: RelationshipInput; rm: RelationshipServ
       const e = loaded.explained!;
       const top = e.factors.slice(0, 2).map((x) => x.label.charAt(0).toLowerCase() + x.label.slice(1));
       const text = s.message || `${profile.firstName}’s ${e.score.toLowerCase()} is ${e.value}${top.length ? `, mainly because of ${top.join(' and ')}` : ''}.`;
-      await sink.text(text, agent);
+      await sink.text(readable(text, loaded.profile?.name), agent);
       await sink.block(scoreFactors(e, profile, input.runId));
       remember(text);
       nextSteps(profile, true);
@@ -357,7 +368,7 @@ async function show(s: Show, c: { input: RelationshipInput; rm: RelationshipServ
     case 'household': {
       const profile = loaded.profile!;
       const text = s.message || (profile.household.length ? `${profile.firstName}’s household has ${profile.household.length + 1} people.` : `${profile.firstName} is the only person in the household.`);
-      await sink.text(text, agent);
+      await sink.text(readable(text, loaded.profile?.name), agent);
       if (profile.household.length) await sink.block(householdList(profile, input.runId));
       remember(text);
       return done('household', { focus: focusOn(profile) });
@@ -376,14 +387,14 @@ async function show(s: Show, c: { input: RelationshipInput; rm: RelationshipServ
       const d = loaded.decline!;
       const card = declineCard(d, input);
       const text = `I’ll record that **${d.party.name}** declined the **${d.payload.product}** offer. It stays hidden for 90 days. Approve below to save it.`;
-      await sink.text(text, agent);
+      await sink.text(readable(text, loaded.profile?.name), agent);
       await sink.block(card);
       remember(text.replace(/\*\*/g, ''));
       return done('decline_drafted', { decline: d, card, superseded: d.superseded });
     }
     case 'answer': {
       const text = s.message || `I couldn’t answer that from ${loaded.profile?.firstName ?? 'the'}’s record.`;
-      await sink.text(text, agent);
+      await sink.text(readable(text, loaded.profile?.name), agent);
       remember(text);
       return done('answer', loaded.profile ? { focus: focusOn(loaded.profile) } : {});
     }

@@ -144,7 +144,8 @@ describe('catalog search (spec 23.5.3)', () => {
   it('does not match questions outside the model (AI-ARC-042)', () => {
     const r = searchCatalog(cu, "What's our wallet share with gig workers?", env.dimensionValues);
     expect(r.matched).toBe(false);
-    expect(r.unknownTerms).toEqual(expect.arrayContaining(['wallet', 'gig', 'worker']));
+    // The person's own words come back, not the stems the match used.
+    expect(r.unknownTerms).toEqual(expect.arrayContaining(['wallet', 'gig', 'workers']));
   });
 
   it('still matches everyday questions in full', () => {

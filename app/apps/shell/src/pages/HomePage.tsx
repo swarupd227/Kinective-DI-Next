@@ -65,7 +65,8 @@ export function HomePage() {
   }
 
   const h = home.data;
-  const ok = h.build.state === 'completed';
+  // A completed build days old is still a warning: the figures are not from last night.
+  const ok = h.build.state === 'completed' && (h.build.ageDays ?? 0) < 2;
   const withResolution = (b: Block): Block => (b.type === 'approval_card' && resolved[b.data.approvalId] ? { ...b, data: { ...b.data, resolution: resolved[b.data.approvalId] } } : b);
   const section = (id: HomeSection['id']) => h.sections.find((s) => s.id === id);
   const yourWork = section('your_work');
@@ -113,8 +114,8 @@ export function HomePage() {
             <h1 className={styles.greeting}>{greetingNow(h.greeting)}</h1>
             <p className={clsx(styles.freshness, !ok && styles.stale)}>
               {ok ? <CircleCheck size={14} aria-hidden /> : <TriangleAlert size={14} aria-hidden />}
-              {formatAsOf(h.build.asOf)}
-              {!ok && <span> · last night&apos;s build is {h.build.state}</span>}
+              {/* A stale build says so in one sentence instead of a date that looks current. */}
+              {ok ? formatAsOf(h.build.asOf) : (h.build.message ?? `${formatAsOf(h.build.asOf)} · last night’s build is ${h.build.state}`)}
               <span className={styles.who}>
                 {' '}
                 · {session.tenant.name}

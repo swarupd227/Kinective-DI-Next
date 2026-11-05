@@ -8,6 +8,9 @@ import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.
 const clean = (t: string) => t.trim().replace(/[.!?]+$/, '').replace(/’/g, "'");
 const plusDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
+/** 2026-10-25 → 25 Oct 2026. */
+const dayLabel = (d: string) => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${d}T00:00:00Z`)).replace('Sept', 'Sep') : d);
+
 export function tasksModule(tasks: TaskService, people: OperationsService, today: () => string): ModuleSpec {
   const noAccess = 'Tasks aren’t part of your DI access.';
   const need = (ctx: ModuleContext) => {
@@ -51,7 +54,7 @@ export function tasksModule(tasks: TaskService, people: OperationsService, today
           need(ctx);
           const m = await tasks.mine(who(ctx), ctx);
           if (!m.items.length) return { text: 'You have nothing open.' };
-          return { text: `**${m.items.length} open**${m.late ? `, ${m.late} past due` : ''}: ${m.bySource.map((s) => `${s.count} ${s.source.toLowerCase()}${s.count === 1 ? '' : 's'}`).join(', ')}. Dates count from the last build, ${m.asOf}.`, blocks: [moduleTable(spec, 'My tasks', ctx.runId, 'task.list', [{ field: 'title', headerName: 'Task', type: 'text' }, { field: 'source', headerName: 'Source', type: 'text' }, { field: 'due', headerName: 'Due', type: 'text' }, { field: 'status', headerName: 'Status', type: 'text' }], m.items.slice(0, 30).map((i) => ({ title: i.title, source: i.source, due: i.due ?? '—', status: i.due && i.due < m.asOf ? 'Past due' : i.status })))] };
+          return { text: `**${m.items.length} open**${m.late ? `, ${m.late} past due` : ''}: ${m.bySource.map((s) => `${s.count} ${s.source.toLowerCase()}${s.count === 1 ? '' : 's'}`).join(', ')}. Past due counts from today; onboarding work is as of the last build, ${dayLabel(m.asOf)}.`, blocks: [moduleTable(spec, 'My tasks', ctx.runId, 'task.list', [{ field: 'title', headerName: 'Task', type: 'text' }, { field: 'source', headerName: 'Source', type: 'text' }, { field: 'due', headerName: 'Due', type: 'text' }, { field: 'status', headerName: 'Status', type: 'text' }], m.items.slice(0, 30).map((i) => ({ title: i.title, source: i.source, due: i.due ? dayLabel(i.due) : '—', status: i.due && i.due < m.today ? 'Past due' : i.status })))] };
         },
       },
       {

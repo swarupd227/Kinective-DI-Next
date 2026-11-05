@@ -71,6 +71,8 @@ function summary(items: InboxItem[], box: InboxBox, filtered: boolean) {
   const whose = box === 'team' ? 'Your team has' : box === 'sent' ? 'You sent' : 'You have';
   if (!items.length) return filtered ? 'Nothing matches that.' : box === 'sent' ? 'You haven’t sent any referrals yet.' : `${whose} nothing open.`;
   const open = box === 'sent' ? '' : ' open';
+  // Filtered to overdue ones, the count is of overdue referrals, never presented as everything open.
+  if (filtered && over === items.length) return `${whose} **${items.length}** overdue ${items.length === 1 ? 'referral' : 'referrals'}.`;
   return `${whose} **${items.length}**${open} ${items.length === 1 ? 'referral' : 'referrals'}${over ? `, **${over}** overdue` : ''}.${over ? ' Overdue ones are first.' : ''}`;
 }
 
@@ -228,7 +230,7 @@ async function show(kind: z.infer<typeof InboxFinish>['outcome'], message: strin
     await sink.text(summary(s.listed.items, s.listed.box, s.listed.filtered), INBOX_AGENT);
     if (s.listed.items.length) await sink.block(inboxList(s.listed.items, s.listed.box, input.runId));
     const [first] = s.listed.items;
-    if (first && input.apps.includes('rm')) sink.suggestion(`Prepare me for my meeting with ${first.name}`);
+    if (first && input.apps.includes('rm')) sink.suggestion(`Prepare me for my meeting with ${first.name}${first.last4 ? `, ending ${first.last4}` : ''}`);
     if (!s.listed.filtered) sink.suggestion(s.listed.box === 'team' ? 'Show my team’s overdue referrals' : 'Show my overdue referrals');
     return { ...base, outcome: 'answer', superseded: [] };
   }
@@ -260,7 +262,7 @@ export function parseInboxRequest(text: string): InboxIntent {
   const note = /\b(?:add a )?note (?:to|on) (.+?)[:,]\s*(.+)$/i.exec(t);
   if (note) return { intent: 'note', ref: ref(note[1]!), note: note[2]!.trim() };
   const older = /\bolder than (\d+) days?\b/i.exec(t)?.[1];
-  return { intent: 'list', box: /\b(team|branch|our)\b/i.test(t) ? 'team' : /\b(sent|i sent|my referrals? status)\b/i.test(t) ? 'sent' : 'mine', olderThan: older ? Number(older) : undefined, overdue: /\boverdue\b/i.test(t) };
+  return { intent: 'list', box: /\b(team|branch|our)\b/i.test(t) ? 'team' : /\b(sent|i sent|my referrals? status)\b/i.test(t) ? 'sent' : 'mine', olderThan: older ? Number(older) : undefined, overdue: /\boverdue\b/i.test(t) && !/\b(waiting|open|all|and which|which are)\b/i.test(t) };
 }
 
 export async function runInboxOffline(input: InboxInput, deps: { gateway: ToolGateway }, sink: RunSink): Promise<InboxOutcome> {

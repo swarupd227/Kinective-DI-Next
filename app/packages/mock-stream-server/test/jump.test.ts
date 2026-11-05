@@ -28,7 +28,7 @@ describe('frontline figures', () => {
     const { kpis: k, narrative } = personalKpis(kpis, mine, sent, { open: 3, overdue: 1 }, now);
     expect(k.data.items.map((i) => [i.label, i.value])).toEqual([
       ['My goal attainment', 100],
-      ['Incentive so far, October 2026', 120],
+      [new Date().toISOString().slice(0, 10) > '2026-10-31' ? 'Incentive, October 2026' : 'Incentive so far, October 2026', 120],
       ['Referrals I sent', 2],
       ['My open work', 3],
     ]);

@@ -100,7 +100,7 @@ describe('voice gateway', () => {
     const spoken = v.of('tts.start')[0]!.text;
     expect(spoken).toMatch(/^Loan balances grew 2\.4 percent in Q3/);
     expect(spoken).toContain('18.2 million dollars');
-    expect(spoken).toMatch(/Based on last night’s build\.$/);
+    expect(spoken).toMatch(/Based on the latest build\.$/);
     expect(v.of('tts.sentence').map((m) => m.text)[0]).toMatch(/^Loan balances grew 2\.4 percent in Q3, ahead of Q2/);
     expect(v.audio()).toBeGreaterThan(0);
 

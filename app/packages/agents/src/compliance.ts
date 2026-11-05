@@ -38,7 +38,7 @@ export function complianceModule(issues: IssueService, pool: Pool): ModuleSpec {
       const f = await issues.list({ overdueOnly: true }, ctx);
       if (!f.count) return null;
       const reg = f.items.filter((i) => i.kind === 'regulatory').length;
-      return { id: 'issues', title: `${f.count} ${f.count === 1 ? 'issue' : 'issues'} past due`, why: `${reg ? `${reg} regulatory. ` : ''}The oldest is ${f.oldestDays} days.`, badge: 'Past due', ask: 'Show my overdue open issues', weight: reg ? 110 : 70 };
+      return { id: 'issues', title: `${f.count} ${f.count === 1 ? 'issue' : 'issues'} past due`, why: `${reg ? `${reg} regulatory. ` : ''}The oldest has been open ${f.oldestDays} days.`, badge: 'Past due', ask: 'Show my overdue open issues', weight: reg ? 110 : 70 };
     },
     plan: (text) => {
       const t = text.trim().replace(/[.!?]+$/, '');
@@ -70,7 +70,7 @@ export function complianceModule(issues: IssueService, pool: Pool): ModuleSpec {
           if (!f.count) return { text: 'No open issues match that.' };
           const by = f.bySource.map((s) => `${s.count} ${s.source}`).join(', ');
           return {
-            text: `**${f.count} ${f.count === 1 ? 'issue' : 'issues'}**: ${by}. The oldest is **${f.oldestDays} days**.`,
+            text: `**${f.count} ${f.count === 1 ? 'issue' : 'issues'}**: ${by}. The oldest has been open **${f.oldestDays} days**.`,
             blocks: [moduleTable(spec, 'Issues', ctx.runId, 'cpm.issue.list', [{ field: 'id', headerName: 'Issue', type: 'text' }, { field: 'member', headerName: 'Member', type: 'text' }, { field: 'source', headerName: 'Source', type: 'text' }, { field: 'opened', headerName: 'Opened', type: 'date' }, { field: 'age', headerName: 'Age', type: 'days' }, { field: 'owner', headerName: 'Owner', type: 'text' }, { field: 'status', headerName: 'Status', type: 'text' }], f.items.slice(0, 25).map((i) => ({ id: `#${i.issueId}`, member: `${i.member} (…${i.last4})`, source: i.source, opened: i.opened, age: i.ageDays, owner: i.owner ?? 'Unassigned', status: i.overdue ? `${i.status}, past due` : i.status })), f.asOf)],
             suggestions: f.items.slice(0, 1).map((i) => `Summarise case ${i.issueId}`),
           };

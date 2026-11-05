@@ -198,6 +198,10 @@ export function verifyNarrative(template: string, resolved: Map<string, Resolved
   const text = kept
     .join(' ')
     .replace(/\{\{\s*([a-z][a-z0-9_]*)\s*\}\}/g, (_, id: string) => resolved.get(id)!.text)
+    // A change placeholder carries its own direction word ("rose $938K"), so a narrative that also wrote
+    // the word, or repeated the placeholder after "by", would read "rose rose" or "rose $938K by rose $938K".
+    .replace(/(\b[a-z]+ (?:by )?[-$\d][\d.,]*(?:[KMB%]| ?bp)?) by \1/gi, '$1')
+    .replace(/\b(rose|fell|grew|increased|decreased|declined|dropped|slipped|eased|improved|worsened|up|down)\s+(?:by\s+)?\1\b/gi, '$1')
     .trim();
   return { text, removed, unresolved };
 }

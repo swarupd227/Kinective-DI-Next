@@ -146,7 +146,7 @@ export function compile(request: SemanticQueryRequest, ctx: QueryContext, env: C
     if (!purviewIds.length) throw new SemanticError('NO_ACCESS', 'Your purview does not include any branch with data.');
     // Naming a branch outside the purview is refused outright, without saying whether data exists.
     const outside = filters.filter((f) => f.dimension === 'branch' && f.op === 'in').flatMap((f) => f.values.filter((v) => !ctx.purviewBranches!.includes(v)));
-    if (outside.length) throw new SemanticError('NO_ACCESS', `${outside.join(', ')} ${outside.length === 1 ? 'is' : 'are'} outside your Report Viewer purview.`);
+    if (outside.length) throw new SemanticError('NO_ACCESS', `${outside.join(', ')} ${outside.length === 1 ? 'is' : 'are'} outside the branches you can see.`);
   }
 
   const periods = request.time ? resolvePeriods(request.time, env.latestMonthEnd) : null;

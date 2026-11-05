@@ -10,6 +10,11 @@
   color: var(--color-text-muted);
 }
 
+.search {
+  max-width: 320px;
+}
+
+/* About twelve rows before the grid scrolls inside itself. */
 .fixed {
-  height: 360px;
+  height: 520px;
 }

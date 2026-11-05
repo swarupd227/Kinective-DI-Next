@@ -111,6 +111,7 @@ Rules:
 - Follow-ups such as "break that down by branch" or "same for Q2" change one part of the previous query and keep the rest.
 
 Data available: nightly build ${svc.build.buildId}, as of ${svc.build.asOf}. Month-end history runs to ${svc.build.latestMonthEnd}. Quarters and years count only when complete.
+Today is ${new Date().toISOString().slice(0, 10)}. "Last month", "this month" and "so far" are counted from today, not from the data's date. When the month asked for is not complete in the data (it ends after ${svc.build.asOf}), say so in the first sentence without digits, which the figure check would remove ("October isn't complete in the data yet, so this compares August with September") and answer with the latest complete month, or with the month to date if the user asked for it. Never present an earlier month as "last month" without saying which month it is.
 
 Metrics:
 ${catalog}
@@ -134,7 +135,7 @@ Question from ${input.user.name} (${input.user.title}): ${input.question}`;
 }
 
 const describeRequest = (svc: SemanticService, r: SemanticQueryRequest) => {
-  const labels = r.metrics.map((m) => svc.model.metrics[m]?.label ?? m).join(' and ');
+  const labels = r.metrics.map((m) => svc.model.metrics[m]?.label ?? m).map((l) => (/^[A-Z][a-z]/.test(l) ? l.charAt(0).toLowerCase() + l.slice(1) : l)).join(' and ');
   const by = r.dimensions.length ? ` by ${r.dimensions.map((d) => svc.model.dimensions[d]?.label.toLowerCase() ?? d).join(' and ')}` : '';
   const when = r.time ? `, ${r.time.last ? `last ${r.time.last} ${r.time.grain}${r.time.last > 1 ? 's' : ''}` : `${r.time.grain}ly`}` : '';
   return `${labels}${by}${when}`;
@@ -157,6 +158,22 @@ function resultForModel(id: string, r: SemanticResult) {
 const errorText = (e: unknown) =>
   e instanceof SemanticError ? JSON.stringify({ error: e.code, message: e.message, suggestions: e.suggestions }) : e instanceof AnswerError ? JSON.stringify({ error: 'ANSWER_INVALID', message: e.message }) : JSON.stringify({ error: 'TOOL_FAILED', message: 'The tool failed.' });
 
+/** Finance measures people ask for by name; when the catalog lacks one, the refusal names it. */
+const FINANCE: [RegExp, string][] = [
+  [/\bnet worth( ratio)?\b/i, 'Net worth ratio'],
+  [/\bnet interest margin\b|\bNIM\b/, 'Net interest margin'],
+  [/\bcost of funds\b/i, 'Cost of funds'],
+  [/\breturn on (average )?assets\b|\bROAA?\b/, 'Return on assets'],
+  [/\befficiency ratio\b/i, 'Efficiency ratio'],
+  [/\b(capital|tier 1|leverage) ratio\b/i, 'Capital ratio'],
+  [/\b(rate shock|basis points?|bps?\b.*\brates?|interest rate risk|NEV)\b/i, 'Interest rate sensitivity'],
+  [/\bnet income\b|\bprofit(ability)?\b/i, 'Net income'],
+  [/\bfee income\b|\bnon-?interest income\b/i, 'Fee income'],
+];
+
+/** Questions about how fresh the data is: answered from the build, not the metric catalog. */
+const FRESHNESS = /\b(how (fresh|current|old|recent|up[- ]to[- ]date)|is (the|this|our|my) data (current|fresh|up[- ]to[- ]date|stale|live)|data (current|fresh|stale|freshness)|when was (the|this|it|our) (data|last build|build)|last (build|refresh|update|load)|(data|figures?|numbers?) as of when|as of when|when (was|is) .* (updated|refreshed|built))\b/i;
+
 export async function runAnalytics(input: AnalyticsInput, deps: { model: ModelClient; semantic: SemanticService }, sink: RunSink): Promise<AnalyticsOutcome> {
   const svc = deps.semantic;
   const toolCalls: ToolCallRecord[] = [];
@@ -174,15 +191,36 @@ export async function runAnalytics(input: AnalyticsInput, deps: { model: ModelCl
   const top = catalog.metrics[0];
   sink.step(plan, { id: 'match', state: 'done', resultSummary: catalog.matched ? `${svc.model.metrics[top!.name]!.label}${catalog.dimensions[0] ? `, by ${catalog.dimensions[0].label.toLowerCase()}` : ''}` : 'No defined metric matches yet' });
 
+  // "Is the data current?" is about the build, not a metric: it gets the build's dates, never a refusal.
+  if (FRESHNESS.test(input.question)) {
+    const asOf = svc.build.asOf;
+    const finished = svc.build.completedAt.slice(0, 10);
+    const days = Math.max(0, Math.floor((Date.now() - Date.parse(`${finished}T00:00:00Z`)) / 86_400_000));
+    const label = (d: string) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${d}T00:00:00Z`)).replace('Sept', 'Sep');
+    await sink.text(
+      days >= 2
+        ? `**The data isn’t current.** The latest build finished ${label(finished)}, ${days} days ago, with data as of ${label(asOf)}. No new build has run since, so every figure in DI is from then. Your DI administrator can see why on Integrations.`
+        : `The data is as of **${label(asOf)}**, from the nightly build that finished ${label(finished)}. It refreshes with each nightly build; nothing in DI is real time.`,
+      AGENT_NAME,
+    );
+    return { outcome: 'answer', toolCalls, usage, numericRemovals: [], catalog };
+  }
+
   // A first question that matches nothing in the catalog is refused without a model call (AI-GRD-052).
   // Terms with no definition anywhere in the model mean a guess, however well the other words match.
   if (!catalog.matched && !input.history.length && !catalog.values.length && catalog.unknownTerms.length) {
     // Closest defined items first, then the most-asked metrics, as questions the user can pick.
     const names = [...catalog.metrics.map((h) => h.name), 'loan_balance', 'deposit_balance', 'member_count'];
     const closest = [...new Set(names)].slice(0, 3).map((n) => `Show ${svc.model.metrics[n]!.label.toLowerCase()}`);
+    // A well-known finance measure is named as missing, not split into words the catalog doesn't know.
+    const finance = FINANCE.find(([re]) => re.test(input.question))?.[1];
     await sink.block(
-      noticeBlock('uncertain', 'I couldn’t map that question to a defined metric, so I won’t guess.', AGENT_NAME, input.runId, {
-        detail: catalog.unknownTerms.length ? `Terms I don’t have a definition for: ${catalog.unknownTerms.join(', ')}. I’ve logged the question for your data team.` : 'I’ve logged the question for your data team.',
+      noticeBlock('uncertain', finance ? `${finance} isn’t in your DI catalog yet, so I won’t estimate it.` : 'I couldn’t map that question to a defined metric, so I won’t guess.', AGENT_NAME, input.runId, {
+        detail: finance
+          ? 'Your data team can add it to the semantic model once its inputs are loaded. I’ve logged the request. Meanwhile, here’s what I can show.'
+          : catalog.unknownTerms.length
+            ? `I don’t have a definition for “${catalog.unknownTerms.join('”, “')}”. I’ve logged the question for your data team.`
+            : 'I’ve logged the question for your data team.',
         options: closest.map((label, i) => ({ id: `o${i + 1}`, label })),
       }),
     );
@@ -247,14 +285,14 @@ export async function runAnalytics(input: AnalyticsInput, deps: { model: ModelCl
             record(false, { error: 'invalid input' });
             continue;
           }
-          const label = `Running the semantic query: ${describeRequest(svc, parsed.data.request)}`;
+          const label = `Looking up ${describeRequest(svc, parsed.data.request)}`;
           sink.step(plan, { id: stepId, label, agent: AGENT_NAME, state: 'running', operation: 'semantic.query' });
           try {
             const r = await svc.query(parsed.data.request, ctx);
             const id = `r${results.size + 1}`;
             results.set(id, r);
             requests.push(r.request);
-            sink.step(plan, { id: stepId, state: 'done', resultSummary: `${r.rowCount} ${r.rowCount === 1 ? 'row' : 'rows'} from build ${r.build.buildId}` });
+            sink.step(plan, { id: stepId, state: 'done', resultSummary: `${r.rowCount} ${r.rowCount === 1 ? 'row' : 'rows'} from the ${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${r.build.asOf}T00:00:00Z`)).replace('Sept', 'Sep')} build` });
             toolResults.push({ type: 'tool_result', tool_use_id: use.id, content: `<data source="semantic.query" trust="data">\n${JSON.stringify(resultForModel(id, r))}\n</data>` });
             record(true, { resultRef: `${id}:${r.queryId}` });
           } catch (e) {
@@ -371,7 +409,7 @@ async function compose(
 
   if (a.outcome === 'no_access') {
     // Fixed wording: the model's text could hint at what exists outside the purview (AI-AGT-008).
-    await sink.block(noticeBlock('no_access', 'That is outside your access in DI.', AGENT_NAME, input.runId, { permission: 'Report Viewer purview', detail: 'Ask your DI administrator if you need it.' }));
+    await sink.block(noticeBlock('no_access', input.purviewBranches?.length ? 'That’s outside the branches you can see.' : 'That is outside your access in DI.', AGENT_NAME, input.runId, { permission: 'Branch access', detail: input.purviewBranches?.length ? `Your access covers ${input.purviewBranches.join(', ')}. Ask about ${input.purviewBranches.length === 1 ? 'it' : 'them'}, or ask your DI administrator if you need more.` : 'Ask your DI administrator if you need it.' }));
     return { outcome: 'no_access', numericRemovals: [], answerText: '' };
   }
   if (a.outcome === 'unmatched' || a.outcome === 'clarify' || a.outcome === 'not_supported') {

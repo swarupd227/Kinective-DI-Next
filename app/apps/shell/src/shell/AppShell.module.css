@@ -40,6 +40,10 @@
 .canvasCol {
   position: relative;
   display: grid;
+
+  /* One column that may shrink: without it the track grows to the header's width and the
+     conversation slides under an open side panel. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;

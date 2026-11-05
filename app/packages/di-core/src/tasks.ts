@@ -32,8 +32,10 @@ export class TaskService {
   }
 
   /** Everything open for one person, oldest due date first. */
-  async mine(who: Person, ctx: CoreContext) {
+  async mine(who: Person, ctx: CoreContext, now = new Date().toISOString().slice(0, 10)) {
     const asOf = await this.asOf();
+    // Tasks are live work: a due date is judged against today, not against the last build's date.
+    const today = now > asOf ? now : asOf;
     const own = await rows<Record<string, unknown>>(this.pool, "SELECT task_id, title, due, status FROM tsk_task WHERE owner_user_id = ? AND status = 'Open'", [who.userId]);
     const items: TaskItem[] = own.map((t) => ({ ref: `task:${t.task_id}`, taskId: t.task_id as number, title: t.title as string, due: t.due ? day(t.due) : null, status: 'Open', source: 'Task', link: '/tasks' }));
     if (who.employeeId !== undefined) {
@@ -41,11 +43,11 @@ export class TaskService {
       for (const r of refs) items.push({ ref: `com:${r.com_id}`, title: (r.summary as string | null) ?? `Referral #${r.com_id}: ${String(r.type_id).replaceAll('_', ' ')}`, due: null, status: r.stage as string, source: 'Referral', link: '/workflows/referrals/inbox' });
       const scope = ctx.purviewBranches ? ' AND b.name IN (?)' : '';
       const touch = await rows<Record<string, unknown>>(this.pool, `SELECT t.task_id, t.touch, t.due, p.first_name, p.last_name FROM onb_task t JOIN cdm_party p ON p.party_id = t.party_id JOIN cdm_location b ON b.int_id = t.branch_id WHERE t.status = 'Open' AND t.assignee_employee_id = ? AND t.due <= DATE_ADD(?, INTERVAL 7 DAY)${scope}`, [who.employeeId, asOf, ...(ctx.purviewBranches ? [ctx.purviewBranches.length ? ctx.purviewBranches : ['']] : [])]);
-      for (const t of touch) items.push({ ref: `onb:${t.task_id}`, title: `${t.first_name} ${t.last_name}: ${String(t.touch).toLowerCase()}`, due: day(t.due), status: day(t.due) < asOf ? 'Late' : 'Open', source: 'Onboarding', link: '/m/onboarding' });
+      for (const t of touch) items.push({ ref: `onb:${t.task_id}`, title: `${t.first_name} ${t.last_name}: ${String(t.touch).toLowerCase()}`, due: day(t.due), status: day(t.due) < today ? 'Late' : 'Open', source: 'Onboarding', link: '/m/onboarding' });
     }
-    const late = (t: TaskItem) => Boolean(t.due && t.due < asOf);
+    const late = (t: TaskItem) => Boolean(t.due && t.due < today);
     items.sort((a, b) => (a.due ?? '9999').localeCompare(b.due ?? '9999'));
-    return { asOf, items, late: items.filter(late).length, bySource: [...new Set(items.map((i) => i.source))].map((s) => ({ source: s, count: items.filter((i) => i.source === s).length })) };
+    return { asOf, today, items, late: items.filter(late).length, bySource: [...new Set(items.map((i) => i.source))].map((s) => ({ source: s, count: items.filter((i) => i.source === s).length })) };
   }
 
   async own(who: Person, title: string) {

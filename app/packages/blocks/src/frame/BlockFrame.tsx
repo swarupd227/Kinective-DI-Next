@@ -18,7 +18,7 @@ import {
 import { Chip, IconButton, Menu } from '@dinext/ui';
 import type { Block, BlockAction, Source } from '@dinext/block-schemas';
 import { useBlockHost } from '../context.tsx';
-import { formatAsOf } from '../format.ts';
+import { formatAsOf, formatDay } from '../format.ts';
 import styles from './BlockFrame.module.css';
 
 export type FrameStatus = 'loading' | 'streaming' | 'complete' | 'error';
@@ -127,7 +127,8 @@ export function BlockFrame({ block, status = 'complete', progressText, bare, hea
       {block.freshness.stale && (
         <p className={styles.stale} role="note">
           <TriangleAlert size={14} aria-hidden />
-          Showing data from the {formatAsOf(block.freshness.asOf).replace('Data as of nightly build ', '')} build. Last night's build has not completed.
+          {/* The date comes from the data itself: never "last night", which is wrong once a build is days old. */}
+          From the {block.freshness.asOf ? formatDay(new Date(`${block.freshness.asOf.slice(0, 10)}T12:00:00Z`)) : 'last'} build. No newer build has finished.
         </p>
       )}
 

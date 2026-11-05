@@ -71,7 +71,7 @@ describe.skipIf(!up)('modules against the warehouse', () => {
 
     it('lists issues by source and age, within the purview', async () => {
       const { r } = await run(compliance, turn('Which regulatory issues are open more than 1 week?', 'thr_c1'));
-      expect(r.texts[0]).toMatch(/issues?\*\*: .* The oldest is \*\*\d+ days/);
+      expect(r.texts[0]).toMatch(/issues?\*\*: .* The oldest has been open \*\*\d+ days/);
       expect(validateBlock(r.blocks[0]!).ok).toBe(true);
       expect(JSON.stringify(r.blocks[0])).not.toContain('Northgate');
     });

@@ -2,6 +2,7 @@
 // 26.10). Lineage comes only from this catalog and the semantic model, never from a model's reading of
 // names, so a table the catalog doesn't know shows as an unknown source (AI-AGT-100).
 import type { Pool } from '@dinext/tenant-db';
+import { CHECK_NAMES } from './modules2.ts';
 import { CoreError } from './referrals.ts';
 
 const rows = async <T>(pool: Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
@@ -90,7 +91,8 @@ export class LineageService {
     const asOf = String(build?.as_of_date instanceof Date ? build.as_of_date.toISOString() : build?.as_of_date).slice(0, 10);
     const uploads = await rows<{ source: string; arrived: string }>(this.pool, 'SELECT source, arrived FROM ops_upload');
     const checks = await rows<{ domain: string; dimension: string; name: string; status: string; rows_failed: number }>(this.pool, 'SELECT domain, dimension, name, status, rows_failed FROM ops_dq_check ORDER BY domain, name');
-    return { asOf, uploads, checks };
+    // People read what a check means, not its rule ("loan.branch_id not null").
+    return { asOf, uploads, checks: checks.map((c) => ({ ...c, name: CHECK_NAMES[c.name] ?? c.name })) };
   }
 
   /** A metric traced to its sources, one lane per table it reads. */

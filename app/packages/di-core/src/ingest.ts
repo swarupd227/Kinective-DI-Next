@@ -125,6 +125,9 @@ function kindOf(s: string): ValueKind {
   return 'text';
 }
 
+/** Headers that name an amount of money, so whole numbers beneath them are dollars. */
+const MONEY_HEADER = /\b(amount|balances?|dollars?|\$|targets?|loans?|deposits?|revenue|income|fees?|costs?|payouts?|incentives?|budget|goal|sales|funded|limit)\b/i;
+
 const TYPE_OF: Record<ValueKind, ColumnType> = { number: 'number', currency: 'currency', percent: 'percent', date: 'date', yesno: 'text', text: 'text' };
 
 /** A column's field name: lower case, underscores, unique. */
@@ -183,7 +186,8 @@ export function profile(sheet: Sheet): FileProfile {
     const [top, n] = [...counts].sort((a, b) => b[1] - a[1])[0] ?? ['text', 0];
     const kind: ValueKind = top !== 'text' && n >= strings.length * 0.75 ? top : 'text';
     const bad = kind === 'text' ? [] : strings.filter((s) => convert(s, kind) === null);
-    return { header: header.trim() || `Column ${i + 1}`, field: fieldFor(header.trim() || `Column ${i + 1}`, taken), kind, type: TYPE_OF[kind], filled: strings.length, blank: values.length - strings.length, invalid: bad.length, invalidExamples: [...new Set(bad)].slice(0, 3), example: strings[0] ?? '' };
+    const money = kind === 'number' && MONEY_HEADER.test(header);
+    return { header: header.trim() || `Column ${i + 1}`, field: fieldFor(header.trim() || `Column ${i + 1}`, taken), kind, type: money ? 'currency' : TYPE_OF[kind], filled: strings.length, blank: values.length - strings.length, invalid: bad.length, invalidExamples: [...new Set(bad)].slice(0, 3), example: strings[0] ?? '' };
   });
   for (const c of columns.filter((x) => x.invalid)) warnings.push(`${c.invalid} ${c.invalid === 1 ? 'value' : 'values'} in ${c.header} ${c.invalid === 1 ? "isn't a" : "aren't"} ${c.kind === 'yesno' ? 'yes or no' : c.kind}${c.invalid === 1 ? '' : 's'} (${c.invalidExamples.map((x) => `“${x}”`).join(', ')}) and will load blank.`);
   const empty = columns.filter((c) => !c.filled);

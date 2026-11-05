@@ -113,7 +113,7 @@ export function memberTake(p: MemberProfile, topics: Topic[]): DiTake {
   const alert = p.alerts.find((a) => a.tone === 'danger') ?? p.alerts.find((a) => a.tone === 'warning');
   const parts = [...(alert && !(alert.code === 'attrition_high' && first?.kind === 'retention_risk') ? [alert.label] : []), ...(first ? [topicLine(first, p)] : [])];
   if (!parts.length) return { headline: `Nothing needs attention for ${p.firstName} today.` };
-  return { headline: `${parts.join('. ')}.`, action: { label: 'Prepare me', ask: `Prepare me for my meeting with ${p.name}` } };
+  return { headline: `${parts.join('. ')}.`, action: { label: 'Prepare me', ask: `Prepare me for my meeting with ${p.name}${p.last4 ? `, ending ${p.last4}` : ''}` } };
 }
 
 /** The full record, in the Relationship Dashboard's section order [BK p11] (FE-RM-001). */

@@ -71,7 +71,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     approvesIncentives: true,
     retention: true,
     modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'ai-admin', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'callreport', 'collections', 'campaigns', 'seg', 'tables'],
-    suggestions: ['What should I do today?', 'Show the October payouts', 'Which regulatory issues are open more than 3 weeks?', 'Where does delinquency come from?', 'Are we ready to file Q3?', 'Show the early-warning list', 'Get me ready for Thursday’s ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'Prepare me for my meeting with Suzanne Jackson', 'Brief me'],
+    suggestions: ['What should I do today?', 'Show the October payouts', 'Which regulatory issues are open more than 3 weeks?', 'Where does delinquency come from?', 'Are we ready to file Q3?', 'Show the early-warning list', 'Get me ready for the next ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'Brief me'],
   },
   analyst: {
     userClass: 'Analyst',
@@ -83,7 +83,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     },
     retention: true,
     modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-finance', 'lineage', 'compliance', 'datalogs', 'operations', 'callreport', 'campaigns', 'tables'],
-    suggestions: ['/query loans opened last week by branch', 'Which campaigns produced the most loan dollars?', 'Which checks failed?', 'Build a table summary of fees by product', 'Show loan growth by branch for Q3 vs Q2', 'Find certificates at risk of leaving'],
+    suggestions: ['/query loans opened last week by branch', 'Which campaigns produced the most loan dollars?', 'Which checks failed?', 'Is the data current?', 'Show loan growth by branch for Q3 vs Q2', 'Find certificates at risk of leaving'],
   },
   branch: {
     userClass: 'Manager',
@@ -100,7 +100,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     approvesIncentives: true,
     retention: true,
     modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-lending', 'lineage', 'indirect', 'prospecting', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'collections', 'seg'],
-    suggestions: ['What should I do today?', 'Who on my team is behind on goals?', 'Approve the October payouts for Westport', 'What’s on my team’s plate?', 'Show the pipeline by product for my branch', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups', 'Refer Suzanne Jackson for a HELOC, she prefers a call after 5 pm', 'Show my overdue onboarding touch points', 'Show Northgate loan detail'],
+    suggestions: ['What should I do today?', 'Who on my team is behind on goals?', 'Approve the October payouts for Westport', 'What’s on my team’s plate?', 'Show the pipeline by product for my branch', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups', 'Refer Suzanne Jackson for a HELOC, she prefers a call after 5 pm', 'Show my overdue onboarding touch points', 'Show Westport loans by category'],
   },
   lender: {
     userClass: 'Lender',
@@ -142,7 +142,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     approvesIncentives: true,
     retention: true,
     modules: ['governance', 'tasks', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'datalogs', 'datalogs-approve', 'collections', 'campaigns', 'tables'],
-    suggestions: ['Get me ready for Thursday’s ALCO meeting', 'Brief me', 'Show loan growth by branch for Q3 vs Q2', 'Show the October payouts'],
+    suggestions: ['Get me ready for the next ALCO meeting', 'Brief me', 'Show loan growth by branch for Q3 vs Q2', 'Show the October payouts'],
   },
   admin: {
     userClass: 'Administrator',
@@ -194,11 +194,19 @@ export function sessionFor(id: PersonaId, voice: VoiceStatus = NO_VOICE): Sessio
   };
 }
 
-export function buildFor(id: PersonaId): BuildStatus {
-  // The bank tenant's build is late, to show the stale-build notice (FE-EXP-010).
-  return id === 'bank_cfo'
-    ? { state: 'late', asOf: '2026-10-25T04:06:00-04:00', buildId: 'bld_20261025', expectedBy: '2026-10-26T05:00:00-04:00', message: "Last night's build has not finished. It was expected by 05:00." }
-    : { state: 'completed', asOf: '2026-10-26T04:10:00-04:00', buildId: 'bld_20261026' };
+export function buildFor(id: PersonaId, now = Date.now()): BuildStatus {
+  // The bank tenant's build is late, to show the stale-build notice (FE-EXP-010). Either way, the age is
+  // counted from today, so a build from days ago is never called "last night's".
+  const age = (iso: string) => Math.max(0, Math.floor((now - Date.parse(`${iso.slice(0, 10)}T00:00:00Z`)) / 86_400_000));
+  const label = (iso: string) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${iso.slice(0, 10)}T00:00:00Z`)).replace('Sept', 'Sep');
+  if (id === 'bank_cfo') {
+    const asOf = '2026-10-25T04:06:00-04:00';
+    const days = age(asOf);
+    return { state: 'late', asOf, buildId: 'bld_20261025', expectedBy: '2026-10-26T05:00:00-04:00', ageDays: days, message: days >= 2 ? `No new build for ${days} days. The one due by 05:00 on 26 Oct 2026 hasn’t finished, so figures are from ${label(asOf)}.` : "Last night's build has not finished. It was expected by 05:00." };
+  }
+  const asOf = '2026-10-26T04:10:00-04:00';
+  const days = age(asOf);
+  return { state: 'completed', asOf, buildId: 'bld_20261026', ageDays: days, ...(days >= 2 ? { message: `No new build for ${days} days. Figures are from the build that finished ${label(asOf)}.` } : {}) };
 }
 
 // ---- Home ---------------------------------------------------------------------------------------

@@ -7,6 +7,7 @@ import { newBlockId } from './answer.ts';
 import type { ToolCallRecord } from './audit.ts';
 import { inStatus, midSentence as lower, type GatewayContext, type ToolGateway } from './gateway.ts';
 import { GOAL_AGENT, type GoalThread } from './goal.ts';
+import { periodClosed } from './incentives.ts';
 import type { ModuleWork } from './moduleAgent.ts';
 import { mostWaitOn, money, taskCard } from './pipelineAgent.ts';
 import type { RunSink } from './sink.ts';
@@ -90,7 +91,7 @@ function referralItem(i: InboxItem, own: boolean, now: number): TodayItem {
     why: `Overdue by ${days(late)}.${own || !i.assignee ? '' : ` With ${i.assignee.name}.`}${i.notes ? ` ${i.notes}` : ''}`.slice(0, 240),
     badge: 'Overdue',
     link: `/workflows/referrals/inbox?id=${i.comId}`,
-    ask: `Prepare me for my meeting with ${i.name}`,
+    ask: `Prepare me for my meeting with ${i.name}${i.last4 ? `, ending ${i.last4}` : ''}`,
     weight: referralWeight(i, now),
     lead: `${late}d late`,
     past: late,
@@ -153,11 +154,13 @@ export function whyFirst(items: TodayItem[]) {
   const peers = rest.filter((i) => i.kind === first?.kind);
   if (!first || !peers.length) return '';
   const beats = (key: 'amount' | 'past') => peers.every((i) => (first[key] ?? 0) > (i[key] ?? 0));
-  if (first.kind === 'referral') return beats('past') ? 'It leads because it is the most overdue here.' : 'It leads on days overdue and priority taken together.';
+  if (first.kind === 'referral') return beats('past') ? 'It leads because it is the most overdue here.' : 'It leads because it is overdue and marked high priority.';
+  // Only applications are ranked on dollars and days; other work says nothing rather than something untrue.
+  if (first.kind !== 'application') return '';
   if (beats('amount') && beats('past')) return 'It leads because it is both the largest application here and the furthest past its threshold.';
   if (beats('amount')) return 'It leads because it is the largest application here.';
   if (beats('past')) return 'It leads because it is the furthest past its threshold.';
-  return 'It leads on dollars and days past the threshold taken together.';
+  return 'It leads on its size and how long it has waited, together.';
 }
 
 export function todayText(p: TodayPlan) {
@@ -192,7 +195,7 @@ export function todayList(p: TodayPlan, runId: string, opts: { startsWork?: bool
 export function goalsTake(mine: Scorecard | null, batches: PayoutBatch[] | null): DiTake {
   const p = batches && payoutSummary(batches);
   if (p) return { headline: `${p.month} payouts are waiting for you at ${p.where}: ${p.facts}.`, action: { label: 'Review payouts', ask: p.ask } };
-  if (mine) return { headline: `${mine.period}: you’ve earned ${usd(mine.total)} so far.`, action: { label: 'How am I doing?', ask: 'How am I doing on my goals this month?' } };
+  if (mine) return periodClosed(mine) ? { headline: `${mine.period} has ended: you’d earned ${usd(mine.total)} by the last build, with final figures after the next one.`, action: { label: 'How did I do?', ask: `How did I do on my goals in ${mine.period}?` } } : { headline: `${mine.period}: you’ve earned ${usd(mine.total)} so far.`, action: { label: 'How am I doing?', ask: 'How am I doing on my goals this month?' } };
   return { headline: 'Nothing is waiting for you here.' };
 }
 
@@ -213,7 +216,7 @@ export function referralTake(items: InboxItem[], own: boolean, now = Date.now())
   if (!top) return { headline: items.length ? 'Nothing is overdue. Oldest work is first.' : 'Nothing is waiting.' };
   const who = own || !top.assignee ? '' : ` with ${top.assignee.name}`;
   const more = late.length > 1 ? ` ${late.length} are overdue in all.` : '';
-  return { headline: `${top.name}’s ${lower(top.typeLabel)}${who} comes first: overdue by ${days(overdueDays(top, now))}.${more}`, action: own ? { label: 'Prepare me', ask: `Prepare me for my meeting with ${top.name}` } : { label: 'Show what’s overdue', ask: 'Show my team’s overdue referrals' } };
+  return { headline: `${top.name}’s ${lower(top.typeLabel)}${who} comes first: overdue by ${days(overdueDays(top, now))}.${more}`, action: own ? { label: 'Prepare me', ask: `Prepare me for my meeting with ${top.name}${top.last4 ? `, ending ${top.last4}` : ''}` } : { label: 'Show what’s overdue', ask: 'Show my team’s overdue referrals' } };
 }
 
 export interface TodayOutcome {

@@ -44,6 +44,9 @@ export interface IncentivesOutcome {
 }
 
 const dollars = (n: number) => (Number.isInteger(n) ? `$${n.toLocaleString('en-US')}` : usd(n));
+/** The goal period has ended by the calendar, though the data may stop before its last day. */
+export const periodClosed = (c: { periodEnd: string }, now = new Date().toISOString().slice(0, 10)) => /^\d{4}-\d{2}-\d{2}/.test(c.periodEnd) && c.periodEnd.slice(0, 10) < now;
+const dataDay = (asOf: string) => (/^\d{4}-\d{2}-\d{2}/.test(asOf) ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${asOf.slice(0, 10)}T00:00:00Z`)).replace('Sept', 'Sep') : asOf);
 const amount = (g: Pick<GoalScore, 'unit'>, n: number) => (g.unit === 'currency' ? dollars(n) : n.toLocaleString('en-US'));
 const measured = (c: Scorecard) => c.goals.filter((g) => !g.qualifier);
 const shortPeriod = (period: string) => period.split(' ')[0]!;
@@ -60,12 +63,17 @@ export function scorecardText(c: Scorecard, own: boolean) {
   const who = own ? 'You' : c.name;
   const lines = measured(c).map((g) => `**${g.name}**: ${amount(g, g.actual)} of ${amount(g, g.target)} (${g.pct}%)${g.earned ? `, earning **${dollars(g.earned)}**` : ''}.`);
   const next = measured(c).find((g) => g.next && g.rule?.kind === 'tiered');
-  const closer = next ? ` ${own ? 'You need' : `${c.name} needs`} **${amount(next, next.next!.need)}** more on ${next.name.toLowerCase()} to reach the next tier, worth ${dollars(next.next!.amount)}.` : '';
+  // Once the month has ended there's no next tier to chase: the figures wait on the build that covers its last days.
+  const closed = periodClosed(c);
+  const closer = next && !closed ? ` ${own ? 'You need' : `${c.name} needs`} **${amount(next, next.next!.need)}** more on ${next.name.toLowerCase()} to reach the next tier, worth ${dollars(next.next!.amount)}.` : '';
   const waiting = measured(c).find((g) => g.pending);
-  const pending = waiting ? ` ${waiting.pending} more ${waiting.pending === 1 ? 'is' : 'are'} active and will count if sold by the end of the period.` : '';
+  const pending = waiting ? (closed ? ` ${waiting.pending} more ${waiting.pending === 1 ? 'was' : 'were'} active when the data was taken; any sold before the month ended count once the next build runs.` : ` ${waiting.pending} more ${waiting.pending === 1 ? 'is' : 'are'} active and will count if sold by the end of the period.`) : '';
   const gate = c.goals.find((g) => g.qualifier && g.actual < g.target);
   const qualifier = gate ? ` ${gate.name} is ${gate.actual}, under the ${gate.target} needed, so no incentive pays this period.` : '';
-  return `${c.period}: ${who} ${own ? 'have' : 'has'} earned **${dollars(c.total)}** so far. ${lines.join(' ')}${closer}${pending}${qualifier}`;
+  const lead = closed
+    ? `${c.period} has ended, but the data stops at ${dataDay(c.asOf)}. By then ${own ? 'you had' : `${c.name} had`} earned **${dollars(c.total)}**; final figures come after the next build.`
+    : `${c.period}: ${who} ${own ? 'have' : 'has'} earned **${dollars(c.total)}** so far.`;
+  return `${lead} ${lines.join(' ')}${closer}${pending}${qualifier}`;
 }
 
 export function scorecardBlock(c: Scorecard, runId: string): Block {
@@ -107,7 +115,7 @@ export function explainText(e: ScoreExplanation, own: boolean) {
   const waiting = e.records.length - counted;
   const who = own ? 'You have' : `${e.card.name} has`;
   const result = !e.card.qualified ? 'A missed qualifier takes it to $0 this period.' : g.capped ? `That reaches the cap, so it pays **${dollars(g.earned)}**.` : `That pays **${dollars(g.earned)}**.`;
-  const more = waiting ? ` ${waiting} more ${waiting === 1 ? 'is' : 'are'} active and will count if sold before the period closes.` : '';
+  const more = waiting ? (periodClosed(e.card) ? ` ${waiting} more ${waiting === 1 ? 'was' : 'were'} active when the data was taken; any sold before the month ended count after the next build.` : ` ${waiting} more ${waiting === 1 ? 'is' : 'are'} active and will count if sold before the period closes.`) : '';
   const measure = g.unit === 'currency' ? `${dollars(g.actual)} of ${dollars(g.target)} (${g.pct}%)` : `${g.actual} ${g.unitLabel}${g.rule?.kind === 'tiered' ? ` of ${g.target} (${g.pct}%)` : ''}`;
   // Per-unit pay has no target to speak of; a tiered one says where its target came from (BE-GI-001).
   const target = g.rule?.kind === 'tiered' ? ` The target is ${g.targetFrom.charAt(0).toLowerCase()}${g.targetFrom.slice(1)}.` : '';

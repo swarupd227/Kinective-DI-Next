@@ -1,4 +1,5 @@
 .list {
+  container: list / inline-size;
   display: grid;
   padding: 0;
   margin: 0;
@@ -147,4 +148,21 @@ a.main:hover {
   color: var(--color-text-secondary);
   font-size: var(--type-caption-size);
   line-height: var(--type-caption-line);
+}
+
+/* On a narrow list (a phone, or beside an open panel) the name keeps the full width and the number,
+   badge and age wrap beneath it, instead of squeezing the name into a column a word wide. */
+@container list (max-width: 460px) {
+  .main {
+    flex-wrap: wrap;
+    row-gap: var(--space-1);
+  }
+
+  .text {
+    flex-basis: calc(100% - 30px - var(--space-4));
+  }
+
+  .meta {
+    white-space: normal;
+  }
 }

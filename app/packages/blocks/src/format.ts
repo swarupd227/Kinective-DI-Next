@@ -77,6 +77,9 @@ export function formatAsOf(iso: string | undefined): string {
   const d = new Date(iso);
   // A feed that only knows its date has no time to show; a converted midnight would be made up.
   if (iso.endsWith('T00:00:00Z')) return `Data as of ${formatDay(d)}`;
+  // A build's time is the institution's own: "04:10" where it ran, not converted to the viewer's zone.
+  const local = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(iso);
+  if (local && /[+-]\d{2}:\d{2}$/.test(iso)) return `Data as of nightly build ${formatDay(new Date(`${local[1]}T12:00:00Z`), false)} ${local[2]}`;
   const date = formatDay(d, false);
   const time = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).format(d);
   return `Data as of nightly build ${date} ${time}`;

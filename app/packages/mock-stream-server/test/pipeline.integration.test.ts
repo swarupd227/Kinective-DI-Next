@@ -36,7 +36,7 @@ describe.skipIf(!available)('Loan Pipeline', () => {
   it('starts a lender on their own applications, and shows them only theirs', async () => {
     await persona('lender');
     const s = (await (await summary()).json()) as PipelineIndex;
-    expect(s).toMatchObject({ view: 'mine', views: ['mine', 'location'], details: true, asOf: '2026-10-25', stale: false });
+    expect(s).toMatchObject({ view: 'mine', views: ['mine', 'location'], details: true, asOf: '2026-10-25' });
     const mine = (await (await list('view=mine')).json()) as PipelineList;
     expect(mine.items.every((a) => a.owner?.name === 'Ana Ruiz')).toBe(true);
     expect(JSON.stringify(mine)).not.toContain('partyId');

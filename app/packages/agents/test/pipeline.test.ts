@@ -44,12 +44,12 @@ describe('recognising pipeline work', () => {
     const app = { name: 'Tom Ruiz', product: 'First mortgage', amount: 255_100, open: true, status: 'In underwriting', daysInStatus: 17, threshold: 5, stalled: true, owner: { name: 'Ana Ruiz' }, history: [{ status: 'In underwriting', at: '2026-10-08' }], asOf: '2026-10-25', stale: false };
     const held = applicationText({ ...app, hold: { label: 'The appraisal isn’t back', waitingOn: 'the appraiser', nextStep: 'Check when the appraisal is due.', days: 9 } } as never);
     expect(held).toContain('**The appraisal isn’t back.** It has waited on the appraiser for **9 days**. Check when the appraisal is due.');
-    expect(applicationText({ ...app, hold: null } as never)).toContain('The LOS doesn’t record what it’s waiting on.');
+    expect(applicationText({ ...app, hold: null } as never)).toContain('The loan system doesn’t record what it’s waiting on.');
   });
 
   it('reads properly for one application, or none', () => {
     const found = (count: number) => ({ count, dollars: 169_800, oldestDays: 12, items: count ? [{ lastName: 'Patel', daysInStatus: 12 }] : [], holds: [], detailsHidden: false, asOf: '2026-10-25', stale: false }) as never;
-    expect(foundText(found(1), 'are waiting on an appraisal')).toBe('**1 application** worth **$169.8K** is waiting on an appraisal. As of the Oct 25 LOS load. Patel has waited **12 days**.');
+    expect(foundText(found(1), 'are waiting on an appraisal')).toBe('**1 application** worth **$169.8K** is waiting on an appraisal. As of the 25 Oct loan system load. Patel has waited **12 days**.');
     expect(foundText(found(1), 'have been in underwriting more than 5 days')).toContain('** has been in underwriting');
     expect(foundText(found(0), 'have stalled')).toMatch(/^Nothing has stalled\./);
   });
@@ -211,7 +211,7 @@ describe.skipIf(!up)('the pipeline against the warehouse', () => {
   it('answers an ageing question with count, dollars, the oldest and the load date', async () => {
     const r = recorder();
     await runPipelineOffline(input('Which of my apps have sat in underwriting more than 2 days?', 'thr_lap1'), { gateway }, r.sink);
-    expect(r.texts[0]).toMatch(/\*\*\d+ applications?\*\* worth \*\*\$[\d.]+[KM]?\*\* are in underwriting more than 2 days\. As of the Oct 25 LOS load\. The oldest has waited \*\*\d+ days\*\* \(/);
+    expect(r.texts[0]).toMatch(/\*\*\d+ applications?\*\* worth \*\*\$[\d.]+[KM]?\*\* are in underwriting more than 2 days\. (?:As of the 25 Oct loan system load|From the \*\*25 Oct\*\* loan system load, \d+ days ago: no newer build has run, so days in status are older now)\. The oldest has waited \*\*\d+ days\*\* \(/);
     expect(validateBlock(r.blocks[0]!).ok).toBe(true);
   });
 

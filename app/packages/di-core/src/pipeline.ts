@@ -52,8 +52,12 @@ export interface PipelineCell {
 export interface PipelineSummary {
   view: PipelineView;
   asOf: string;
-  /** The LOS feed missed the last build; figures are from this earlier load. */
+  /** The feed missed the last build, or no build has run for two days or more. */
   stale: boolean;
+  /** The feed missed the last build; figures are from this earlier load. */
+  missed?: boolean;
+  /** Days since the data's date. */
+  ageDays?: number;
   windowDays: number;
   /** Reporting groups in the tenant's order, with the tenant's names (FE-LAP-002). */
   groups: string[];
@@ -81,6 +85,8 @@ export interface PipelineFilter {
 export interface PipelineFound {
   asOf: string;
   stale: boolean;
+  missed?: boolean;
+  ageDays?: number;
   view: PipelineView;
   count: number;
   dollars: number;
@@ -156,7 +162,10 @@ export class PipelineService {
     const build = day((b as { as_of_date: unknown }[])[0]?.as_of_date);
     const load = (l as { load_date: unknown }[])[0];
     const asOf = load ? day(load.load_date) : build;
-    return { asOf, stale: !load || asOf < build };
+    // Stale when the last build went without the feed, or when no build has run for two days or more.
+    const missed = !load || asOf < build;
+    const ageDays = /^\d{4}-\d{2}-\d{2}$/.test(asOf) ? Math.max(0, Math.floor((Date.now() - Date.parse(`${asOf}T00:00:00Z`)) / 86_400_000)) : 0;
+    return { asOf, stale: missed || ageDays >= 2, missed, ageDays };
   }
 
   private async thresholds() {
@@ -228,7 +237,7 @@ export class PipelineService {
 
   /** The funnel and Pipeline By Product (FE-LAP-003): counts, percent, dollars and average days. */
   async summary(view: PipelineView, who: PipelineWho, ctx: CoreContext): Promise<PipelineSummary> {
-    const { asOf, stale } = await this.freshness();
+    const { asOf, stale, missed, ageDays } = await this.freshness();
     const { apps, statuses } = await this.rows(view, who, ctx, asOf, ['(s.in_progress = 1 OR a.applied_date >= ? - INTERVAL ? DAY)'], [asOf, SUMMARY_WINDOW_DAYS]);
     const groups = [...new Set(statuses.filter((s) => s.visible).map((s) => s.group))];
     const stalled = apps.filter((a) => a.stalled);
@@ -238,6 +247,8 @@ export class PipelineService {
       view,
       asOf,
       stale,
+      missed,
+      ageDays,
       windowDays: SUMMARY_WINDOW_DAYS,
       groups,
       funnel: groups.map((group) => ({ group, ...this.cell(apps.filter((a) => a.group === group), apps.length, asOf) })),
@@ -252,7 +263,7 @@ export class PipelineService {
 
   /** lap.application.list and list_stalled. Stalled first, then longest in status. */
   async find(f: PipelineFilter, who: PipelineWho, ctx: CoreContext): Promise<PipelineFound> {
-    const { asOf, stale } = await this.freshness();
+    const { asOf, stale, missed, ageDays } = await this.freshness();
     const finished = f.includeFinished || f.group !== undefined;
     const { apps } = await this.rows(f.view, who, ctx, asOf, finished ? ['(s.in_progress = 1 OR a.applied_date >= ? - INTERVAL ? DAY)'] : ['s.in_progress = 1'], finished ? [asOf, SUMMARY_WINDOW_DAYS] : []);
     const hits = apps
@@ -268,20 +279,20 @@ export class PipelineService {
     const waiting = new Map<string, number>();
     for (const { hold } of hits) if (hold) waiting.set(hold.waitingOn, (waiting.get(hold.waitingOn) ?? 0) + 1);
     const holds = [...waiting].map(([waitingOn, count]) => ({ waitingOn, count })).sort((a, b) => b.count - a.count);
-    return { asOf, stale, view: f.view, holds, count: hits.length, dollars: hits.reduce((s, a) => s + a.amount, 0), oldestDays: Math.max(0, ...hits.map((a) => a.daysInStatus)), byProduct: [...products.values()].sort((a, b) => b.count - a.count), items: who.details ? hits : [], detailsHidden: !who.details };
+    return { asOf, stale, missed, ageDays, view: f.view, holds, count: hits.length, dollars: hits.reduce((s, a) => s + a.amount, 0), oldestDays: Math.max(0, ...hits.map((a) => a.daysInStatus)), byProduct: [...products.values()].sort((a, b) => b.count - a.count), items: who.details ? hits : [], detailsHidden: !who.details };
   }
 
   /** One application with its path through the statuses. Outside the purview it reads as not found. */
   async application(applicationId: number, who: PipelineWho, ctx: CoreContext) {
     if (!who.details) throw new CoreError('NO_ACCESS', 'Your access shows pipeline totals, not application details.');
-    const { asOf, stale } = await this.freshness();
+    const { asOf, stale, missed, ageDays } = await this.freshness();
     const [statuses, over] = [await this.statuses(), await this.thresholds()];
     const [rows] = await this.pool.query(`${APP_SQL} WHERE a.application_id = ? AND s.visible = 1`, [applicationId]);
     const row = (rows as Record<string, unknown>[])[0];
     const app = row && this.toApplication(row, asOf, statuses, over);
     if (!app || (ctx.purviewBranches && !ctx.purviewBranches.includes(app.branch))) throw new CoreError('NOT_FOUND', `Application #${applicationId} was not found.`);
     const [hist] = await this.pool.query('SELECT h.status_code, h.entered_date, COALESCE(s.label, h.status_code) AS label FROM cdm_loan_app_status_history h LEFT JOIN mod_lap_status_map s ON s.status_code = h.status_code WHERE h.application_id = ? ORDER BY h.entered_date, h.status_code = ? ', [applicationId, app.statusCode]);
-    return { ...app, asOf, stale, history: (hist as { label: string; entered_date: unknown }[]).map((h) => ({ status: h.label, at: day(h.entered_date) })) };
+    return { ...app, asOf, stale, missed, ageDays, history: (hist as { label: string; entered_date: unknown }[]).map((h) => ({ status: h.label, at: day(h.entered_date) })) };
   }
 
   async products() {

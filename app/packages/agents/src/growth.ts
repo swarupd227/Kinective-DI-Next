@@ -55,7 +55,7 @@ export function indirectModule(ind: IndirectService, dealerNames: string[], toda
           if (a.dealer) {
             const one = await ind.dealer(a.dealer, ctx);
             const d = p.dealers.find((x) => x.dealerId === one.dealerId)!;
-            return { text: `**${d.name}** funded **${d.funded} loans** for ${money(d.fundedAmount)} in ${p.label}, ${p.partial ? `against ${d.prior.funded} in all of ${p.priorLabel}` : `${change(d.funded, d.prior.funded)} on ${p.priorLabel} (${d.prior.funded})`}. Received ${d.received} applications: ${d.approved} approved, ${d.declined} declined, ${d.countered} countered. Average FICO ${d.avgFico}. ${one.rep} is the rep; last visit ${one.lastVisited ?? 'not recorded'}.`, suggestions: [`Log a visit to ${d.name}`] };
+            return { text: `**${d.name}** funded **${d.funded} loans** for ${money(d.fundedAmount)} in ${p.label}, ${p.partial ? `against ${d.prior.funded} in all of ${p.priorLabel}` : `${change(d.funded, d.prior.funded)} on ${p.priorLabel} (${d.prior.funded})`}. Received ${d.received} applications: ${d.approved} approved, ${d.declined} declined, ${d.countered} countered. Average FICO ${d.avgFico}. ${one.rep === ctx.user.name ? 'You’re the rep' : `${one.rep} is the rep`}; last visit ${one.lastVisited ? new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${String(one.lastVisited).slice(0, 10)}T00:00:00Z`)).replace('Sept', 'Sep') : 'not recorded'}.`, suggestions: [`Log a visit to ${d.name}`] };
           }
           const drops = p.dealers.filter((d) => d.prior.funded > d.funded).sort((x, y) => (x.funded - x.prior.funded) - (y.funded - y.prior.funded));
           const top = p.dealers[0];

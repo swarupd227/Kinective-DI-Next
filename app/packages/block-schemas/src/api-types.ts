@@ -42,6 +42,8 @@ export interface BuildStatus {
   buildId: string;
   expectedBy?: string;
   message?: string;
+  /** Whole days since the build the data comes from; two or more means no new build has run. */
+  ageDays?: number;
 }
 
 /** GET /v1/session (spec 11.3). Access is enforced by the server; the client only shows or hides. */
@@ -298,6 +300,8 @@ export interface PipelineIndex {
   details: boolean;
   asOf: string;
   stale: boolean;
+  missed?: boolean;
+  ageDays?: number;
   windowDays: number;
   groups: string[];
   funnel: (PipelineCell & { group: string })[];
@@ -341,6 +345,8 @@ export interface PipelineList {
 export interface PipelineApplicationDetail extends PipelineApplicationRow {
   asOf: string;
   stale: boolean;
+  missed?: boolean;
+  ageDays?: number;
   history: { status: string; at: string }[];
 }
 

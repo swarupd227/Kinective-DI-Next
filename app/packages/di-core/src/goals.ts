@@ -85,7 +85,7 @@ export interface PayoutBatch {
 
 export interface ScoreExplanation {
   score: GoalScore;
-  card: Pick<Scorecard, 'employeeId' | 'name' | 'period' | 'qualified'>;
+  card: Pick<Scorecard, 'employeeId' | 'name' | 'period' | 'periodEnd' | 'qualified'>;
   records: { date: string; label: string; value: number; counted: boolean }[];
   rule: string;
   asOf: string;

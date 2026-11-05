@@ -1006,8 +1006,9 @@ export function personalKpis(base: KpiGroupBlock, mine: Scorecard | null, sent: 
   const recent = sent.filter((r) => now - Date.parse(r.createdAt) <= 30 * DAY);
   const sold = recent.filter((r) => r.stage === 'Sold').length;
   const items: KpiGroupBlock['data']['items'] = [];
-  if (attainment !== null) items.push({ label: 'My goal attainment', value: attainment, unit: 'percent', format: { decimals: 1 }, comparison: { label: behind ? `${behind === 1 ? 'goal' : 'goals'} behind target` : 'every goal on target', value: behind, unit: 'count', direction: 'flat', goodWhen: 'down' }, metricRef: 'metric:goal_attainment' });
-  if (mine) items.push({ label: `Incentive so far, ${mine.period}`, value: mine.total, unit: 'currency', format: { decimals: 0 }, metricRef: 'metric:incentive_earned' });
+  // "0 every goal on target" reads as nothing: the comparison shows only when a goal is behind.
+  if (attainment !== null) items.push({ label: 'My goal attainment', value: attainment, unit: 'percent', format: { decimals: 1 }, ...(behind ? { comparison: { label: `${behind === 1 ? 'goal' : 'goals'} behind target`, value: behind, unit: 'count' as const, direction: 'flat' as const, goodWhen: 'down' as const } } : {}), metricRef: 'metric:goal_attainment' });
+  if (mine) items.push({ label: mine.periodEnd.slice(0, 10) < new Date().toISOString().slice(0, 10) ? `Incentive, ${mine.period}` : `Incentive so far, ${mine.period}`, value: mine.total, unit: 'currency', format: { decimals: 0 }, metricRef: 'metric:incentive_earned' });
   items.push({ label: 'Referrals I sent', value: recent.length, unit: 'count', comparison: { label: 'sold, last 30 days', value: sold, unit: 'count', direction: 'flat', goodWhen: 'up' }, metricRef: 'metric:referrals_sent' });
   if (work) items.push({ label: 'My open work', value: work.open, unit: 'count', comparison: { label: 'overdue', value: work.overdue, unit: 'count', direction: 'flat', goodWhen: 'down' }, metricRef: 'metric:open_work' });
   const kpis: KpiGroupBlock = { ...base, provenance: { ...base.provenance, sources: [{ kind: 'table', label: 'Goals & Incentives', ref: 'table:gi_scorecard' }, { kind: 'table', label: 'Referrals', ref: 'table:esp_com_items' }], filters: ['Your own work'] }, data: { layout: 'row', items } };

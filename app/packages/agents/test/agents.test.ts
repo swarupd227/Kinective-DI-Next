@@ -227,7 +227,7 @@ describe.skipIf(!available)('Concierge and Analytics Q&A with a scripted model',
     const s = recordingSink();
     await new Concierge({ model, audit: new AuditLog(auditDir) }).handle(turn('Show Northgate loan balance', { purviewBranches: ['Westport'] }), s.sink);
     expect(s.blocks).toHaveLength(1);
-    expect(s.blocks[0]).toMatchObject({ type: 'notice', data: { kind: 'no_access', message: 'That is outside your access in DI.' } });
+    expect(s.blocks[0]).toMatchObject({ type: 'notice', data: { kind: 'no_access', message: 'That’s outside the branches you can see.', detail: expect.stringContaining('Your access covers Westport') } });
     expect(JSON.stringify(s.blocks)).not.toMatch(/\$\d/);
   });
 
@@ -271,7 +271,7 @@ describe.skipIf(!available)('Concierge and Analytics Q&A with a scripted model',
     const s = recordingSink();
     await new Concierge({ model: null, audit: new AuditLog(auditDir) }).handle(turn('Show Northgate loan balance', { purviewBranches: ['Westport'] }), s.sink);
     expect(s.blocks).toHaveLength(1);
-    expect(s.blocks[0]).toMatchObject({ type: 'notice', data: { kind: 'no_access', message: 'That is outside your access in DI.' } });
+    expect(s.blocks[0]).toMatchObject({ type: 'notice', data: { kind: 'no_access', message: 'That’s outside the branches you can see.', detail: expect.stringContaining('Your access covers Westport') } });
     expect(JSON.stringify(s.blocks[0])).not.toContain('retryable');
   });
 });

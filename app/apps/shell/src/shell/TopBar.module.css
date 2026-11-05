@@ -12,6 +12,7 @@
 
 /* Desktop header: orientation on the left, search and identity on the right. */
 .desk {
+  container: topbar / inline-size;
   display: flex;
   align-items: center;
   gap: var(--space-4);
@@ -341,4 +342,23 @@
   padding: var(--space-3);
   color: var(--color-text-muted);
   font-size: var(--type-caption-size);
+}
+
+/* The bar sizes to its own width, which shrinks when a side panel opens: the hints and the name go
+   first, then the search label, so the breadcrumb and the controls never overlap. */
+@container topbar (max-width: 820px) {
+  .kbd,
+  .userText {
+    display: none;
+  }
+}
+
+@container topbar (max-width: 600px) {
+  .searchText {
+    display: none;
+  }
+
+  .search {
+    margin-right: 0;
+  }
 }

@@ -96,9 +96,9 @@ describe('explaining the order', () => {
     expect(whyFirst([app(9, 9), app(1, 1)])).toBe('It leads because it is both the largest application here and the furthest past its threshold.');
     expect(whyFirst([app(9, 12), app(1, 13)])).toBe('It leads because it is the largest application here.');
     expect(whyFirst([app(1, 13), app(9, 12)])).toBe('It leads because it is the furthest past its threshold.');
-    expect(whyFirst([app(5, 5), app(9, 1), app(1, 9)])).toBe('It leads on dollars and days past the threshold taken together.');
+    expect(whyFirst([app(5, 5), app(9, 1), app(1, 9)])).toBe('It leads on its size and how long it has waited, together.');
     expect(whyFirst([referral(3), referral(2)])).toBe('It leads because it is the most overdue here.');
-    expect(whyFirst([referral(2), referral(2)])).toBe('It leads on days overdue and priority taken together.');
+    expect(whyFirst([referral(2), referral(2)])).toBe('It leads because it is overdue and marked high priority.');
   });
 
   it('compares like with like, and says nothing with no peer', () => {

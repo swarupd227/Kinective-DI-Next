@@ -194,6 +194,25 @@ const goalAudit = (r: GoalOutcome): AuditRecord['outcome'] => (r.outcome === 'ap
 const relationshipAudit = (r: RelationshipOutcome): AuditRecord['outcome'] =>
   r.outcome === 'decline_drafted' ? 'approval_requested' : r.outcome === 'choose' || r.outcome === 'needs_info' ? 'clarify' : r.outcome === 'not_found' || r.outcome === 'not_supported' || r.outcome === 'cancelled' || r.outcome === 'failed' ? r.outcome : 'answer';
 
+/** A bank's words for a credit union's: members are customers, loan-to-share is loan-to-deposit. */
+export const bankText = (t: string) =>
+  t
+    .replace(/\bMembers\b/g, 'Customers')
+    .replace(/\bmembers\b/g, 'customers')
+    .replace(/\bMember\b/g, 'Customer')
+    .replace(/\bmember\b/g, 'customer')
+    .replace(/\bloan-to-share\b/gi, (m) => (m[0] === 'L' ? 'Loan-to-deposit' : 'loan-to-deposit'));
+
+/** The same words in what a person reads in a block: titles, column headers, labels and summaries. */
+const bankBlock = <B>(b: B): B => JSON.parse(JSON.stringify(b).replace(/"(headerName|title|label|summary|detail|subtitle|headline|text|markdown)":"((?:[^"\\]|\\.)*)"/g, (_m, k: string, v: string) => `"${k}":"${bankText(v)}"`)) as B;
+
+function bankWords(sink: RunSink): RunSink {
+  const out = Object.create(sink) as RunSink;
+  out.text = (m, ...rest) => sink.text(bankText(m), ...rest);
+  out.block = (b) => sink.block(bankBlock(b));
+  return out;
+}
+
 export class Concierge {
   private readonly memory = new Map<string, MemoryTurn[]>();
   private readonly referralThreads = new Map<string, ReferralThread>();
@@ -435,11 +454,20 @@ export class Concierge {
         case 'help':
           await this.help(turn, sink);
           return { kind: 'handled' };
-        case 'none':
+        case 'none': {
           sink.routing('DI Concierge', 'Out of scope');
-          await sink.block(noticeBlock('not_supported', 'That is outside what DI can help with.', 'DI Concierge', turn.runId, { detail: 'I can answer questions about your institution’s data, brief you on what changed, and prepare work for your approval.' }));
+          // A policy or procedure question has an answer in a document, even though DI can't read documents yet.
+          const policy = /\b(polic(y|ies)|procedures?|guidelines?|rules? (on|for)|allowed to|am i able to|can i waive|waive)\b/i.test(screened.text);
+          await sink.block(
+            noticeBlock('not_supported', policy ? 'DI can’t answer policy questions yet.' : 'That is outside what DI can help with.', 'DI Concierge', turn.runId, {
+              detail: policy
+                ? 'Policies and procedures are documents, and DI doesn’t read inside documents yet. Ask “Find the policy” to open the right one in Files, or check with your supervisor.'
+                : 'I can answer questions about your institution’s data, brief you on what changed, and prepare work for your approval.',
+            }),
+          );
           outcome = 'not_supported';
           return { kind: 'handled' };
+        }
         case 'dashboard_briefing':
           if (!svc) return { kind: 'scripted', agent: 'dashboard_briefing' };
           await this.brief(turn, svc, sink);
@@ -535,13 +563,13 @@ export class Concierge {
       // A member chip outside the purview reads the same as one that does not exist (spec 20.7).
       if (e instanceof CoreError && (e.code === 'NO_ACCESS' || e.code === 'NOT_FOUND') && !sink.signal.aborted) {
         outcome = 'no_access';
-        await sink.block(noticeBlock('no_access', 'That record is outside your access in DI.', 'DI Concierge', turn.runId, { permission: 'Relationship Manager purview', detail: 'Remove the chip, or ask your DI administrator if you need it.' }));
+        await sink.block(noticeBlock('no_access', 'That record is outside your access in DI.', 'DI Concierge', turn.runId, { permission: 'Branch access', detail: 'Remove the chip, or ask your DI administrator if you need it.' }));
         return { kind: 'handled' };
       }
       // Offline answers reach purview checks directly; they get the same fixed wording as live ones.
       if (e instanceof SemanticError && e.code === 'NO_ACCESS' && !sink.signal.aborted) {
         outcome = 'no_access';
-        await sink.block(noticeBlock('no_access', 'That is outside your access in DI.', 'DI Concierge', turn.runId, { permission: 'Report Viewer purview', detail: 'Ask your DI administrator if you need it.' }));
+        await sink.block(noticeBlock('no_access', turn.purviewBranches?.length ? 'That’s outside the branches you can see.' : 'That is outside your access in DI.', 'DI Concierge', turn.runId, { permission: 'Branch access', detail: turn.purviewBranches?.length ? `Your access covers ${turn.purviewBranches.join(', ')}. Ask about ${turn.purviewBranches.length === 1 ? 'it' : 'them'}, or ask your DI administrator if you need more.` : 'Ask your DI administrator if you need it.' }));
         return { kind: 'handled' };
       }
       outcome = sink.signal.aborted ? 'cancelled' : 'failed';
@@ -617,10 +645,17 @@ export class Concierge {
     const input = { runId: turn.runId, threadId: turn.threadId, text, user: turn.user, tenant: { name: turn.tenant.name }, purviewBranches: turn.purviewBranches, employeeId: turn.employeeId, modules: turn.modules ?? [], leads: turn.gi?.leads };
     if (!input.modules.includes(spec.id)) {
       sink.routing('DI Concierge', `${spec.agent} not available`);
+      // A bank's call report is the FFIEC one; DI says what it can do instead of sending a CFO to an administrator.
+      if (spec.id === 'callreport' && turn.tenant.institutionType === 'bank') {
+        await sink.text('DI doesn’t prepare the FFIEC Call Report yet. I can show the figures that feed it: loans and deposits by category and branch, delinquency, and how each changed over the quarter. Try “Show loan balances by category for Q3 vs Q2”.', 'DI Concierge');
+        return { outcome: 'answer', toolCalls: [], usage: [], superseded: [] };
+      }
       await sink.block(noticeBlock('no_access', spec.noAccess, 'DI Concierge', turn.runId, { permission: spec.agent, detail: 'Ask your DI administrator if you need it.' }));
       return { outcome: 'not_found', toolCalls: [], usage: [], superseded: [] };
     }
-    const r = this.deps.model ? await runModule(spec, input, { model: this.deps.model, gateway }, sink) : await runModuleOffline(spec, input, { gateway }, sink);
+    // Module answers are written once; a bank hears "customer" where a credit union hears "member".
+    const out = turn.tenant.institutionType === 'bank' ? bankWords(sink) : sink;
+    const r = this.deps.model ? await runModule(spec, input, { model: this.deps.model, gateway }, out) : await runModuleOffline(spec, input, { gateway }, out);
     usage.push(...r.usage);
     if (r.asked) this.moduleAsking.set(turn.threadId, { spec, text });
     else this.moduleAsking.delete(turn.threadId);

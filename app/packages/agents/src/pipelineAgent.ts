@@ -45,11 +45,16 @@ export interface PipelineOutcome {
 }
 
 export const money = (n: number) => (Math.abs(n) >= 1_000_000 ? `$${(n / 1_000_000).toFixed(2)}M` : Math.abs(n) >= 1000 ? `$${(n / 1000).toFixed(1)}K` : `$${Math.round(n)}`);
-const shortDate = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+const shortDate = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' }).replace('Sept', 'Sep');
 const apps = (n: number) => `${n} ${n === 1 ? 'application' : 'applications'}`;
 const VIEW_LABEL = { mine: 'Your applications', location: 'Your location', team: 'Your team', institution: 'The institution' };
 
-const load = (s: { asOf: string; stale: boolean }) => (s.stale ? `The LOS feed wasn’t loaded in the last build, so this is from the **${shortDate(s.asOf)}** load.` : `As of the ${shortDate(s.asOf)} LOS load.`);
+const load = (s: { asOf: string; stale: boolean; missed?: boolean; ageDays?: number }) =>
+  s.missed ?? s.stale
+    ? `The loan system feed wasn’t loaded in the last build, so this is from the **${shortDate(s.asOf)}** load${(s.ageDays ?? 0) >= 2 ? `, ${s.ageDays} days ago` : ''}.`
+    : (s.ageDays ?? 0) >= 2
+      ? `From the **${shortDate(s.asOf)}** loan system load, ${s.ageDays} days ago: no newer build has run, so days in status are older now.`
+      : `As of the ${shortDate(s.asOf)} loan system load.`;
 
 const freshness = (s: { asOf: string; stale: boolean }) => ({ kind: 'nightly_build' as const, asOf: `${s.asOf}T00:00:00Z`, stale: s.stale || undefined });
 
@@ -164,7 +169,7 @@ export const withoutFigures = (note: string) =>
 
 /** What's holding it up, from the LOS. With nothing recorded, it says so and doesn't guess. */
 function holdText(h: PipelineApplication['hold']) {
-  if (!h) return 'The LOS doesn’t record what it’s waiting on.';
+  if (!h) return 'The loan system doesn’t record what it’s waiting on.';
   return `**${h.label}.** ${h.days ? `It has waited on ${h.waitingOn} for **${h.days} ${h.days === 1 ? 'day' : 'days'}**.` : `It’s waiting on ${h.waitingOn}.`} ${h.nextStep}`;
 }
 

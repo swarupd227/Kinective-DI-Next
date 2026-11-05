@@ -63,4 +63,5 @@ export const PHRASES = {
 } as const;
 
 /** Spoken data answers state the build they come from (FE-VOICE-091). */
-export const DATA_DATE = 'Based on last night’s build.';
+// Always true, however old the build: the figures say their own date where it matters.
+export const DATA_DATE = 'Based on the latest build.';

@@ -52,7 +52,7 @@ export function PipelinePage() {
         <p className={page.lede}>
           {data ? (
             <>
-              {data.stalled.count} of {data.open.count} open applications have stalled. {data.stale ? `The LOS feed missed the last build, so this is from the ${shortDate(data.asOf)} load.` : `As of the ${shortDate(data.asOf)} LOS load.`}
+              {data.stalled.count} of {data.open.count} open applications have stalled. {(data.missed ?? data.stale) ? `The loan system feed missed the last build, so this is from the ${shortDate(data.asOf)} load.` : (data.ageDays ?? 0) >= 2 ? `From the ${shortDate(data.asOf)} loan system load, ${data.ageDays} days ago. No newer build has run.` : `As of the ${shortDate(data.asOf)} loan system load.`}
             </>
           ) : (
             'Where applications sit, and which ones need a push.'

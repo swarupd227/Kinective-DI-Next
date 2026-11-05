@@ -10,9 +10,10 @@ const moved = (r: unknown) => (r as { affectedRows: number }).affectedRows;
 
 // ---- operations and admin ---------------------------------------------------------------------
 
-export const CAPABILITIES: Record<string, string> = { approve_incentives: 'approve incentives', referrals: 'work referrals', loan_pipeline: 'see the Loan Pipeline', reports: 'open reports', compliance: 'work compliance issues', manage_users: 'manage users', data_logs: 'approve data logs' };
+export const CAPABILITIES: Record<string, string> = { approve_incentives: 'approve incentives', referrals: 'work referrals', loan_pipeline: 'see the Loan Pipeline', reports: 'open reports', compliance: 'work compliance issues', manage_users: 'manage users', data_logs: 'approve data logs', platform: 'run the platform: builds, uploads and data quality' };
 export const CLASSES: Record<string, string[]> = {
-  Administrator: ['manage_users', 'reports'],
+  // An administrator runs the platform, not the business: no member reports, which keeps duties apart.
+  Administrator: ['manage_users', 'platform'],
   Executive: ['approve_incentives', 'referrals', 'loan_pipeline', 'reports', 'compliance', 'data_logs'],
   Manager: ['approve_incentives', 'referrals', 'loan_pipeline', 'reports', 'compliance', 'data_logs'],
   Lender: ['referrals', 'loan_pipeline'],
@@ -28,6 +29,18 @@ export interface DirectoryUser {
   branch: string | null;
   status: string;
 }
+
+// The checks' rules are written for engineers ("loan.branch_id not null"); people read what each one means.
+export const CHECK_NAMES: Record<string, string> = {
+  'loan.branch_id not null': 'Every loan has a branch',
+  'share.open_date not in future': 'No deposit account opens in the future',
+  'party.member_number unique': 'Every person’s number is unique',
+  'core extract arrived by 03:00': 'Core extract arrived by 03:00',
+  'loan balance matches the GL': 'Loan balances match the general ledger',
+  'delinquency days are not negative': 'Days delinquent are never negative',
+  'certificate maturity present': 'Every certificate has a maturity date',
+  'share balance matches the GL': 'Deposit balances match the general ledger',
+};
 
 const SOURCE_METHODS: Record<string, string> = { 'Core extract': 'Core connection, nightly snapshot', 'Card processor': 'SFTP folder, scheduled uploader', 'Goal scores': 'File upload', 'LOS feed': 'API connection' };
 
@@ -49,7 +62,7 @@ export class OperationsService {
 
   async checks(onlyFailed: boolean) {
     const all = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM ops_dq_check ORDER BY domain, dimension');
-    const items = all.map((c) => ({ domain: c.domain as string, dimension: c.dimension as string, name: c.name as string, passed: c.status === 'Pass', rowsFailed: c.rows_failed as number }));
+    const items = all.map((c) => ({ domain: c.domain as string, dimension: c.dimension as string, name: CHECK_NAMES[c.name as string] ?? (c.name as string), rule: c.name as string, passed: c.status === 'Pass', rowsFailed: c.rows_failed as number }));
     return { total: items.length, failed: items.filter((c) => !c.passed).length, items: onlyFailed ? items.filter((c) => !c.passed) : items };
   }
 
@@ -106,11 +119,28 @@ export class OperationsService {
 export class CallReportService {
   constructor(private readonly pool: Pool) {}
 
+  /**
+   * The 5300 worksheet's entries are a fixed template; the institution's own balances size it. Each entry
+   * is scaled so the deposit lines add up to the open deposit balances and the loan lines to the open
+   * loans, the same figures Home and the reports show. GL lines follow the balance sheet's size.
+   * Each quarter keeps its own shape, so changes between quarters are the template's.
+   */
+  private async scales(entries: Record<string, unknown>[]) {
+    const total = (source: string) => entries.filter((e) => e.source === source).reduce((n, e) => n + Number(e.current_value) * Number(e.multiplier), 0);
+    const sum = async (sql: string) => Number((await rows<{ n: unknown }>(this.pool, sql).catch(() => []))[0]?.n ?? 0);
+    const deposits = await sum('SELECT SUM(balance) AS n FROM cdm_deposit_account WHERE close_date IS NULL');
+    const loans = await sum('SELECT SUM(balance) AS n FROM cdm_loan WHERE close_date IS NULL AND charge_off_date IS NULL');
+    const dep = deposits > 0 && total('Core: deposits') > 0 ? deposits / total('Core: deposits') : 1;
+    return { 'Core: deposits': dep, 'Core: loans': loans > 0 && total('Core: loans') > 0 ? loans / total('Core: loans') : 1, other: dep } as Record<string, number>;
+  }
+
   async lines() {
     const lines = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM cr_line ORDER BY schedule, code');
     const entries = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM cr_entry ORDER BY code, entry_type');
+    const scale = await this.scales(entries);
+    const sized = (v: unknown, source: string) => Math.round((Number(v) * (scale[source] ?? scale.other!)) / 1000) * 1000;
     return lines.map((l) => {
-      const own = entries.filter((e) => e.code === l.code).map((e) => ({ entryType: e.entry_type as string, source: e.source as string, multiplier: e.multiplier as number, prior: Number(e.prior_value), current: Number(e.current_value) }));
+      const own = entries.filter((e) => e.code === l.code).map((e) => ({ entryType: e.entry_type as string, source: e.source as string, multiplier: e.multiplier as number, prior: sized(e.prior_value, e.source as string), current: sized(e.current_value, e.source as string) }));
       const prior = own.reduce((n, e) => n + e.prior * e.multiplier, 0);
       const current = own.reduce((n, e) => n + e.current * e.multiplier, 0);
       return { code: l.code as string, schedule: l.schedule as string, name: l.name as string, prior, current, change: current - prior, pct: prior ? Math.round(((current - prior) / Math.abs(prior)) * 1000) / 10 : 0, entries: own };

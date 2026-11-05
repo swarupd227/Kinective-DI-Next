@@ -32,7 +32,9 @@ export const MATCH_THRESHOLD = 3;
 
 const STOP = new Set(['the', 'a', 'an', 'of', 'for', 'by', 'in', 'on', 'to', 'and', 'or', 'what', 'how', 'is', 'are', 'was', 'were', 'our', 'my', 'me', 'show', 'give', 'tell', 'did', 'do', 'does', 'vs', 'versus', 'compared', 'with', 'last', 'this', 'per', 'each', 'all', 'at', 'from', 'over', 'which', 'many', 'much',
   // Everyday grammar, so "How many members do we have?" is not refused for "we" and "have".
-  'we', 'us', 'i', 'you', 'your', 'they', 'their', 'it', 'its', 'have', 'has', 'had', 'got', 'get', 'be', 'been', 'being', 'there', 'that', 'these', 'those', 'any', 'so', 'just', 'right', 'whats', 'hows', 'currently']);
+  'we', 'us', 'i', 'you', 'your', 'they', 'their', 'it', 'its', 'have', 'has', 'had', 'got', 'get', 'be', 'been', 'being', 'there', 'that', 'these', 'those', 'any', 'so', 'just', 'right', 'whats', 'hows', 'currently',
+  // Question words and fillers, so a refusal names the subject, never "if" or "happen".
+  'if', 'when', 'where', 'why', 'who', 'would', 'could', 'should', 'can', 'will', 'happen', 'happens', 'happened', 'please', 'about', 'like', 'look', 'looks', 'see', 'into', 'up', 'out', 'than', 'then', 'now', 'today', 'trend', 'trending', 'trended', 'trends']);
 
 const stem = (w: string) => w.replace(/'s$/, '').replace(/(ies)$/, 'y').replace(/(?<=[a-z]{3})s$/, '');
 export const tokens = (text: string) =>
@@ -93,8 +95,11 @@ export function searchCatalog(model: SemanticModel, query: string, dimensionValu
   // also be mostly made of words the catalog understands, or the agent says it cannot map it.
   const known = vocabulary(model, dimensionValues);
   const unknown = qt.filter((t) => !known.has(t) && !/^\d+$/.test(t));
+  // The reply quotes the person's own words ("funds", "basis"), never the stems the match used ("fund", "basi").
+  const said = query.toLowerCase().replace(/['’]s\b/g, '').replace(/[^a-z0-9+&\s-]/g, ' ').split(/[\s-]+/).filter((w) => w && !STOP.has(w));
+  const asSaid = [...new Set(unknown.map((t) => said.find((w) => stem(w) === t) ?? t))];
   const coverage = qt.length ? 1 - unknown.length / qt.length : 0;
-  return { metrics, dimensions, values: values.slice(0, 8), matched: (metrics[0]?.score ?? 0) >= MATCH_THRESHOLD && coverage >= 0.6, unknownTerms: unknown };
+  return { metrics, dimensions, values: values.slice(0, 8), matched: (metrics[0]?.score ?? 0) >= MATCH_THRESHOLD && coverage >= 0.6, unknownTerms: asSaid };
 }
 
 /** Words about time, ranking and presentation that need no catalog entry. */

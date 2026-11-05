@@ -28,7 +28,7 @@ export function operationsModule(ops: OperationsService): ModuleSpec {
     agent: 'Operations',
     request: /\bnightly build\b|\bnew build\b|\blast night['’]?s? (build|load)\b|\buploaders?\b|\blate[- ]file\b|\b(data quality|dq) checks?\b|\bchecks? failed\b|\bcreate a user\b|\bwho can\b|\bwhy can['’]?t\b|\b(lock|unlock) .*(user|account)\b|^\s*(lock|unlock)\s+\S+\s+\S+\s*[.!?]?\s*$|\bspoof\b|\bimpersonate\b|\b(?:has|have) left\b|\bleaver\b|\boff-?board|\bremove (?:\w+ )?access\b|\bdeactivate\b|\b(?:to|into) the \w+ class\b|\bclass\b.*\b(?:to|into)\b|\bmake [A-Z][\w.'-]*(?: [A-Z][\w.'-]*)? an? (?:manager|lender|msr|executive|analyst|administrator)\b|\bsigned in\b|\bsign-?ins?\b|\bdormant\b|\blast (?:log|sign)/i,
     noAccess,
-    sources: [{ kind: 'table', label: 'Build and data quality', ref: 'table:ops_dq_check' }],
+    sources: [{ kind: 'table', label: 'Platform operations: builds, checks and users', ref: 'table:ops_dq_check' }],
     prompt: ({ tenant, user, title }) => `You are the Operations agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) runs the platform.
 
 - "Did last night's build finish?", "which uploaders missed their late-file time?": ops_build_status.
@@ -101,7 +101,7 @@ export function operationsModule(ops: OperationsService): ModuleSpec {
           const cap = capabilityFrom(a.what);
           if (!cap) throw new CoreError('INVALID', `Which capability do you mean: ${Object.values(CAPABILITIES).join(', ')}?`);
           const w = await ops.whoCan(cap);
-          return { text: `**${w.users.length} ${w.users.length === 1 ? 'person' : 'people'}** can ${CAPABILITIES[cap]}, through the ${w.classes.join(' and ')} ${w.classes.length === 1 ? 'class' : 'classes'}.`, blocks: [moduleTable(spec, 'Who can', ctx.runId, 'iam.user.list', [{ field: 'name', headerName: 'Name', type: 'text' }, { field: 'userClass', headerName: 'Class', type: 'text' }, { field: 'branch', headerName: 'Branch', type: 'text' }], w.users.slice(0, 25).map((u) => ({ name: u.name, userClass: u.userClass, branch: u.branch ?? 'All' })))] };
+          return { text: `**${w.users.length} ${w.users.length === 1 ? 'person' : 'people'}** can ${CAPABILITIES[cap]}, through the ${w.classes.length > 2 ? `${w.classes.slice(0, -1).join(', ')} and ${w.classes.at(-1)}` : w.classes.join(' and ')} ${w.classes.length === 1 ? 'class' : 'classes'}.`, blocks: [moduleTable(spec, 'Who can', ctx.runId, 'iam.user.list', [{ field: 'name', headerName: 'Name', type: 'text' }, { field: 'userClass', headerName: 'Class', type: 'text' }, { field: 'branch', headerName: 'Branch', type: 'text' }], w.users.slice(0, 25).map((u) => ({ name: u.name, userClass: u.userClass, branch: u.branch ?? 'All' })))] };
         },
       },
       {
