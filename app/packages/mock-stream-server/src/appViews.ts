@@ -2,7 +2,7 @@
 // and records to check. They read the same DI Core services the agents use, under the same purview,
 // so a page and an answer always agree. Changes happen in a task, behind an approval card.
 import type { AppTile, AppView, AppViewId, Block, ListBlock, TableBlock } from '@dinext/block-schemas';
-import { memberNumber, WorkflowDefService, WorksheetService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, IrrService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
+import { memberNumber, WorkflowDefService, WorksheetService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, DelinquencyService, DQ_BUCKETS, IrrService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 import { SourceService, TableService, secretKeyFrom } from '@dinext/di-core';
 import { EmailOutbox } from '@dinext/di-core';
@@ -229,6 +229,52 @@ export function createAppViews(deps: ViewDeps) {
         tiles: [{ label: 'Companies', value: String(list.length) }, { label: 'SEG members', value: list.reduce((n, c) => n + c.members, 0).toLocaleString('en-US') }, { label: 'New members', value: String(list.reduce((n, c) => n + c.newMembers, 0)) }, { label: 'Loans', value: usd(list.reduce((n, c) => n + c.loans, 0)) }],
         prompts: ['Which SEGs had the most new members?', 'Prepare me for my SEG meeting with Albany Medical'],
         blocks: [table('SEG companies', 'seg.performance', [text('name', 'Company'), text('stage', 'Stage'), { field: 'members', headerName: 'Members', type: 'count' }, { field: 'newMembers', headerName: 'New', type: 'count' }, { field: 'loans', headerName: 'Loans', type: 'currency' }, { field: 'deposits', headerName: 'Deposits', type: 'currency' }], list.map(({ name, stage, members, newMembers, loans, deposits }) => ({ name, stage, members, newMembers, loans, deposits })))],
+      };
+    },
+    async delinquency() {
+      const svc = new DelinquencyService(pool);
+      const scope = { purviewBranches: ctx.purviewBranches };
+      const [g, trend, r, vint, seg, loans, losses] = await Promise.all([svc.aging(scope), svc.trend(scope), svc.rolls(scope), svc.vintages(scope), svc.segments(scope), svc.loans({ ...scope, minDays: 60, limit: 15 }), svc.losses()]);
+      const p2 = (n: number) => `${n.toFixed(2)}%`;
+      const p1 = (n: number) => `${n.toFixed(1)}%`;
+      const prev = trend[trend.length - 2];
+      const moved = prev ? Math.round((g.ratio60 - prev.ratio60) * 100) : 0;
+      const yearAgo = trend[0]!;
+      const roll = (name: string) => r.series.find((x) => x.name === name)!.rates;
+      const c30 = roll('Current to 30');
+      const r3060 = roll('30 to 60');
+      const worst = seg[0];
+      const scopeWord = ctx.purviewBranches?.length === 1 ? ctx.purviewBranches[0] : null;
+      // 30+ and 60+ by month, the trend credit committees read first.
+      const trendChart = {
+        id: blockId(), type: 'chart', version: '2.0.0', title: '30+ and 60+ delinquency by month', subtitle: `Share of loan balances past due at each month-end${scopeWord ? `, ${scopeWord}` : ''}.`,
+        provenance: { agent: 'DI', operations: ['dq.trend'], sources: [] }, freshness: { kind: 'workflow_event' },
+        data: { chartType: 'line', dataset: { dimensions: [{ name: 'label', displayName: 'Month', type: 'ordinal' }, { name: 'r30', displayName: '30+ days', type: 'number' }, { name: 'r60', displayName: '60+ days', type: 'number' }], source: trend.map((x) => [x.label, Math.round(x.ratio30 * 100) / 100, Math.round(x.ratio60 * 100) / 100]) }, series: [{ name: '30+ days', encode: { x: 'label', y: 'r30' } }, { name: '60+ days', encode: { x: 'label', y: 'r60' } }], axes: { y: [{ unit: 'percent' }] }, legend: true },
+      } as Block;
+      return {
+        title: `Delinquency${scopeWord ? ` · ${scopeWord}` : ''}`,
+        lede: `Aging, roll rates, vintages and the loans to work, from the month-end delinquency history (latest ${g.label}). 60 days and over is reportable delinquency on the 5300.`,
+        take: {
+          headline: `60+ delinquency is ${p2(g.ratio60)} at ${g.label}, ${moved > 0 ? `up ${moved} bp` : moved < 0 ? `down ${-moved} bp` : 'flat'} on the month and ${g.ratio60 >= yearAgo.ratio60 ? 'up' : 'down'} from ${p2(yearAgo.ratio60)} a year ago. ${p2(c30[c30.length - 1]!.rate)} of current balances rolled to 30 days, and ${p1(r3060[r3060.length - 1]!.rate)} of 30-day balances to 60.${worst ? ` The worst segment is ${worst.category} at ${worst.branch}, ${p2(worst.ratio60)}.` : ''}`,
+          action: { label: 'What are our roll rates?', ask: 'What are our roll rates?' },
+        },
+        tiles: [
+          { label: '60+ delinquency', value: p2(g.ratio60), detail: `${moved >= 0 ? '+' : ''}${moved} bp on the month`, tone: moved > 0 ? 'warning' : 'neutral' },
+          { label: '30+ delinquency', value: p2(g.ratio30) },
+          { label: 'Current to 30, monthly', value: p2(c30[c30.length - 1]!.rate) },
+          ...(losses ? [{ label: 'Net charge-offs to average loans', value: p2(losses.ncoRatio), detail: 'annualized' }, { label: 'Allowance coverage of 60+', value: losses.coverage !== null ? `${losses.coverage.toFixed(2)}×` : '–' }] : []),
+        ],
+        prompts: ['What are our roll rates?', 'Show the largest delinquent loans', 'How are recent vintages performing?', 'Which branches and products are worst?'],
+        blocks: [
+          trendChart,
+          table(`Aging at ${g.label}`, 'dq.aging', [text('bucket', 'Days past due'), { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'count', headerName: 'Loans', type: 'number' }, text('pct', 'Share of loans')], g.buckets.map((b) => ({ bucket: b.bucket, balance: Math.round(b.balance), count: b.count, pct: p2(b.pct) }))),
+          table('Loan categories by days past due', 'dq.aging.category', [text('category', 'Category'), ...DQ_BUCKETS.slice(1).map((b) => ({ field: b, headerName: b, type: 'currency' as const })), text('r30', '30+'), text('r60', '60+')], g.categories.map((c) => ({ category: c.category, ...Object.fromEntries(DQ_BUCKETS.slice(1).map((b) => [b, Math.round(c.by[b] ?? 0)])), r30: p2(c.ratio30), r60: p2(c.ratio60) }))),
+          table(`Roll rates, ${r.label}: where last month’s balances went`, 'dq.rolls.matrix', [text('from', 'Last month'), ...[...DQ_BUCKETS, 'Charged off'].map((b) => text(b, b))], r.matrix.map((row) => ({ from: row.from, ...Object.fromEntries(Object.entries(row.to).map(([k, v]) => [k, v ? p1(v) : '–'])) }))),
+          table('Forward rolls by month', 'dq.rolls.series', [text('name', 'Roll'), ...c30.map((x) => text(x.month, x.label))], [...r.series.map((x) => ({ name: x.name, ...Object.fromEntries(x.rates.map((y) => [y.month, p2(y.rate)])) })), { name: '30-day cure', ...Object.fromEntries(r.cure.map((y, i) => [c30[i]!.month, p1(y.rate)])) }]),
+          table('Highest 60+ by branch and product', 'dq.segments', [text('branch', 'Branch'), text('category', 'Category'), { field: 'balance', headerName: 'Balance', type: 'currency' }, text('r60', '60+'), text('change', 'Change, 3 months')], seg.map((x) => ({ branch: x.branch, category: x.category, balance: Math.round(x.balance), r60: p2(x.ratio60), change: `${x.changeBp >= 0 ? '+' : ''}${x.changeBp} bp` }))),
+          table('Delinquency by vintage', 'dq.vintages', [text('vintage', 'Year opened'), { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'loans', headerName: 'Loans', type: 'number' }, text('r30', '30+'), text('r60', '60+')], [...vint].filter((x) => x.balance > 0).reverse().slice(0, 12).map((x) => ({ vintage: String(x.vintage), balance: Math.round(x.balance), loans: x.loans, r30: p2(x.ratio30), r60: p2(x.ratio60) }))),
+          table('Largest loans 60+ days past due', 'dq.loans', [text('name', deps.person === 'customer' ? 'Customer' : 'Member'), text('member', 'Number'), text('category', 'Category'), text('branch', 'Branch'), { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'days', headerName: 'Days past due', type: 'number' }, text('bucket', 'Bucket'), text('channel', 'Channel')], loans.map((l) => ({ name: l.name, member: `…${l.last4}`, category: l.category, branch: l.branch, balance: Math.round(l.balance), days: l.days, bucket: l.bucket, channel: l.channel }))),
+        ],
       };
     },
     async irr() {

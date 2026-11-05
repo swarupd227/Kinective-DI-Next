@@ -79,6 +79,24 @@ describe.skipIf(!available)('semantic service on the synthetic credit union', ()
     expect(r.rows[0]!.net_interest_margin).toBeLessThan(4.5);
   });
 
+  it('breaks loans down by days past due and vintage, and 30+ sits above 60+', async () => {
+    const total = await svc.query({ metrics: ['loan_balance'] }, all);
+    const byBucket = await svc.query({ metrics: ['loan_balance'], dimensions: ['delinquency_bucket'] }, all);
+    expect(byBucket.rows.map((r) => r.delinquency_bucket)).toEqual(expect.arrayContaining(['Current', '30–59 days', '60–89 days', '90–179 days']));
+    expect(byBucket.rows.reduce((s, r) => s + Number(r.loan_balance), 0)).toBeCloseTo(Number(total.rows[0]!.loan_balance), 0);
+    const r = await svc.query({ metrics: ['delinquency_ratio_30_plus', 'delinquency_ratio_60_plus'] }, all);
+    expect(r.rows[0]!.delinquency_ratio_30_plus).toBeGreaterThan(r.rows[0]!.delinquency_ratio_60_plus as number);
+    // Month-end history by vintage, for the trend.
+    const vint = await svc.query({ metrics: ['delinquency_ratio_60_plus'], dimensions: ['vintage'], time: { grain: 'month', last: 3 } }, all);
+    expect(vint.rows.length).toBeGreaterThan(10);
+  });
+  it('divides annualized net charge-offs by NCUA average loans: this quarter and last year-end', async () => {
+    const v = async (code: string) => one(`SELECT amount FROM cr_value WHERE code = '${code}' AND quarter_end = (SELECT MAX(quarter_end) FROM cr_value)`);
+    const yearEnd = await one("SELECT SUM(balance) FROM hist_loan_month WHERE month_end = '2025-12-31'");
+    const average = ((await v('025B')) + yearEnd) / 2;
+    const r = await svc.query({ metrics: ['net_charge_off_ratio'] }, all);
+    expect(r.rows[0]!.net_charge_off_ratio).toBeCloseTo(((((await v('550')) - (await v('551'))) * 12) / 9 / average) * 100, 4);
+  });
   it('limits rows to the purview (GQ-PERM-004)', async () => {
     const r = await svc.query({ metrics: ['loan_balance'], dimensions: ['branch'] }, { canViewSql: false, purviewBranches: ['Eastgate'] });
     expect(r.rows.map((x) => x.branch)).toEqual(['Eastgate']);

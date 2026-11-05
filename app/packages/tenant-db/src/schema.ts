@@ -85,6 +85,28 @@ export const TENANT_DDL = [
      new_member_count INT NOT NULL,
      PRIMARY KEY (month_end, branch_id)
    )`,
+  // Month-end delinquency status, for aging, roll rates and vintages. 60+ ties to hist_loan_month.
+  `CREATE TABLE hist_loan_dq_month (
+     month_end DATE NOT NULL,
+     branch_id INT NOT NULL,
+     loan_category VARCHAR(40) NOT NULL,
+     is_indirect TINYINT NOT NULL,
+     vintage_year INT NOT NULL,
+     bucket VARCHAR(20) NOT NULL,
+     balance DECIMAL(16,2) NOT NULL,
+     loan_count INT NOT NULL,
+     PRIMARY KEY (month_end, branch_id, loan_category, is_indirect, vintage_year, bucket)
+   )`,
+  `CREATE TABLE hist_loan_roll_month (
+     month_end DATE NOT NULL,
+     branch_id INT NOT NULL,
+     loan_category VARCHAR(40) NOT NULL,
+     from_bucket VARCHAR(20) NOT NULL,
+     to_bucket VARCHAR(20) NOT NULL,
+     balance DECIMAL(16,2) NOT NULL,
+     loan_count INT NOT NULL,
+     PRIMARY KEY (month_end, branch_id, loan_category, from_bucket, to_bucket)
+   )`,
   // Published nightly builds (spec 14.8.5): every answer states the build it came from.
   `CREATE TABLE meta_build (
      build_id VARCHAR(40) PRIMARY KEY,
@@ -94,4 +116,4 @@ export const TENANT_DDL = [
    )`,
 ];
 
-export const TENANT_TABLES = ['cdm_location', 'cdm_employee', 'cdm_party', 'cdm_loan', 'cdm_deposit_account', 'hist_loan_month', 'hist_deposit_month', 'hist_party_month', 'meta_build'];
+export const TENANT_TABLES = ['cdm_location', 'cdm_employee', 'cdm_party', 'cdm_loan', 'cdm_deposit_account', 'hist_loan_month', 'hist_deposit_month', 'hist_party_month', 'hist_loan_dq_month', 'hist_loan_roll_month', 'meta_build'];

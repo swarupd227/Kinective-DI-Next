@@ -28,6 +28,16 @@ sources:
     time_column: h.month_end
     purview_column: h.branch_id
     lineage: [hist_loan_month, cdm_location]
+  loan_dq_history:
+    # Month-end balance by delinquency status, for aging and vintage over time. Charged-off loans are excluded.
+    kind: history
+    table: hist_loan_dq_month
+    alias: hq
+    joins: ['JOIN cdm_location AS loc ON loc.int_id = hq.branch_id']
+    filters: ["hq.bucket <> 'Charged off'"]
+    time_column: hq.month_end
+    purview_column: hq.branch_id
+    lineage: [hist_loan_dq_month, cdm_location]
   deposit_current:
     kind: current
     table: cdm_deposit_account
@@ -86,6 +96,7 @@ dimensions:
     exprs:
       loan_current: loc.name
       loan_history: loc.name
+      loan_dq_history: loc.name
       deposit_current: loc.name
       deposit_history: loc.name
       party_current: loc.name
@@ -99,6 +110,7 @@ dimensions:
     exprs:
       loan_current: loc.region
       loan_history: loc.region
+      loan_dq_history: loc.region
       deposit_current: loc.region
       deposit_history: loc.region
       party_current: loc.region
@@ -112,6 +124,7 @@ dimensions:
     exprs:
       loan_current: l.loan_category
       loan_history: h.loan_category
+      loan_dq_history: hq.loan_category
       application_history: ha.loan_category
     values_sql: SELECT DISTINCT loan_category FROM cdm_loan ORDER BY loan_category
   origination_channel:
@@ -121,7 +134,24 @@ dimensions:
     exprs:
       loan_current: "CASE WHEN l.is_indirect = 1 THEN 'Indirect' ELSE 'Direct' END"
       loan_history: "CASE WHEN h.is_indirect = 1 THEN 'Indirect' ELSE 'Direct' END"
+      loan_dq_history: "CASE WHEN hq.is_indirect = 1 THEN 'Indirect' ELSE 'Direct' END"
     values: [Direct, Indirect]
+  delinquency_bucket:
+    label: Days past due
+    description: How far behind a loan is, in the 5300's aging buckets. 60 days and over is reportable delinquency.
+    synonyms: [aging, aging bucket, delinquency bucket, days past due, past due bucket, dpd, buckets, delinquency status]
+    exprs:
+      loan_current: "CASE WHEN l.days_delinquent >= 360 THEN '360+ days' WHEN l.days_delinquent >= 180 THEN '180–359 days' WHEN l.days_delinquent >= 90 THEN '90–179 days' WHEN l.days_delinquent >= 60 THEN '60–89 days' WHEN l.days_delinquent >= 30 THEN '30–59 days' ELSE 'Current' END"
+      loan_dq_history: hq.bucket
+    values: [Current, 30–59 days, 60–89 days, 90–179 days, 180–359 days, 360+ days]
+  vintage:
+    label: Vintage (year opened)
+    description: The year the loan was made, to compare how each year's lending performs.
+    synonyms: [vintage, origination year, year opened, year booked, cohort, origination cohort]
+    exprs:
+      loan_current: YEAR(l.open_date)
+      loan_dq_history: hq.vintage_year
+    values_sql: SELECT DISTINCT YEAR(open_date) FROM cdm_loan ORDER BY 1
   deposit_category:
     label: Deposit category
     labels_by_type: { credit_union: Share category }
@@ -147,16 +177,24 @@ measures:
     exprs:
       loan_current: SUM(l.balance)
       loan_history: SUM(h.balance)
+      loan_dq_history: SUM(hq.balance)
+  delinquent_30_balance_sum:
+    unit: usd
+    exprs:
+      loan_current: 'SUM(CASE WHEN l.days_delinquent >= 30 THEN l.balance ELSE 0 END)'
+      loan_dq_history: "SUM(CASE WHEN hq.bucket <> 'Current' THEN hq.balance ELSE 0 END)"
   delinquent_loan_balance_sum:
     unit: usd
     exprs:
       loan_current: 'SUM(CASE WHEN l.days_delinquent >= {{ setting.delinquency_basis_days }} THEN l.balance ELSE 0 END)'
       loan_history: SUM(h.delinquent_60_balance)
+      loan_dq_history: "SUM(CASE WHEN hq.bucket IN ('60–89 days', '90–179 days', '180–359 days', '360+ days') THEN hq.balance ELSE 0 END)"
   loan_count:
     unit: count
     exprs:
       loan_current: COUNT(*)
       loan_history: SUM(h.loan_count)
+      loan_dq_history: SUM(hq.loan_count)
   loan_rate_weighted:
     unit: number
     exprs:
@@ -198,6 +236,28 @@ measures:
     unit: usd
     exprs:
       call_report: "SUM(CASE WHEN cv.code = 'IS0010' THEN cv.amount * 12 / MONTH(cv.quarter_end) ELSE 0 END)"
+  net_charge_off_annualized_sum:
+    unit: usd
+    exprs:
+      call_report: "SUM(CASE WHEN cv.code = '550' THEN cv.amount WHEN cv.code = '551' THEN -cv.amount ELSE 0 END * 12 / MONTH(cv.quarter_end))"
+  call_report_loans_sum:
+    unit: usd
+    exprs:
+      call_report: "SUM(CASE WHEN cv.code = '025B' THEN cv.amount ELSE 0 END)"
+  average_loans_sum:
+    unit: usd
+    exprs:
+      # NCUA's average loans: this quarter's total loans (025B) and last year-end's, averaged. The
+      # year-end comes from the month-end loan history, which ties to the 5300.
+      call_report: "(SUM(CASE WHEN cv.code = '025B' THEN cv.amount ELSE 0 END) + (SELECT SUM(ye.balance) FROM hist_loan_month AS ye WHERE ye.month_end = (SELECT MAX(m.month_end) FROM hist_loan_month AS m WHERE m.month_end < MAKEDATE(YEAR((SELECT MAX(q.quarter_end) FROM cr_value AS q)), 1)))) / 2"
+  allowance_sum:
+    unit: usd
+    exprs:
+      call_report: "SUM(CASE WHEN cv.code = 'AS0048' THEN cv.amount ELSE 0 END)"
+  call_report_dq60_sum:
+    unit: usd
+    exprs:
+      call_report: "SUM(CASE WHEN cv.code = '041B' THEN cv.amount ELSE 0 END)"
   call_report_assets_sum:
     unit: usd
     exprs:
@@ -242,7 +302,7 @@ metrics:
     description: Sum of the current balance of every open loan. Closed and charged-off loans are excluded.
     synonyms: [loans, total loans, loans outstanding, loan portfolio, loan book, lending, loan growth, loan balances]
     owner: Finance data team
-    dimensions_allowed: [branch, region, loan_category, origination_channel]
+    dimensions_allowed: [branch, region, loan_category, origination_channel, delinquency_bucket, vintage]
   loan_count:
     label: Number of open loans
     type: simple
@@ -251,7 +311,7 @@ metrics:
     description: Count of open loans. Closed and charged-off loans are excluded.
     synonyms: [loan count, how many loans, number of loans, loans open]
     owner: Finance data team
-    dimensions_allowed: [branch, region, loan_category, origination_channel]
+    dimensions_allowed: [branch, region, loan_category, origination_channel, delinquency_bucket, vintage]
   delinquency_ratio_60_plus:
     label: Delinquency ratio (60+ days)
     type: ratio
@@ -262,7 +322,18 @@ metrics:
     regulatory_basis: NCUA 5300 basis - loans 60 or more days delinquent divided by total loans and leases, at period end. Charged-off loans are excluded.
     synonyms: [delinquency, delinquency rate, dq, past due, 60+, late loans, delinquent loans, loans that are behind, behind on payments, behind]
     owner: Finance data team
-    dimensions_allowed: [branch, region, loan_category, origination_channel]
+    dimensions_allowed: [branch, region, loan_category, origination_channel, delinquency_bucket, vintage]
+  delinquency_ratio_30_plus:
+    label: Delinquency ratio (30+ days)
+    type: ratio
+    numerator: delinquent_30_balance_sum
+    denominator: loan_balance_sum
+    format: percent_2
+    description: Balance of open loans 30 or more days past due, divided by the balance of all open loans. An earlier signal than the 60+ ratio NCUA reports.
+    synonyms: [30+, 30 plus, 30 day delinquency, thirty day delinquency, early delinquency, 30+ delinquency]
+    requires_any: ['30']
+    owner: Finance data team
+    dimensions_allowed: [branch, region, loan_category, origination_channel, vintage]
   delinquent_loan_balance:
     label: Delinquent loan balance (60+ days)
     type: simple
@@ -271,7 +342,7 @@ metrics:
     description: Balance of open loans 60 or more days past due.
     synonyms: [delinquent balance, past due balance, dollars delinquent]
     owner: Finance data team
-    dimensions_allowed: [branch, region, loan_category, origination_channel]
+    dimensions_allowed: [branch, region, loan_category, origination_channel, delinquency_bucket, vintage]
   average_loan_rate:
     label: Weighted average loan rate
     type: ratio
@@ -367,6 +438,31 @@ metrics:
     regulatory_basis: NCUA Financial Performance Report net interest margin, from 5300 accounts IS0010 and 010.
     synonyms: [nim, net interest margin, margin, interest margin, spread, net interest income ratio]
     requires_any: [nim, margin, spread]
+    owner: Finance data team
+    dimensions_allowed: []
+    current_only: true
+  net_charge_off_ratio:
+    label: Net charge-offs to average loans
+    type: ratio
+    numerator: net_charge_off_annualized_sum
+    denominator: average_loans_sum
+    format: percent_2
+    description: Year-to-date charge-offs less recoveries (5300 accounts 550 and 551), annualized, divided by average loans, the mean of this quarter's total loans (025B) and last year-end's.
+    regulatory_basis: NCUA Financial Performance Report net charge-offs to average loans.
+    synonyms: [net charge-offs, nco, charge-off ratio, charge-offs, loan losses, loss rate]
+    requires_any: [charge, nco, loss]
+    owner: Finance data team
+    dimensions_allowed: []
+    current_only: true
+  allowance_coverage:
+    label: Allowance coverage of delinquent loans
+    type: ratio
+    numerator: allowance_sum
+    denominator: call_report_dq60_sum
+    format: percent_1
+    description: The allowance for credit losses on loans (5300 account AS0048) as a share of loans 60 or more days delinquent (041B), from the latest 5300. Above 100% means the allowance exceeds reportable delinquency.
+    synonyms: [allowance coverage, acl coverage, reserve coverage, alll coverage, coverage ratio, allowance]
+    requires_any: [allowance, acl, reserve, alll, coverage]
     owner: Finance data team
     dimensions_allowed: []
     current_only: true

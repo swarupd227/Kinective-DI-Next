@@ -264,6 +264,10 @@ export interface GeneratedTenant {
   histLoan: unknown[][];
   histDeposit: unknown[][];
   histParty: unknown[][];
+  /** Month-end balance by delinquency status, branch, category, channel and vintage. */
+  histDq: unknown[][];
+  /** Month-end moves from last month's status to this month's, for roll rates. */
+  histRoll: unknown[][];
 }
 
 /**
@@ -295,6 +299,37 @@ function nameDemoMembers(rows: unknown[][], staff: string[]) {
     while (reserved.has(`${r[1]} ${r[2]}`) && owner.get(full) !== r[0]) r[2] = LAST[(LAST.indexOf(String(r[2])) + step++) % LAST.length];
   }
 }
+
+/** Days past due for a loan in a status, stable per loan. */
+const pastDueDays = (id: number, state: string) =>
+  state === '30–59 days' ? 31 + (id % 27) : state === '60–89 days' ? 61 + (id % 27) : state === '90–179 days' ? 91 + (id % 85) : state === '180–359 days' ? 181 + (id % 170) : state === '360+ days' ? 361 + (id % 200) : 0;
+
+/**
+ * One month's move in a loan's delinquency status. Monthly roll rates are those of a seasoned consumer
+ * book: about half of 30-day loans cure, most 60-day loans roll to 90, and later buckets mostly stay or
+ * cure. `a` is the chance a current loan misses a payment, set so the 60+ rate settles at the loan's
+ * delinquency rate (60+ settles near 1.35 times a).
+ */
+function nextStatus(state: string, a: number, u: number) {
+  switch (state) {
+    case 'Current':
+      return u < a ? '30–59 days' : 'Current';
+    case '30–59 days':
+      return u < 0.17 ? '60–89 days' : u < 0.65 ? 'Current' : '30–59 days';
+    case '60–89 days':
+      return u < 0.55 ? '90–179 days' : u < 0.67 ? 'Current' : u < 0.77 ? '30–59 days' : '60–89 days';
+    case '90–179 days':
+      return u < 0.18 ? '180–359 days' : u < 0.3 ? 'Current' : '90–179 days';
+    case '180–359 days':
+      return u < 0.08 ? '360+ days' : u < 0.28 ? 'Current' : '180–359 days';
+    default:
+      return u < 0.25 ? 'Current' : '360+ days';
+  }
+}
+const SIXTY_PLUS = new Set(['60–89 days', '90–179 days', '180–359 days', '360+ days']);
+/** Where a loan starts when history begins, from its draw: about its delinquency rate is 60+. */
+const startStatus = (r: number) => (r < 0.065 ? '360+ days' : r < 0.3 ? '180–359 days' : r < 0.7 ? '90–179 days' : r < 1 ? '60–89 days' : r < 2.32 ? '30–59 days' : 'Current');
+export const dqBucket = (days: number) => (days >= 360 ? '360+ days' : days >= 180 ? '180–359 days' : days >= 90 ? '90–179 days' : days >= 60 ? '60–89 days' : days >= 30 ? '30–59 days' : 'Current');
 
 export function generate(profile: TenantProfile): GeneratedTenant {
   const r = prng(profile.seed);
@@ -410,6 +445,11 @@ export function generate(profile: TenantProfile): GeneratedTenant {
   const histLoan = new Map<string, number[]>();
   const histDeposit = new Map<string, number[]>();
   const histParty = new Map<string, number[]>();
+  const histDq = new Map<string, number[]>();
+  const histRoll = new Map<string, number[]>();
+  /** Each loan's last month-end status and balance. */
+  const dqState = new Map<number, string>();
+  const lastBal = new Map<number, number>();
   months.forEach((me, mi) => {
     const at = new Date(`${me}T23:59:59Z`);
     const monthStart = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), 1));
@@ -421,14 +461,50 @@ export function generate(profile: TenantProfile): GeneratedTenant {
       if (bal > 0) {
         agg[0]! += bal;
         agg[2]! += 1;
-        // One persistent draw per loan: a loan stays delinquent as the rate rises, so trends are smooth.
-        if (unit(l.id, 0) < dqProb(l, monthsAgo)) agg[1]! += bal;
+      }
+      // Month-end delinquency status. Each loan follows its own path, rolling forward, curing or
+      // charging off month by month at rates scaled to its branch's and product's delinquency, so the
+      // trends (Northgate's rise) hold and roll rates are real. The 60+ balance above comes from it.
+      const prev = dqState.get(l.id);
+      let state: string | null = null;
+      let amount = bal;
+      if (bal > 0) {
+        const p = dqProb(l, monthsAgo);
+        const toChargeOff = l.chargeOff ? monthsBetween(at, l.chargeOff) : 99;
+        // Loans that will be charged off are seriously behind in their last months.
+        if (toChargeOff <= 3 && toChargeOff >= 0) state = toChargeOff <= 1 ? '180–359 days' : '90–179 days';
+        else state = prev ? nextStatus(prev, p / 1.35, unit(l.id, 1000 + mi)) : startStatus(unit(l.id, 0) / p);
+        if (SIXTY_PLUS.has(state)) agg[1]! += bal;
+      } else if (l.chargeOff && l.chargeOff > monthStart && l.chargeOff <= at && prev) {
+        state = 'Charged off';
+        amount = lastBal.get(l.id) ?? 0;
+      }
+      if (state) {
+        const dk = `${me}|${l.branch + 1}|${l.cat.category}|${l.indirect ? 1 : 0}|${l.open.getUTCFullYear()}|${state}`;
+        const d = histDq.get(dk) ?? [0, 0];
+        d[0]! += amount;
+        d[1]! += 1;
+        histDq.set(dk, d);
+        if (prev) {
+          const rk = `${me}|${l.branch + 1}|${l.cat.category}|${prev}|${state}`;
+          const rr = histRoll.get(rk) ?? [0, 0];
+          rr[0]! += amount;
+          rr[1]! += 1;
+          histRoll.set(rk, rr);
+        }
+      }
+      if (agg[0] || agg[3]) histLoan.set(key, agg);
+      if (state && state !== 'Charged off') {
+        dqState.set(l.id, state);
+        lastBal.set(l.id, bal);
+      } else {
+        dqState.delete(l.id);
+        lastBal.delete(l.id);
       }
       if (l.open >= monthStart && l.open <= at) {
         agg[3]! += l.original;
         agg[4]! += 1;
       }
-      if (agg[0] || agg[3]) histLoan.set(key, agg);
     }
     for (const d of deps) {
       const bal = depBalanceAt(d, at);
@@ -449,6 +525,16 @@ export function generate(profile: TenantProfile): GeneratedTenant {
     }
   });
 
+  // Days past due as of the build: one more step on each loan's path, so today's buckets follow history.
+  loans.forEach((l, i) => {
+    const row = loanRows[i]!;
+    if (!row[10]) return;
+    const toChargeOff = l.chargeOff ? monthsBetween(asOf, l.chargeOff) : 99;
+    const prev = dqState.get(l.id) ?? startStatus(unit(l.id, 0) / dqProb(l, 0));
+    const state = toChargeOff <= 3 && toChargeOff >= 0 ? (toChargeOff <= 1 ? '180–359 days' : '90–179 days') : nextStatus(prev, dqProb(l, 0) / 1.35, unit(l.id, 1000 + HISTORY_MONTHS));
+    row[12] = pastDueDays(l.id, state);
+  });
+
   return {
     profile,
     locations,
@@ -463,6 +549,14 @@ export function generate(profile: TenantProfile): GeneratedTenant {
     histDeposit: [...histDeposit].map(([k, v]) => {
       const [me, b, c] = k.split('|');
       return [me, Number(b), c, round2(v[0]!), v[1]];
+    }),
+    histDq: [...histDq].map(([k, v]) => {
+      const [me, b, c, i, y, st] = k.split('|');
+      return [me, Number(b), c, Number(i), Number(y), st, round2(v[0]!), v[1]];
+    }),
+    histRoll: [...histRoll].map(([k, v]) => {
+      const [me, b, c, f, to] = k.split('|');
+      return [me, Number(b), c, f, to, round2(v[0]!), v[1]];
     }),
     histParty: [...histParty].map(([k, v]) => {
       const [me, b] = k.split('|');

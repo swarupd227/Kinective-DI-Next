@@ -126,6 +126,7 @@ function Inside({ label, threadId, leave }: { label: string; threadId?: string; 
               <Route path="/m/seg/*" element={guard('seg', <AppViewPage app="seg" />)} />
               <Route path="/m/callreport/*" element={guard('callreport', <AppViewPage app="callreport" />)} />
               <Route path="/m/irr/*" element={guard('irr', <AppViewPage app="irr" />)} />
+              <Route path="/m/delinquency/*" element={guard('delinquency', <AppViewPage app="delinquency" />)} />
               <Route path="*" element={<Leave to={leave} />} />
             </Routes>
           </Suspense>

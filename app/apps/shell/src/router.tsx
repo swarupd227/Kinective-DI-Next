@@ -83,6 +83,7 @@ export const router = createBrowserRouter([
           { path: 'm/seg/*', element: guarded('seg', <AppViewPage app="seg" />) },
           { path: 'm/callreport/*', element: guarded('callreport', <AppViewPage app="callreport" />) },
           { path: 'm/irr/*', element: guarded('irr', <AppViewPage app="irr" />) },
+          { path: 'm/delinquency/*', element: guarded('delinquency', <AppViewPage app="delinquency" />) },
           { path: 'm/:module/*', element: page(<AppPlaceholder app="module" />) },
           { path: '*', element: page(<NotFound />) },
         ],

@@ -34,8 +34,8 @@ const LOAN_TYPES: [string, number, string, string, string, string, string][] = [
 ];
 const COMMERCIAL = new Set(['900K4', '900P']);
 
-/** 60+ delinquency splits across the buckets like a seasoned book; 30-59 runs about 1.65 times the 60+. */
-const BUCKETS: [string, number][] = [[' - 60 - 89 days', 0.46], [' - 90 - 179 days', 0.31], [' - 180 - 359 days', 0.16], [' - >=360 days', 0.07]];
+/** The 5300's aging columns and the month-end delinquency status each one reads. */
+const BUCKETS: [string, string][] = [[' - 30 - 59 days', '30–59 days'], [' - 60 - 89 days', '60–89 days'], [' - 90 - 179 days', '90–179 days'], [' - 180 - 359 days', '180–359 days'], [' - >=360 days', '360+ days']];
 
 const r0 = (n: number) => Math.round(n);
 const pct = (n: number) => Math.round(n * 100) / 100;
@@ -62,6 +62,7 @@ export function generateCallReport(t: GeneratedTenant) {
   const histDeposit = t.histDeposit as [string, number, string, number, number][];
   const histParty = t.histParty as [string, number, number, number][];
   const loans = t.loans as [number, number, number, number, string, number, string, string | null, string | null, number, number, number, number][];
+  const histDq = t.histDq as [string, number, string, number, number, string, number, number][];
   const deposits = t.deposits as [number, number, number, string, string, string | null, string | null, number, number][];
 
   // Balance-weighted rates by category, from the accounts themselves.
@@ -116,12 +117,21 @@ export function generateCallReport(t: GeneratedTenant) {
       set(countCode, count);
       set(amountCode, amount);
       gl.push({ gl: '', name: `Loans, ${row.replace(/ Loans\/Lines of Credit| Loans$/g, '').toLowerCase()}`, line: amountCode, amount });
-      const d60 = r0((dq60.get(cat) ?? 0) * share);
-      const parts = split(d60, BUCKETS.map((b) => b[1]));
-      BUCKETS.forEach(([suffix], k) => set(dqCode.get(`${row}${suffix}`)!, parts[k]!));
-      set(dqCode.get(`${row} - 30 - 59 days`)!, d60 * 1.65);
+      // Each aging column is the quarter-end delinquency history, so the 5300 and the delinquency report agree.
+      const at = (status: string) => histDq.filter((h) => h[0] === q.end && h[2] === cat && h[5] === status);
+      let d60 = 0;
+      let n60 = 0;
+      for (const [suffix, status] of BUCKETS) {
+        const hs = at(status);
+        const amt = r0(hs.reduce((s2, h) => s2 + h[6], 0) * share);
+        set(dqCode.get(`${row}${suffix}`)!, amt);
+        if (status !== '30–59 days') {
+          d60 += amt;
+          n60 += hs.reduce((s2, h) => s2 + h[7], 0) * share;
+        }
+      }
       set(dqCode.get(`${row} - Total Amount of Loans Delinquent 60+ Days`)!, d60);
-      set(dqCode.get(`${row} - Total Number of Loans Delinquent 60+ Days`)!, d60 && count ? Math.max(1, (d60 / amount) * count * 1.4) : 0);
+      set(dqCode.get(`${row} - Total Number of Loans Delinquent 60+ Days`)!, n60);
       const co = (coByCat.get(cat) ?? 0) * share;
       set(coCode, co);
       set(recCode, co * 0.14);

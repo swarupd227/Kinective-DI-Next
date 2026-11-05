@@ -38,6 +38,7 @@ const MODULE_KINDS: Record<string, Kind[]> = {
   seg: ['Report'],
   callreport: ['Report'],
   irr: ['Report'],
+  delinquency: ['Report'],
   dq: ['Report'],
 };
 const FIRST = 12;

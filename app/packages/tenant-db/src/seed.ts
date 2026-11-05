@@ -50,6 +50,8 @@ async function main() {
     await insert(admin, 'hist_loan_month', ['month_end', 'branch_id', 'loan_category', 'is_indirect', 'balance', 'delinquent_60_balance', 'loan_count', 'new_loan_amount', 'new_loan_count'], t.histLoan);
     await insert(admin, 'hist_deposit_month', ['month_end', 'branch_id', 'deposit_category', 'balance', 'account_count'], t.histDeposit);
     await insert(admin, 'hist_party_month', ['month_end', 'branch_id', 'member_count', 'new_member_count'], t.histParty);
+    await insert(admin, 'hist_loan_dq_month', ['month_end', 'branch_id', 'loan_category', 'is_indirect', 'vintage_year', 'bucket', 'balance', 'loan_count'], t.histDq);
+    await insert(admin, 'hist_loan_roll_month', ['month_end', 'branch_id', 'loan_category', 'from_bucket', 'to_bucket', 'balance', 'loan_count'], t.histRoll);
     await insert(admin, 'meta_build', ['build_id', 'as_of_date', 'completed_at', 'state'], [[BUILD.buildId, AS_OF, BUILD.completedAt, 'completed']]);
     for (const ddl of RELATIONSHIP_DDL) await admin.query(ddl);
     const rm = generateRelationship(t);

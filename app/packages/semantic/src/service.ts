@@ -152,7 +152,9 @@ export class SemanticService {
         if (c) return c;
       }
       for (const d of request.dimensions) {
-        const c = compareValues(a[d] ?? null, b[d] ?? null);
+        // A dimension with a set order (days past due: Current, 30–59 … 360+) keeps it; others sort by value.
+        const fixed = this.model.dimensions[d]!.values;
+        const c = fixed ? fixed.indexOf(String(a[d])) - fixed.indexOf(String(b[d])) : compareValues(a[d] ?? null, b[d] ?? null);
         if (c) return c;
       }
       return (periodIndex.get(String(a.period)) ?? 0) - (periodIndex.get(String(b.period)) ?? 0);

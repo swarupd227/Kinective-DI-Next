@@ -38,3 +38,4 @@ export { classesNamed, fieldsFrom, parseSettingsRequest, settingsDiff, settingsV
 export { kindNamed, notificationsModule, NOTIFICATIONS_AGENT, NOTIFICATIONS_REQUEST } from './notifications.ts';
 export { scheduleFrom, sourcesModule } from './sources.ts';
 export { irrModule, shockFrom } from './irr.ts';
+export { delinquencyModule } from './delinquency.ts';
