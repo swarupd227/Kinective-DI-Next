@@ -232,7 +232,7 @@ export function generateModules(t: GeneratedTenant, institutionType: 'credit_uni
     logRow('CASH_COUNT', 'Teller drawer recount', 120, 'Returned', msrs[0]!, 4);
     logRow('EVENT', 'Chamber of commerce breakfast', null, 'Approved', msrs[1]!, 9);
 
-    // Customer complaints from the last six months: most are closed, a few are still being worked.
+    // Customer complaints from the last six months: all but the last few weeks' are closed.
     for (let n = 0; n < 10; n++) {
       const id = pastIssueId++;
       const source = ['Call In', 'Call In', 'Branch', 'Email'][Math.floor(unit(id, 321) * 4)]!;
@@ -244,7 +244,8 @@ export function generateModules(t: GeneratedTenant, institutionType: 'credit_uni
       const owner = msrs[Math.floor(unit(id, 325) * msrs.length)]![0];
       const ownerName = staff.find((e) => e[0] === owner)![1];
       const sla = ISSUE_SLA.customer;
-      const done = age > 20 && unit(id, 326) < 0.85;
+      // Only recent ones are still open, so the oldest open complaint stays one of the branch's own above.
+      const done = age > 20;
       const closed = done ? plus(opened, Math.min(age - 1, 2 + Math.floor(unit(id, 327) * 20))) : null;
       const status = done ? 'Closed' : 'In Progress';
       issues.push([id, party, 'customer', source, category, options[Math.floor(unit(id, 328) * options.length)], status, owner, branch, opened, plus(opened, sla.respond), plus(opened, sla.resolve), closed, done ? 'Reviewed with the member and resolved.' : null, done ? ROOT_CAUSES[Math.floor(unit(id, 329) * ROOT_CAUSES.length)] : null]);
