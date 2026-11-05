@@ -75,13 +75,14 @@ export interface ReportControls {
 /** Sections a service computes on each run (the ALCO package's policy, rate risk, liquidity and so on). */
 export interface ReportAnalyses {
   keys: string[];
-  run: (key: string, runId: string) => Promise<{ block: Block; take?: DiTake }>;
+  /** scope: the report's branch control and the viewer's purview, for sections that follow them. */
+  run: (key: string, runId: string, scope?: { node: string; purviewBranches?: string[] }) => Promise<{ block: Block; take?: DiTake }>;
 }
 
 /** Several sets of analyses as one: the ALCO sections and the board scorecard. */
 export function combineAnalyses(...sets: (ReportAnalyses | null | undefined)[]): ReportAnalyses {
   const all = sets.filter((s): s is ReportAnalyses => !!s);
-  return { keys: all.flatMap((s) => s.keys), run: (key, runId) => all.find((s) => s.keys.includes(key))!.run(key, runId) };
+  return { keys: all.flatMap((s) => s.keys), run: (key, runId, scope) => all.find((s) => s.keys.includes(key))!.run(key, runId, scope) };
 }
 
 export interface RunContext {
@@ -140,7 +141,7 @@ async function widgetBlock(w: ReportWidget, def: ReportDefinition, c: { period: 
   if (w.kind === 'analysis') {
     // Whole-institution analyses, as of the build: they don't follow the period or branch controls.
     if (!w.analysis || !ctx.analyses?.keys.includes(w.analysis)) return { block: noticeBlock('not_supported', `${w.title} is not available here`, REPORT_AGENT, runId, { detail: 'This section needs an analysis that isn’t set up for this institution.' }) };
-    const r = await ctx.analyses.run(w.analysis, runId);
+    const r = await ctx.analyses.run(w.analysis, runId, { node: c.node, purviewBranches: ctx.purviewBranches });
     return { block: { ...r.block, title: w.title } as Block, take: r.take };
   }
   const type = def.settings.periodType;

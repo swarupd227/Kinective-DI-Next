@@ -189,12 +189,14 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
       layoutVersion: 1,
       pendingEdits: [],
       widgets: [
+        { id: 'a1', title: 'Branch scorecard', kind: 'analysis', analysis: 'branch.scorecard', metrics: [], size: 'full' },
         kpi('k1', 'Total loans', 'loan_balance'),
         kpi('k2', 'Total deposits', 'deposit_balance'),
         kpi('k3', 'Delinquency 60+', 'delinquency_ratio_60_plus'),
         kpi('k4', `New ${persons}`, 'new_members'),
-        { id: 't1', title: 'By branch', kind: 'table', metrics: ['loan_balance', 'deposit_balance', 'new_loan_amount', 'delinquency_ratio_60_plus'], by: 'branch', size: 'full' },
-        { id: 'c1', title: 'Loan balance, last 13 months', kind: 'chart', chart: 'line', metrics: ['loan_balance'], trend: 13, size: 'full' },
+        { id: 'a2', title: 'Team goals', kind: 'analysis', analysis: 'branch.team', metrics: [], size: 'full' },
+        { id: 'c1', title: 'Loan balance, last 13 months', kind: 'chart', chart: 'line', metrics: ['loan_balance'], trend: 13, size: 'half' },
+        { id: 'c2', title: 'New loans funded, last 13 months', kind: 'chart', chart: 'bar', metrics: ['new_loan_amount'], trend: 13, size: 'half' },
       ],
     },
     {
@@ -376,6 +378,7 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
       layoutVersion: 1,
       pendingEdits: [],
       widgets: [
+        { id: 'a1', title: 'Branch scorecard', kind: 'analysis', analysis: 'branch.scorecard', metrics: [], size: 'full' },
         kpi('k1', `New ${persons}`, 'new_members'),
         kpi('k2', 'New loan dollars', 'new_loan_amount'),
         kpi('k3', 'Total loans', 'loan_balance'),

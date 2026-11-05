@@ -110,16 +110,19 @@ describe.skipIf(!available)('report engine (spec 8.5, 18)', () => {
     const { canvas } = await runReport(def, { period: '2026-08', node: 'Westport' }, semantic, { canViewSql: false }, { runId: 'R-rpttest-1', mode: 'read', status: 'stock', version: 1 });
     expect(validateBlock(canvas).ok).toBe(true);
     expect(canvas.data.controls.map((c) => c.value)).toEqual(['2026-08', 'Westport']);
-    const kpi = canvas.data.widgets[0]!.view;
+    const kpi = canvas.data.widgets.find((w) => w.id === 'k1')!.view;
     const direct = await semantic.query({ metrics: ['loan_balance'], filters: [{ dimension: 'branch', op: 'in', values: ['Westport'] }], time: { grain: 'month', from: '2026-08', to: '2026-08' } }, { canViewSql: false });
     expect(kpi.type === 'kpi' && kpi.data.value).toBeCloseTo(direct.rows[0]!.loan_balance as number, 2);
+    // The scorecard and team sections are full width; tiles four to a row; charts two to a row.
     expect(canvas.data.widgets.map((w) => w.gridPos)).toEqual([
-      { x: 0, y: 0, w: 3, h: 2 },
-      { x: 3, y: 0, w: 3, h: 2 },
-      { x: 6, y: 0, w: 3, h: 2 },
-      { x: 9, y: 0, w: 3, h: 2 },
-      { x: 0, y: 2, w: 12, h: 4 },
-      { x: 0, y: 6, w: 12, h: 4 },
+      { x: 0, y: 0, w: 12, h: 5 },
+      { x: 0, y: 5, w: 3, h: 2 },
+      { x: 3, y: 5, w: 3, h: 2 },
+      { x: 6, y: 5, w: 3, h: 2 },
+      { x: 9, y: 5, w: 3, h: 2 },
+      { x: 0, y: 7, w: 12, h: 5 },
+      { x: 0, y: 12, w: 6, h: 4 },
+      { x: 6, y: 12, w: 6, h: 4 },
     ]);
   });
 

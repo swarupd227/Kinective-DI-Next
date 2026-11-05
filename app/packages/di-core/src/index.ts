@@ -11,7 +11,7 @@ export { GovernanceService, LineageService, LINEAGE_CATALOG, type CatalogEntry, 
 export { CALL_REPORT_EDITION, CallReportService, CampaignService, CollectionsService, OperationsService, SegService, CAPABILITIES, CLASSES, SEG_STAGES, USER_CLASSES, type CallReportCheck, type CallReportLine, type DirectoryUser, type SegCompany, type UncategorizedGl, type WatchedLoan } from './modules2.ts';
 export { DataLogService, IssueService, OnboardingService, findPerson, ISSUE_REGULATORS, ISSUE_ROOT_CAUSES, type DataLog, type Issue, type IssueDetail, type IssueFilter, type TouchPoint } from './modules.ts';
 export { RetentionService, OFFER_RULES, offerRate, type Certificate, type MaturingCertificates, type OfferCost, type RetentionFilter } from './retention.ts';
-export { GoalsService, furthestBehind, payFor, ruleText, usd, type GoalsWho, type GoalScore, type IncentiveRule, type PayoutBatch, type PayoutLine, type ScoreExplanation, type Scorecard } from './goals.ts';
+export { GoalsService, averagePct, furthestBehind, payFor, ruleText, usd, type GoalsWho, type GoalScore, type IncentiveRule, type PayoutBatch, type PayoutLine, type ScoreExplanation, type Scorecard } from './goals.ts';
 export { PipelineService, PIPELINE_VIEWS, SUMMARY_WINDOW_DAYS, type PipelineView, type PipelineWho, type PipelineApplication, type PipelineCell, type PipelineSummary, type PipelineFilter, type PipelineFound, type PipelineStatus } from './pipeline.ts';
 export { ReferralService, CoreError, REFERRAL_STAGES, CLOSED_STAGES, DUE_DAYS, type CoreContext, type PartyHit, type ReferralDraft, type RouteResult, type DraftCheck, type InboxBox, type InboxItem, type InboxDetail, type ChangeMeta, type ReferralStage } from './referrals.ts';
 export type { AtRiskMember } from './relationship.ts';
@@ -40,3 +40,4 @@ export { CHARGED_OFF, DQ_BUCKETS, DelinquencyService, type DqScope } from './del
 export { LIQUIDITY_POLICY, LiquidityService, pctAgainst } from './liquidity.ts';
 export { MEMBER_AGE_BANDS, MEMBERSHIP_BENCHMARKS, MembershipService, type MembershipScope } from './membership.ts';
 export { ALCO_POLICY, AlcoService, type PolicyLine, type PolicyStatus } from './alco.ts';
+export { BranchScorecardService, type BranchLine } from './branchScorecard.ts';
