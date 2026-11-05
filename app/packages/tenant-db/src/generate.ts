@@ -183,8 +183,74 @@ export function monthEnds(): string[] {
   return out;
 }
 
-const FIRST = ['Suzanne', 'Robert', 'Ana', 'James', 'Maria', 'David', 'Grace', 'Omar', 'Lena', 'Victor', 'Hannah', 'Kofi', 'Mei', 'Paul', 'Rosa', 'Daniel', 'Priya', 'Marcus', 'Elena', 'Samuel', 'Aisha', 'Tom', 'Julia', 'Kenji', 'Fatima', 'Liam', 'Nora', 'Ivan', 'Chloe', 'Mateo'];
-const LAST = ['Jackson', 'Nguyen', 'Patel', 'Garcia', 'Okafor', 'Kim', 'Brown', 'Silva', 'Novak', 'Haddad', 'Lopez', 'Murphy', 'Reed', 'Shah', 'Ortiz', 'Chen', 'Ruiz', 'Taylor', 'Walsh', 'Moreau', 'Lindqvist', 'Adeyemi', 'Kowalski', 'Romero'];
+// Names are drawn uniformly, so the pool sets how often a full name repeats. 300 first and 271 last
+// names give about 81,000 combinations: in 46,000 members a name repeats a handful of times at most,
+// as in a real membership, instead of 720 combinations repeating up to 124 times.
+const FIRST = [
+  'Aaron', 'Abigail', 'Adam', 'Adrian', 'Aisha', 'Alan', 'Albert', 'Alejandro', 'Alex', 'Alexis',
+  'Alice', 'Alicia', 'Allison', 'Amanda', 'Amara', 'Amber', 'Amir', 'Amy', 'Ana', 'Andre',
+  'Andrea', 'Andrew', 'Angela', 'Anita', 'Ann', 'Anthony', 'Antonio', 'Arjun', 'Ashley', 'Audrey',
+  'Austin', 'Barbara', 'Ben', 'Benjamin', 'Beth', 'Bianca', 'Brandon', 'Brenda', 'Brian',
+  'Brittany', 'Bruce', 'Bryan', 'Caleb', 'Cameron', 'Camila', 'Carl', 'Carla', 'Carlos', 'Carmen',
+  'Carol', 'Caroline', 'Carter', 'Catherine', 'Cecilia', 'Charles', 'Charlotte', 'Chelsea',
+  'Chloe', 'Chris', 'Christina', 'Christopher', 'Claire', 'Clara', 'Colin', 'Connor', 'Craig',
+  'Crystal', 'Cynthia', 'Daniel', 'Danielle', 'Darius', 'David', 'Deborah', 'Denise', 'Derek',
+  'Diana', 'Diego', 'Dominic', 'Donald', 'Donna', 'Dorothy', 'Dylan', 'Edward', 'Eileen', 'Elena',
+  'Elijah', 'Elizabeth', 'Ella', 'Emily', 'Emma', 'Eric', 'Erica', 'Erin', 'Esther', 'Ethan',
+  'Eugene', 'Evan', 'Evelyn', 'Farah', 'Fatima', 'Felix', 'Fiona', 'Frances', 'Frank', 'Gabriel',
+  'Gabriela', 'Gary', 'George', 'Gerald', 'Gina', 'Gloria', 'Grace', 'Gregory', 'Hailey', 'Hannah',
+  'Harold', 'Harper', 'Hassan', 'Heather', 'Helen', 'Henry', 'Hiroshi', 'Holly', 'Hugo', 'Ian',
+  'Imani', 'Irene', 'Isaac', 'Isabel', 'Isabella', 'Ivan', 'Jack', 'Jacob', 'Jacqueline', 'Jake',
+  'Jamal', 'James', 'Jamie', 'Janet', 'Janice', 'Jasmine', 'Jason', 'Javier', 'Jean', 'Jeffrey',
+  'Jennifer', 'Jeremy', 'Jerome', 'Jessica', 'Joan', 'Joel', 'John', 'Jonathan', 'Jordan', 'Jorge',
+  'Jose', 'Joseph', 'Joshua', 'Joyce', 'Juan', 'Judith', 'Julia', 'Julian', 'Justin', 'Karen',
+  'Katherine', 'Keith', 'Kelly', 'Kenji', 'Kenneth', 'Kevin', 'Kimberly', 'Kofi', 'Kyle', 'Laila',
+  'Lara', 'Laura', 'Lauren', 'Lawrence', 'Leah', 'Lena', 'Leon', 'Leticia', 'Liam', 'Lillian',
+  'Linda', 'Lisa', 'Logan', 'Lucas', 'Lucia', 'Luis', 'Luke', 'Madeline', 'Malik', 'Mara',
+  'Marcus', 'Margaret', 'Maria', 'Marie', 'Mario', 'Mark', 'Martha', 'Martin', 'Mary', 'Mason',
+  'Mateo', 'Matthew', 'Maya', 'Megan', 'Mei', 'Melissa', 'Michael', 'Michelle', 'Miguel', 'Mila',
+  'Monica', 'Nadia', 'Nancy', 'Naomi', 'Natalie', 'Nathan', 'Nicholas', 'Nicole', 'Noah', 'Nora',
+  'Olivia', 'Omar', 'Oscar', 'Owen', 'Pamela', 'Patricia', 'Patrick', 'Paul', 'Paula', 'Peter',
+  'Philip', 'Priya', 'Rachel', 'Rafael', 'Rahul', 'Ramon', 'Raymond', 'Rebecca', 'Reggie', 'Renee',
+  'Ricardo', 'Richard', 'Rita', 'Robert', 'Roger', 'Ronald', 'Rosa', 'Ruby', 'Russell', 'Ruth',
+  'Ryan', 'Samantha', 'Samuel', 'Sandra', 'Sara', 'Scott', 'Sean', 'Sergio', 'Sharon', 'Simone',
+  'Stephanie', 'Stephen', 'Steven', 'Susan', 'Suzanne', 'Tamara', 'Teresa', 'Terrence', 'Theresa',
+  'Thomas', 'Tiffany', 'Timothy', 'Tina', 'Tom', 'Travis', 'Trevor', 'Tyler', 'Valerie', 'Vanessa',
+  'Victor', 'Victoria', 'Vincent', 'Virginia', 'Walter', 'Wanda', 'Wayne', 'Wei', 'Wesley',
+  'William', 'Xavier', 'Yasmin', 'Yolanda', 'Yusuf', 'Zachary', 'Zoe',
+];
+const LAST = [
+  'Abbott', 'Acosta', 'Adams', 'Adeyemi', 'Aguilar', 'Ahmed', 'Alexander', 'Ali', 'Allen',
+  'Alvarez', 'Anderson', 'Andrews', 'Armstrong', 'Arnold', 'Bailey', 'Baker', 'Banerjee', 'Barnes',
+  'Bell', 'Bennett', 'Berg', 'Bishop', 'Black', 'Boyd', 'Bradley', 'Brennan', 'Brooks', 'Brown',
+  'Bryant', 'Burke', 'Burns', 'Butler', 'Byrne', 'Caldwell', 'Campbell', 'Carlson', 'Carpenter',
+  'Carroll', 'Carter', 'Castillo', 'Castro', 'Chan', 'Chang', 'Chapman', 'Chavez', 'Chen', 'Cho',
+  'Clark', 'Cohen', 'Cole', 'Coleman', 'Collins', 'Cook', 'Cooper', 'Cruz', 'Cunningham',
+  'Daniels', 'Davidson', 'Davis', 'Delgado', 'Diaz', 'Dixon', 'Dominguez', 'Doyle', 'Duncan',
+  'Dunn', 'Edwards', 'Elliott', 'Ellis', 'Evans', 'Farrell', 'Ferguson', 'Fernandez', 'Fischer',
+  'Fisher', 'Fitzgerald', 'Fleming', 'Flores', 'Foster', 'Fox', 'Francis', 'Freeman', 'Fuller',
+  'Gallagher', 'Garcia', 'Gardner', 'Gibson', 'Gill', 'Gomez', 'Gonzalez', 'Goodwin', 'Gordon',
+  'Graham', 'Grant', 'Gray', 'Green', 'Greene', 'Griffin', 'Gupta', 'Gutierrez', 'Haddad', 'Hall',
+  'Hamilton', 'Hansen', 'Harper', 'Harris', 'Hart', 'Hayes', 'Henderson', 'Hernandez', 'Herrera',
+  'Hill', 'Hoffman', 'Holland', 'Holmes', 'Howard', 'Hughes', 'Hunt', 'Hussain', 'Ibrahim',
+  'Jackson', 'Jacobson', 'James', 'Jenkins', 'Jensen', 'Johnson', 'Jones', 'Jordan', 'Joseph',
+  'Kaur', 'Keller', 'Kelly', 'Kennedy', 'Khan', 'Kim', 'Knight', 'Kowalski', 'Kumar', 'Lam',
+  'Larsen', 'Lawrence', 'Lawson', 'Le', 'Lewis', 'Li', 'Lindqvist', 'Little', 'Liu', 'Long',
+  'Lopez', 'Lynch', 'Mahoney', 'Malik', 'Marshall', 'Martin', 'Martinez', 'Mason', 'Matthews',
+  'Mendoza', 'Meyer', 'Miller', 'Mills', 'Mitchell', 'Molina', 'Moore', 'Morales', 'Moreau',
+  'Moreno', 'Morgan', 'Morris', 'Murphy', 'Murray', 'Myers', 'Nakamura', 'Nelson', 'Newman',
+  'Nguyen', 'Nichols', 'Novak', 'Obi', 'Okafor', 'Oliver', 'Olsen', 'Ortega', 'Ortiz', 'Owens',
+  'Palmer', 'Park', 'Parker', 'Patel', 'Patterson', 'Payne', 'Perez', 'Perry', 'Peters',
+  'Peterson', 'Phillips', 'Pierce', 'Porter', 'Powell', 'Price', 'Quinn', 'Ramirez', 'Ramos',
+  'Reed', 'Reyes', 'Reynolds', 'Rice', 'Richardson', 'Riley', 'Rivera', 'Roberts', 'Robinson',
+  'Rodriguez', 'Rogers', 'Romero', 'Rose', 'Ross', 'Ruiz', 'Russell', 'Ryan', 'Salazar', 'Sanchez',
+  'Sanders', 'Santos', 'Schmidt', 'Schneider', 'Scott', 'Shah', 'Sharma', 'Shaw', 'Silva',
+  'Simmons', 'Simpson', 'Singh', 'Sullivan', 'Sutton', 'Tanaka', 'Taylor', 'Thomas', 'Thompson',
+  'Torres', 'Tran', 'Tucker', 'Turner', 'Vargas', 'Vasquez', 'Vaughn', 'Wagner', 'Walker',
+  'Wallace', 'Walsh', 'Wang', 'Ward', 'Warren', 'Washington', 'Watson', 'Weber', 'Wells', 'West',
+  'Wheeler', 'White', 'Williams', 'Wilson', 'Wood', 'Wright', 'Wu', 'Yamamoto', 'Yang', 'Young',
+  'Zhang',
+];
 
 // ---- generation ------------------------------------------------------------------------------
 
@@ -211,8 +277,11 @@ const DEMO_MEMBERS: [string, string, number][] = [
   ['Ana', 'Jacobs', 4],
 ];
 
-function nameDemoMembers(rows: unknown[][]) {
-  const reserved = new Set(DEMO_MEMBERS.map(([f, l]) => `${f} ${l}`));
+/** People who sign in to the demo. A member who shares a staff member's name is confusing, so none does. */
+const PERSONA_NAMES = ['Dana Lee', 'Priya Shah', 'Sam Taylor', 'Marcus Reed', 'Ana Ruiz', 'Sofia Ruiz', 'Tom Walsh', 'Elena Ortiz'];
+
+function nameDemoMembers(rows: unknown[][], staff: string[]) {
+  const reserved = new Set([...DEMO_MEMBERS.map(([f, l]) => `${f} ${l}`), ...PERSONA_NAMES, ...staff]);
   const owner = new Map<string, number>([['Suzanne Jackson', 1]]);
   for (const [first, last, branch] of DEMO_MEMBERS.slice(1)) {
     const row = rows.find((r) => r[5] === branch + 1 && r[8] === 1 && ![...owner.values()].includes(r[0] as number))!;
@@ -222,7 +291,8 @@ function nameDemoMembers(rows: unknown[][]) {
   }
   for (const r of rows) {
     const full = `${r[1]} ${r[2]}`;
-    if (reserved.has(full) && owner.get(full) !== r[0]) r[2] = LAST[(LAST.indexOf(String(r[2])) + 1) % LAST.length];
+    let step = 1;
+    while (reserved.has(`${r[1]} ${r[2]}`) && owner.get(full) !== r[0]) r[2] = LAST[(LAST.indexOf(String(r[2])) + step++) % LAST.length];
   }
 }
 
@@ -237,7 +307,8 @@ export function generate(profile: TenantProfile): GeneratedTenant {
   const employees: unknown[][] = [];
   profile.branches.forEach((_, bi) => {
     for (let k = 0; k < 6; k++) {
-      employees.push([bi * 100 + k + 1, `${FIRST[Math.floor(r() * FIRST.length)]![0]}. ${LAST[Math.floor(r() * LAST.length)]}`, k < 2 ? 'Loan officer' : k < 5 ? 'MSR' : 'Branch manager', bi + 1]);
+      // Staff have full names, as in a real core. The two draws are the same as when they were initials.
+      employees.push([bi * 100 + k + 1, `${FIRST[Math.floor(r() * FIRST.length)]} ${LAST[Math.floor(r() * LAST.length)]}`, k < 2 ? 'Loan officer' : k < 5 ? 'MSR' : 'Branch manager', bi + 1]);
     }
   });
 
@@ -262,7 +333,7 @@ export function generate(profile: TenantProfile): GeneratedTenant {
     parties.push({ id: i + 1, branch, join, member });
     partyRows.push([i + 1, first, last, ymd(birth), ymd(join), branch + 1, segment, Math.floor(i / 1.7) + 1, member ? 1 : 0]);
   }
-  nameDemoMembers(partyRows);
+  nameDemoMembers(partyRows, employees.map((e) => String(e[1])));
 
   // Loans: open within the last term-and-a-bit, amortise linearly, and close when paid off.
   type Loan = { id: number; party: number; branch: number; cat: LoanMix; indirect: boolean; open: Date; close: Date | null; chargeOff: Date | null; original: number; rate: number };

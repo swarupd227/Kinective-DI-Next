@@ -134,9 +134,9 @@ export const MODULE_FIXTURES = {
     ['115', 'Operating expenses', 'GL 7000-7999', -1, 2_870_000, 3_010_000],
   ],
   crChecks: [['Accounts balance', 'Pass', 'Assets equal liabilities and equity.'], ['GL accounts categorized', 'Fail', '3 uncategorized GL accounts, totalling $18,400.'], ['Delinquency agrees with the core', 'Pass', 'Within tolerance.'], ['Net income agrees with the GL', 'Pass', 'Within tolerance.']],
-  campaigns: [[1, 'HELOC fall', 'Email', 'HELOC', 18400, 212, 8_400_000], [2, 'New auto', 'Postcard', 'Auto', 26100, 188, 5_100_000], [3, 'Card balance transfer', 'Email', 'Credit Card', 31200, 340, 1_260_000], [4, 'First home', 'Branch', 'First mortgage', 2200, 41, 9_800_000], [5, 'Refi your auto', 'Email', 'Auto', 14300, 96, 2_350_000]],
-  companies: [[1, 'Albany Medical', 'Board Approved', 412, 18, 9_400_000, 12_100_000, 'Marcus Reed', 'Annual health fair'], [2, 'Acme HR', 'Meeting Held', 0, 0, 0, 0, 'Marcus Reed', null], [3, 'Riverside Schools', 'Board Approved', 655, 24, 14_200_000, 19_800_000, 'Marcus Reed', 'Teacher of the year award'], [4, 'Northgate Logistics', 'Proposal', 12, 3, 180_000, 240_000, 'Marcus Reed', null], [5, 'Lakeshore Hospitality', 'Contacted', 0, 0, 0, 0, null, null]],
-  interactions: [[1, '2026-09-30', 'Meeting', 'Reviewed open enrollment dates.', 'Marcus Reed'], [1, '2026-10-14', 'Phone call', 'Confirmed the health fair booth.', 'Marcus Reed'], [2, '2026-10-20', 'Meeting', 'HR wants a lunch-and-learn in November.', 'Marcus Reed']],
+  campaigns: [[1, 'HELOC fall', 'Email', 'HELOC', 18400, 212, 8_400_000], [2, 'New auto', 'Postcard', 'Auto', 26100, 188, 5_100_000], [3, 'Card balance transfer', 'Email', 'Credit Card', 31200, 340, 1_260_000], [4, 'First home', 'Branch', 'First mortgage', 2200, 41, 9_800_000], [5, 'Refi your auto', 'Email', 'Auto', 14300, 96, 2_350_000], [6, 'Holiday loan', 'Email', 'Personal Loan', 22800, 154, 1540000], [7, 'Certificate special', 'Email', 'Certificate', 19600, 233, 0], [8, 'Teen checking', 'Branch', 'Checking', 3100, 87, 0], [9, 'Boat and RV', 'Postcard', 'Auto', 8700, 39, 1420000], [10, 'Spring HELOC', 'Email', 'HELOC', 17500, 168, 6900000], [11, 'Skip a payment', 'Email', 'Auto', 24400, 412, 0], [12, 'Mortgage pre-approval', 'Digital', 'First mortgage', 12900, 64, 7600000]],
+  companies: [[1, 'Albany Medical', 'Board Approved', 412, 18, 9_400_000, 12_100_000, 'Marcus Reed', 'Annual health fair'], [2, 'Acme HR', 'Meeting Held', 0, 0, 0, 0, 'Marcus Reed', null], [3, 'Riverside Schools', 'Board Approved', 655, 24, 14_200_000, 19_800_000, 'Marcus Reed', 'Teacher of the year award'], [4, 'Northgate Logistics', 'Proposal', 12, 3, 180_000, 240_000, 'Marcus Reed', null], [5, 'Lakeshore Hospitality', 'Contacted', 0, 0, 0, 0, null, null], [6, 'St. Agnes Health System', 'Board Approved', 980, 16, 21400000, 28900000, 'Marcus Reed', 'Nurses week breakfast'], [7, 'Capital Region Transit', 'Board Approved', 540, 11, 9800000, 12600000, 'Tom Walsh', null], [8, 'Hudson Valley Water Authority', 'Board Approved', 210, 4, 3100000, 5400000, 'Ana Ruiz', null], [9, 'Mohawk Paper Mill', 'Board Approved', 365, 7, 6200000, 7900000, 'Marcus Reed', 'Retiree picnic'], [10, 'Town of Colonie', 'Board Approved', 720, 13, 15700000, 22300000, 'Marcus Reed', 'Public works appreciation day'], [11, 'Pine Bush Fire District', 'Board Approved', 88, 2, 1400000, 2000000, 'Tom Walsh', null], [12, 'Hudson Community College', 'Board Approved', 430, 15, 5900000, 8800000, 'Ana Ruiz', 'Scholarship fund'], [13, 'Tri-County Electric Co-op', 'Board Approved', 260, 5, 4600000, 6100000, 'Marcus Reed', null], [14, 'Saint Luke Parish School', 'Board Approved', 64, 1, 900000, 1300000, 'Tom Walsh', null], [15, 'Harmon Foods Distribution', 'Board Approved', 310, 9, 4800000, 3900000, 'Ana Ruiz', null], [16, 'Greenway Senior Living', 'Submit Letter for Board Approval', 0, 0, 0, 0, 'Marcus Reed', null], [17, 'Brightline Software', 'Submit Letter for Board Approval', 0, 0, 0, 0, 'Ana Ruiz', null], [18, 'Union Rail Maintenance', 'Proposal', 6, 2, 110000, 90000, 'Tom Walsh', null], [19, 'Kessler Machine Works', 'Proposal', 0, 0, 0, 0, 'Marcus Reed', null], [20, 'Downtown Business Alliance', 'Proposal', 0, 0, 0, 0, 'Ana Ruiz', null], [21, 'Maplewood Veterinary Group', 'Meeting Held', 0, 0, 0, 0, 'Tom Walsh', null], [22, 'Crescent Cold Storage', 'Meeting Held', 0, 0, 0, 0, 'Marcus Reed', null], [23, 'Orchard Grove Apartments', 'Meeting Held', 0, 0, 0, 0, 'Ana Ruiz', null], [24, 'Bayside Printing', 'Contacted', 0, 0, 0, 0, 'Tom Walsh', null], [25, 'Summit Dental Partners', 'Contacted', 0, 0, 0, 0, 'Marcus Reed', null], [26, 'Granite Peak Construction', 'Contacted', 0, 0, 0, 0, null, null], [27, 'Mapleton Plastics', 'Identification', 0, 0, 0, 0, null, null], [28, 'Iron Horse Brewing', 'Identification', 0, 0, 0, 0, null, null], [29, 'Clearwater Labs', 'Identification', 0, 0, 0, 0, null, null], [30, 'Valley Courier Service', 'Closed - Lost', 0, 0, 0, 0, 'Tom Walsh', null]],
+  interactions: [[1, '2026-09-30', 'Meeting', 'Reviewed open enrollment dates.', 'Marcus Reed'], [1, '2026-10-14', 'Phone call', 'Confirmed the health fair booth.', 'Marcus Reed'], [2, '2026-10-20', 'Meeting', 'HR wants a lunch-and-learn in November.', 'Marcus Reed'], [6, '2026-07-02', 'Meeting', 'Walked HR through the payroll deduction set-up.', 'Marcus Reed'], [7, '2026-08-09', 'Phone call', 'Asked for a table at the benefits fair.', 'Tom Walsh'], [7, '2026-10-20', 'Email', 'Sent the employee benefits flyer.', 'Tom Walsh'], [8, '2026-09-16', 'Email', 'Sent the employee benefits flyer.', 'Ana Ruiz'], [8, '2026-07-27', 'Meeting', 'Met the new HR director.', 'Ana Ruiz'], [8, '2026-09-12', 'Phone call', 'Followed up on the board letter.', 'Ana Ruiz'], [9, '2026-10-23', 'Meeting', 'Met the new HR director.', 'Marcus Reed'], [10, '2026-07-04', 'Phone call', 'Followed up on the board letter.', 'Marcus Reed'], [10, '2026-09-15', 'Meeting', 'Walked HR through the payroll deduction set-up.', 'Marcus Reed'], [11, '2026-08-11', 'Meeting', 'Walked HR through the payroll deduction set-up.', 'Tom Walsh'], [11, '2026-10-22', 'Phone call', 'Asked for a table at the benefits fair.', 'Tom Walsh'], [11, '2026-08-07', 'Email', 'Sent the employee benefits flyer.', 'Tom Walsh'], [12, '2026-09-18', 'Phone call', 'Asked for a table at the benefits fair.', 'Ana Ruiz'], [13, '2026-10-25', 'Email', 'Sent the employee benefits flyer.', 'Marcus Reed'], [13, '2026-08-10', 'Meeting', 'Met the new HR director.', 'Marcus Reed'], [14, '2026-07-06', 'Meeting', 'Met the new HR director.', 'Tom Walsh'], [14, '2026-09-17', 'Phone call', 'Followed up on the board letter.', 'Tom Walsh'], [14, '2026-07-02', 'Meeting', 'Walked HR through the payroll deduction set-up.', 'Tom Walsh'], [15, '2026-08-13', 'Phone call', 'Followed up on the board letter.', 'Ana Ruiz'], [16, '2026-09-20', 'Meeting', 'Walked HR through the payroll deduction set-up.', 'Marcus Reed'], [16, '2026-07-05', 'Phone call', 'Asked for a table at the benefits fair.', 'Marcus Reed'], [17, '2026-10-27', 'Phone call', 'Asked for a table at the benefits fair.', 'Ana Ruiz'], [17, '2026-08-12', 'Email', 'Sent the employee benefits flyer.', 'Ana Ruiz'], [17, '2026-10-23', 'Meeting', 'Met the new HR director.', 'Ana Ruiz'], [18, '2026-07-08', 'Email', 'Sent the employee benefits flyer.', 'Tom Walsh'], [19, '2026-08-15', 'Meeting', 'Met the new HR director.', 'Marcus Reed'], [19, '2026-10-26', 'Phone call', 'Followed up on the board letter.', 'Marcus Reed'], [20, '2026-09-22', 'Phone call', 'Followed up on the board letter.', 'Ana Ruiz'], [20, '2026-07-07', 'Meeting', 'Walked HR through the payroll deduction set-up.', 'Ana Ruiz'], [20, '2026-09-18', 'Phone call', 'Asked for a table at the benefits fair.', 'Ana Ruiz'], [21, '2026-10-03', 'Meeting', 'Walked HR through the payroll deduction set-up.', 'Tom Walsh'], [22, '2026-07-10', 'Phone call', 'Asked for a table at the benefits fair.', 'Marcus Reed'], [22, '2026-09-21', 'Email', 'Sent the employee benefits flyer.', 'Marcus Reed'], [23, '2026-08-17', 'Email', 'Sent the employee benefits flyer.', 'Ana Ruiz'], [23, '2026-10-02', 'Meeting', 'Met the new HR director.', 'Ana Ruiz'], [23, '2026-08-13', 'Phone call', 'Followed up on the board letter.', 'Ana Ruiz'], [24, '2026-09-24', 'Meeting', 'Met the new HR director.', 'Tom Walsh'], [25, '2026-10-05', 'Phone call', 'Followed up on the board letter.', 'Marcus Reed'], [25, '2026-08-16', 'Meeting', 'Walked HR through the payroll deduction set-up.', 'Marcus Reed'], [30, '2026-07-14', 'Phone call', 'Followed up on the board letter.', 'Tom Walsh']],
 };
 
 const SUMMARIES: Record<string, string[]> = {
@@ -168,6 +168,11 @@ export function generateModules(t: GeneratedTenant, institutionType: 'credit_uni
   let issueId = 3300;
   let taskId = 7000;
   let logId = 4470;
+  // Older history, numbered apart so the rows above keep their ids. It is mostly closed or done, so
+  // it adds depth for trends and root causes without adding to anyone's open work.
+  let pastIssueId = 5000;
+  let pastTaskId = 9000;
+  let pastLogId = 6000;
 
   t.locations.forEach((_, i) => {
     const branch = i + 1;
@@ -213,8 +218,8 @@ export function generateModules(t: GeneratedTenant, institutionType: 'credit_uni
         tasks.push([id, person[0], touch, offset, due, done ? 'Done' : 'Open', owner, branch, done ? plus(due, Math.floor(unit(id, 314) * 3)) : null, done ? 'Spoke with the member.' : null]);
       }
     }
-    const logRow = (type: string, title: string, amount: number | null, status: string, by: [number, string, string, number], ago: number) => {
-      const id = ++logId;
+    const logRow = (type: string, title: string, amount: number | null, status: string, by: [number, string, string, number], ago: number, fixedId?: number) => {
+      const id = fixedId ?? ++logId;
       const on = daysAgo(ago);
       logs.push([id, type, title, amount, branch, status, `emp:${by[0]}`, by[1], on]);
       logHistory.push([id, on, by[1], null, 'Entered', null]);
@@ -226,6 +231,44 @@ export function generateModules(t: GeneratedTenant, institutionType: 'credit_uni
     logRow('EVENT', 'School savings day', null, 'Submitted', msrs[1]!, 2);
     logRow('CASH_COUNT', 'Teller drawer recount', 120, 'Returned', msrs[0]!, 4);
     logRow('EVENT', 'Chamber of commerce breakfast', null, 'Approved', msrs[1]!, 9);
+
+    // Customer complaints from the last six months: most are closed, a few are still being worked.
+    for (let n = 0; n < 10; n++) {
+      const id = pastIssueId++;
+      const source = ['Call In', 'Call In', 'Branch', 'Email'][Math.floor(unit(id, 321) * 4)]!;
+      const category = ISSUE_CATEGORIES[Math.floor(unit(id, 322) * ISSUE_CATEGORIES.length)]!;
+      const options = SUMMARIES[category]!;
+      const age = 6 + Math.floor(unit(id, 323) * 170);
+      const opened = daysAgo(age);
+      const party = pool[Math.floor(unit(id, 324) * pool.length)]![0];
+      const owner = msrs[Math.floor(unit(id, 325) * msrs.length)]![0];
+      const ownerName = staff.find((e) => e[0] === owner)![1];
+      const sla = ISSUE_SLA.customer;
+      const done = age > 20 && unit(id, 326) < 0.85;
+      const closed = done ? plus(opened, Math.min(age - 1, 2 + Math.floor(unit(id, 327) * 20))) : null;
+      const status = done ? 'Closed' : 'In Progress';
+      issues.push([id, party, 'customer', source, category, options[Math.floor(unit(id, 328) * options.length)], status, owner, branch, opened, plus(opened, sla.respond), plus(opened, sla.resolve), closed, done ? 'Reviewed with the member and resolved.' : null, done ? ROOT_CAUSES[Math.floor(unit(id, 329) * ROOT_CAUSES.length)] : null]);
+      history.push([id, opened, ownerName, 'Opened', `Logged from ${source}.`]);
+      history.push([id, plus(opened, 1), ownerName, 'Contacted the member', 'Called and confirmed the details.']);
+      if (done) history.push([id, closed, manager[1], 'Closed', 'Resolved.']);
+    }
+    // Members who joined one to three months ago, further through the 90-day plan.
+    for (let n = 0; n < 12; n++) {
+      const person = pool[Math.floor(unit(branch * 100 + n, 331) * pool.length)]!;
+      const joined = Math.floor(30 + unit(branch * 100 + n, 332) * 58);
+      const start = daysAgo(joined);
+      const owner = msrs[n % msrs.length]![0];
+      for (const [touch, offset] of TOUCHES) {
+        const id = pastTaskId++;
+        const due = plus(start, offset);
+        const past = offset < joined;
+        const done = past && unit(id, 333) < 0.9;
+        tasks.push([id, person[0], touch, offset, due, done ? 'Done' : 'Open', owner, branch, done ? plus(due, Math.floor(unit(id, 334) * 3)) : null, done ? 'Spoke with the member.' : null]);
+      }
+    }
+    // Data logs from earlier months, all approved.
+    const pastLogs: [string, string, number | null][] = [['CASH_COUNT', 'Vault count adjustment', -80], ['EVENT', 'Financial literacy night', null], ['SURVEY', 'Lobby survey cards', null], ['CASH_COUNT', 'ATM balancing difference', 40], ['EVENT', 'Farmers market table', null], ['SURVEY', 'New member survey calls', null], ['CASH_COUNT', 'Coin machine recount', -15], ['EVENT', 'High school career day', null]];
+    pastLogs.forEach(([type, title, amount], n) => logRow(type, title, amount === null ? null : amount * (1 + (branch % 3)), 'Approved', msrs[n % msrs.length]!, 12 + n * 13 + branch, ++pastLogId));
   });
   return { issues, history, tasks, logs, logHistory };
 }
