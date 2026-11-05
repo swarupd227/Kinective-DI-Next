@@ -211,7 +211,8 @@ describe.skipIf(!up)('the pipeline against the warehouse', () => {
   it('answers an ageing question with count, dollars, the oldest and the load date', async () => {
     const r = recorder();
     await runPipelineOffline(input('Which of my apps have sat in underwriting more than 2 days?', 'thr_lap1'), { gateway }, r.sink);
-    expect(r.texts[0]).toMatch(/\*\*\d+ applications?\*\* worth \*\*\$[\d.]+[KM]?\*\* are in underwriting more than 2 days\. (?:As of the 25 Oct loan system load|From the \*\*25 Oct\*\* loan system load, \d+ days ago: no newer build has run, so days in status are older now)\. The oldest has waited \*\*\d+ days\*\* \(/);
+    // One application reads in the singular, by last name; several give the oldest and a list.
+    expect(r.texts[0]).toMatch(/\*\*\d+ applications?\*\* worth \*\*\$[\d.]+[KM]?\*\* (?:are|is) in underwriting more than 2 days\. (?:As of the 25 Oct loan system load|From the \*\*25 Oct\*\* loan system load, \d+ days ago: no newer build has run, so days in status are older now)\. (?:The oldest|[A-Z][a-z’'-]+) has waited \*\*\d+ days\*\*/);
     expect(validateBlock(r.blocks[0]!).ok).toBe(true);
   });
 

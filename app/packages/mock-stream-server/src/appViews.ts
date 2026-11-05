@@ -1,8 +1,9 @@
 // The workspace pages (spec 8.10 to 8.15, 8.19, 8.22). Each page opens on DI's view, then the figures
 // and records to check. They read the same DI Core services the agents use, under the same purview,
 // so a page and an answer always agree. Changes happen in a task, behind an approval card.
+import { bankText } from '@dinext/agents';
 import type { AppTile, AppView, AppViewId, Block, ListBlock, TableBlock } from '@dinext/block-schemas';
-import { memberNumber, WorkflowDefService, WorksheetService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, DelinquencyService, DQ_BUCKETS, IrrService, LiquidityService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
+import { memberNumber, WorkflowDefService, WorksheetService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, DelinquencyService, DQ_BUCKETS, IrrService, LiquidityService, pctAgainst, MEMBERSHIP_BENCHMARKS, MembershipService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 import { SourceService, TableService, secretKeyFrom } from '@dinext/di-core';
 import { EmailOutbox } from '@dinext/di-core';
@@ -277,6 +278,64 @@ export function createAppViews(deps: ViewDeps) {
         ],
       };
     },
+    async membership() {
+      const svc = new MembershipService(pool);
+      const scope = { purviewBranches: ctx.purviewBranches };
+      const [g, bs, x, p, nm] = await Promise.all([svc.growth(scope), svc.branches(scope), svc.exits(scope), svc.penetration(scope), svc.newMembers(scope)]);
+      const who = deps.person === 'customer' ? 'customers' : 'members';
+      const Who = deps.person === 'customer' ? 'Customers' : 'Members';
+      const p1 = (n: number) => `${n.toFixed(1)}%`;
+      const n0 = (n: number) => Math.round(n).toLocaleString('en-US');
+      const scopeWord = ctx.purviewBranches?.length === 1 ? ctx.purviewBranches[0] : null;
+      const [lo, hi] = MEMBERSHIP_BENCHMARKS.attritionPct;
+      const youngest = p.ages[0];
+      const peak = [...p.ages].sort((a, b) => b.productsPerMember - a.productsPerMember)[0];
+      const flows = {
+        id: blockId(), type: 'chart', version: '2.0.0', title: `Joined and left by month`, subtitle: `${Who} who joined and ${who} whose memberships closed, each month${scopeWord ? `, ${scopeWord}` : ''}.`,
+        provenance: { agent: 'DI', operations: ['mem.growth'], sources: [] }, freshness: { kind: 'workflow_event' },
+        data: { chartType: 'bar', dataset: { dimensions: [{ name: 'label', displayName: 'Month', type: 'ordinal' }, { name: 'joined', displayName: 'Joined', type: 'number' }, { name: 'left', displayName: 'Left', type: 'number' }], source: g.months.slice(-12).map((m) => [m.label, m.joined, m.left]) }, series: [{ name: 'Joined', encode: { x: 'label', y: 'joined' } }, { name: 'Left', encode: { x: 'label', y: 'left' } }], axes: { y: [{ unit: 'count' }] }, legend: true },
+        a11y: { summary: `Bar chart of ${who} joining and leaving each month: ${n0(g.joined)} joined and ${n0(g.left)} left over twelve months.` },
+      } as Block;
+      const depthChart = {
+        id: blockId(), type: 'chart', version: '2.0.0', title: 'Penetration by age band', subtitle: `Share of ${who} in each age band with checking, a loan and direct deposit, at ${p.label}.`,
+        provenance: { agent: 'DI', operations: ['mem.penetration.age'], sources: [] }, freshness: { kind: 'workflow_event' },
+        data: { chartType: 'bar', dataset: { dimensions: [{ name: 'band', displayName: 'Age', type: 'ordinal' }, { name: 'c', displayName: 'Checking', type: 'number' }, { name: 'l', displayName: 'A loan', type: 'number' }, { name: 'd', displayName: 'Direct deposit', type: 'number' }], source: p.ages.map((a) => [a.band, Math.round(a.checking * 10) / 10, Math.round(a.loan * 10) / 10, Math.round(a.directDeposit * 10) / 10]) }, series: [{ name: 'Checking', encode: { x: 'band', y: 'c' } }, { name: 'A loan', encode: { x: 'band', y: 'l' } }, { name: 'Direct deposit', encode: { x: 'band', y: 'd' } }], axes: { y: [{ unit: 'percent' }] }, legend: true },
+        a11y: { summary: `Bar chart of penetration by age band; ${youngest ? `${p1(youngest.loan)} of ${youngest.band} have a loan` : ''}.` },
+      } as Block;
+      const depthCols: ColumnSpec[] = [{ field: 'members', headerName: Who, type: 'count' }, text('checking', 'Checking'), text('loan', 'A loan'), text('dd', 'Direct deposit'), text('digital', 'Digital, active'), text('ppm', 'Products each')];
+      const depthRow = (d: { members: number; checking: number; loan: number; directDeposit: number; digital: number; productsPerMember: number }) => ({ members: d.members, checking: p1(d.checking), loan: p1(d.loan), dd: p1(d.directDeposit), digital: p1(d.digital), ppm: d.productsPerMember.toFixed(2) });
+      return {
+        title: `Membership growth & penetration${scopeWord ? ` · ${scopeWord}` : ''}`,
+        lede: `Who joined, who left and why, and how deep ${deps.person === 'customer' ? 'customer' : 'member'} relationships are, from the month-end ${deps.person === 'customer' ? 'customer' : 'member'} history and the core’s closed-membership extract (latest ${g.latest.label}).`,
+        take: {
+          headline: `${Who} grew ${p1(g.netGrowthPct)} over the year to ${n0(g.members)}: ${n0(g.joined)} joined and ${n0(g.left)} left, an attrition rate of ${p1(g.attritionPct)}${g.attritionPct >= lo && g.attritionPct <= hi ? `, within the usual ${lo}–${hi}%` : ''}. ${p1(x.firstYearPct)} of those who left had joined within a year. ${youngest && peak ? `${who[0]!.toUpperCase()}${who.slice(1)} aged ${youngest.band} hold ${youngest.productsPerMember.toFixed(2)} products against ${peak.productsPerMember.toFixed(2)} at ${peak.band}.` : ''}`,
+          action: { label: `Why are ${who} leaving?`, ask: `Why are ${who} leaving?` },
+        },
+        tiles: [
+          { label: `Net ${deps.person === 'customer' ? 'customer' : 'member'} growth, 12 months`, value: p1(g.netGrowthPct), detail: `${g.net >= 0 ? '+' : '−'}${n0(Math.abs(g.net))} ${who}` },
+          { label: 'Attrition rate', value: p1(g.attritionPct), detail: `typical ${lo}–${hi}%`, tone: g.attritionPct > hi ? 'warning' : 'neutral' },
+          { label: `${Who} with checking`, value: p1(p.now.checking) },
+          { label: `${Who} with a loan`, value: p1(p.now.loan) },
+          { label: `Products per ${deps.person === 'customer' ? 'customer' : 'member'}`, value: p.now.productsPerMember.toFixed(2), detail: p.yearAgo ? `${p.yearAgo.productsPerMember.toFixed(2)} a year ago` : undefined },
+        ],
+        prompts: [`Why are ${who} leaving?`, `Are new ${who} staying?`, 'Show penetration by age band', 'Which branches are growing?'],
+        blocks: [
+          flows,
+          table(`Joins, exits and ${who} by month`, 'mem.growth', [text('month', 'Month'), { field: 'joined', headerName: 'Joined', type: 'count' }, { field: 'left', headerName: 'Left', type: 'count' }, { field: 'net', headerName: 'Net', type: 'count' }, { field: 'members', headerName: Who, type: 'count' }], g.months.slice(-12).map((m) => ({ month: m.label, joined: m.joined, left: m.left, net: m.net, members: m.members }))),
+          table(`Why ${who} left, last 12 months`, 'mem.exits', [text('reason', 'Reason recorded at closing'), { field: 'count', headerName: Who, type: 'count' }, text('pct', 'Share')], x.reasons.map((r) => ({ reason: r.reason, count: r.count, pct: p1(r.pct) }))),
+          ...(bs.length > 1 ? [table('By branch, last 12 months', 'mem.branches', [text('branch', 'Branch'), { field: 'members', headerName: Who, type: 'count' }, { field: 'joined', headerName: 'Joined', type: 'count' }, { field: 'left', headerName: 'Left', type: 'count' }, text('growth', 'Net growth'), text('attrition', 'Attrition')], bs.map((b) => ({ branch: b.branch, members: b.members, joined: b.joined, left: b.left, growth: p1(b.netGrowthPct), attrition: p1(b.attritionPct) })))] : []),
+          depthChart,
+          table('Penetration by age band', 'mem.penetration.age', [text('band', 'Age'), ...depthCols], p.ages.map((a) => ({ band: a.band, ...depthRow(a) }))),
+          ...(p.branches.length > 1 ? [table('Penetration by branch', 'mem.penetration.branch', [text('branch', 'Branch'), ...depthCols], p.branches.map((b) => ({ branch: b.branch, ...depthRow(b) })))] : []),
+          table(`New ${who}, last 12 months`, 'mem.new', [text('item', 'Measure'), text('value', `New ${who}`), text('all', `All ${who}`)], [
+            { item: 'Have checking', value: p1(nm.checking), all: p1(p.now.checking) },
+            { item: 'Have a loan', value: p1(nm.loan), all: p1(p.now.loan) },
+            { item: `Products per ${deps.person === 'customer' ? 'customer' : 'member'}`, value: nm.productsPerMember.toFixed(2), all: p.now.productsPerMember.toFixed(2) },
+            { item: 'Already left', value: `${n0(nm.left)} of ${n0(nm.joined)}`, all: '—' },
+          ]),
+        ],
+      };
+    },
     async liquidity() {
       const a = await new LiquidityService(pool, deps.person === 'customer' ? 'bank' : 'credit_union').analysis();
       const m = (n: number) => (Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : `$${(n / 1e6).toFixed(1)}M`);
@@ -286,15 +345,15 @@ export function createAppViews(deps: ViewDeps) {
       const s30 = a.stress.find((x) => x.pct === 30)!;
       const fhlb = a.capacity[0]!;
       const asOf = new Date(`${a.asOf}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
-      return {
+      const view: AppView = {
         title: 'Liquidity',
         lede: `Liquidity ratios, the cash-flow ladder, borrowing capacity and survival under share runoff, from the balances as of ${asOf}. Capacity is DI’s estimate at typical lendable values; the FHLB’s and the Reserve Bank’s collateral rules set the real figures.`,
         take: {
-          headline: `Available liquidity is ${m(a.available)}, ${p1(a.availableToShares)} of shares: ${m(a.liquid)} on the balance sheet and ${m(a.contingent)} of borrowing capacity. ${la.value < a.policy.liquidToAssetsMinPct ? `Liquid assets are ${p1(la.value)} of total assets, just below the ${a.policy.liquidToAssetsMinPct}% policy.` : `Liquid assets are ${p1(la.value)} of total assets, within policy.`} A 30% share run within 30 days would be covered ${s30.coverage.toFixed(1)} times.`,
+          headline: `Available liquidity is ${m(a.available)}, ${p1(a.availableToShares)} of shares: ${m(a.liquid)} on the balance sheet and ${m(a.contingent)} of borrowing capacity. ${la.value < a.policy.liquidToAssetsMinPct ? `Liquid assets are ${pctAgainst(la.value, a.policy.liquidToAssetsMinPct)} of total assets, just below the ${a.policy.liquidToAssetsMinPct}% policy.` : `Liquid assets are ${p1(la.value)} of total assets, within policy.`} A 30% share run within 30 days would be covered ${s30.coverage.toFixed(1)} times.`,
           action: { label: 'How much could we borrow tomorrow?', ask: 'How much could we borrow tomorrow?' },
         },
         tiles: [
-          { label: 'Liquid assets to total assets', value: p1(la.value), detail: `policy ${a.policy.liquidToAssetsMinPct}%+`, tone: la.value < a.policy.liquidToAssetsMinPct ? 'warning' : 'neutral' },
+          { label: 'Liquid assets to total assets', value: pctAgainst(la.value, a.policy.liquidToAssetsMinPct), detail: `policy ${a.policy.liquidToAssetsMinPct}%+`, tone: la.value < a.policy.liquidToAssetsMinPct ? 'warning' : 'neutral' },
           { label: 'Available liquidity to shares', value: p1(a.availableToShares), detail: `policy ${a.policy.availableToSharesMinPct}%+` },
           { label: 'FHLB capacity available', value: m(fhlb.available), detail: `${m(fhlb.used)} drawn` },
           { label: '20% share run, covered', value: `${s20.coverage.toFixed(1)}×`, detail: `${s20.days} days` },
@@ -302,7 +361,7 @@ export function createAppViews(deps: ViewDeps) {
         ],
         prompts: ['How much could we borrow tomorrow?', 'Can we survive a 30% deposit run?', 'Show the cash-flow ladder', 'What assumptions does the liquidity view use?'],
         blocks: [
-          table('Liquidity ratios', 'liq.ratios', [text('name', 'Ratio'), text('value', 'Value'), text('note', 'What it shows')], a.ratios.map((r) => ({ name: r.name, value: p1(r.value), note: r.note }))),
+          table('Liquidity ratios', 'liq.ratios', [text('name', 'Ratio'), text('value', 'Value'), text('note', 'What it shows')], a.ratios.map((r) => ({ name: r.name, value: r.limit ? pctAgainst(r.value, r.limit) : p1(r.value), note: r.note }))),
           bar('Cash-flow ladder: cumulative position from cash', 'liq.ladder.chart', a.ladder.map((l) => [l.label, Math.round(l.cumulative)] as [string, number]), 'currency', 'Cumulative position', 'Inflows from loan payments and maturing investments, less share runoff, certificates that don’t renew and borrowings.'),
           table('Cash-flow ladder', 'liq.ladder', [text('band', 'Band'), { field: 'inflows', headerName: 'Inflows', type: 'currency' }, { field: 'outflows', headerName: 'Outflows', type: 'currency' }, { field: 'net', headerName: 'Net', type: 'currency' }, { field: 'cumulative', headerName: 'Cumulative, from cash', type: 'currency' }], a.ladder.map((l) => ({ band: l.label, inflows: Math.round(l.inflows), outflows: Math.round(l.outflows), net: Math.round(l.net), cumulative: Math.round(l.cumulative) }))),
           table('Borrowing capacity', 'liq.capacity', [text('source', 'Source'), text('collateral', 'Collateral'), { field: 'value', headerName: 'Collateral value', type: 'currency' }, { field: 'lendable', headerName: 'Lendable value', type: 'currency' }, { field: 'used', headerName: 'Used', type: 'currency' }, { field: 'available', headerName: 'Available', type: 'currency' }], [...a.capacity.map((c) => ({ source: c.source, collateral: c.collateral, value: Math.round(c.collateralValue), lendable: Math.round(c.lendable), used: Math.round(c.used), available: Math.round(c.available) })), ...(a.clf ? [{ source: 'Central Liquidity Facility', collateral: a.clf, value: 0, lendable: 0, used: 0, available: 0 }] : [])]),
@@ -310,6 +369,8 @@ export function createAppViews(deps: ViewDeps) {
           table('Assumptions', 'liq.assumptions', [text('item', 'Assumption'), text('detail', 'What DI uses')], a.assumptions.map(([item, detail]) => ({ item, detail }))),
         ],
       };
+      // A bank reads deposits, not shares.
+      return deps.person === 'customer' ? (JSON.parse(JSON.stringify(view), (_k, v: unknown) => (typeof v === 'string' ? bankText(v) : v)) as typeof view) : view;
     },
     async irr() {
       const a = await new IrrService(pool).analysis();

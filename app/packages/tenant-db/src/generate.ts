@@ -271,7 +271,18 @@ export interface GeneratedTenant {
   histDq: unknown[][];
   /** Month-end moves from last month's status to this month's, for roll rates. */
   histRoll: unknown[][];
+  /** Memberships closed during the history window: who left, when, after how long and why. */
+  exits: unknown[][];
 }
+
+/** Members leave at about 6% a year, so net growth lands between 1% and 2%, as at most credit unions now. */
+const ATTRITION = 0.06;
+/** Why members leave, by life stage. Weights, not shares. */
+const EXIT_REASONS: Record<'young' | 'middle' | 'senior', [string, number][]> = {
+  young: [['Moved away', 34], ['Moved to a bank or fintech', 26], ['Rates or fees', 14], ['Service experience', 9], ['Inactive, closed by the credit union', 9], ['Other or not given', 8]],
+  middle: [['Moved away', 22], ['Moved to a bank or fintech', 20], ['Rates or fees', 18], ['Service experience', 12], ['Inactive, closed by the credit union', 14], ['Other or not given', 14]],
+  senior: [['Deceased', 42], ['Moved away', 14], ['Rates or fees', 10], ['Service experience', 8], ['Inactive, closed by the credit union', 12], ['Other or not given', 14]],
+};
 
 /**
  * Demo members keep their names unique, so "Refer Suzanne Jackson" finds one person. Names only:
@@ -304,6 +315,8 @@ function nameDemoMembers(rows: unknown[][], staff: string[]) {
 }
 
 /** Days past due for a loan in a status, stable per loan. */
+/** The last day of each aging bucket. */
+const BUCKET_END: Record<string, number> = { '30–59 days': 59, '60–89 days': 89, '90–179 days': 179, '180–359 days': 359 };
 const pastDueDays = (id: number, state: string) =>
   state === '30–59 days' ? 31 + (id % 27) : state === '60–89 days' ? 61 + (id % 27) : state === '90–179 days' ? 91 + (id % 85) : state === '180–359 days' ? 181 + (id % 170) : state === '360+ days' ? 361 + (id % 200) : 0;
 
@@ -354,13 +367,13 @@ export function generate(profile: TenantProfile): GeneratedTenant {
   for (const [id, name] of [[1, 'Ana Ruiz'], [2, 'Tom Walsh'], [3, 'J. Ortiz'], [4, 'Sofia Ruiz'], [6, 'Marcus Reed']] as const) employees.find((e) => e[0] === id)![1] = name;
 
   // Members: join dates skew recent; the very first party is the member the demos refer to.
-  type Party = { id: number; branch: number; join: Date; member: boolean };
+  type Party = { id: number; branch: number; join: Date; member: boolean; age: number };
   const parties: Party[] = [];
   const partyRows: unknown[][] = [];
   for (let i = 0; i < profile.members; i++) {
     const branch = i === 0 ? 0 : pick(r, branchWeights);
-    // Spread over 25 years with a mild recent skew: steady membership growth of a few percent a year.
-    const yearsAgo = 25 * Math.pow(r(), 1.08);
+    // Spread over 25 years with a recent skew: about 7% of today's members joined in the last year.
+    const yearsAgo = 25 * Math.pow(r(), 1.2);
     const join = new Date(asOf.getTime() - yearsAgo * 365.25 * 86_400_000);
     const first = i === 0 ? 'Suzanne' : FIRST[Math.floor(r() * FIRST.length)]!;
     const last = i === 0 ? 'Jackson' : LAST[Math.floor(r() * LAST.length)]!;
@@ -368,14 +381,50 @@ export function generate(profile: TenantProfile): GeneratedTenant {
     const age = segment === 'Young Adult' ? 18 + r() * 8 : segment === 'Senior' ? 62 + r() * 25 : 26 + r() * 36;
     const birth = new Date(asOf.getTime() - age * 365.25 * 86_400_000);
     const member = r() > 0.03;
-    parties.push({ id: i + 1, branch, join, member });
+    parties.push({ id: i + 1, branch, join, member, age });
     partyRows.push([i + 1, first, last, ymd(birth), ymd(join), branch + 1, segment, Math.floor(i / 1.7) + 1, member ? 1 : 0]);
   }
   nameDemoMembers(partyRows, employees.map((e) => String(e[1])));
 
+  // Members who left during the history window, on their own draws so today's members are unchanged.
+  // A third leave in their first year; weaker branches lose a little more; the reason follows life stage.
+  const rx = prng(profile.seed ^ 0xe817);
+  type Exit = { id: number; branch: number; join: Date; close: Date; birth: Date; segment: string; reason: string };
+  const exits: Exit[] = [];
+  const exitWeights = profile.branches.map((b, i) => [i, b.weight * (1 + 0.6 * (b.dqBias - 1))] as [number, number]);
+  const activeMembers = parties.filter((p) => p.member).length;
+  months.forEach((me) => {
+    const end = new Date(`${me}T23:59:59Z`);
+    const start = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), 1);
+    const n = Math.round(((activeMembers * ATTRITION) / 12) * (0.85 + rx() * 0.3) * (end.getUTCMonth() === 0 ? 1.25 : 1));
+    for (let k = 0; k < n; k++) {
+      const close = new Date(start + rx() * (end.getTime() - start));
+      const u = rx();
+      const tenureYears = u < 0.33 ? 0.08 + rx() * 0.92 : u < 0.58 ? 1 + rx() * 2 : 3 + Math.pow(rx(), 1.4) * 22;
+      const join = new Date(close.getTime() - tenureYears * 365.25 * 86_400_000);
+      const segment = pick(rx, profile.segments);
+      const age = segment === 'Young Adult' ? 18 + rx() * 8 : segment === 'Senior' ? 62 + rx() * 28 : 26 + rx() * 36;
+      const birth = new Date(close.getTime() - age * 365.25 * 86_400_000);
+      const stage = age < 30 ? 'young' : age >= 65 ? 'senior' : 'middle';
+      exits.push({ id: 1_000_001 + exits.length, branch: pick(rx, exitWeights), join, close, birth, segment, reason: pick(rx, EXIT_REASONS[stage]) });
+    }
+  });
+
   // Loans: open within the last term-and-a-bit, amortise linearly, and close when paid off.
   type Loan = { id: number; party: number; branch: number; cat: LoanMix; indirect: boolean; open: Date; close: Date | null; chargeOff: Date | null; original: number; rate: number };
   const loans: Loan[] = [];
+  const ra = prng(profile.seed ^ 0xa9e5);
+  const workingAge = profile.branches.map((_, bi) => parties.filter((q) => q.branch === bi && q.member && q.id > 500 && q.age >= 25 && q.age < 65));
+  /** The chance a drawn loan belongs to someone older or younger instead. The demos' first 500 members keep theirs. */
+  const loanShift = (p: Party, category: string) => {
+    if (p.id <= 500) return 0;
+    const home = /mortgage|heloc|home equity|real estate/i.test(category);
+    if (p.age < 25) return home ? 0.9 : 0.4;
+    if (p.age < 35) return home ? 0.35 : 0.05;
+    if (p.age < 50) return 0;
+    if (p.age < 65) return 0.12;
+    return home ? 0.55 : 0.45;
+  };
   const loanMix = profile.loans.map((l) => [l, l.share] as [LoanMix, number]);
   let loanId = 1;
   for (const p of parties) {
@@ -389,7 +438,14 @@ export function generate(profile: TenantProfile): GeneratedTenant {
       const close = payoff <= asOf ? payoff : r() < 0.04 ? new Date(open.getTime() + r() * (asOf.getTime() - open.getTime())) : null;
       const chargeOff = !close && r() < 0.006 && monthsBetween(open, asOf) > 8 ? addMonths(open, 6 + Math.floor(r() * Math.max(1, monthsBetween(open, asOf) - 6))) : null;
       const original = cat.min + Math.pow(r(), 1.6) * (cat.max - cat.min);
-      loans.push({ id: loanId++, party: p.id, branch: p.branch, cat, indirect: r() < cat.indirectShare, open, close, chargeOff, original, rate: cat.rate[0] + r() * (cat.rate[1] - cat.rate[0]) });
+      const indirect = r() < cat.indirectShare;
+      const rate = cat.rate[0] + r() * (cat.rate[1] - cat.rate[0]);
+      // Borrowing follows life stage: under-25s and retirees borrow less and the young rarely hold a
+      // mortgage, so some of their loans belong to a working-age member at the same branch instead. The
+      // loan itself, its branch and its delinquency path are unchanged; only who holds it moves.
+      const adults = workingAge[p.branch]!;
+      const owner = adults.length && ra() < loanShift(p, cat.category) ? adults[Math.floor(ra() * adults.length)]! : p;
+      loans.push({ id: loanId++, party: owner.id, branch: p.branch, cat, indirect, open, close, chargeOff, original, rate });
     }
   }
 
@@ -539,21 +595,35 @@ export function generate(profile: TenantProfile): GeneratedTenant {
     for (const p of parties) {
       if (!p.member || p.join > at) continue;
       const key = `${me}|${p.branch + 1}`;
-      const agg = histParty.get(key) ?? [0, 0];
+      const agg = histParty.get(key) ?? [0, 0, 0];
       agg[0]! += 1;
       if (p.join >= monthStart) agg[1]! += 1;
       histParty.set(key, agg);
     }
+    // Former members count while they were members, join like anyone else, and leave in their month.
+    for (const x of exits) {
+      if (x.join > at) continue;
+      const key = `${me}|${x.branch + 1}`;
+      const agg = histParty.get(key) ?? [0, 0, 0];
+      if (x.close > at) agg[0]! += 1;
+      if (x.join >= monthStart) agg[1]! += 1;
+      if (x.close >= monthStart && x.close <= at) agg[2]! += 1;
+      histParty.set(key, agg);
+    }
   });
 
-  // Days past due as of the build: one more step on each loan's path, so today's buckets follow history.
+  // Days past due as of the build: each loan's month-end status, with the days since added within its
+  // bucket, so today's branches and buckets match the month-end instead of re-drawing a whole month's
+  // cures and new misses in 25 days.
+  const lastMonthEnd = new Date(`${months[months.length - 1]}T00:00:00Z`);
+  const sinceMonthEnd = Math.max(0, Math.round((asOf.getTime() - lastMonthEnd.getTime()) / 86_400_000));
   loans.forEach((l, i) => {
     const row = loanRows[i]!;
     if (!row[10]) return;
     const toChargeOff = l.chargeOff ? monthsBetween(asOf, l.chargeOff) : 99;
-    const prev = dqState.get(l.id) ?? startStatus(unit(l.id, 0) / dqProb(l, 0));
-    const state = toChargeOff <= 3 && toChargeOff >= 0 ? (toChargeOff <= 1 ? '180–359 days' : '90–179 days') : nextStatus(prev, dqProb(l, 0) / 1.35, unit(l.id, 1000 + HISTORY_MONTHS));
-    row[12] = pastDueDays(l.id, state);
+    const state = toChargeOff <= 3 && toChargeOff >= 0 ? (toChargeOff <= 1 ? '180–359 days' : '90–179 days') : (dqState.get(l.id) ?? 'Current');
+    // Within its bucket: cures and new misses in the part-month aren't known until the next month-end.
+    row[12] = state === 'Current' ? 0 : Math.min(BUCKET_END[state] ?? 9999, pastDueDays(l.id, state) + sinceMonthEnd);
   });
 
   return {
@@ -581,7 +651,8 @@ export function generate(profile: TenantProfile): GeneratedTenant {
     }),
     histParty: [...histParty].map(([k, v]) => {
       const [me, b] = k.split('|');
-      return [me, Number(b), v[0], v[1]];
+      return [me, Number(b), v[0], v[1], v[2]];
     }),
+    exits: exits.map((x) => [x.id, x.branch + 1, ymd(x.join), ymd(x.close), ymd(x.birth), x.segment, x.reason]),
   };
 }

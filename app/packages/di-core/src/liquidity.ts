@@ -12,6 +12,9 @@ const rows = async <T>(pool: Pool, sql: string, params: unknown[] = []) => (awai
 /** Board policy for the demo institution; an ALCO sets its own. */
 export const LIQUIDITY_POLICY = { availableToSharesMinPct: 15, liquidToAssetsMinPct: 10, survivalMinDays: 30 };
 
+/** A percentage to one place, or two when one place would round it onto its policy line (9.96% is not 10.0%). */
+export const pctAgainst = (value: number, limit: number) => (value.toFixed(1) === limit.toFixed(1) && value !== limit ? `${value.toFixed(2)}%` : `${value.toFixed(1)}%`);
+
 /** Lendable value of each kind of collateral, as a share of balance or fair value. */
 const LENDABLE = { firstMortgage: 0.75, homeEquity: 0.6, auto: 0.7, consumer: 0.5, securities: 0.95 };
 /** The FHLB lends up to about 20% of total assets, whatever the collateral. */

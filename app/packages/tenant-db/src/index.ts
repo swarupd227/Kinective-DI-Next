@@ -17,3 +17,4 @@ export { WORKFLOW_DDL, WORKFLOW_WRITE_TABLES, REFERRAL_TYPES, workflowSeed, refe
 // Email notifications: the simulated outbox and each person's preferences.
 export { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 export { CORE_READER, SOURCES_DDL, SOURCES_LANDING_TABLES, SOURCES_WRITE_TABLES, SOURCE_TARGETS, SYMITAR_CODES, coreReaderPassword, createSourceTables, landingTable, replicaDatabase, seedCoreReplica } from './sources.ts';
+export { AGE_BANDS, generateMemberHistory } from './membership.ts';

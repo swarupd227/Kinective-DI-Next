@@ -1,7 +1,7 @@
 // Liquidity on the shared module agent: the liquidity ratios, the cash-flow ladder, borrowing capacity by
 // source and survival under share runoff. Read-only, and honest that capacity is DI's estimate.
 import { z } from 'zod';
-import { CoreError, type LiquidityService } from '@dinext/di-core';
+import { CoreError, pctAgainst, type LiquidityService } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 const NO_ACCESS = 'Liquidity isn’t part of your DI access. It is for the finance team and executives.';
@@ -54,8 +54,8 @@ export function liquidityModule(liq: LiquidityService): ModuleSpec {
           const la = a.ratios[0]!;
           const s20 = a.stress.find((x) => x.pct === 20)!;
           return {
-            text: `Liquid assets are **${m(a.liquid)}**, ${p1(la.value)} of total assets (policy: at least ${a.policy.liquidToAssetsMinPct}%${la.value < a.policy.liquidToAssetsMinPct ? ', **below policy**' : ''}). With borrowing capacity of **${m(a.contingent)}**, available liquidity is **${m(a.available)}**, ${p1(a.availableToShares)} of shares (policy: at least ${a.policy.availableToSharesMinPct}%). If 20% of shares left within 30 days, available liquidity would cover it **${s20.coverage.toFixed(1)} times**. Capacity is DI’s estimate from loan and investment data.`,
-            blocks: [moduleTable(spec, 'Liquidity ratios', ctx.runId, 'liq.ratios', [{ field: 'name', headerName: 'Ratio', type: 'text' }, { field: 'value', headerName: 'Value', type: 'text' }, { field: 'note', headerName: 'What it shows', type: 'text' }], a.ratios.map((r) => ({ name: r.name, value: p1(r.value), note: r.note })))],
+            text: `Liquid assets are **${m(a.liquid)}**, ${pctAgainst(la.value, a.policy.liquidToAssetsMinPct)} of total assets (policy: at least ${a.policy.liquidToAssetsMinPct}%${la.value < a.policy.liquidToAssetsMinPct ? ', **below policy**' : ''}). With borrowing capacity of **${m(a.contingent)}**, available liquidity is **${m(a.available)}**, ${p1(a.availableToShares)} of shares (policy: at least ${a.policy.availableToSharesMinPct}%). If 20% of shares left within 30 days, available liquidity would cover it **${s20.coverage.toFixed(1)} times**. Capacity is DI’s estimate from loan and investment data.`,
+            blocks: [moduleTable(spec, 'Liquidity ratios', ctx.runId, 'liq.ratios', [{ field: 'name', headerName: 'Ratio', type: 'text' }, { field: 'value', headerName: 'Value', type: 'text' }, { field: 'note', headerName: 'What it shows', type: 'text' }], a.ratios.map((r) => ({ name: r.name, value: r.limit ? pctAgainst(r.value, r.limit) : p1(r.value), note: r.note })))],
             suggestions: ['How much could we borrow tomorrow?', 'Can we survive a 30% deposit run?'],
           };
         },

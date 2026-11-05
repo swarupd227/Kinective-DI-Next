@@ -51,7 +51,7 @@ const StockSchema = z.object({
       measure: ident.optional(),
       numerator: ident.optional(),
       denominator: ident.optional(),
-      format: z.enum(['currency', 'count', 'percent_1', 'percent_2', 'rate']),
+      format: z.enum(['currency', 'count', 'percent_1', 'percent_2', 'rate', 'decimal']),
       description: z.string(),
       regulatory_basis: z.string().optional(),
       synonyms: z.array(z.string()).default([]),

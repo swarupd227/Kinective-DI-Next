@@ -1,8 +1,9 @@
 // Liquidity: the questions it answers, and figures that hang together on the seeded warehouse.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { LiquidityService } from '@dinext/di-core';
+import { LiquidityService, pctAgainst } from '@dinext/di-core';
 import { tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { liquidityModule, runoffFrom } from '../src/liquidity.ts';
+import { bankText } from '../src/index.ts';
 
 describe('liquidity questions', () => {
   const spec = liquidityModule({} as LiquidityService);
@@ -15,6 +16,16 @@ describe('liquidity questions', () => {
     expect(plan('What assumptions does the liquidity view use?')).toEqual({ tool: 'liq_assumptions', args: {} });
     expect(plan('How is our liquidity?')).toEqual({ tool: 'liq_summary', args: {} });
     expect(runoffFrom('if 25 percent of shares leave')).toBe(20);
+  });
+
+  it('speaks deposits to a bank', () => {
+    expect(bankText('Available liquidity is $1.12B, 68.2% of shares. A 30% share run within 30 days would be covered 2.3 times.')).toBe('Available liquidity is $1.12B, 68.2% of deposits. A 30% deposit run within 30 days would be covered 2.3 times.');
+    expect(bankText('Loans as a share of member shares')).toBe('Loans as a share of deposits');
+    expect(bankText('Borrowings to shares and net worth')).toBe('Borrowings to deposits and equity');
+    // Sharing a report is not a deposit.
+    expect(bankText('DI shares the report with 7 people')).toBe('DI shares the report with 7 people');
+    expect(pctAgainst(9.96, 10)).toBe('9.96%');
+    expect(pctAgainst(10.14, 10)).toBe('10.1%');
   });
 
   it('leaves loan-to-share to Analytics', () => {

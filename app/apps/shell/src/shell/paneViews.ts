@@ -30,6 +30,7 @@ const OWNERS: [RegExp, AppId][] = [
   [/^irr_/, 'irr'],
   [/^dq_/, 'delinquency'],
   [/^liq_/, 'liquidity'],
+  [/^mem_/, 'membership'],
   [/^tsk_/, 'tasks'],
   [/^wf_/, 'workflows'],
   [/^esp_files/, 'files'],

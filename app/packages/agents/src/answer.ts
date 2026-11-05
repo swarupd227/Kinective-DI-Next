@@ -66,6 +66,8 @@ export function formatMetric(value: number | null, format: MetricFormat | 'perce
       return `${new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(value)}%`;
     case 'rate':
       return `${new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(value)}%`;
+    case 'decimal':
+      return new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 2, minimumFractionDigits: 2 }).format(value);
     case 'bp':
       return `${new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 0 }).format(value)} bp`;
     case 'percent_point':
@@ -267,7 +269,7 @@ function provenance(results: SemanticResult[], agent: string, runId: string, def
 export const TENANT_UTC_OFFSET = '-04:00';
 const freshness = (r: SemanticResult): Block['freshness'] => ({ kind: 'nightly_build', asOf: `${r.build.completedAt}${TENANT_UTC_OFFSET}`, buildId: r.build.buildId });
 
-const unitOf = (f: MetricFormat) => (f === 'currency' ? 'currency' : f === 'count' ? 'count' : 'percent');
+const unitOf = (f: MetricFormat) => (f === 'currency' ? 'currency' : f === 'count' ? 'count' : f === 'decimal' ? 'number' : 'percent');
 
 /** Opens the lineage of the block's first metric (spec 24.10). */
 const traceAction = (sources: Block['provenance']['sources']): NonNullable<Block['actions']> => {

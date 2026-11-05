@@ -70,6 +70,14 @@ sources:
     time_column: hp.month_end
     purview_column: hp.branch_id
     lineage: [hist_party_month, cdm_location]
+  member_history:
+    kind: history
+    table: hist_member_month
+    alias: hm
+    joins: ['JOIN cdm_location AS loc ON loc.int_id = hm.branch_id']
+    time_column: hm.month_end
+    purview_column: hm.branch_id
+    lineage: [hist_member_month, cdm_party, cdm_deposit_account, cdm_loan, cdm_digital_usage, cdm_location]
   application_history:
     kind: history
     table: hist_lap_month
@@ -101,6 +109,7 @@ dimensions:
       deposit_history: loc.name
       party_current: loc.name
       party_history: loc.name
+      member_history: loc.name
       application_history: loc.name
     values_sql: SELECT name FROM cdm_location ORDER BY int_id
   region:
@@ -115,6 +124,7 @@ dimensions:
       deposit_history: loc.region
       party_current: loc.region
       party_history: loc.region
+      member_history: loc.region
       application_history: loc.region
     values_sql: SELECT DISTINCT region FROM cdm_location ORDER BY region
   loan_category:
@@ -169,6 +179,13 @@ dimensions:
     exprs:
       party_current: p.segment_code
     values_sql: SELECT DISTINCT segment_code FROM cdm_party ORDER BY segment_code
+  age_band:
+    label: Age band
+    description: The member's age at each month-end, in five bands.
+    synonyms: [age, age band, age group, generation, by age, young members, older members]
+    exprs:
+      member_history: hm.age_band
+    values: [18–24, 25–34, 35–49, 50–64, 65+]
 
 # Aggregations per source. {{ setting.x }} reads a tenant setting; values are never user input.
 measures:
@@ -272,6 +289,51 @@ measures:
     exprs:
       party_current: COUNT(*)
       party_history: SUM(hp.member_count)
+      member_history: SUM(hm.member_count)
+  member_month_sum:
+    unit: count
+    flow: true
+    exprs:
+      party_history: SUM(hp.member_count)
+  closed_member_count_sum:
+    unit: count
+    flow: true
+    exprs:
+      party_history: SUM(hp.closed_member_count)
+  closed_member_annualized_sum:
+    unit: count
+    flow: true
+    exprs:
+      party_history: SUM(hp.closed_member_count) * 12
+  net_new_member_count_sum:
+    unit: count
+    flow: true
+    exprs:
+      party_history: SUM(hp.new_member_count - hp.closed_member_count)
+  member_count_sum_hm:
+    unit: count
+    exprs:
+      member_history: SUM(hm.member_count)
+  checking_member_sum:
+    unit: count
+    exprs:
+      member_history: SUM(hm.with_checking)
+  loan_member_sum:
+    unit: count
+    exprs:
+      member_history: SUM(hm.with_loan)
+  direct_deposit_member_sum:
+    unit: count
+    exprs:
+      member_history: SUM(hm.with_direct_deposit)
+  digital_member_sum:
+    unit: count
+    exprs:
+      member_history: SUM(hm.digital_active)
+  product_sum:
+    unit: count
+    exprs:
+      member_history: SUM(hm.product_count)
   new_member_count_sum:
     unit: count
     flow: true
@@ -509,7 +571,7 @@ metrics:
     description: People who hold an open primary relationship with the institution.
     synonyms: [members, customers, membership, how many members, member base, customer base]
     owner: Member experience team
-    dimensions_allowed: [branch, region, segment]
+    dimensions_allowed: [branch, region, segment, age_band]
   approval_rate:
     label: Loan application approval rate
     type: ratio
@@ -536,6 +598,92 @@ metrics:
     measure: new_member_count_sum
     format: count
     description: Members who joined in the period. Complete months only.
-    synonyms: [new members, members joined, new customers, member growth, growth, joiners]
+    synonyms: [new members, members joined, new customers, joiners, gross adds, new memberships]
     owner: Member experience team
     dimensions_allowed: [branch, region]
+  members_left:
+    label: Members who left
+    labels_by_type: { bank: Customers who left }
+    type: simple
+    measure: closed_member_count_sum
+    format: count
+    description: Memberships closed in the period, from the core's closed-membership extract. Complete months only.
+    synonyms: [members left, members who left, closed memberships, member exits, lost members, customers who left, closed accounts members, departures]
+    owner: Member experience team
+    dimensions_allowed: [branch, region]
+  net_member_growth:
+    label: Net member growth
+    labels_by_type: { bank: Net customer growth }
+    type: simple
+    measure: net_new_member_count_sum
+    format: count
+    description: Members who joined less members who left in the period. Complete months only.
+    synonyms: [net member growth, net growth, member growth, net new members, membership growth, customer growth, how fast are we growing]
+    owner: Member experience team
+    dimensions_allowed: [branch, region]
+  member_attrition_rate:
+    label: Member attrition rate
+    labels_by_type: { bank: Customer attrition rate }
+    type: ratio
+    numerator: closed_member_annualized_sum
+    denominator: member_month_sum
+    format: percent_1
+    description: Members who left, annualized, as a share of average members over the period. Most credit unions lose 5% to 8% a year.
+    synonyms: [attrition rate, member attrition, churn, churn rate, attrition, member churn, customer attrition, runoff of members]
+    owner: Member experience team
+    dimensions_allowed: [branch, region]
+  checking_penetration:
+    label: Members with checking
+    labels_by_type: { bank: Customers with checking }
+    type: ratio
+    numerator: checking_member_sum
+    denominator: member_count_sum_hm
+    format: percent_1
+    description: Share of members with an open checking account at the month-end, the usual sign of a primary relationship.
+    synonyms: [checking penetration, members with checking, share with checking, checking adoption]
+    owner: Member experience team
+    dimensions_allowed: [branch, region, age_band]
+  loan_penetration:
+    label: Members with a loan
+    labels_by_type: { bank: Customers with a loan }
+    type: ratio
+    numerator: loan_member_sum
+    denominator: member_count_sum_hm
+    format: percent_1
+    description: Share of members with at least one open loan at the month-end.
+    synonyms: [loan penetration, members with a loan, share with a loan, borrowing members, borrower penetration]
+    owner: Member experience team
+    dimensions_allowed: [branch, region, age_band]
+  direct_deposit_penetration:
+    label: Members with direct deposit
+    labels_by_type: { bank: Customers with direct deposit }
+    type: ratio
+    numerator: direct_deposit_member_sum
+    denominator: member_count_sum_hm
+    format: percent_1
+    description: Share of members whose pay arrives by direct deposit at the month-end, the strongest sign the credit union is their primary financial institution.
+    synonyms: [direct deposit penetration, members with direct deposit, direct deposit rate, primary financial institution, pfi, primary relationship]
+    owner: Member experience team
+    dimensions_allowed: [branch, region, age_band]
+  digital_active_rate:
+    label: Members active on digital banking
+    labels_by_type: { bank: Customers active on digital banking }
+    type: ratio
+    numerator: digital_member_sum
+    denominator: member_count_sum_hm
+    format: percent_1
+    description: Share of members enrolled in online or mobile banking who logged in within the last 90 days.
+    synonyms: [digital adoption, digital penetration, digital banking, mobile adoption, online banking adoption, digitally active]
+    owner: Member experience team
+    dimensions_allowed: [branch, region, age_band]
+  products_per_member:
+    label: Products per member
+    labels_by_type: { bank: Products per customer }
+    type: ratio
+    numerator: product_sum
+    denominator: member_count_sum_hm
+    format: decimal
+    description: Kinds of product held per member at the month-end, counting each deposit and loan type once (share savings, checking, certificates, auto loan and so on).
+    synonyms: [products per member, product penetration, cross-sell ratio, cross sell, products per customer, depth of relationship, relationship depth]
+    owner: Member experience team
+    dimensions_allowed: [branch, region, age_band]

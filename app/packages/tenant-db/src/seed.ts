@@ -14,6 +14,7 @@ import { TABLES_DDL, TABLES_WRITE_TABLES, seedTables } from './tables.ts';
 import { generateGoals, GI_GOALS, GI_INCENTIVES, GI_TIERS, GOALS_DDL, GOALS_WRITE_TABLES } from './goals.ts';
 import { generatePipeline, LAP_APPLICATION_COLUMNS, LAP_HOLDS, LAP_STATUSES, PIPELINE_DDL, PIPELINE_WRITE_TABLES } from './pipeline.ts';
 import { generateRelationship, RELATIONSHIP_DDL } from './relationship.ts';
+import { generateMemberHistory } from './membership.ts';
 import { reportSeed } from './reports.ts';
 import { generateCallReport } from './callReport.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
@@ -49,7 +50,8 @@ async function main() {
     await insert(admin, 'cdm_deposit_account', ['account_id', 'party_id', 'branch_id', 'deposit_category', 'open_date', 'close_date', 'maturity_date', 'balance', 'rate'], t.deposits);
     await insert(admin, 'hist_loan_month', ['month_end', 'branch_id', 'loan_category', 'is_indirect', 'balance', 'delinquent_60_balance', 'loan_count', 'new_loan_amount', 'new_loan_count'], t.histLoan);
     await insert(admin, 'hist_deposit_month', ['month_end', 'branch_id', 'deposit_category', 'balance', 'account_count'], t.histDeposit);
-    await insert(admin, 'hist_party_month', ['month_end', 'branch_id', 'member_count', 'new_member_count'], t.histParty);
+    await insert(admin, 'hist_party_month', ['month_end', 'branch_id', 'member_count', 'new_member_count', 'closed_member_count'], t.histParty);
+    await insert(admin, 'cdm_membership_exit', ['party_id', 'branch_id', 'join_date', 'close_date', 'birth_date', 'segment_code', 'reason'], t.exits);
     await insert(admin, 'hist_loan_dq_month', ['month_end', 'branch_id', 'loan_category', 'is_indirect', 'vintage_year', 'bucket', 'balance', 'loan_count'], t.histDq);
     await insert(admin, 'hist_loan_roll_month', ['month_end', 'branch_id', 'loan_category', 'from_bucket', 'to_bucket', 'balance', 'loan_count'], t.histRoll);
     await insert(admin, 'meta_build', ['build_id', 'as_of_date', 'completed_at', 'state'], [[BUILD.buildId, AS_OF, BUILD.completedAt, 'completed']]);
@@ -57,6 +59,7 @@ async function main() {
     const rm = generateRelationship(t);
     await insert(admin, 'cdm_party_contact', ['party_id', 'email', 'phone', 'preferred_channel'], rm.contacts);
     await insert(admin, 'cdm_digital_usage', ['party_id', 'online_banking_since', 'mobile_since', 'mobile_deposit_since', 'estatements_since', 'bill_pay_since', 'direct_deposit_status', 'direct_deposit_changed', 'last_login'], rm.digital);
+    await insert(admin, 'hist_member_month', ['month_end', 'branch_id', 'age_band', 'member_count', 'with_checking', 'with_loan', 'with_direct_deposit', 'digital_active', 'product_count'], generateMemberHistory(t, rm.digital));
     await insert(admin, 'cdm_attrition_score', ['party_id', 'score', 'factors', 'model_version', 'run_date'], rm.attrition);
     await insert(admin, 'cdm_suggestion', ['suggestion_id', 'party_id', 'product', 'referral_type_id', 'likelihood', 'reason', 'model_version', 'run_date'], rm.suggestions);
     const lap = generatePipeline(t, rm.applications);

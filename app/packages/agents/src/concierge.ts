@@ -205,9 +205,16 @@ const goalAudit = (r: GoalOutcome): AuditRecord['outcome'] => (r.outcome === 'ap
 const relationshipAudit = (r: RelationshipOutcome): AuditRecord['outcome'] =>
   r.outcome === 'decline_drafted' ? 'approval_requested' : r.outcome === 'choose' || r.outcome === 'needs_info' ? 'clarify' : r.outcome === 'not_found' || r.outcome === 'not_supported' || r.outcome === 'cancelled' || r.outcome === 'failed' ? r.outcome : 'answer';
 
-/** A bank's words for a credit union's: members are customers, loan-to-share is loan-to-deposit. */
+/** A bank's words for a credit union's: members are customers, shares are deposits, loan-to-share is loan-to-deposit. */
 export const bankText = (t: string) =>
   t
+    .replace(/\bmember shares\b/g, 'deposits')
+    .replace(/\bshares and net worth\b/g, 'deposits and equity')
+    .replace(/\b(of|to) shares\b/g, '$1 deposits')
+    .replace(/\bshares and borrowings\b/g, 'deposits and borrowings')
+    .replace(/\bShares leaving\b/g, 'Deposits leaving')
+    .replace(/\bShare (run|runoff)\b/g, 'Deposit $1')
+    .replace(/\bshare (run|runoff|outflows?)\b/g, 'deposit $1')
     .replace(/\bMembers\b/g, 'Customers')
     .replace(/\bmembers\b/g, 'customers')
     .replace(/\bMember\b/g, 'Customer')

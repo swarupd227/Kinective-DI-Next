@@ -40,3 +40,5 @@ export { scheduleFrom, sourcesModule } from './sources.ts';
 export { irrModule, shockFrom } from './irr.ts';
 export { delinquencyModule } from './delinquency.ts';
 export { liquidityModule, runoffFrom } from './liquidity.ts';
+export { membershipModule } from './membership.ts';
+export { bankText } from './concierge.ts';

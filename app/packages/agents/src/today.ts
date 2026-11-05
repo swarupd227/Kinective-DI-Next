@@ -129,7 +129,7 @@ export async function buildToday(who: TodayWho, gateway: ToolGateway, now = Date
   const apps = found?.items ?? [];
   const items = [...overdue.map((i) => referralItem(i, own, now)), ...apps.map((a) => applicationItem(a, found?.view === 'mine'))];
   // Totals-only access: the work is real, but there is nobody to name.
-  if (found?.detailsHidden && found.count) items.push({ id: 'totals', kind: 'totals', title: `${found.count} applications have stalled`, why: `Worth ${money(found.dollars)}, mostly ${lower(found.byProduct[0]!.product)}s.`, badge: 'Stalled', link: '/m/lap', ask: 'Show the pipeline by product', weight: 60 });
+  if (found?.detailsHidden && found.count) items.push({ id: 'totals', kind: 'totals', title: `${found.count} applications have stalled`, why: `Worth ${money(found.dollars)}, mostly ${found.byProduct[0]!.product.split(' ').map((w) => (/^[A-Z]{2,}$/.test(w) ? w : w.toLowerCase())).join(' ')} loans.`, badge: 'Stalled', link: '/m/lap', ask: 'Show the pipeline by product', weight: 60 });
   const payouts = who.gi?.approves ? await gateway.call('gi_payouts_list', {}, ctx, 'incentives') : null;
   const owed = payouts?.ok && payouts.batches ? payoutItem(payouts.batches) : null;
   if (owed) items.push(owed);

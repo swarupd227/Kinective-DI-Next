@@ -7,7 +7,7 @@ import { z } from 'zod';
 import type { ApprovalCardBlock, Block, KpiGroupBlock } from '@dinext/block-schemas';
 import type { ApprovalRecord as Approval, MemberProfile, RelationshipService, Topic } from '@dinext/di-core';
 import { SemanticError, type SemanticResult, type SemanticService } from '@dinext/semantic';
-import type { IrrService, LiquidityService } from '@dinext/di-core';
+import { pctAgainst, type IrrService, type LiquidityService } from '@dinext/di-core';
 import { buildBlock, formatMetric, newBlockId, TENANT_UTC_OFFSET } from './answer.ts';
 import type { ToolCallRecord } from './audit.ts';
 import { FOLLOW_UP_CAP, type BatchDraft, type GatewayContext, type GatewayResult, type ToolGateway } from './gateway.ts';
@@ -520,7 +520,7 @@ export async function almSummary(alm: AlmDeps) {
   const la = liq.ratios[0]!;
   const lines = [
     `At +300 bp, net interest income ${up.niiPct < 0 ? 'falls' : 'rises'} ${Math.abs(up.niiPct).toFixed(1)}% and NEV ${up.nevPct < 0 ? 'falls' : 'rises'} ${Math.abs(up.nevPct).toFixed(1)}% (NEV ratio ${up.nevRatio.toFixed(1)}%); at -300 bp, NEV ${down.nevPct < 0 ? 'falls' : 'rises'} ${Math.abs(down.nevPct).toFixed(1)}%. ${breaches.length ? `${breaches.map((b) => `${b.shockBp > 0 ? '+' : ''}${b.shockBp} bp`).join(' and ')} breaches the board's rate risk limits.` : 'Every rate shock is within the board limits.'}`,
-    `Available liquidity is ${m(liq.available)}, ${liq.availableToShares.toFixed(1)}% of shares, with ${m(liq.contingent)} of borrowing capacity; liquid assets are ${la.value.toFixed(1)}% of total assets${la.value < liq.policy.liquidToAssetsMinPct ? `, below the ${liq.policy.liquidToAssetsMinPct}% policy` : ''}. A 30% share run within 30 days would be covered ${run.coverage.toFixed(1)} times.`,
+    `Available liquidity is ${m(liq.available)}, ${liq.availableToShares.toFixed(1)}% of shares, with ${m(liq.contingent)} of borrowing capacity; liquid assets are ${pctAgainst(la.value, liq.policy.liquidToAssetsMinPct)} of total assets${la.value < liq.policy.liquidToAssetsMinPct ? `, below the ${liq.policy.liquidToAssetsMinPct}% policy` : ''}. A 30% share run within 30 days would be covered ${run.coverage.toFixed(1)} times.`,
   ];
   return { lines, irr, liq };
 }

@@ -33,6 +33,7 @@ const PAGE_WORDS: Partial<Record<string, string>> = {
   gi: 'payouts incentives goals scorecards',
   callreport: 'ncua call report 5300',
   delinquency: 'delinquency past due aging roll rates vintage collections charge-offs 30+ 60+',
+  membership: 'membership growth member penetration attrition churn members left net growth products per member cross-sell checking direct deposit digital adoption age',
   liquidity: 'liquidity borrowing capacity fhlb discount window contingency funding cash flow ladder deposit run clf',
   irr: 'interest rate risk alm alco nev eve nii at risk rate shock repricing gap sensitivity',
   lap: 'pipeline applications loans mortgages',

@@ -256,8 +256,29 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
         { ...kpi('k5', `Average deposits per ${persons === 'members' ? 'member' : 'customer'}`, 'deposits_per_member'), size: 'half' },
         { id: 'c1', title: `New ${persons}, last 12 months`, kind: 'chart', chart: 'bar', metrics: ['new_members'], trend: 12, size: 'half' },
         { id: 'c2', title: `Total ${persons}, last 12 months`, kind: 'chart', chart: 'line', metrics: ['member_count'], trend: 12, size: 'half' },
-        { id: 'n1', title: 'About growth', kind: 'text', metrics: [], text: `Closed ${persons === 'members' ? 'memberships' : 'relationships'} aren’t in DI’s data yet, so this shows who joined and the ${persons === 'members' ? 'member' : 'customer'} count, not net growth.`, size: 'full' },
+        { ...kpi('k6', `Net ${persons === 'members' ? 'member' : 'customer'} growth`, 'net_member_growth'), size: 'half' },
+        { ...kpi('k7', 'Attrition rate', 'member_attrition_rate'), size: 'half' },
         { id: 't1', title: 'New loan production by loan group', kind: 'table', metrics: ['new_loan_count', 'new_loan_amount', 'loan_balance'], by: 'loan_category', size: 'full' },
+      ],
+    },
+    // Membership growth and penetration: net growth with joins against exits, attrition, and how deep
+    // relationships are by branch and age band. The Membership page has the reasons and new members.
+    {
+      templateId: 'membership_growth_monthly',
+      name: `${persons === 'members' ? 'Membership' : 'Customer'} growth & penetration`,
+      description: `Net ${persons === 'members' ? 'member' : 'customer'} growth, joins and exits, the attrition rate, and the share of ${persons} with checking, a loan, direct deposit and digital banking, by branch and age band.`,
+      folder: 'Marketing',
+      settings: settings('month', ['Executive', 'Branch Manager', 'Finance']),
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        { ...kpi('k1', `Net ${persons === 'members' ? 'member' : 'customer'} growth`, 'net_member_growth'), size: 'third' },
+        { ...kpi('k2', 'Attrition rate', 'member_attrition_rate'), size: 'third' },
+        { ...kpi('k3', `Products per ${persons === 'members' ? 'member' : 'customer'}`, 'products_per_member'), size: 'third' },
+        { id: 'c1', title: 'Joined and left, last 12 months', kind: 'chart', chart: 'bar', metrics: ['new_members', 'members_left'], trend: 12, size: 'half' },
+        { id: 'c2', title: `Total ${persons}, last 12 months`, kind: 'chart', chart: 'line', metrics: ['member_count'], trend: 12, size: 'half' },
+        { id: 't1', title: 'Penetration by age band', kind: 'table', metrics: ['checking_penetration', 'loan_penetration', 'direct_deposit_penetration', 'digital_active_rate', 'products_per_member'], by: 'age_band', size: 'full' },
+        { id: 't2', title: 'Growth and penetration by branch', kind: 'table', metrics: ['net_member_growth', 'member_attrition_rate', 'checking_penetration', 'loan_penetration', 'products_per_member'], by: 'branch', size: 'full' },
       ],
     },
     // The named reports today's DI shows on its Dashboards home.

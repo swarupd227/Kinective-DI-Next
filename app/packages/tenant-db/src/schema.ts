@@ -44,6 +44,7 @@ export const TENANT_DDL = [
      rate DECIMAL(6,3) NOT NULL,
      days_delinquent INT NOT NULL,
      KEY ix_loan_branch (branch_id),
+     KEY ix_loan_party (party_id),
      KEY ix_loan_open (open_date)
    )`,
   `CREATE TABLE cdm_deposit_account (
@@ -56,7 +57,8 @@ export const TENANT_DDL = [
      maturity_date DATE NULL,
      balance DECIMAL(14,2) NOT NULL,
      rate DECIMAL(6,3) NOT NULL,
-     KEY ix_dep_branch (branch_id)
+     KEY ix_dep_branch (branch_id),
+     KEY ix_dep_party (party_id)
    )`,
   `CREATE TABLE hist_loan_month (
      month_end DATE NOT NULL,
@@ -83,7 +85,34 @@ export const TENANT_DDL = [
      branch_id INT NOT NULL,
      member_count INT NOT NULL,
      new_member_count INT NOT NULL,
+     closed_member_count INT NOT NULL DEFAULT 0,
      PRIMARY KEY (month_end, branch_id)
+   )`,
+  // Closed memberships, from the core's closed-membership extract: kept apart from cdm_party so former
+  // members never appear in search, Member 360 or campaign lists.
+  `CREATE TABLE cdm_membership_exit (
+     party_id INT PRIMARY KEY,
+     branch_id INT NOT NULL,
+     join_date DATE NOT NULL,
+     close_date DATE NOT NULL,
+     birth_date DATE NOT NULL,
+     segment_code VARCHAR(30) NOT NULL,
+     reason VARCHAR(60) NOT NULL,
+     KEY ix_exit_close (close_date),
+     KEY ix_exit_branch (branch_id)
+   )`,
+  // Month-end penetration by branch and age band: how many members hold each kind of relationship.
+  `CREATE TABLE hist_member_month (
+     month_end DATE NOT NULL,
+     branch_id INT NOT NULL,
+     age_band VARCHAR(10) NOT NULL,
+     member_count INT NOT NULL,
+     with_checking INT NOT NULL,
+     with_loan INT NOT NULL,
+     with_direct_deposit INT NOT NULL,
+     digital_active INT NOT NULL,
+     product_count INT NOT NULL,
+     PRIMARY KEY (month_end, branch_id, age_band)
    )`,
   // Month-end delinquency status, for aging, roll rates and vintages. 60+ ties to hist_loan_month.
   `CREATE TABLE hist_loan_dq_month (
@@ -116,4 +145,4 @@ export const TENANT_DDL = [
    )`,
 ];
 
-export const TENANT_TABLES = ['cdm_location', 'cdm_employee', 'cdm_party', 'cdm_loan', 'cdm_deposit_account', 'hist_loan_month', 'hist_deposit_month', 'hist_party_month', 'hist_loan_dq_month', 'hist_loan_roll_month', 'meta_build'];
+export const TENANT_TABLES = ['cdm_location', 'cdm_employee', 'cdm_party', 'cdm_loan', 'cdm_deposit_account', 'hist_loan_month', 'hist_deposit_month', 'hist_party_month', 'cdm_membership_exit', 'hist_member_month', 'hist_loan_dq_month', 'hist_loan_roll_month', 'meta_build'];
