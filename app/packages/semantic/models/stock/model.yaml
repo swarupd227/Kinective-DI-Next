@@ -441,6 +441,13 @@ measures:
       call_report_history: "SUM(CASE WHEN cvh.code = '661A' THEN cvh.amount * 12 / MONTH(cvh.quarter_end) ELSE 0 END)"
       ffiec_report: "SUM(CASE WHEN fv.code = 'RIAD4340' THEN fv.amount ELSE 0 END * 12 / MONTH(fv.quarter_end))"
       ffiec_history: "SUM(CASE WHEN fvh.code = 'RIAD4340' THEN fvh.amount ELSE 0 END * 12 / MONTH(fvh.quarter_end))"
+  average_equity_sum:
+    # Average equity for the year so far: this quarter's total equity (RCON3210) and last year-end's
+    # (RI-A RIAD3217), halved. Banks only.
+    unit: usd
+    exprs:
+      ffiec_report: "SUM(CASE WHEN fv.code IN ('RCON3210', 'RIAD3217') THEN fv.amount ELSE 0 END) / 2"
+      ffiec_history: "SUM(CASE WHEN fvh.code IN ('RCON3210', 'RIAD3217') THEN fvh.amount ELSE 0 END) / 2"
   net_interest_income_annualized_sum:
     unit: usd
     exprs:
@@ -795,6 +802,19 @@ metrics:
     regulatory_basis: Basel III standardized approach, 12 CFR 3, 217 and 324.
     synonyms: [risk-weighted assets, risk weighted assets, rwa, rwas]
     requires_any: [risk-weighted, risk weighted, rwa]
+    owner: Finance data team
+    dimensions_allowed: []
+  return_on_equity:
+    label: Return on equity (ROE)
+    institution_types: [bank]
+    type: ratio
+    numerator: net_income_annualized_sum
+    denominator: average_equity_sum
+    format: percent_2
+    description: Year-to-date net income (RIAD4340), annualized, divided by average equity, the mean of this quarter's total equity capital (RCON3210) and last year-end's (RIAD3217), from the latest Call Report. Equity includes accumulated other comprehensive income, so unrealized securities losses raise ROE.
+    regulatory_basis: FFIEC Uniform Bank Performance Report, return on average equity.
+    synonyms: [roe, return on equity, return on average equity, roae, shareholder return, equity return]
+    requires_any: [roe, roae, return on equity, return on average equity, equity return, shareholder return]
     owner: Finance data team
     dimensions_allowed: []
   return_on_assets:

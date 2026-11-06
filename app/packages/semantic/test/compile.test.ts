@@ -145,6 +145,10 @@ describe('catalog search (spec 23.5.3)', () => {
     expect(cu.metrics.cet1_ratio).toBeUndefined();
     expect(cu.metrics.risk_weighted_assets).toBeUndefined();
     expect(bank.metrics.cet1_ratio!.format).toBe('percent_2');
+    expect(top('What is our ROE?')).toBe('return_on_equity');
+    expect(top('return on equity by quarter')).toBe('return_on_equity');
+    expect(top('What is our return on assets?')).toBe('return_on_assets');
+    expect(cu.metrics.return_on_equity).toBeUndefined();
   });
 
   it('finds the capital and earnings ratios by their everyday names', () => {

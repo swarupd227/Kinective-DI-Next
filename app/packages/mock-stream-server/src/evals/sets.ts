@@ -155,6 +155,7 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-NIM-001', set: 'golden', persona: 'bank_cfo', q: 'What is our net interest margin?', agent: 'Analytics Q&A', approval: 'none' },
   { id: 'GQ-NIM-002', set: 'golden', persona: 'bank_cfo', q: 'Chart our yield on earning assets by quarter', agent: 'Analytics Q&A', approval: 'none' },
   { id: 'GQ-TSK-006', set: 'golden', persona: 'branch', q: 'What are my to-dos today?', agent: 'To-dos', approval: 'none' },
+  { id: 'GQ-ROE-001', set: 'golden', persona: 'bank_cfo', q: 'What is our return on equity?', agent: 'Analytics Q&A', approval: 'none' },
   { id: 'PM-BAS-001', set: 'permission', persona: 'branch', q: 'What are our risk-weighted assets?', refused: true, notContains: ['Risk-weighted assets are'], approval: 'none', ref: 'Basel III capital is for finance and executives' },
   // The third way in: API connections, and the marketing round trip on them.
   { id: 'GQ-API-001', set: 'golden', persona: 'admin', q: 'Show the API connections', agent: 'API Connections', contains: ['API connection'], approval: 'none' },
