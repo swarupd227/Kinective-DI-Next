@@ -11,7 +11,7 @@ import { useSession } from '../session/SessionProvider.tsx';
 import { DiTake } from '../shell/DiTake.tsx';
 import { useUi } from '../shell/uiStore.ts';
 import { TableWorkspace } from '../workspace/TableWorkspace.tsx';
-import { Blocks, Prompts } from './AppViewPage.tsx';
+import { Blocks } from './AppViewPage.tsx';
 import page from './Page.module.css';
 import styles from './TablesPage.module.css';
 
@@ -35,7 +35,7 @@ export function TablesPage() {
         <p className={page.lede}>Curated tables from the nightly build, and the saved views and snapshots made from them. Open one to work in the grid, or ask DI about it.</p>
       </header>
       <div className={styles.stack}>
-        {v && <DiTake take={v.take} />}
+        {v && <DiTake take={v.take} more={v.prompts} />}
         <ul className={styles.list}>
           {(tables.data ?? [])
             .filter((t) => t.kind === 'table' || t.kind === 'view')
@@ -71,7 +71,6 @@ export function TablesPage() {
                 ))}
               </ul>
             )}
-            <Prompts prompts={v.prompts} />
           </>
         )}
       </div>

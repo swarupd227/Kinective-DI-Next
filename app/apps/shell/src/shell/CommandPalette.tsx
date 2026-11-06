@@ -127,7 +127,7 @@ export function CommandPalette() {
           <span className={styles.icon}>
             <LayoutGrid size={16} aria-hidden />
           </span>
-          <span className={styles.label}>All dashboards</span>
+          <span className={styles.label}>Browse</span>
           <span className={styles.detail}>Every table, form and report you can open</span>
         </Command.Item>
       )}

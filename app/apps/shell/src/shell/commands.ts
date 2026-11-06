@@ -9,7 +9,7 @@ export const SLASH_HELP: Record<string, { hint: string; routedTo: string }> = {
   '/member': { hint: 'Open a member 360', routedTo: 'Relationship' },
   '/customer': { hint: 'Open a customer 360', routedTo: 'Relationship' },
   '/refer': { hint: 'Start a referral', routedTo: 'Referral' },
-  '/workflow': { hint: 'Open a workflow inbox or start a COM', routedTo: 'Workspace' },
+  '/workflow': { hint: 'Open a workflow inbox or start a workflow item', routedTo: 'Workspace' },
   '/log': { hint: 'Create or review a data log', routedTo: 'Workspace' },
   '/user': { hint: 'Administer users', routedTo: 'Admin' },
 };

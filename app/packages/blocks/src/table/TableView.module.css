@@ -18,3 +18,50 @@
 .fixed {
   height: 520px;
 }
+
+.stack {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+}
+
+.cardTitle {
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.pairs {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.pair {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.pair dt {
+  color: var(--color-text-muted);
+}
+
+.pair dd {
+  margin: 0;
+  color: var(--color-text-primary);
+  text-align: right;
+  overflow-wrap: anywhere;
+}

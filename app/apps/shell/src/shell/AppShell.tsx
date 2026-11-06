@@ -23,7 +23,8 @@ export function AppShell() {
   const thread = useMatch('/c/:threadId/*');
   const threadId = thread?.params.threadId && thread.params.threadId !== 'new' ? thread.params.threadId : undefined;
   // Classic views open at full width with the conversation bar collapsed to one line (FE-EXP-002).
-  const classic = /^\/(tables|reports|workflows|calendar|files|datalogs|queries|admin|members|customers|m)\b/.test(location.pathname);
+  // Every page but Home and a conversation is a classic view, where DI's box starts collapsed (FE-EXP-002).
+  const classic = !/^\/(home|c)(\/|$)/.test(location.pathname) && location.pathname !== '/';
   const { workspace, workspaceWidth, workspaceMaximized, setPalette, setMobileNav, paletteOpen } = useUi();
   // Once opened, the palette stays mounted so it can animate closed and reopen instantly.
   const [paletteUsed, setPaletteUsed] = useState(false);

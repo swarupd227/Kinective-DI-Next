@@ -1,6 +1,7 @@
 // Reports app (spec 8.5–8.9): the library by folder, the user's schedules with their last result,
 // and a report page that runs a template with its controls. Building and changing reports happens
 // in the conversation with the Report Builder; this view opens, runs and reviews them.
+import { formatDay } from '@dinext/blocks';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -106,7 +107,10 @@ export function ReportsPage() {
                 {folder}
               </h2>
               <ul className={styles.list}>
-                {items.map((t) => (
+                {items.map((t) => {
+                  // The card says when the report reaches you, if it's scheduled, and when it last did.
+                  const sched = q.data?.schedules.find((x) => x.templateId === t.templateId);
+                  return (
                   <li key={t.templateId}>
                     <Link to={`/reports/${t.templateId}`} className={styles.item}>
                       <FileBarChart size={18} aria-hidden className={styles.icon} />
@@ -120,11 +124,18 @@ export function ReportsPage() {
                         <span className={styles.meta}>
                           {t.periodType === 'month' ? 'Monthly' : 'Quarterly'} · {t.sections} sections{t.origin ? ` · ${t.origin}` : t.status === 'stock' ? ' · Standard report' : ` · ${t.owner}`}
                         </span>
+                        {sched && (
+                          <span className={styles.meta}>
+                            Scheduled {sched.when}
+                            {sched.lastRunAt ? ` · last sent ${formatDay(new Date(`${sched.lastRunAt.slice(0, 10)}T00:00:00Z`))}${sched.lastResult === 'failed' ? ', failed' : sched.lastResult === 'empty' ? ', no data' : ''}` : ' · first run after tonight’s build'}
+                          </span>
+                        )}
                       </span>
                       <ChevronRight size={16} aria-hidden className={styles.icon} />
                     </Link>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             </section>
           ))}

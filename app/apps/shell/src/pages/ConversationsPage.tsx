@@ -41,7 +41,7 @@ export function ConversationsPage() {
   });
 
   return (
-    <div className={`${page.page} ${page.narrow}`}>
+    <div className={page.page}>
       <header className={page.header}>
         <div className={page.headerRow}>
           <h1 className={page.title}>All tasks</h1>
@@ -119,9 +119,10 @@ export function ConversationsPage() {
           ))}
         </ul>
       ) : (
-        <p className={styles.empty}>{q ? 'No tasks match that search.' : view === 'archived' ? 'No archived tasks.' : 'No tasks yet. Give DI one from Home or the bar below.'}</p>
+        <p className={styles.empty}>{q ? 'No tasks match that search.' : view === 'archived' ? 'No archived tasks.' : 'No tasks yet. A task is anything you give DI: a question, a report to build, or a change it prepares for your approval. Start one with New task, or from the bar below.'}</p>
       )}
-      <p className={styles.note}>Deleting a task removes it from this list. The audit record of what was asked, what the AI did and who approved it is kept, as your institution requires.</p>
+      {/* The audit note matters once there's something to delete. */}
+      {(list.data?.length ?? 0) > 0 && <p className={styles.note}>Deleting a task removes it from this list. The audit record of what was asked, what the AI did and who approved it is kept, as your institution requires.</p>}
     </div>
   );
 }

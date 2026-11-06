@@ -182,7 +182,7 @@ describe('conversation bar (spec 6.7, 6.14, 6.15)', () => {
   it('starts collapsed on classic views and expands on request (FE-EXP-002)', async () => {
     const user = userEvent.setup();
     const { container } = renderShell(<ConversationBar collapsedByDefault />, makeSession());
-    await user.click(screen.getByRole('button', { name: /Ask DI about this view/ }));
+    await user.click(screen.getByRole('button', { name: /Give DI a task or ask about this page/ }));
     expect(screen.getByRole('combobox', { name: 'Ask DI' })).toHaveFocus();
     await noSeriousViolations(container);
   });

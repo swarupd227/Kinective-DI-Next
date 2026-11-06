@@ -58,7 +58,7 @@ const isTasks = (path: string) => /^\/c(\/|$)/.test(path);
 
 /** Pages that aren't apps still name themselves in the breadcrumb, never "Page". */
 const PAGE_NAMES: [RegExp, string][] = [
-  [/^\/dashboards(\/|$)/, 'All dashboards'],
+  [/^\/dashboards(\/|$)/, 'Browse'],
   [/^\/settings\/email(\/|$)/, 'Email notifications'],
 ];
 const pageName = (path: string) => PAGE_NAMES.find(([re]) => re.test(path))?.[1];

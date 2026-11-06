@@ -541,7 +541,7 @@ export function ConversationBar({ threadId, collapsedByDefault, hero = false, dr
           }}
         >
           <MessageSquare size={16} aria-hidden />
-          Ask DI about this view…
+          Give DI a task or ask about this page…
           <kbd className={styles.kbd}>/</kbd>
         </button>
       </div>

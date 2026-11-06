@@ -147,6 +147,12 @@ export function NavRail() {
               <section className={styles.group} aria-label={g.label ?? 'Workspace'}>
                 {g.label && expanded && <h2 className={styles.groupTitle}>{g.label}</h2>}
                 <ul className={styles.list}>{g.apps.map(item)}</ul>
+                {/* Every table, form and report in one place, for people who like to browse. */}
+                {g.id === 'modules' && expanded && (
+                  <Link to="/dashboards" className={styles.allTasks}>
+                    Browse everything
+                  </Link>
+                )}
               </section>
               {/* Recent tasks sit right under the workspace, so work in progress stays in view. */}
               {gi === 0 && expanded && (
