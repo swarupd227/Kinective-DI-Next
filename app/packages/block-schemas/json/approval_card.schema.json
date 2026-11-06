@@ -288,6 +288,22 @@
       "type": "string",
       "maxLength": 600
     },
+    "output": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 160
+        }
+      },
+      "required": [
+        "label"
+      ]
+    },
     "dqStatus": {
       "type": "string",
       "enum": [

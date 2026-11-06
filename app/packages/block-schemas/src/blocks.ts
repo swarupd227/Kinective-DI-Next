@@ -239,6 +239,8 @@ export const listData = z.strictObject({
         badge: z.strictObject({ label: z.string().max(30), tone: z.enum(['neutral', 'info', 'success', 'warning', 'danger', 'accent']) }).optional(),
         /** Plain-language reason an item was flagged ("Why?", spec 6.3 FE-EXP-013). */
         why: z.string().max(400).optional(),
+        /** Up to three things to do with the item, each a DI Next link; "/c/new?q=…" hands it to DI. */
+        actions: z.array(z.strictObject({ label: z.string().max(30), link: z.string().regex(/^\/[^/]/) })).max(3).optional(),
       }),
     )
     .max(200),

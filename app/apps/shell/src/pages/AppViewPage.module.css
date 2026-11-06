@@ -34,7 +34,7 @@
 }
 
 .message {
-  color: var(--color-danger-text);
+  color: var(--color-status-danger-text);
 }
 
 .notice {
@@ -85,11 +85,11 @@
 }
 
 .danger {
-  color: var(--color-danger-text);
+  color: var(--color-status-danger-text);
 }
 
 .warning {
-  color: var(--color-warning-text);
+  color: var(--color-status-warning-text);
 }
 
 .agenda .danger,
@@ -155,9 +155,13 @@
 
 .day {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  min-height: 64px;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: var(--space-1);
+  min-width: 0;
+  min-height: 84px;
+  text-align: left;
   padding: var(--space-2);
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-sm);
@@ -180,6 +184,48 @@
   background: var(--color-bg-agent);
 }
 
+.dayHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.dayItem,
+.dayItemLate,
+.dayMore {
+  overflow: hidden;
+  font-size: var(--type-caption-size);
+  font-weight: var(--weight-regular);
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dayItem {
+  color: var(--color-text-primary);
+}
+
+.dayItemLate {
+  color: var(--color-status-danger-text);
+}
+
+.dayMore {
+  color: var(--color-text-muted);
+}
+
+/* On a phone a day is too narrow for names: the count says it. */
+@media (width <= 640px) {
+  .dayItem,
+  .dayItemLate,
+  .dayMore {
+    display: none;
+  }
+
+  .day {
+    min-height: 56px;
+  }
+}
+
 .count,
 .countLate {
   min-width: 20px;
@@ -192,7 +238,7 @@
 
 .countLate {
   background: var(--color-bg-subtle);
-  color: var(--color-danger-text);
+  color: var(--color-status-danger-text);
   font-weight: var(--weight-semibold);
 }
 
@@ -386,4 +432,44 @@
 .downloadDetail {
   color: var(--color-text-secondary);
   font-size: var(--type-caption-size);
+}
+
+.pickRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  color: var(--color-accent-text);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.picker:hover {
+  border-color: var(--color-accent-default);
+}
+
+.picker:focus-within {
+  outline: 2px solid var(--color-accent-default);
+  outline-offset: 2px;
+}
+
+/* Still focusable and announced; only the button above is seen. */
+.pickInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

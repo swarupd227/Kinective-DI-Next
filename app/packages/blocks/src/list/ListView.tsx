@@ -50,13 +50,13 @@ export function ListView({ block }: { block: ListBlock }) {
   return (
     <ul className={clsx(styles.list, layout === 'columns' && styles.columns)}>
       {items.map((item) => (
-        <Row key={item.id} item={item} onOpen={item.link ? () => host.onNavigate?.(item.link!) : undefined} />
+        <Row key={item.id} item={item} onOpen={item.link ? () => host.onNavigate?.(item.link!) : undefined} onAction={(link) => host.onNavigate?.(link)} />
       ))}
     </ul>
   );
 }
 
-function Row({ item, onOpen }: { item: Item; onOpen?: () => void }) {
+function Row({ item, onOpen, onAction }: { item: Item; onOpen?: () => void; onAction: (link: string) => void }) {
   const [why, setWhy] = useState(false);
   const whyId = useId();
   const body = (
@@ -89,6 +89,20 @@ function Row({ item, onOpen }: { item: Item; onOpen?: () => void }) {
         ) : (
           <span className={styles.main}>{body}</span>
         )}
+        {item.actions?.map((a) => (
+          <a
+            key={a.label}
+            href={a.link}
+            className={styles.action}
+            aria-label={`${a.label}: ${item.title}`}
+            onClick={(e) => {
+              e.preventDefault();
+              onAction(a.link);
+            }}
+          >
+            {a.label}
+          </a>
+        ))}
         {item.why && (
           <button type="button" className={styles.why} aria-expanded={why} aria-controls={whyId} onClick={() => setWhy((w) => !w)}>
             Why?

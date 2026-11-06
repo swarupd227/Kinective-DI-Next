@@ -288,6 +288,22 @@
       "type": "string",
       "maxLength": 600
     },
+    "output": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 160
+        }
+      },
+      "required": [
+        "label"
+      ]
+    },
     "dqStatus": {
       "type": "string",
       "enum": [
@@ -351,6 +367,37 @@
         "periodLabel": {
           "type": "string",
           "maxLength": 40
+        },
+        "take": {
+          "type": "object",
+          "properties": {
+            "headline": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "action": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "maxLength": 40
+                },
+                "ask": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              },
+              "required": [
+                "label",
+                "ask"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "headline"
+          ],
+          "additionalProperties": false
         },
         "controls": {
           "maxItems": 6,
@@ -748,6 +795,22 @@
                       "speakable": {
                         "type": "string",
                         "maxLength": 600
+                      },
+                      "output": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "maxLength": 80
+                          },
+                          "summary": {
+                            "type": "string",
+                            "maxLength": 160
+                          }
+                        },
+                        "required": [
+                          "label"
+                        ]
                       },
                       "dqStatus": {
                         "type": "string",
@@ -1168,6 +1231,22 @@
                       "speakable": {
                         "type": "string",
                         "maxLength": 600
+                      },
+                      "output": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "maxLength": 80
+                          },
+                          "summary": {
+                            "type": "string",
+                            "maxLength": 160
+                          }
+                        },
+                        "required": [
+                          "label"
+                        ]
                       },
                       "dqStatus": {
                         "type": "string",
@@ -1686,6 +1765,22 @@
                         "type": "string",
                         "maxLength": 600
                       },
+                      "output": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "maxLength": 80
+                          },
+                          "summary": {
+                            "type": "string",
+                            "maxLength": 160
+                          }
+                        },
+                        "required": [
+                          "label"
+                        ]
+                      },
                       "dqStatus": {
                         "type": "string",
                         "enum": [
@@ -2112,6 +2207,22 @@
                         "type": "string",
                         "maxLength": 600
                       },
+                      "output": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "maxLength": 80
+                          },
+                          "summary": {
+                            "type": "string",
+                            "maxLength": 160
+                          }
+                        },
+                        "required": [
+                          "label"
+                        ]
+                      },
                       "dqStatus": {
                         "type": "string",
                         "enum": [
@@ -2451,6 +2562,22 @@
                       "speakable": {
                         "type": "string",
                         "maxLength": 600
+                      },
+                      "output": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "maxLength": 80
+                          },
+                          "summary": {
+                            "type": "string",
+                            "maxLength": 160
+                          }
+                        },
+                        "required": [
+                          "label"
+                        ]
                       },
                       "dqStatus": {
                         "type": "string",

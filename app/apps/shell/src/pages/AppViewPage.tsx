@@ -505,8 +505,21 @@ function Month({ events, today }: { events: AppEvent[]; today: string }) {
           const late = items.some((e) => e.late);
           return (
             <button key={date} type="button" className={`${styles.day} ${date === day ? styles.chosen : ''} ${date === today ? styles.today : ''}`} aria-pressed={date === day} aria-label={`${date}, ${items.length} ${items.length === 1 ? 'item' : 'items'}`} onClick={() => setDay(date)}>
-              <span>{i + 1}</span>
-              {items.length > 0 && <span className={late ? styles.countLate : styles.count}>{items.length}</span>}
+              <span className={styles.dayHead}>
+                <span>{i + 1}</span>
+                {items.length > 0 && <span className={late ? styles.countLate : styles.count}>{items.length}</span>}
+              </span>
+              {/* The month says what's on each day: the first two, then how many more. */}
+              {items.slice(0, 2).map((e) => (
+                <span key={`${e.kind}${e.title}`} className={e.late ? styles.dayItemLate : styles.dayItem} aria-hidden>
+                  {e.title}
+                </span>
+              ))}
+              {items.length > 2 && (
+                <span className={styles.dayMore} aria-hidden>
+                  +{items.length - 2} more
+                </span>
+              )}
             </button>
           );
         })}
@@ -571,17 +584,25 @@ function Upload({ folders }: { folders: string[] }) {
         Upload a file
       </h2>
       <div className={styles.uploadRow}>
-        <label className={styles.field}>
+        {/* The browser's own file control, hidden behind a button that matches the page. */}
+        <div className={styles.field}>
           <span className={styles.tileLabel}>File</span>
-          <input
-            type="file"
-            accept={ACCEPT}
-            onChange={(e) => {
-              setFile(e.target.files?.[0] ?? null);
-              stage.reset();
-            }}
-          />
-        </label>
+          <span className={styles.pickRow}>
+            <label className={styles.picker}>
+              <input
+                type="file"
+                accept={ACCEPT}
+                className={styles.pickInput}
+                onChange={(e) => {
+                  setFile(e.target.files?.[0] ?? null);
+                  stage.reset();
+                }}
+              />
+              {file ? 'Choose another file' : 'Choose a file'}
+            </label>
+            <span className={styles.tileLabel}>{file ? `${file.name}, ${(file.size / 1024 / 1024).toFixed(1)} MB` : 'No file chosen'}</span>
+          </span>
+        </div>
         <label className={styles.field}>
           <span className={styles.tileLabel}>Save to</span>
           <select className={styles.select} value={folder} onChange={(e) => setFolder(e.target.value)}>
@@ -630,7 +651,7 @@ function FileList({ files }: { files: AppFile[] }) {
                   Download
                 </a>
               ) : (
-                <span className={styles.tileLabel}>Sample document, no content to download</span>
+                <span className={styles.tileLabel}>Sample: listed only</span>
               )}
             </li>
           ))}

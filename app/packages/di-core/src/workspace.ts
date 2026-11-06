@@ -39,10 +39,12 @@ export class CalendarService {
   constructor(private readonly sources: { onboarding: TouchSource; issues: IssueSource; retention: CertificateSource; meetings?: MeetingSource | null }) {}
 
   /** Dated work inside the purview, and the person's own events. A source this person can't use is left out, not an error. */
-  async events(input: { employeeId?: number; userId?: string; canUse: (source: 'onboarding' | 'compliance' | 'retention') => boolean; ctx: unknown }) {
+  async events(input: { employeeId?: number; userId?: string; canUse: (source: 'onboarding' | 'compliance' | 'retention') => boolean; ctx: unknown; ownWorkOnly?: boolean }) {
     const ctx = input.ctx as never;
     const empty = { asOf: '', items: [] };
-    const [touch, issues, certificates, meetings] = await Promise.all([input.canUse('onboarding') ? this.sources.onboarding.list({ employeeId: input.employeeId, withinDays: 45 }, ctx) : empty, input.canUse('compliance') ? this.sources.issues.list({}, ctx) : { items: [] }, input.canUse('retention') ? this.sources.retention.maturing({ days: 45 }, ctx) : { items: [] }, input.userId && this.sources.meetings ? this.sources.meetings.forUser(input.userId) : []]);
+    // Touch points are someone's call to make: with ownWorkOnly, only the person's own, never the whole institution's.
+    const touchToo = input.canUse('onboarding') && !(input.ownWorkOnly && input.employeeId === undefined);
+    const [touch, issues, certificates, meetings] = await Promise.all([touchToo ? this.sources.onboarding.list({ employeeId: input.employeeId, withinDays: 45 }, ctx) : empty, input.canUse('compliance') ? this.sources.issues.list({}, ctx) : { items: [] }, input.canUse('retention') ? this.sources.retention.maturing({ days: 45 }, ctx) : { items: [] }, input.userId && this.sources.meetings ? this.sources.meetings.forUser(input.userId) : []]);
     const events: CalendarEvent[] = [
       ...meetings.map((m): CalendarEvent => ({ date: m.startsAt.slice(0, 10), kind: 'Event', title: `${clock(m.startsAt.slice(11))} ${m.title}`, detail: [m.ownerUserId === input.userId ? (m.withWhom ? `With ${m.withWhom}` : 'Your calendar') : `From ${m.ownerName}`, m.source, m.rule].filter(Boolean).join(' · '), late: false, ask: 'What’s on my calendar this week?' })),
       ...touch.items.map((t): CalendarEvent => ({ date: t.due, kind: 'Touch point', title: `${t.member}: ${t.touch.toLowerCase()}`, detail: `${t.branch}, ${t.assignee ?? 'branch queue'}`, late: t.daysLate > 0, ask: 'Show my overdue onboarding touch points' })),

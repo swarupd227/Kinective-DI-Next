@@ -2,7 +2,7 @@ export { ApprovalStore, ApprovalError, APPROVAL_TTL_MS, SECOND_APPROVER_TTL_MS, 
 export { WorkflowDefService, splitFields, type Definition, type Problem } from './workflowDefs.ts';
 export { allFields, applyLayout, layoutOf, previewOf, type LayoutOp } from './formLayout.ts';
 export { WorksheetService, WORKSHEET_CREATORS, WORKSHEET_PRODUCTS, type ReferralTypeSheet } from './worksheet.ts';
-export { TaskService, type Person, type TaskItem } from './tasks.ts';
+export { TaskService, workToday, type Person, type TaskItem } from './tasks.ts';
 export { IndirectService, ProspectService, directionsLink, miles, visitOrder, type DealerFigures, type Prospect } from './growth.ts';
 export { CalendarService, CalendarStore, FileStore, FILE_FOLDERS, FILE_LIBRARY, MAX_UPLOAD_BYTES, MY_FILES, QueryService, SAVED_QUERIES, UPLOAD_EXTENSIONS, checkUpload, clock, findFiles, folderNamed, foldersFor, type CalendarEvent, type LibraryFile, type Meeting, type QueryResult, type SavedQuery } from './workspace.ts';
 export { DEFAULT_OCCURRENCES, MAX_OCCURRENCES, dayInMonth, describeEnd, describeRule, firstOccurrence, occurrences, ordinal, spokenDate, type Recurrence } from './recurrence.ts';

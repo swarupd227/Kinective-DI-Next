@@ -1,5 +1,5 @@
-// The figures a page opens on, as solid tiles in the Kinective palette, like the dashboards bank staff
-// know from DI. A tile that needs attention takes the warning or danger colour instead, and a tile with
+// The figures a page opens on, as slim cards edged in the Kinective palette (the colours of the DI
+// dashboards bank staff know). A figure that needs attention takes the warning or danger colour, and a tile with
 // a question hands that figure to DI: one click starts the task.
 import { useState } from 'react';
 import { useNavigate } from 'react-router';

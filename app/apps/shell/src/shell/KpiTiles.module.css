@@ -1,92 +1,101 @@
+/* The figures a page opens on: a slim row of cards. The Kinective palette marks each card's edge,
+   so the page leads with DI's read and the figures support it rather than dominate it. */
 .tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-/* White on each of these colours is above 4.5:1. */
 .tile {
+  --tile-accent: var(--color-tile-steel);
+
   position: relative;
   display: grid;
   align-content: start;
   gap: var(--space-1);
-  min-height: 104px;
-  padding: var(--space-4) var(--space-5);
+  min-height: 68px;
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-5);
   overflow: hidden;
+  border: 1px solid var(--color-border-default);
   border-radius: var(--radius-md);
-  color: var(--color-on-brand);
-  box-shadow: var(--elevation-1);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
 }
 
-.tile::after {
+.tile::before {
   position: absolute;
-  right: -24px;
-  bottom: -40px;
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  background: var(--color-on-brand-glow);
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 4px;
+  background: var(--tile-accent);
   content: '';
 }
 
 .value {
-  font-size: var(--type-kpi-size);
-  line-height: var(--type-kpi-line);
+  font-size: var(--type-h2-size);
+  line-height: 1.2;
   font-weight: var(--weight-bold);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
 .label {
-  font-size: var(--type-body-size);
-  line-height: var(--type-body-line);
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
   font-weight: var(--weight-medium);
 }
 
 .detail {
+  color: var(--color-text-muted);
   font-size: var(--type-caption-size);
   line-height: var(--type-caption-line);
-  opacity: 0.9;
 }
 
 .c0 {
-  background: var(--color-tile-steel);
+  --tile-accent: var(--color-tile-steel);
 }
 
 .c1 {
-  background: var(--color-tile-teal);
+  --tile-accent: var(--color-tile-teal);
 }
 
 .c2 {
-  background: var(--color-tile-blue);
+  --tile-accent: var(--color-tile-blue);
 }
 
 /* No green here: green would read as "good" on a neutral figure. */
 .c3 {
-  background: var(--color-tile-indigo);
+  --tile-accent: var(--color-tile-indigo);
 }
 
+/* Only a figure that needs attention takes colour beyond its edge. */
 .warning {
-  background: var(--color-tile-warning);
+  --tile-accent: var(--color-tile-warning);
 }
 
 .danger {
-  background: var(--color-tile-danger);
+  --tile-accent: var(--color-tile-danger);
+}
+
+.danger .value {
+  color: var(--color-status-danger-text);
 }
 
 /* A tile with a question is a button: the whole tile starts the task. */
 .actionable {
   padding: 0;
-  transition: transform var(--motion-duration-micro) var(--motion-easing-standard), box-shadow var(--motion-duration-micro) var(--motion-easing-standard);
+  transition: border-color var(--motion-duration-micro) var(--motion-easing-standard), box-shadow var(--motion-duration-micro) var(--motion-easing-standard);
 }
 
 .actionable:hover {
-  box-shadow: var(--elevation-2);
-  transform: translateY(-2px);
+  border-color: var(--tile-accent);
+  box-shadow: var(--elevation-1);
 }
 
 .act {
@@ -95,7 +104,7 @@
   gap: var(--space-1);
   width: 100%;
   height: 100%;
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-5);
   border: 0;
   background: none;
   color: inherit;
@@ -105,28 +114,22 @@
 }
 
 .act:focus-visible {
-  outline: 2px solid var(--color-on-brand);
-  outline-offset: -4px;
+  outline: 2px solid var(--color-accent-default);
+  outline-offset: -3px;
 }
 
 .askHint {
   position: absolute;
-  top: var(--space-3);
-  right: var(--space-3);
+  top: var(--space-2);
+  right: var(--space-2);
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--color-on-brand-border);
+  padding: 0 var(--space-2);
   border-radius: var(--radius-full);
-  background: var(--color-on-brand-fill);
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-text);
   font-size: var(--type-caption-size);
   line-height: var(--type-caption-line);
   font-weight: var(--weight-medium);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .actionable:hover {
-    transform: none;
-  }
 }

@@ -67,7 +67,7 @@
 }
 
 .failed {
-  color: var(--color-danger-text);
+  color: var(--color-status-danger-text);
   font-weight: var(--weight-semibold);
 }
 

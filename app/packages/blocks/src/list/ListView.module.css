@@ -166,3 +166,26 @@ a.main:hover {
     white-space: normal;
   }
 }
+
+/* A row's own actions ("Mark done", "Open"): small and quiet beside the row, so the list still scans. */
+.action {
+  flex: none;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  color: var(--color-accent-text);
+  font-size: var(--type-caption-size);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.action:hover {
+  border-color: var(--color-accent-default);
+}
+
+.action:focus-visible {
+  outline: 2px solid var(--color-accent-default);
+  outline-offset: 1px;
+}

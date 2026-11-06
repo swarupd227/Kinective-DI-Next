@@ -56,7 +56,7 @@ export const APP_META: Record<string, AppMeta> = {
   reports: { label: 'Reports', icon: i(FileBarChart), path: '/reports', group: 'core', phase: 'Phase 1, report builder slice' },
   tables: { label: 'Tables', icon: i(Table2), path: '/tables', group: 'core' },
   workflows: { label: 'Workflows', icon: i(Workflow), path: '/workflows', group: 'core', phase: 'Phase 1, referrals slice' },
-  tasks: { label: 'Tasks', icon: i(ListChecks), path: '/tasks', group: 'core' },
+  tasks: { label: 'To-dos', icon: i(ListChecks), path: '/tasks', group: 'core' },
   calendar: { label: 'Calendar', icon: i(Calendar), path: '/calendar', group: 'core', phase: 'Phase 2' },
   files: { label: 'Files', icon: i(FolderOpen), path: '/files', group: 'core', phase: 'Phase 2' },
   datalogs: { label: 'Data Logs', icon: i(ClipboardList), path: '/datalogs', group: 'core', phase: 'Phase 2' },

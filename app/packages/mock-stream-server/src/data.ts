@@ -282,7 +282,7 @@ const yourWork = (id: PersonaId): ListBlock =>
     'DI Concierge',
     [
       { id: 'w1', icon: 'inbox', title: 'Referrals inbox', meta: '6 open', subtitle: '2 due today', link: '/workflows/referrals/inbox', badge: { label: '2 due', tone: 'warning' } },
-      { id: 'w2', icon: 'task', title: 'Tasks', meta: '1 overdue', subtitle: 'Follow-ups 4', link: '/calendar' },
+      { id: 'w2', icon: 'task', title: 'To-dos', meta: '1 overdue', subtitle: 'Follow-ups 4', link: '/calendar' },
       { id: 'w3', icon: 'calendar', title: id === 'branch' ? 'Team huddle' : 'ALCO committee', meta: id === 'branch' ? '09:30' : '14:00', subtitle: 'Today', link: '/calendar' },
     ],
     'list',

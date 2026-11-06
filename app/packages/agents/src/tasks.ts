@@ -24,11 +24,11 @@ export function tasksModule(tasks: TaskService, people: OperationsService, today
   const spec: ModuleSpec = {
     id: 'tasks',
     prefix: 'tsk',
-    agent: 'Tasks',
-    request: /\bmy tasks\b|\btasks? (for )?(today|this week)\b|\bcreate a task\b|\bmark (the |my )?.+ task (as )?done\b|\blog \d+(\.\d+)? hours?\b|\bmy hours\b|\bhours (this|last) month\b|\bmy time\b/i,
+    agent: 'To-dos',
+    request: /\bmy tasks\b|\btasks? (for )?(today|this week)\b|\bcreate a task\b|\bmark (the |my )?.+ task (as )?done\b|\bmy to-?dos?\b|\bto-?dos? (for )?(today|this week)\b|\b(create|add) a to-?do\b|\bmark (the |my )?.+ to-?do (as )?done\b|\blog \d+(\.\d+)? hours?\b|\bmy hours\b|\bhours (this|last) month\b|\bmy time\b/i,
     noAccess,
-    sources: [{ kind: 'table', label: 'Tasks', ref: 'table:tsk_task' }],
-    prompt: ({ tenant, user, title }) => `You are the Tasks agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) is managing their work.
+    sources: [{ kind: 'table', label: 'To-dos', ref: 'table:tsk_task' }],
+    prompt: ({ tenant, user, title }) => `You are the To-dos agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) is managing their work.
 
 - "What are my tasks today?": tsk_list. It includes referrals, touch points and the person's own tasks.
 - "Create a task for Maria to call the three Northgate members": tsk_create with owner Maria.
@@ -39,9 +39,9 @@ export function tasksModule(tasks: TaskService, people: OperationsService, today
       const log = /\blog (\d+(?:\.\d+)?) hours? (?:to|on|for) (?:the )?(.+?)(?: project)?(?: for today| today| yesterday)?$/i.exec(t);
       if (log) return { tool: 'time_log', args: { hours: Number(log[1]), project: log[2]!.trim(), ...(/\byesterday\b/i.test(t) ? { date: plusDays(today(), -1) } : {}) } };
       if (/\b(my hours|hours (this|last) month|my time)\b/i.test(t)) return { tool: 'time_summary', args: {} };
-      const create = /\bcreate a task (?:for ([A-Z][a-z]+(?: [A-Z][a-z]+)?) )?to (.+)$/i.exec(t);
+      const create = /\b(?:create|add) a (?:task|to-?do) (?:for ([A-Z][a-z]+(?: [A-Z][a-z]+)?) )?to (.+)$/i.exec(t);
       if (create) return { tool: 'tsk_create', args: { title: create[2]!.replace(/\b(today|tomorrow)$/i, '').trim(), ...(create[1] && !/^me$/i.test(create[1]) ? { owner: create[1] } : {}), ...(due(t) ? { due: due(t) } : {}) } };
-      const done = /\bmark (?:the |my )?(.+?) task (?:as )?done(?:[:;—]\s*(.+))?$/i.exec(t);
+      const done = /\bmark (?:the |my )?(.+?) (?:task|to-?do) (?:as )?done(?:[:;—]\s*(.+))?$/i.exec(t);
       if (done) return { tool: 'tsk_complete', args: { task: done[1]!, ...(done[2] ? { note: done[2] } : {}) } };
       return { tool: 'tsk_list', args: {} };
     },

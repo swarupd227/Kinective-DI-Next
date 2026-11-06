@@ -3,7 +3,7 @@
 // so a page and an answer always agree. Changes happen in a task, behind an approval card.
 import { bankText } from '@dinext/agents';
 import type { AppTile, AppView, AppViewId, Block, ListBlock, TableBlock } from '@dinext/block-schemas';
-import { memberNumber, WorkflowDefService, WorksheetService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, DelinquencyService, DQ_BUCKETS, IrrService, LiquidityService, pctAgainst, MEMBERSHIP_BENCHMARKS, MembershipService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
+import { memberNumber, WorkflowDefService, WorksheetService, TaskService, workToday, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, DelinquencyService, DQ_BUCKETS, IrrService, LiquidityService, pctAgainst, MEMBERSHIP_BENCHMARKS, MembershipService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 import { SourceService, TableService, secretKeyFrom } from '@dinext/di-core';
 import { ApiService, apiHosts, stampUtc } from '@dinext/di-core';
@@ -44,6 +44,7 @@ const text = (field: string, headerName: string): ColumnSpec => ({ field, header
 
 export function createAppViews(deps: ViewDeps) {
   const { pool, blockId, ctx } = deps;
+  const openList = (items: ListBlock['data']['items']): Block => ({ id: blockId(), type: 'list', version: '1.0.0', title: 'Open', provenance: { agent: 'DI', operations: ['task.list'], sources: [] }, freshness: { kind: 'workflow_event' }, data: { items, layout: 'list' } }) as ListBlock;
   const table = (title: string, operation: string, columns: ColumnSpec[], rows: Record<string, string | number>[]): Block => ({ id: blockId(), type: 'table', version: '1.0.0', title, provenance: { agent: 'DI', operations: [operation], sources: [] }, freshness: { kind: 'workflow_event' }, data: { columns, rows, rowCount: rows.length } });
   /** A bar chart for a page's main breakdown, so each page opens on a picture as well as figures. */
   const bar = (title: string, operation: string, rows: [string, number][], unit: 'count' | 'currency' | 'percent', valueName: string, subtitle?: string): Block => ({ id: blockId(), type: 'chart', version: '2.0.0', title, ...(subtitle ? { subtitle } : {}), provenance: { agent: 'DI', operations: [operation], sources: [] }, freshness: { kind: 'workflow_event' }, data: { chartType: 'bar', dataset: { dimensions: [{ name: 'label', displayName: title, type: 'ordinal' }, { name: 'value', displayName: valueName, type: 'number' }], source: rows }, series: [{ name: valueName, encode: { x: 'label', y: 'value' } }], axes: { y: [{ unit }] }, legend: false } } as Block);
@@ -57,11 +58,13 @@ export function createAppViews(deps: ViewDeps) {
 
   const calendarEvents = async () => {
     const service = new CalendarService({ onboarding: onboarding as never, issues: issues as never, retention: retention as never, meetings: deps.workspace ? new CalendarStore(pool) : null });
-    const items = await service.events({ employeeId: deps.leads ? undefined : deps.employeeId, userId: deps.user.id || undefined, canUse: (s) => (s === 'retention' ? deps.retention : deps.modules.includes(s)), ctx });
-    // The calendar runs on the real date: work due since the last build is overdue now, even though its
-    // data is from the build. The build's date stays on the page, for what the data covers.
+    // A branch manager sees the team's dated work in their branches; someone who sees every branch
+    // (an executive) sees their own, or the whole institution's touch points would bury it.
+    const team = deps.leads && !!ctx.purviewBranches?.length;
+    const items = await service.events({ employeeId: team ? undefined : deps.employeeId, ownWorkOnly: !team, userId: deps.user.id || undefined, canUse: (s) => (s === 'retention' ? deps.retention : deps.modules.includes(s)), ctx });
+    // The calendar runs on the work day, the day the latest build finished, like Tasks and Home.
     const asOf = (await onboarding.list({ overdueOnly: true }, ctx)).asOf;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = await workToday(pool);
     const work = new Set(['Touch point', 'Issue due']);
     return { today, asOf, items: items.map((e) => ({ ...e, late: e.late || (work.has(e.kind) && e.date < today) })) };
   };
@@ -512,19 +515,20 @@ export function createAppViews(deps: ViewDeps) {
         branches ? [branches.length ? branches : ['']] : [],
       )) as unknown as [{ n: number }[]];
       const where = branches?.length ? ` at ${branches.join(' and ')}` : '';
-      const open = [{ name: `Referrals${where}`, count: Number(referrals[0]?.n ?? 0), link: 'Open in Referrals' }];
-      if (deps.modules.includes('compliance')) open.push({ name: 'Compliance issues', count: (await issues.list({}, ctx)).count, link: 'Ask DI' });
-      if (deps.modules.includes('onboarding')) open.push({ name: 'Onboarding touch points', count: (await onboarding.list({}, ctx)).count, link: 'Ask DI' });
-      if (deps.modules.includes('datalogs')) open.push({ name: 'Data logs', count: (await logs.list({ status: 'Submitted' }, ctx)).count, link: 'Ask DI' });
+      // Each workflow opens where its work is done, or hands the question to DI.
+      const open = [{ name: `Referrals${where}`, count: Number(referrals[0]?.n ?? 0), link: '/workflows/referrals', ask: 'What’s in my referrals inbox?' }];
+      if (deps.modules.includes('compliance')) open.push({ name: 'Compliance issues', count: (await issues.list({}, ctx)).count, link: '/m/compliance', ask: 'Which regulatory issues are open more than 3 weeks?' });
+      if (deps.modules.includes('onboarding')) open.push({ name: 'Onboarding touch points', count: (await onboarding.list({}, ctx)).count, link: '/m/onboarding', ask: 'Which onboarding touch points are overdue?' });
+      if (deps.modules.includes('datalogs')) open.push({ name: 'Data logs', count: (await logs.list({ status: 'Submitted' }, ctx)).count, link: '/datalogs', ask: 'Which data logs are waiting for approval?' });
       const total = open.reduce((n, w) => n + w.count, 0);
       return {
         title: 'Workflows',
-        lede: `Everything open across your workflows${where ? `, for everyone${where}` : ''}. Your own items are on Tasks.`,
+        lede: `Everything open across your workflows${where ? `, for everyone${where}` : ''}. Your own items are on To-dos.`,
         take: { headline: `${count(total, 'item')} open${where} across ${count(open.length, 'workflow')}.`, action: { label: 'What should I do today?', ask: 'What should I do today?' } },
         tiles: open.slice(0, 4).map((w) => ({ label: w.name, value: w.count.toLocaleString('en-US') })),
         prompts: ['What’s in my referrals inbox?', 'What should I do today?'],
-        links: [{ label: 'Open Referrals', to: '/workflows/referrals/inbox' }],
-        blocks: [bar('Open work by workflow', 'workflow.summary', open.map((o) => [o.name, o.count]), 'count', 'Open'), table('Open work', 'workflow.summary', [text('name', 'Workflow'), { field: 'count', headerName: 'Open', type: 'count' }], open.map(({ name, count: n }) => ({ name, count: n })))],
+        // The tiles carry the counts; the list says where each workflow's work is done.
+        blocks: [{ ...openList(open.map((o) => ({ id: o.link, title: o.name, lead: o.count.toLocaleString('en-US'), icon: 'workflow' as const, link: o.link, actions: [{ label: 'Ask DI', link: `/c/new?q=${encodeURIComponent(o.ask)}` }] }))), title: 'Open work' } as Block],
       };
     },
     async indirect() {
@@ -546,7 +550,8 @@ export function createAppViews(deps: ViewDeps) {
     async prospecting() {
       const prs = new ProspectService(pool);
       const [list, funnel] = await Promise.all([prs.list({}, ctx), prs.funnel(ctx)]);
-      const due = list.filter((p) => p.nextFollowUp && p.nextFollowUp <= new Date().toISOString().slice(0, 10));
+      const workDay = await workToday(pool);
+      const due = list.filter((p) => p.nextFollowUp && p.nextFollowUp <= workDay);
       const biggest = list[0];
       return {
         title: 'Prospecting',
@@ -555,7 +560,7 @@ export function createAppViews(deps: ViewDeps) {
         tiles: funnel.map((f) => ({ label: f.stage, value: String(f.count) })),
         prompts: ['Show my prospects in Qualified with assets over $5 million', 'What’s our conversion from Prospect to Application this quarter?'],
         notice: 'Routes are shown as a list with miles and a directions link. A map isn’t built yet.',
-        blocks: [bar('Prospects by stage', 'prospect.list', countBy(list, (p) => p.stage), 'count', 'Prospects'), table('Prospects', 'prospect.list', [text('company', 'Company'), text('stage', 'Stage'), text('grade', 'Grade'), { field: 'assets', headerName: 'Assets', type: 'currency' }, text('disposition', 'Disposition'), text('owner', 'Owner'), text('next', 'Next follow-up'), text('branch', 'Branch')], list.map((p) => ({ company: p.company, stage: p.stage, grade: p.grade, assets: p.assets, disposition: p.disposition, owner: p.owner, next: p.nextFollowUp ? `${day(p.nextFollowUp)}${p.nextFollowUp < new Date().toISOString().slice(0, 10) ? ', overdue' : ''}` : '—', branch: p.branch })))],
+        blocks: [bar('Prospects by stage', 'prospect.list', countBy(list, (p) => p.stage), 'count', 'Prospects'), table('Prospects', 'prospect.list', [text('company', 'Company'), text('stage', 'Stage'), text('grade', 'Grade'), { field: 'assets', headerName: 'Assets', type: 'currency' }, text('disposition', 'Disposition'), text('owner', 'Owner'), text('next', 'Next follow-up'), text('branch', 'Branch')], list.map((p) => ({ company: p.company, stage: p.stage, grade: p.grade, assets: p.assets, disposition: p.disposition, owner: p.owner, next: p.nextFollowUp ? `${day(p.nextFollowUp)}${p.nextFollowUp < workDay ? ', overdue' : ''}` : '—', branch: p.branch })))],
       };
     },
     async campaigns() {
@@ -663,12 +668,18 @@ export function createAppViews(deps: ViewDeps) {
       const several = m.bySource.length > 1;
       const fromBuild = m.bySource.some((x) => /onboarding/i.test(x.source));
       return {
-        title: 'Tasks',
+        title: 'To-dos',
         lede: `Everything open for you${several ? ', from every source' : ''}. Past due counts from today${fromBuild ? `; onboarding work is from the build that finished ${day(m.asOf)}` : ''}.`,
-        take: { headline: m.items.length ? `${count(m.items.length, 'item')} open${m.late ? `, ${m.late} past due` : ''}. ${first ? `First: ${first.title}.` : ''}` : 'You have nothing open.', action: { label: 'Add a task', ask: 'Create a task to ' } },
+        take: { headline: m.items.length ? `${count(m.items.length, 'item')} open${m.late ? `, ${m.late} past due` : ''}. ${first ? `First: ${first.title}.` : ''}` : 'You have nothing open.', action: { label: 'Add a to-do', ask: 'Create a to-do to ' } },
         tiles: [{ label: 'Open', value: String(m.items.length) }, ...(several ? m.bySource.map((x) => ({ label: sourceName(x.source), value: String(x.count) })) : []), { label: 'Past due', value: String(m.late), tone: m.late ? ('danger' as const) : ('neutral' as const) }, ...(time?.month ? [{ label: `Hours, ${new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(new Date(`${time.month}-15T00:00:00Z`))}`, value: String(time.total) } satisfies AppTile] : [])],
-        prompts: ['What are my tasks today?', ...(time ? ['Show my hours this month'] : [])],
-        blocks: [table('Open', 'task.list', [text('title', 'Task'), ...(several ? [text('source', 'Source')] : []), text('due', 'Due'), text('status', 'Status')], m.items.map((i) => ({ title: i.title, ...(several ? { source: sourceName(i.source) } : {}), due: i.due ? day(i.due) : '—', status: i.due && i.due < m.today ? 'Past due' : i.status }))), ...(time?.month ? [table(`My hours, ${monthName(time.month)}`, 'time.summary', [text('project', 'Project'), { field: 'hours', headerName: 'Hours', type: 'number' }], time.byProject)] : [])],
+        prompts: ['What are my to-dos today?', ...(time ? ['Show my hours this month'] : [])],
+        blocks: [openList(m.items.map((i) => {
+          const late = Boolean(i.due && i.due < m.today);
+          const ask = (q: string) => `/c/new?q=${encodeURIComponent(q)}`;
+          // A person's own task is finished through DI (an approval records it); work from elsewhere opens where it lives.
+          const actions = i.taskId !== undefined ? [{ label: 'Mark done', link: ask(`Mark the ${i.title} to-do done`) }, { label: 'Ask DI', link: ask(`What do I need for “${i.title}”?`) }] : [{ label: 'Open', link: i.link }];
+          return { id: i.ref, title: i.title, subtitle: [several ? sourceName(i.source) : null, i.due ? `Due ${day(i.due)}` : 'No due date'].filter(Boolean).join(' · '), icon: 'task' as const, ...(late ? { badge: { label: 'Past due', tone: 'danger' as const } } : i.status !== 'Open' ? { badge: { label: i.status, tone: 'neutral' as const } } : {}), actions };
+        })), ...(time?.month ? [table(`My hours, ${monthName(time.month)}`, 'time.summary', [text('project', 'Project'), { field: 'hours', headerName: 'Hours', type: 'number' }], time.byProject)] : [])],
       };
     },
     async integrations() {

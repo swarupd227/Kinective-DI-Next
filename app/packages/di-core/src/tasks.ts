@@ -7,6 +7,18 @@ import { CoreError, type CoreContext } from './referrals.ts';
 const rows = async <T>(pool: Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
 const day = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v ?? '')).slice(0, 10);
 
+/**
+ * The day work is judged against: the day the latest build finished. With nightly builds that is
+ * today; when the data has stopped (a demo, or a late build), due dates, overdue counts and the
+ * calendar stay with the data instead of counting days nobody's figures cover. Platform health
+ * (Integrations, Admin) still reports how old the build is.
+ */
+export async function workToday(pool: Pool, now = new Date().toISOString().slice(0, 10)) {
+  const [b] = await rows<{ d: unknown }>(pool, "SELECT MAX(completed_at) AS d FROM meta_build WHERE state = 'completed'").catch(() => []);
+  const built = b?.d ? day(b.d) : '';
+  return /^\d{4}-\d{2}-\d{2}$/.test(built) && built < now ? built : now;
+}
+
 export interface TaskItem {
   ref: string;
   title: string;
@@ -32,10 +44,10 @@ export class TaskService {
   }
 
   /** Everything open for one person, oldest due date first. */
-  async mine(who: Person, ctx: CoreContext, now = new Date().toISOString().slice(0, 10)) {
+  async mine(who: Person, ctx: CoreContext, now?: string) {
     const asOf = await this.asOf();
-    // Tasks are live work: a due date is judged against today, not against the last build's date.
-    const today = now > asOf ? now : asOf;
+    // Due dates are judged against the work day: the day the latest build finished (workToday).
+    const today = now ?? (await workToday(this.pool));
     const own = await rows<Record<string, unknown>>(this.pool, "SELECT task_id, title, due, status FROM tsk_task WHERE owner_user_id = ? AND status = 'Open'", [who.userId]);
     const items: TaskItem[] = own.map((t) => ({ ref: `task:${t.task_id}`, taskId: t.task_id as number, title: t.title as string, due: t.due ? day(t.due) : null, status: 'Open', source: 'Task', link: '/tasks' }));
     if (who.employeeId !== undefined) {
