@@ -416,6 +416,22 @@ measures:
       call_report_history: "SUM(CASE WHEN cvh.code = 'NW0010' THEN cvh.amount ELSE 0 END)"
       ffiec_report: "SUM(CASE WHEN fv.code = 'RCONA224' THEN fv.amount ELSE 0 END)"
       ffiec_history: "SUM(CASE WHEN fvh.code = 'RCONA224' THEN fvh.amount ELSE 0 END)"
+  risk_weighted_assets_sum:
+    # DI's Basel III estimate: each Call Report line at its effective risk weight, the same weights as
+    # di-core's BaselService (a test keeps the two equal). Banks only.
+    #   1: multifamily, CRE, consumer, premises, other assets   0.5: first-lien 1-4 family; past due 90+ and nonaccrual (+50 points)
+    #   0.155: securities at amortized cost (Treasuries and Ginnie 0%, agency and GO munis 20%, revenue munis 50%)
+    #   0.13: cash (35% currency at 0%, 65% due from banks at 20%)
+    #   1.3 HELOCs, 1.095 C&I, 1.325 construction: the loans plus their unused commitments after conversion
+    unit: usd
+    exprs:
+      ffiec_report: "SUM(fv.amount * CASE WHEN fv.code IN ('RCON1460', 'RCONF160', 'RCONF161', 'RCONB538', 'RCONK137', 'RCONK207', 'RCON2145', 'RCON2160') THEN 1 WHEN fv.code IN ('RCON5367', 'RCON1407', 'RCON1403') THEN 0.5 WHEN fv.code IN ('RCON1754', 'RCON1772') THEN 0.155 WHEN fv.code IN ('RCON0081') THEN 0.13 WHEN fv.code IN ('RCON1797') THEN 1.3 WHEN fv.code IN ('RCON1766') THEN 1.095 WHEN fv.code IN ('RCONF159') THEN 1.325 ELSE 0 END)"
+      ffiec_history: "SUM(fvh.amount * CASE WHEN fvh.code IN ('RCON1460', 'RCONF160', 'RCONF161', 'RCONB538', 'RCONK137', 'RCONK207', 'RCON2145', 'RCON2160') THEN 1 WHEN fvh.code IN ('RCON5367', 'RCON1407', 'RCON1403') THEN 0.5 WHEN fvh.code IN ('RCON1754', 'RCON1772') THEN 0.155 WHEN fvh.code IN ('RCON0081') THEN 0.13 WHEN fvh.code IN ('RCON1797') THEN 1.3 WHEN fvh.code IN ('RCON1766') THEN 1.095 WHEN fvh.code IN ('RCONF159') THEN 1.325 ELSE 0 END)"
+  cet1_capital_sum:
+    unit: usd
+    exprs:
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RCONP742' THEN fv.amount ELSE 0 END)"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RCONP742' THEN fvh.amount ELSE 0 END)"
   net_income_annualized_sum:
     unit: usd
     exprs:
@@ -745,6 +761,31 @@ metrics:
     description: Total net worth (5300 account 997) divided by total assets (NW0010), from the latest 5300. Seven percent or more is well capitalized.
     regulatory_basis: NCUA 5300 Schedule G account 998; PCA categories under 12 CFR 702.102.
     synonyms: [net worth, capital ratio, capital, well capitalized, capitalization, pca, prompt corrective action, leverage ratio, cculr]
+    owner: Finance data team
+    dimensions_allowed: []
+  cet1_ratio:
+    label: CET1 ratio
+    institution_types: [bank]
+    type: ratio
+    numerator: cet1_capital_sum
+    denominator: risk_weighted_assets_sum
+    format: percent_2
+    description: Common equity tier 1 capital (RC-R RCONP742, equity less AOCI under the opt-out election) divided by risk-weighted assets, DI's Basel III estimate from the Call Report. The minimum is 4.5%, 7% with the conservation buffer, and 6.5% is well capitalized.
+    regulatory_basis: Basel III standardized approach, 12 CFR 3, 217 and 324; a bank on the community bank leverage ratio does not file it (RC-R Part II).
+    synonyms: [cet1, cet 1, cet1 ratio, common equity tier 1, common equity tier 1 ratio, common equity ratio, risk-based capital, risk based capital, basel iii]
+    requires_any: [cet, common equity, risk-based, risk based, basel]
+    owner: Finance data team
+    dimensions_allowed: []
+  risk_weighted_assets:
+    label: Risk-weighted assets
+    institution_types: [bank]
+    type: simple
+    measure: risk_weighted_assets_sum
+    format: currency
+    description: Every asset and unused commitment weighted by its risk under the Basel III standardized approach, DI's estimate from the Call Report and the assumptions shown with the Basel III capital report.
+    regulatory_basis: Basel III standardized approach, 12 CFR 3, 217 and 324.
+    synonyms: [risk-weighted assets, risk weighted assets, rwa, rwas]
+    requires_any: [risk-weighted, risk weighted, rwa]
     owner: Finance data team
     dimensions_allowed: []
   return_on_assets:

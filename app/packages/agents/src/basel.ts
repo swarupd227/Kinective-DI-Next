@@ -126,7 +126,8 @@ export function baselModule(deps: BaselDeps): ModuleSpec {
     id: 'basel',
     prefix: 'bas',
     agent: AGENT,
-    request: /\bbasel\b|\brisk[- ]weighted\b|\brwa\b|\brisk[- ]weights?\b|\brisk[- ]based (?:capital|ratios?)\b|\bcet ?1\b|\bcommon equity tier 1\b|\btier 2\b|\btotal capital ratio\b|\btier 1 (?:risk[- ]based )?capital ratio\b|\bconservation buffer\b|\bwell[- ]capitali[sz]ed\b|\bprompt corrective\b|\b(?:stay|remain|leave|exit|drop|opt out of|get out of)\b[^.?!]*\b(?:cblr|community bank leverage)\b|\b(?:cblr|community bank leverage ratio)\b[^.?!]*\b(?:or|vs\.?|versus|compared?|instead|full rules|risk[- ]based)\b|\bcapital ratios?\b[^.?!]*\$\s?\d|\$\s?\d[^.?!]*\bcapital ratios?\b/i,
+    // A chart of a ratio ("chart CET1 by quarter") goes to Analytics, which draws it from the catalog.
+    request: /^(?![\s\S]*\b(?:chart|graph|plot)\b)[\s\S]*?(?:\bbasel\b|\brisk[- ]weighted\b|\brwa\b|\brisk[- ]weights?\b|\brisk[- ]based (?:capital|ratios?)\b|\bcet ?1\b|\bcommon equity tier 1\b|\btier 2\b|\btotal capital ratio\b|\btier 1 (?:risk[- ]based )?capital ratio\b|\bconservation buffer\b|\bwell[- ]capitali[sz]ed\b|\bprompt corrective\b|\b(?:stay|remain|leave|exit|drop|opt out of|get out of)\b[^.?!]*\b(?:cblr|community bank leverage)\b|\b(?:cblr|community bank leverage ratio)\b[^.?!]*\b(?:or|vs\.?|versus|compared?|instead|full rules|risk[- ]based)\b|\bcapital ratios?\b[^.?!]*\$\s?\d|\$\s?\d[^.?!]*\bcapital ratios?\b)/i,
     noAccess,
     sources: [{ kind: 'table', label: 'FFIEC 051 Call Report values', ref: 'table:cr_value' }],
     prompt: ({ tenant, user, title }) => `You are the Basel III capital agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) reports capital to the board and examiners.

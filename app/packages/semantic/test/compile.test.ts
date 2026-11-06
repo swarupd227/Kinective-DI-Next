@@ -137,6 +137,16 @@ describe('catalog search (spec 23.5.3)', () => {
     expect(searchCatalog(cu, 'certificate share', env.dimensionValues).metrics.map((m) => m.name)).not.toContain('certificates_maturing_90_days');
   });
 
+  it('finds a bank’s CET1 ratio and risk-weighted assets, which a credit union never has', () => {
+    const top = (q: string) => searchCatalog(bank, q, env.dimensionValues).metrics[0]?.name;
+    expect(top('What is our CET1 ratio?')).toBe('cet1_ratio');
+    expect(top('common equity tier 1 ratio by quarter')).toBe('cet1_ratio');
+    expect(top('Chart our risk-weighted assets')).toBe('risk_weighted_assets');
+    expect(cu.metrics.cet1_ratio).toBeUndefined();
+    expect(cu.metrics.risk_weighted_assets).toBeUndefined();
+    expect(bank.metrics.cet1_ratio!.format).toBe('percent_2');
+  });
+
   it('finds the capital and earnings ratios by their everyday names', () => {
     const top = (q: string) => searchCatalog(cu, q, env.dimensionValues).metrics[0]!.name;
     expect(top('What is our net worth ratio?')).toBe('net_worth_ratio');

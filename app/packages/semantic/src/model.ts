@@ -49,6 +49,8 @@ const StockSchema = z.object({
     z.object({
       label: z.string(),
       labels_by_type: labelsByType,
+      /** Only these institutions have it, like a bank's Basel III ratios. */
+      institution_types: z.array(z.enum(['credit_union', 'bank'])).optional(),
       type: z.enum(['simple', 'ratio']),
       measure: ident.optional(),
       numerator: ident.optional(),
@@ -155,7 +157,7 @@ export function loadModel(tenant: string, institutionType: InstitutionType, dir 
     ]),
   );
   const metrics = Object.fromEntries(
-    Object.entries(stock.metrics).map(([name, m]) => {
+    Object.entries(stock.metrics).filter(([, m]) => !m.institution_types || m.institution_types.includes(institutionType)).map(([name, m]) => {
       const ms = m.type === 'simple' ? [m.measure!] : [m.numerator!, m.denominator!];
       for (const x of ms) if (!measures[x]) throw new Error(`Metric ${name} uses unknown measure ${x}`);
       for (const d of m.dimensions_allowed) if (!dimensions[d]) throw new Error(`Metric ${name} allows unknown dimension ${d}`);

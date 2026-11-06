@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { blockSchema, type Block } from '@dinext/block-schemas';
 import { ApprovalStore, BaselService } from '@dinext/di-core';
+import { SemanticService } from '@dinext/semantic';
 import { tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { baselAnalyses, baselModule, ModuleGateway, runModuleOffline, type ModuleSpec, type ModuleTurn, type RunSink } from '../src/index.ts';
 
@@ -95,6 +96,19 @@ for (const [schema, type] of [['dinext_t_test_bank', 'bank'], ['dinext_t_test_cu
       expect((await ask('What if we run off $10M of auto loans?')).text).toMatch(/Running off \*\*\$10\.0M of auto loans/);
     });
 
+    it('gives the same CET1 ratio and risk-weighted assets from the catalog, every quarter', async () => {
+      const a = (await new BaselService(pool, type).analysis())!;
+      const svc = await SemanticService.create(pool, 'test_bank', type);
+      const now = await svc.query({ metrics: ['cet1_ratio', 'risk_weighted_assets'] }, { canViewSql: false });
+      expect(Number(now.rows[0]!.cet1_ratio)).toBeCloseTo(a.now.ratios[0]!.pct, 4);
+      expect(Number(now.rows[0]!.risk_weighted_assets)).toBeCloseTo(a.now.rwa, -1);
+      const trend = await svc.query({ metrics: ['cet1_ratio'], time: { grain: 'quarter', last: 5 } }, { canViewSql: false });
+      expect(trend.rows.map((r) => Number(r.cet1_ratio).toFixed(4))).toEqual(a.quarters.slice(-5).map((q) => q.ratios[0]!.pct.toFixed(4)));
+      // Branch purview sees no institution-wide capital.
+      const branch = await svc.query({ metrics: ['cet1_ratio'] }, { canViewSql: false, purviewBranches: ['Westport'] }).catch(() => null);
+      expect(branch?.rows[0]?.cet1_ratio ?? null).toBeNull();
+    });
+
     it('builds every report section as a valid block, with takes short enough for the report', async () => {
       const a = baselAnalyses({ pool, institutionType: type });
       for (const key of a.keys) {
@@ -112,6 +126,9 @@ for (const [schema, type] of [['dinext_t_test_bank', 'bank'], ['dinext_t_test_cu
       expect(spec.request.test('Are we well capitalized?')).toBe(true);
       expect(spec.request.test('Show our risk-weighted assets')).toBe(true);
       expect(spec.request.test('Run the stress test')).toBe(false);
+      expect(spec.request.test('What is our CET1 ratio?')).toBe(true);
+      // A chart goes to Analytics, which draws the catalog's CET1 ratio.
+      expect(spec.request.test('Chart our CET1 ratio over the last five quarters')).toBe(false);
     });
   });
 }

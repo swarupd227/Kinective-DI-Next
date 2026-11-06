@@ -150,6 +150,8 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-BAS-003', set: 'golden', persona: 'bank_cfo', q: 'What would $20M more CRE loans do to our capital ratios?', agent: 'Basel III capital', contains: ['commercial real estate loans', 'risk weight 100%'], approval: 'none' },
   { id: 'GQ-BAS-004', set: 'golden', persona: 'bank_cfo', q: 'What happens to our risk-based ratios in a severe recession?', agent: 'Basel III capital', contains: ['severely adverse'], approval: 'none' },
   { id: 'GQ-BAS-005', set: 'golden', persona: 'executive', q: 'What are our Basel III ratios?', agent: 'Basel III capital', contains: ['apply to banks', 'net worth ratio'], approval: 'none' },
+  { id: 'GQ-CET-001', set: 'golden', persona: 'bank_cfo', q: 'Chart our CET1 ratio over the last five quarters', agent: 'Analytics Q&A', approval: 'none' },
+  { id: 'GQ-CET-002', set: 'golden', persona: 'bank_cfo', q: 'What is our CET1 ratio?', agent: 'Basel III capital', contains: ['CET1 is'], approval: 'none' },
   { id: 'PM-BAS-001', set: 'permission', persona: 'branch', q: 'What are our risk-weighted assets?', refused: true, notContains: ['Risk-weighted assets are'], approval: 'none', ref: 'Basel III capital is for finance and executives' },
   // The third way in: API connections, and the marketing round trip on them.
   { id: 'GQ-API-001', set: 'golden', persona: 'admin', q: 'Show the API connections', agent: 'API Connections', contains: ['API connection'], approval: 'none' },
