@@ -27,6 +27,8 @@ export function operationsModule(ops: OperationsService): ModuleSpec {
     prefix: 'ops',
     agent: 'Operations',
     request: /\bis (the |our )?data (current|fresh|up to date|stale)\b|\bhow (fresh|current|old|recent) is (the |our )?data\b|\bnightly build\b|\bnew build\b|\blast night['’]?s? (build|load)\b|\buploaders?\b|\blate[- ]file\b|\b(data quality|dq) checks?\b|\bchecks? failed\b|\bcreate a user\b|\bwho can\b|\bwhy can['’]?t\b|\b(lock|unlock) .*(user|account)\b|^\s*(lock|unlock)\s+\S+\s+\S+\s*[.!?]?\s*$|\bspoof\b|\bimpersonate\b|\b(?:has|have) left\b|\bleaver\b|\boff-?board|\bremove (?:\w+ )?access\b|\bdeactivate\b|\b(?:to|into) the \w+ class\b|\bclass\b.*\b(?:to|into)\b|\bmake [A-Z][\w.'-]*(?: [A-Z][\w.'-]*)? an? (?:manager|lender|msr|executive|analyst|administrator)\b|\bsigned in\b|\bsign-?ins?\b|\bdormant\b|\blast (?:log|sign)/i,
+    // Everyone may ask whether the data is current; without Operations they get the build's dates.
+    shared: /\bis (the |our )?data (current|fresh|up to date|stale)\b|\bhow (fresh|current|old|recent) is (the |our )?data\b/i,
     noAccess,
     sources: [{ kind: 'table', label: 'Platform operations: builds, checks and users', ref: 'table:ops_dq_check' }],
     prompt: ({ tenant, user, title }) => `You are the Operations agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) runs the platform.

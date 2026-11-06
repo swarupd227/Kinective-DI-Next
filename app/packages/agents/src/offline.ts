@@ -2,6 +2,7 @@
 // from the semantic layer by a deterministic planner. Answers say so, and nothing is guessed.
 import type { CatalogResult, SemanticQueryInput, SemanticService } from '@dinext/semantic';
 import { buildBlock, formatMetric, noticeBlock } from './answer.ts';
+import { freshnessAnswer } from './analytics.ts';
 import type { RunSink } from './sink.ts';
 
 export const OFFLINE_AGENT = 'Analytics Q&A (offline)';
@@ -28,6 +29,11 @@ export function planOffline(question: string, catalog: CatalogResult, svc: Seman
 export async function runOffline(question: string, svc: SemanticService, ctx: { purviewBranches?: string[]; canViewSql: boolean }, runId: string, sink: RunSink) {
   sink.routing(OFFLINE_AGENT, 'Language model unavailable: deterministic planner');
   const catalog = svc.search(question);
+  const fresh = freshnessAnswer(question, svc);
+  if (fresh) {
+    await sink.text(fresh, OFFLINE_AGENT);
+    return { outcome: 'answer' as const, catalog };
+  }
   const request = planOffline(question, catalog, svc);
   if (!request) {
     await sink.block(noticeBlock('uncertain', 'I couldn’t map that question to a defined metric, so I won’t guess.', OFFLINE_AGENT, runId, { detail: 'Live AI is off in this environment, so only simple questions about defined metrics can be answered. Set DI_ANTHROPIC_API_KEY in app/.env to turn it on.' }));

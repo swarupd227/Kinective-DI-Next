@@ -6,7 +6,7 @@ import type { ApprovalCardBlock, ContextRef } from '@dinext/block-schemas';
 import { ApprovalError, CoreError, usd, type ReferralService, type RelationshipService } from '@dinext/di-core';
 import { SemanticError, type SemanticService } from '@dinext/semantic';
 import { formatMetric, noticeBlock } from './answer.ts';
-import { AGENT_NAME, runAnalytics, type MemoryTurn } from './analytics.ts';
+import { AGENT_NAME, freshnessAnswer, runAnalytics, type MemoryTurn } from './analytics.ts';
 import type { AuditLog, AuditRecord, ToolCallRecord } from './audit.ts';
 import { BRIEFING_AGENT, buildBriefing } from './briefing.ts';
 import type { ReferralPayload, ToolGateway } from './gateway.ts';
@@ -327,7 +327,9 @@ export class Concierge {
 
       // A module's own request, or the answer to a question it asked, needs no model to route.
       const waiting = this.moduleAsking.get(turn.threadId);
-      const matched = turn.tenant.modules?.match(screened.text) ?? null;
+      const found = turn.tenant.modules?.match(screened.text) ?? null;
+      // A question others may answer goes to them when this person lacks the module, instead of a refusal.
+      const matched = found && !(turn.modules ?? []).includes(found.id) && found.shared?.test(screened.text) ? null : found;
       const module = matched ?? (waiting && screened.text.length <= 200 ? waiting.spec : null);
       if (module && turn.tenant.modules) {
         classification = { intent: 'module_task', agent: 'none', confidence: 1, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' };
@@ -338,6 +340,16 @@ export class Concierge {
         outcome = inboxAudit(r);
         error = r.error;
         return r.approval ? { kind: 'handled', approval: { approvalId: r.approval.record.approvalId, card: r.approval.card }, superseded: r.superseded } : { kind: 'handled', superseded: r.superseded };
+      }
+
+      // "Is the data current?" has one answer, the build's dates: no model and no clarifying question.
+      const fresh = svc ? freshnessAnswer(screened.text, svc) : null;
+      if (fresh) {
+        classification = { intent: 'data_question', agent: 'analytics_qa', confidence: 1, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' };
+        sink.routing(AGENT_NAME, 'How fresh the data is');
+        await sink.text(fresh, AGENT_NAME);
+        outcome = 'answer';
+        return { kind: 'handled' };
       }
 
       // "MISSED-CREDIT" alone answers DI's question; it isn't a new request.

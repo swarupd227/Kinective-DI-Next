@@ -82,6 +82,8 @@ export interface ModuleSpec {
   agent: string;
   /** Recognises the module's work without a model call. */
   request: RegExp;
+  /** Requests another agent answers for people without this module, rather than refusing them. */
+  shared?: RegExp;
   noAccess: string;
   sources: { kind: 'table'; label: string; ref: string }[];
   prompt: (input: { tenant: string; user: string; title: string }) => string;

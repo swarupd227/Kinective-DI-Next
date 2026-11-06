@@ -177,6 +177,18 @@ const FINANCE: [RegExp, string][] = [
 /** Questions about how fresh the data is: answered from the build, not the metric catalog. */
 const FRESHNESS = /\b(how (fresh|current|old|recent|up[- ]to[- ]date)|is (the|this|our|my) data (current|fresh|up[- ]to[- ]date|stale|live)|data (current|fresh|stale|freshness)|when was (the|this|it|our) (data|last build|build)|last (build|refresh|update|load)|(data|figures?|numbers?) as of when|as of when|when (was|is) .* (updated|refreshed|built))\b/i;
 
+/** The answer to "Is the data current?", from the build's dates; null for any other question. */
+export function freshnessAnswer(question: string, svc: SemanticService): string | null {
+  if (!FRESHNESS.test(question)) return null;
+  const asOf = svc.build.asOf;
+  const finished = svc.build.completedAt.slice(0, 10);
+  const days = Math.max(0, Math.floor((Date.now() - Date.parse(`${finished}T00:00:00Z`)) / 86_400_000));
+  const label = (d: string) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${d}T00:00:00Z`)).replace('Sept', 'Sep');
+  return days >= 2
+    ? `**The data isn’t current.** The latest nightly build finished ${label(finished)}, ${days} days ago, with data as of ${label(asOf)}. No new build has run since, so every figure in DI is from then. Your DI administrator can see why on Integrations.`
+    : `The data is as of **${label(asOf)}**, from the nightly build that finished ${label(finished)}. It refreshes with each nightly build; nothing in DI is real time.`;
+}
+
 export async function runAnalytics(input: AnalyticsInput, deps: { model: ModelClient; semantic: SemanticService }, sink: RunSink): Promise<AnalyticsOutcome> {
   const svc = deps.semantic;
   const toolCalls: ToolCallRecord[] = [];
@@ -195,17 +207,9 @@ export async function runAnalytics(input: AnalyticsInput, deps: { model: ModelCl
   sink.step(plan, { id: 'match', state: 'done', resultSummary: catalog.matched ? `${svc.model.metrics[top!.name]!.label}${catalog.dimensions[0] ? `, by ${catalog.dimensions[0].label.toLowerCase()}` : ''}` : 'No defined metric matches yet' });
 
   // "Is the data current?" is about the build, not a metric: it gets the build's dates, never a refusal.
-  if (FRESHNESS.test(input.question)) {
-    const asOf = svc.build.asOf;
-    const finished = svc.build.completedAt.slice(0, 10);
-    const days = Math.max(0, Math.floor((Date.now() - Date.parse(`${finished}T00:00:00Z`)) / 86_400_000));
-    const label = (d: string) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${d}T00:00:00Z`)).replace('Sept', 'Sep');
-    await sink.text(
-      days >= 2
-        ? `**The data isn’t current.** The latest build finished ${label(finished)}, ${days} days ago, with data as of ${label(asOf)}. No new build has run since, so every figure in DI is from then. Your DI administrator can see why on Integrations.`
-        : `The data is as of **${label(asOf)}**, from the nightly build that finished ${label(finished)}. It refreshes with each nightly build; nothing in DI is real time.`,
-      AGENT_NAME,
-    );
+  const fresh = freshnessAnswer(input.question, svc);
+  if (fresh) {
+    await sink.text(fresh, AGENT_NAME);
     return { outcome: 'answer', toolCalls, usage, numericRemovals: [], catalog };
   }
 
