@@ -443,7 +443,7 @@ export function EmailsPage() {
           <Blocks view={v} />
           <p className={styles.tileLabel} role="status">
             <Button size="sm" variant="ghost" busy={morning.isPending} onClick={() => morning.mutate()}>
-              Run this morning’s emails now (local test)
+              Send this morning’s emails now (demo)
             </Button>{' '}
             {morning.data ? `${morning.data.emails} new ${morning.data.emails === 1 ? 'email' : 'emails'} across your institution: follow-up reminders and digests, for those who want them.` : 'Follow-up reminders and digests go out once each morning.'}
           </p>

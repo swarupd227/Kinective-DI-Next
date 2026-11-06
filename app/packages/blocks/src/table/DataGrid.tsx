@@ -76,7 +76,9 @@ export default function DataGrid({ columns, rows, sort, layout = 'auto', filters
         // The widest thing that shouldn't break: a whole number, a short value such as a name or a date
         // ("Paul Lindqvist (…9364)"), or the longest single word of longer text.
         const keepWhole = (s: string) => (s.length <= SHORT_TEXT ? s.length : Math.max(0, ...s.split(/\s+/).map((w) => w.length)));
-        const unbroken = Math.max(0, ...sample.map((r) => (isNum ? format(r[c.field]).length : keepWhole(String(r[c.field] ?? '')))));
+        // The header's longest word counts too, so "Component" never breaks as "Comp / onent".
+        const headerWord = Math.max(0, ...c.headerName.split(/\s+/).map((w) => w.length));
+        const unbroken = Math.max(headerWord, ...sample.map((r) => (isNum ? format(r[c.field]).length : keepWhole(String(r[c.field] ?? '')))));
         return {
           field: c.field,
           headerName: c.headerName,
@@ -86,7 +88,9 @@ export default function DataGrid({ columns, rows, sort, layout = 'auto', filters
           flex: c.width ? undefined : Math.min(3, Math.max(1, Math.round(longest / 16))),
           // A column narrows only as far as its widest number or word, so values are never cut to "…";
           // a crowded grid scrolls sideways instead.
-          minWidth: Math.min(isNum ? 200 : 260, Math.max(64, Math.round(unbroken * CHAR_PX) + CELL_PADDING_PX)),
+          // Short phrases are capped at 200px so a six-column report table fits its card; past that
+          // they wrap at word breaks.
+          minWidth: Math.min(200, Math.max(64, Math.round(unbroken * CHAR_PX) + CELL_PADDING_PX)),
           sort: sort?.find((s) => s.field === c.field)?.dir,
           type: isNum ? 'rightAligned' : undefined,
           // A column's own cellClass replaces the one from its type, so the alignment is repeated here.
@@ -116,6 +120,10 @@ export default function DataGrid({ columns, rows, sort, layout = 'auto', filters
         domLayout={layout === 'auto' ? 'autoHeight' : 'normal'}
         defaultColDef={{ sortable: true, resizable: true, suppressMovable: true, wrapHeaderText: true, autoHeaderHeight: true }}
         quickFilterText={quickFilter}
+        // Flex columns settle after the first layout; wrapped rows are measured again so text isn't cut off.
+        onFirstDataRendered={(e) => e.api.resetRowHeights()}
+        onGridSizeChanged={(e) => e.api.resetRowHeights()}
+        onColumnResized={(e) => e.finished && e.api.resetRowHeights()}
         ensureDomOrder
         suppressDragLeaveHidesColumns
         enableCellTextSelection

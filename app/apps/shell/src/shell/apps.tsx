@@ -63,7 +63,7 @@ export const APP_META: Record<string, AppMeta> = {
   dq: { label: 'Data Quality', icon: i(HeartPulse), path: '/dq', group: 'core' },
   queries: { label: 'Queries', icon: i(SquareTerminal), path: '/queries', group: 'core', phase: 'Phase 3' },
   rm: { label: 'Relationship Manager', icon: i(UserRound), path: '/members', group: 'modules', phase: 'Phase 1, member 360 slice' },
-  referrals: { label: 'Referrals', icon: i(Share2), path: '/workflows/referrals/inbox', group: 'modules', phase: 'Phase 1, referrals slice' },
+  referrals: { label: 'Referrals', icon: i(Share2), path: '/workflows/referrals', group: 'modules', phase: 'Phase 1, referrals slice' },
   lap: { label: 'Loan Pipeline', icon: i(Landmark), path: '/m/lap', group: 'modules', phase: 'Phase 1, lending slice' },
   gi: { label: 'Goals & Incentives', icon: i(Target), path: '/m/gi', group: 'modules', phase: 'Phase 2' },
   indirect: { label: 'Indirect Lending', icon: i(Car), path: '/m/indirect', group: 'modules' },

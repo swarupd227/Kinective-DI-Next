@@ -26,7 +26,7 @@ export function TopBar({ threadId }: { threadId?: string }) {
   const segment = (first === 'm' ? second : first) ?? 'home';
   const bank = session.tenant.institutionType === 'bank';
   const page = viewLabel(location.pathname, metasFor(bank));
-  const crumb = threadId ? (thread.data?.title ?? 'Task') : isTasks(location.pathname) ? 'All tasks' : page === 'View' ? (APP_META[segmentToApp(segment)] ? labelFor(segmentToApp(segment), bank) : 'Home') : page;
+  const crumb = threadId ? (thread.data?.title ?? 'Task') : isTasks(location.pathname) ? 'All tasks' : page === 'View' ? (pageName(location.pathname) ?? (APP_META[segmentToApp(segment)] ? labelFor(segmentToApp(segment), bank) : 'Home')) : page;
 
   return (
     <header className={styles.bar} data-region="topbar" tabIndex={-1}>
@@ -56,6 +56,13 @@ export function TopBar({ threadId }: { threadId?: string }) {
 /** A task's own pages: "/c", "/c/new" and "/c/<id>", but not "/calendar". */
 const isTasks = (path: string) => /^\/c(\/|$)/.test(path);
 
+/** Pages that aren't apps still name themselves in the breadcrumb, never "Page". */
+const PAGE_NAMES: [RegExp, string][] = [
+  [/^\/dashboards(\/|$)/, 'All dashboards'],
+  [/^\/settings\/email(\/|$)/, 'Email notifications'],
+];
+const pageName = (path: string) => PAGE_NAMES.find(([re]) => re.test(path))?.[1];
+
 /** The apps with the institution's own page names (a bank's Customer Growth). */
 const metasFor = (bank: boolean) => Object.entries(APP_META).map(([id, m]) => ({ ...m, label: labelFor(id, bank) }));
 
@@ -83,7 +90,7 @@ export function DeskBar({ threadId }: { threadId?: string }) {
       ? []
       : reportId && reportId !== 'summary'
         ? [{ label: 'Reports', to: '/reports' }, { label: report.data?.data.name ?? 'Report' }]
-        : [{ label: page === 'View' ? (appLabel ?? 'Page') : page }];
+        : [{ label: page === 'View' ? (pageName(pathname) ?? appLabel ?? 'Page') : page }];
 
   return (
     <header className={styles.desk} data-region="topbar" tabIndex={-1}>

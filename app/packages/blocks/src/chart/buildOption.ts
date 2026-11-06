@@ -95,7 +95,9 @@ export function buildOption(block: ChartBlock, theme: ChartTheme, reducedMotion:
       name: axes?.x?.title,
       axisLine: { lineStyle: { color: theme.grid } },
       axisTick: { show: false },
-      axisLabel: { color: theme.muted, fontFamily: theme.fontFamily },
+      // A handful of named bars each keep their label, wrapping onto two lines, rather than ECharts
+      // dropping every other one; long series still thin their labels.
+      axisLabel: { color: theme.muted, fontFamily: theme.fontFamily, ...(chartType !== 'scatter' && dataset.source.length <= 8 ? { interval: 0, width: 96, overflow: 'break' } : {}) },
     },
     yAxis: (axes?.y?.length ? axes.y : [{}]).map((y) => ({
       type: 'value',

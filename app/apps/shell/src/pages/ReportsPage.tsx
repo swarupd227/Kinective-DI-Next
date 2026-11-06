@@ -54,7 +54,7 @@ export function ReportsPage() {
             Build a report
           </Button>
         </div>
-        <p className={page.lede}>Standard and saved reports, run on last night’s build and limited to your access. Ask DI to build or change one, or to send it to you on a schedule.</p>
+        <p className={page.lede}>Standard and saved reports, run on the latest build and limited to your access. Ask DI to build or change one, or to send it to you on a schedule.</p>
         <SegmentedControl
           label="Reports view"
           value={tab}
@@ -224,7 +224,7 @@ function Schedules({ schedules }: { schedules: ReportsIndex['schedules'] }) {
       <p className={styles.hint}>
         Schedules run after each nightly build. To stop one, ask DI “stop the {schedules[0]!.report} schedule”.{' '}
         <Button size="sm" variant="ghost" icon={<PlayCircle size={14} aria-hidden />} busy={running} onClick={() => void runNow()}>
-          Run now (local test of tonight’s run)
+          Run tonight’s schedules now (demo)
         </Button>
       </p>
     </>

@@ -65,7 +65,7 @@ describe.skipIf(!up)('modules against the warehouse', () => {
 
   describe('compliance', () => {
     it('recognises its work', () => {
-      for (const t of ['Which regulatory issues are open more than 3 weeks?', 'Log a complaint from James Lee about a double fee', 'Summarise case 3301', 'Escalate issue 3307 to the compliance officer']) expect(gateway.match(t)?.id, t).toBe('compliance');
+      for (const t of ['Which regulatory issues are open more than 3 weeks?', 'Log a complaint from James Lee about a double fee', 'Summarize case 3301', 'Escalate issue 3307 to the compliance officer']) expect(gateway.match(t)?.id, t).toBe('compliance');
       for (const t of ['Show loan growth by branch', 'Show my overdue referrals']) expect(gateway.match(t), t).toBeNull();
     });
 
@@ -79,7 +79,7 @@ describe.skipIf(!up)('modules against the warehouse', () => {
     it('labels a case summary as an AI draft and quotes the record', async () => {
       const service = new IssueService(pool);
       const [i] = (await service.list({}, { purviewBranches: ['Westport'] })).items;
-      const { r } = await run(compliance, turn(`Summarise case ${i!.issueId}`, 'thr_c2'));
+      const { r } = await run(compliance, turn(`Summarize case ${i!.issueId}`, 'thr_c2'));
       expect(r.texts[0]).toContain('AI draft – verify before use');
       expect(r.texts[0]).toContain(i!.summary);
     });
@@ -87,7 +87,7 @@ describe.skipIf(!up)('modules against the warehouse', () => {
     it('reads an issue outside the purview as not found', async () => {
       const service = new IssueService(pool);
       const away = (await service.list({}, {})).items.find((i) => i.branch !== 'Westport')!;
-      const { r } = await run(compliance, turn(`Summarise case ${away.issueId}`, 'thr_c3'));
+      const { r } = await run(compliance, turn(`Summarize case ${away.issueId}`, 'thr_c3'));
       expect(r.texts[0]).toContain('was not found');
     });
 

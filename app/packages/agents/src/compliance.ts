@@ -30,7 +30,7 @@ export function complianceModule(issues: IssueService, pool: Pool): ModuleSpec {
     prompt: ({ tenant, user, title }) => `You are the Compliance & Problem Management agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) works member and regulatory issues.
 
 - "Which regulatory issues are open more than 3 weeks?": cpm_issues_list. Three weeks is older_than_days 21.
-- "Summarise case 4471": cpm_issue_get.
+- "Summarize case 4471": cpm_issue_get.
 - "What are the top root causes?": cpm_root_causes.
 - "Log a complaint from James Lee about a double fee": cpm_issue_create. Don't decide if it's a regulatory complaint under any rule: a person confirms the source on the card.
 - "Escalate issue 3307": cpm_issue_escalate. "Close issue 3307 with resolution: ...": cpm_issue_close, with a root cause only if the user gave one.`,
@@ -72,7 +72,7 @@ export function complianceModule(issues: IssueService, pool: Pool): ModuleSpec {
           return {
             text: `**${f.count} ${f.count === 1 ? 'issue' : 'issues'}**: ${by}. The oldest has been open **${f.oldestDays} days**.`,
             blocks: [moduleTable(spec, 'Issues', ctx.runId, 'cpm.issue.list', [{ field: 'id', headerName: 'Issue', type: 'text' }, { field: 'member', headerName: 'Member', type: 'text' }, { field: 'source', headerName: 'Source', type: 'text' }, { field: 'opened', headerName: 'Opened', type: 'date' }, { field: 'age', headerName: 'Age', type: 'days' }, { field: 'owner', headerName: 'Owner', type: 'text' }, { field: 'status', headerName: 'Status', type: 'text' }], f.items.slice(0, 25).map((i) => ({ id: `#${i.issueId}`, member: `${i.member} (…${i.last4})`, source: i.source, opened: i.opened, age: i.ageDays, owner: i.owner ?? 'Unassigned', status: i.overdue ? `${i.status}, past due` : i.status })), f.asOf)],
-            suggestions: f.items.slice(0, 1).map((i) => `Summarise case ${i.issueId}`),
+            suggestions: f.items.slice(0, 1).map((i) => `Summarize case ${i.issueId}`),
           };
         },
       },

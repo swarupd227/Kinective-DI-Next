@@ -122,7 +122,7 @@ export function createAppViews(deps: ViewDeps) {
       return {
         title: 'Tables',
         lede: 'Curated tables from the nightly build, and the saved views and snapshots made from them.',
-        take: { headline: saved.length ? `${count(saved.length, 'saved view, snapshot or uploaded table', 'saved views, snapshots and uploaded tables')} you can open${bin.length ? `, and ${count(bin.length, 'item')} in your Recycle Bin` : ''}.` : 'No saved views, snapshots or uploaded tables yet. Ask DI to snapshot a table, merge two into a saved view, or load a file on Integrations.', action: { label: 'Summarise Loan Accounts', ask: 'Profile the Loan Accounts table' } },
+        take: { headline: saved.length ? `${count(saved.length, 'saved view, snapshot or uploaded table', 'saved views, snapshots and uploaded tables')} you can open${bin.length ? `, and ${count(bin.length, 'item')} in your Recycle Bin` : ''}.` : 'No saved views, snapshots or uploaded tables yet. Ask DI to snapshot a table, merge two into a saved view, or load a file on Integrations.', action: { label: 'Summarize Loan Accounts', ask: 'Profile the Loan Accounts table' } },
         tiles: [{ label: 'Curated tables', value: String(svc.catalog.length) }, { label: 'Saved views', value: String(views) }, { label: 'Snapshots', value: String(saved.filter((o) => o.kind === 'Snapshot').length) }, ...(saved.some((o) => o.kind === 'Upload') ? [{ label: 'Uploaded tables', value: String(saved.filter((o) => o.kind === 'Upload').length) }] : []), { label: 'Recycle Bin', value: String(bin.length) }],
         prompts: ['Which tables link to Loan Accounts?', 'Snapshot the Loan Accounts table', 'Show my saved views and snapshots', ...bin.slice(0, 3).map((o) => (o.kind === 'View' ? `Restore the ${o.name} view` : `Restore ${o.name}`))],
         notice: 'Curated tables come from the core system in each nightly build, so their rows can’t be added or edited here. Uploaded tables are your own data, loaded from a file on Integrations. Comparing two snapshots isn’t built yet.',
@@ -658,13 +658,17 @@ export function createAppViews(deps: ViewDeps) {
       const m = await svc.mine({ userId: deps.user.id, name: deps.user.name, employeeId: deps.employeeId }, ctx);
       const time = deps.modules.includes('mytime') ? await svc.hours(deps.user.id) : null;
       const first = m.items[0];
+      // A person's own tasks read as "Personal"; the source column and per-source tiles only appear when work comes from more than one place.
+      const sourceName = (x: string) => (x === 'Task' ? 'Personal' : x);
+      const several = m.bySource.length > 1;
+      const fromBuild = m.bySource.some((x) => /onboarding/i.test(x.source));
       return {
         title: 'Tasks',
-        lede: `Everything open for you, from every source. Past due counts from today; onboarding work is as of the last build, ${day(m.asOf)}.`,
+        lede: `Everything open for you${several ? ', from every source' : ''}. Past due counts from today${fromBuild ? `; onboarding work is from the build that finished ${day(m.asOf)}` : ''}.`,
         take: { headline: m.items.length ? `${count(m.items.length, 'item')} open${m.late ? `, ${m.late} past due` : ''}. ${first ? `First: ${first.title}.` : ''}` : 'You have nothing open.', action: { label: 'Add a task', ask: 'Create a task to ' } },
-        tiles: [...m.bySource.map((s) => ({ label: s.source, value: String(s.count) })), { label: 'Past due', value: String(m.late), tone: m.late ? ('danger' as const) : ('neutral' as const) }, ...(time?.month ? [{ label: `Hours, ${new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(new Date(`${time.month}-15T00:00:00Z`))}`, value: String(time.total) } satisfies AppTile] : [])],
+        tiles: [{ label: 'Open', value: String(m.items.length) }, ...(several ? m.bySource.map((x) => ({ label: sourceName(x.source), value: String(x.count) })) : []), { label: 'Past due', value: String(m.late), tone: m.late ? ('danger' as const) : ('neutral' as const) }, ...(time?.month ? [{ label: `Hours, ${new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }).format(new Date(`${time.month}-15T00:00:00Z`))}`, value: String(time.total) } satisfies AppTile] : [])],
         prompts: ['What are my tasks today?', ...(time ? ['Show my hours this month'] : [])],
-        blocks: [table('Open', 'task.list', [text('title', 'Task'), text('source', 'Source'), text('due', 'Due'), text('status', 'Status')], m.items.map((i) => ({ title: i.title, source: i.source, due: i.due ? day(i.due) : '—', status: i.due && i.due < m.today ? 'Past due' : i.status }))), ...(time?.month ? [table(`My hours, ${monthName(time.month)}`, 'time.summary', [text('project', 'Project'), { field: 'hours', headerName: 'Hours', type: 'number' }], time.byProject)] : [])],
+        blocks: [table('Open', 'task.list', [text('title', 'Task'), ...(several ? [text('source', 'Source')] : []), text('due', 'Due'), text('status', 'Status')], m.items.map((i) => ({ title: i.title, ...(several ? { source: sourceName(i.source) } : {}), due: i.due ? day(i.due) : '—', status: i.due && i.due < m.today ? 'Past due' : i.status }))), ...(time?.month ? [table(`My hours, ${monthName(time.month)}`, 'time.summary', [text('project', 'Project'), { field: 'hours', headerName: 'Hours', type: 'number' }], time.byProject)] : [])],
       };
     },
     async integrations() {
