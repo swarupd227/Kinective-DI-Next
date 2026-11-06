@@ -231,8 +231,9 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
 
   /** Someone has this task open right now, so an "Answer ready" in the bell would only repeat what they see. */
   const watched = (threadId: string) => [...sockets.values()].some((subs) => subs.has(threadId));
+  /** Someone who left the conversation hears that its answer is ready; someone watching it already sees it. */
   const answerReady = (threadId: string) => {
-    if (!watched(threadId)) answerReady(threadId);
+    if (!watched(threadId)) notify(thread(threadId).owner, { group: 'agent_runs', title: 'Answer ready', detail: thread(threadId).summary.title, link: `/c/${threadId}` });
   };
 
   const completeRun = (runId: string, threadId: string) => {

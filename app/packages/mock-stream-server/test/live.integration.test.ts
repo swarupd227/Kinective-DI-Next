@@ -132,6 +132,23 @@ describe.skipIf(!available)('a referral end to end through an approval card', ()
     c.conn.stop();
   });
 
+  it('finishes a quick refusal nobody is watching yet, and leaves an "Answer ready" notice', async () => {
+    // A refusal can finish before the page subscribes to its thread; that once overflowed the stack
+    // and turned a correct refusal into "Something went wrong".
+    await persona('branch');
+    const c = await client();
+    const t = `thr_live_unwatched_${Date.now()}`;
+    await c.api.sendMessage(t, { clientMessageId: `cm_${Math.random()}`, input: { kind: 'text', text: 'Run the stress test' }, inputChannel: 'text', context: [] });
+    const ready = async () => ((await (await fetch(`${base}/v1/notifications`)).json()) as { notifications: { title: string; link: string }[] }).notifications.some((n) => n.title === 'Answer ready' && n.link === `/c/${t}`);
+    let seen = false;
+    for (let i = 0; i < 60 && !seen; i++) {
+      seen = await ready();
+      if (!seen) await new Promise((r) => setTimeout(r, 250));
+    }
+    expect(seen).toBe(true);
+    c.conn.stop();
+  });
+
   it('shows only real figures on Home: no sample sections, charts or tabs', async () => {
     for (const p of ['executive', 'msr']) {
       await persona(p);
