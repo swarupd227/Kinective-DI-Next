@@ -934,10 +934,10 @@ metrics:
     numerator: operating_expense_annualized_sum
     denominator: revenue_annualized_sum
     format: percent_1
-    description: Operating expense as a share of net interest income plus non-interest income, from the 5300. Lower is better; most credit unions run 70% to 85%.
+    description: Operating expense as a share of net interest income plus non-interest income, from the 5300, so 60% means it costs 60 cents to earn each dollar of revenue. Lower is better; community banks often run 55% to 70%, credit unions 70% to 85%.
     regulatory_basis: NCUA Financial Performance Report basis - operating expenses over net interest income plus fee and other operating income.
-    synonyms: [efficiency ratio, efficiency, cost to income, cost-to-income, overhead ratio]
-    requires_any: [efficiency, cost to income, cost-to-income, overhead ratio]
+    synonyms: [efficiency ratio, efficiency, cost to income, cost-to-income, overhead ratio, cost to make a dollar, cost to earn a dollar, cost per dollar of revenue, cost to make $1, cost to earn $1]
+    requires_any: [efficiency, cost to income, cost-to-income, overhead ratio, cost to make, cost to earn, cost per dollar, to make a dollar, to make $1, to earn $1]
     owner: Finance data team
     dimensions_allowed: []
   operating_expense_ratio:

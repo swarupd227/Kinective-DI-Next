@@ -149,6 +149,9 @@ describe('catalog search (spec 23.5.3)', () => {
     expect(top('return on equity by quarter')).toBe('return_on_equity');
     expect(top('What is our return on assets?')).toBe('return_on_assets');
     expect(cu.metrics.return_on_equity).toBeUndefined();
+    expect(top('What does it cost us to make $1?')).toBe('efficiency_ratio');
+    expect(top('What is our cost to earn a dollar of revenue?')).toBe('efficiency_ratio');
+    expect(top('efficiency ratio by quarter')).toBe('efficiency_ratio');
   });
 
   it('finds the capital and earnings ratios by their everyday names', () => {
