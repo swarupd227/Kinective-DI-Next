@@ -22,3 +22,4 @@ export { BENCHMARK_DDL, BUDGET_WRITE_TABLES, benchmarks, budgetSeed } from './be
 export { FFIEC_FILING, FFIEC_QUARTERS, generateFfiecCallReport } from './ffiecCallReport.ts';
 export { FFIEC_051, FFIEC_051_EDITION } from './ffiec051.ts';
 export { APIS_DDL, APIS_WRITE_TABLES, RELAY_BASE_URL, RELAY_HOST, createApiTables, relayCampaigns, relayDemoKey } from './apis.ts';
+export { BUILD_ACCOUNT, OFFCORE_DDL, OFFCORE_DEMO_NAME, OFFCORE_WRITE_TABLES, buildDbUrl, createOffcoreTables, offcoreDemoRows } from './offcore.ts';

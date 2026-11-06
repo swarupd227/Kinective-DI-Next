@@ -14,6 +14,9 @@ import { columnStatRows, dataLoadModule, sourcesModule, tablesModule } from '@di
 import { IngestService, SourceService, coreSystem, secretKeyFrom, TableService, type TableObject } from '@dinext/di-core';
 import { ApiService, apiHosts } from '@dinext/di-core';
 import { RELAY_BASE_URL, relayDemoKey } from '@dinext/tenant-db';
+import { AS_OF, buildDbUrl, createPool, offcoreDemoRows } from '@dinext/tenant-db';
+import { OffcoreService } from '@dinext/di-core';
+import { offcoreWorkbook } from './offcoreFile.ts';
 import { apisModule } from '@dinext/agents';
 import { readWorkbook } from './spreadsheet.ts';
 import type { TableSavedItem, TableWorkbench } from '@dinext/block-schemas';
@@ -94,6 +97,8 @@ interface Tenant {
   replica: string | null;
   /** API connections, once the tenant has the API tables. */
   apis: ApiService | null;
+  /** Off-core loans from servicer spreadsheets, once the tenant has the off-core tables. */
+  offcore: OffcoreService | null;
 }
 
 /**
@@ -178,6 +183,8 @@ export interface LiveRuntime {
   callReportFile(persona: PersonaId, kind: CallReportFileKind): Promise<{ fileName: string; contentType: string; body: Buffer } | null>;
   /** Keeps an upload as Staged for its uploader; nothing is in a folder until a save is approved (spec 8.15). */
   stageFile(persona: PersonaId, f: { name: string; body: Buffer }): Promise<{ fileId: number; name: string; type: string; sizeKb: number } | null>;
+  /** Stages the demo servicer spreadsheet of off-core loans for the person, as if they had uploaded it. */
+  stageDemoOffcore(persona: PersonaId): Promise<{ fileId: number; name: string; type: string; sizeKb: number } | null>;
   /** Saves a core login for the person; the password never comes back. Null without the access. */
   saveSourceLogin(persona: PersonaId, f: { system: string; host: string; port: number; database: string; login: string; password: string }): Promise<{ credentialId: number; system: string; host: string; database: string; login: string } | null>;
   /** The demo replica's connection details, so a demo can fill the form. Null where there's none. */
@@ -337,8 +344,16 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       () => false,
     );
     const sources = hasSources ? new SourceService(pool, sourceOptions()) : null;
+    // Off-core loans exist once the tenant was seeded with the off-core slice or later. The publish
+    // step connects with the build account, which can only add and remove loan rows.
+    const hasOffcore = await pool.query('SELECT 1 FROM ofc_feed LIMIT 1').then(
+      () => true,
+      () => false,
+    );
+    let buildPool: Pool | null = null;
+    const offcore = hasOffcore ? new OffcoreService(pool, institutionType, () => (buildPool ??= createPool(`${buildDbUrl()}/${t.schema}`, { connectionLimit: 2 })), AS_OF) : null;
     const replica = hasSources && institutionType === 'credit_union' ? replicaDatabase(t.schema) : null;
-    const governanceModules = governance ? [lineageModule(new LineageService(pool, semantic.model, undefined, sources ? () => sources.feeds() : undefined)), governanceModule(governance, () => new Date().getFullYear())] : [];
+    const governanceModules = governance ? [lineageModule(new LineageService(pool, semantic.model, undefined, sources ? () => sources.feeds() : undefined, offcore ? () => offcore.feeds() : undefined)), governanceModule(governance, () => new Date().getFullYear())] : [];
     // Indirect Lending and Prospecting exist once the tenant was seeded with Slice 21 or later.
     const growth = await Promise.all([pool.query('SELECT name FROM ind_dealer ORDER BY dealer_id'), pool.query('SELECT company FROM prs_prospect ORDER BY prospect_id'), pool.query('SELECT name FROM prs_stage ORDER BY position')]).then(
       ([d, p, s]) => ({ dealers: (d[0] as { name: string }[]).map((x) => x.name), companies: (p[0] as { company: string }[]).map((x) => x.company), stages: (s[0] as { name: string }[]).map((x) => x.name) }),
@@ -377,7 +392,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     );
     const tables = hasTables ? new TableService(pool, institutionType === 'bank' ? 'customer' : 'member') : null;
     // Data files load into the Tables store; the module goes first so "load x.csv into a table" is never read as Tables or Files.
-    const tablesModules = tables ? [dataLoadModule(files, new IngestService(pool, readWorkbook), today), tablesModule(tables, today)] : [];
+    const tablesModules = tables ? [dataLoadModule(files, new IngestService(pool, readWorkbook), today, offcore), tablesModule(tables, today)] : [];
     // "Connect the Symitar replica" and "pull from the core" go to Data Sources before anything else reads them.
     if (sources) tablesModules.unshift(sourcesModule(sources, today));
     // API connections exist once the tenant was seeded with the API slice or later.
@@ -420,7 +435,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     const [reportNames, segNames, dealerNames] = await Promise.all([names('SELECT DISTINCT name FROM esp_report_templates'), names('SELECT name FROM seg_company'), names('SELECT name FROM ind_dealer')]);
     const metricNames = Object.values(semantic.model.metrics).map((m) => m.label.replace(/\s*\(.*\)$/, ''));
     const vocabulary = [...new Set([...(dims.branch ?? []), ...(dims.region ?? []), ...(dims.loan_category ?? []), ...(dims.deposit_category ?? []), ...(staff as { display_name: string }[]).map((s) => s.display_name).filter((s) => !/^\w\. /.test(s)), ...metricNames, ...reportNames, ...segNames, ...dealerNames])];
-    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, governance, files, tables, outbox, sources, replica, apis, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules, alm: { irr: new IrrService(pool), liquidity: new LiquidityService(pool, institutionType) }, staff: (staff as { display_name: string }[]).map((s) => s.display_name) } });
+    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, governance, files, tables, outbox, sources, replica, apis, offcore, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules, alm: { irr: new IrrService(pool), liquidity: new LiquidityService(pool, institutionType) }, staff: (staff as { display_name: string }[]).map((s) => s.display_name) } });
   }
   if (!tenants.size) return null;
 
@@ -457,6 +472,15 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       const p = PERSONAS[persona];
       if (!t || !t.runtime.modules || !p.session.apps.includes('admin')) return null;
       return createAppViews(viewDeps(t.pool, t.runtime.institutionType, { purviewBranches: p.purview, employeeId: p.employeeId, modules: p.modules ?? [], leads: false, retention: Boolean(p.retention), user: { id: p.session.user.id, name: p.session.user.name } }, Boolean(t.files))).platform();
+    },
+
+    async stageDemoOffcore(persona) {
+      const t = tenantFor(persona);
+      const p = PERSONAS[persona];
+      if (!t?.files || !t.offcore || !p.session.apps.includes('files') || !p.modules?.includes('dataload')) return null;
+      const [branches] = (await t.pool.query('SELECT name FROM cdm_location ORDER BY int_id')) as unknown as [{ name: string }[]];
+      const demo = offcoreDemoRows(branches.map((b) => b.name));
+      return t.files.stage({ name: demo.name, body: await offcoreWorkbook(demo), owner: { userId: p.session.user.id, name: p.session.user.name }, on: new Date().toISOString().slice(0, 10) });
     },
 
     async stageFile(persona, f) {

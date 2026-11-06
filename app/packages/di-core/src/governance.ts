@@ -61,6 +61,8 @@ export class LineageService {
     private readonly catalog = LINEAGE_CATALOG,
     /** Curated tables a direct core connection feeds, in place of the extract file. */
     private readonly feeds?: () => Promise<Map<string, { name: string; system: string; theirTables: string[]; lastPull: string | null; since: string | null; schedule: string }>>,
+    /** Servicer spreadsheets whose off-core loans are in cdm_loan, tagged by source. */
+    private readonly offcore?: () => Promise<{ name: string; source: string; servicer: string | null; file: string | null; asOf: string | null; loans: number; loadedBy: string | null; loadedAt: string | null }[]>,
   ) {}
 
   /** The metric a question names, by its longest matching name or synonym. */
@@ -120,6 +122,19 @@ export class LineageService {
     const domains = new Set<string>();
     const columns = this.columnsFor(metric.measures);
     const fed = (await this.feeds?.().catch(() => null)) ?? new Map();
+    const offcore = ((await this.offcore?.().catch(() => null)) ?? []).filter((f) => f.loans > 0);
+    // Off-core loans sit beside the core's rows in the current loan table, each tagged with its spreadsheet.
+    const offcoreLanes = (table: string, detail?: string) =>
+      table === 'cdm_loan'
+        ? offcore.map((f) => ({
+            nodes: [
+              { kind: 'table', label: 'Loans (off-core rows)', detail: `${table}${detail ? `: ${detail}` : ''}, source “${f.source}”` },
+              { kind: 'load', label: 'Off-core loan load', detail: `${f.loans.toLocaleString('en-US')} loans as of ${f.asOf ?? '—'}, approved by ${f.loadedBy ?? '—'}${f.loadedAt ? ` on ${f.loadedAt.slice(0, 10)}` : ''}. Replaced each month by the next file` },
+              { kind: 'file', label: f.file ?? f.name },
+              { kind: 'source', label: f.servicer ? `Serviced by ${f.servicer}` : 'Servicer spreadsheet' },
+            ] as LineageNode[],
+          }))
+        : [];
     for (const [table, cols] of columns) {
       const entry = this.catalog[table];
       const detail = cols.size ? [...cols].join(', ') : undefined;
@@ -138,7 +153,7 @@ export class LineageService {
         if (entry.rollupOf) nodes.push({ kind: 'rollup', label: 'Month-end rollup', detail: `From ${entry.rollupOf}` });
         nodes.push({ kind: 'load', label: `${feed.name} sync`, detail: `Read-only, ${feed.schedule.toLowerCase()}. Replaces the core extract file from the next build${feed.lastPull ? `; last pulled ${feed.lastPull} UTC` : ''}` });
         nodes.push({ kind: 'source', label: `${feed.system} replica`, detail: feed.theirTables.join(' + ') });
-        lanes.push({ nodes });
+        lanes.push({ nodes }, ...offcoreLanes(table, detail));
         continue;
       }
       const nodes: LineageNode[] = [{ kind: 'table', label: entry.label, detail: `${table}${detail ? `: ${detail}` : ''}`, dq: dqFor(entry.domains), lastLoad: lastLoad(base?.upload) }];
@@ -147,7 +162,7 @@ export class LineageService {
       if (base?.file) nodes.push({ kind: 'file', label: `${base.file}_${stamp}.txt` });
       if (base?.system) nodes.push({ kind: 'source', label: base.system });
       else nodes.push({ kind: 'unknown', label: 'Unknown source', detail: 'No lineage recorded' });
-      lanes.push({ nodes });
+      lanes.push({ nodes }, ...offcoreLanes(table, detail));
     }
     const own = checks.filter((c) => domains.has(c.domain)).map((c) => ({ domain: c.domain, dimension: c.dimension, name: c.name, passed: c.status === 'Pass', rowsFailed: c.rows_failed }));
     return { metric, lanes, unknown, checks: own, asOf };

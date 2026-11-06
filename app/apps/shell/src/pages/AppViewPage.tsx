@@ -143,12 +143,21 @@ function DataUpload() {
   const navigate = useNavigate();
   const [file, setFile] = useState<File | null>(null);
   const [into, setInto] = useState('');
-  const load = useMutation<void, Error, { file: File; into: string }>({
+  const [as, setAs] = useState<'table' | 'offcore'>('table');
+  const load = useMutation<void, Error, { file: File; into: string; as: 'table' | 'offcore' }>({
     mutationFn: async (u) => {
       if (u.file.size > MAX_BYTES) throw new Error(`That file is ${(u.file.size / 1024 / 1024).toFixed(1)} MB. Data files can be up to 5 MB.`);
       const staged = await api.stageFile({ name: u.file.name, data: await base64(u.file) });
       const table = u.into.trim();
-      const id = await startThread(table ? `Load “${staged.name}” into the ${table} table` : `Load “${staged.name}”`);
+      const id = await startThread(u.as === 'offcore' ? `Load “${staged.name}” as off-core loans` : table ? `Load “${staged.name}” into the ${table} table` : `Load “${staged.name}”`);
+      navigate(`/c/${id}`);
+    },
+  });
+  // The demo servicer spreadsheet, staged as though it had been uploaded.
+  const demo = useMutation<void, Error, void>({
+    mutationFn: async () => {
+      const staged = await api.stageDemoOffcore();
+      const id = await startThread(`Load “${staged.name}” as off-core loans`);
       navigate(`/c/${id}`);
     },
   });
@@ -170,19 +179,37 @@ function DataUpload() {
           />
         </label>
         <label className={styles.field}>
-          <span className={styles.tileLabel}>Into (optional)</span>
-          <input className={styles.select} value={into} onChange={(e) => setInto(e.target.value)} placeholder="New table" />
+          <span className={styles.tileLabel}>Load as</span>
+          <select className={styles.select} value={as} onChange={(e) => setAs(e.target.value as 'table' | 'offcore')}>
+            <option value="table">A table of my own</option>
+            <option value="offcore">Off-core loans (participations, purchased pools)</option>
+          </select>
         </label>
+        {as === 'table' && (
+          <label className={styles.field}>
+            <span className={styles.tileLabel}>Into (optional)</span>
+            <input className={styles.select} value={into} onChange={(e) => setInto(e.target.value)} placeholder="New table" />
+          </label>
+        )}
       </div>
-      <p className={styles.tileLabel}>DI reads every row, says what each column holds and what won’t load, and prepares a card. Nothing is loaded until you approve. Up to 5 MB and 5,000 rows, with a header row.</p>
-      <div>
-        <Button variant="primary" disabled={!file || load.isPending} onClick={() => file && load.mutate({ file, into })}>
+      <p className={styles.tileLabel}>
+        {as === 'offcore'
+          ? 'For loans your core doesn’t carry, from a servicer’s monthly spreadsheet. DI matches the columns to its loan fields, places each loan type in one of your categories and says which rows won’t load. Once approved, the loans are in every loan figure, tagged with their source; next month’s file replaces this one.'
+          : 'DI reads every row, says what each column holds and what won’t load, and prepares a card. Nothing is loaded until you approve. Up to 5 MB and 5,000 rows, with a header row.'}
+      </p>
+      <div className={styles.uploadRow}>
+        <Button variant="primary" disabled={!file || load.isPending} onClick={() => file && load.mutate({ file, into, as })}>
           {load.isPending ? 'Uploading…' : 'Upload and ask DI to load it'}
         </Button>
+        {as === 'offcore' && (
+          <Button variant="secondary" disabled={demo.isPending} onClick={() => demo.mutate()}>
+            {demo.isPending ? 'Staging…' : 'Use the demo servicer file'}
+          </Button>
+        )}
       </div>
-      {load.isError && (
+      {(load.isError || demo.isError) && (
         <p className={styles.message} role="alert">
-          {load.error.message}
+          {(load.error ?? demo.error)!.message}
         </p>
       )}
     </section>

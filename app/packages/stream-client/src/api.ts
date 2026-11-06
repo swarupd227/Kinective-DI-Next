@@ -141,6 +141,13 @@ export function createApiClient({ baseUrl, token }: ApiClientOptions) {
       if (!res.ok) throw new Error(json.message ?? 'That file could not be uploaded.');
       return json;
     },
+    /** Stages the demo servicer spreadsheet of off-core loans, as though the person had uploaded it. */
+    async stageDemoOffcore(): Promise<{ fileId: number; name: string; type: string; sizeKb: number }> {
+      const res = await fetch(`${baseUrl}/v1/files/demo-offcore`, { method: 'POST', headers: headers() });
+      const json = (await res.json().catch(() => ({}))) as { fileId: number; name: string; type: string; sizeKb: number; message?: string };
+      if (!res.ok) throw new Error(json.message ?? 'The demo file could not be staged.');
+      return json;
+    },
     /** Saves a core login. The password goes to DI Core and never comes back; the reply has its number. */
     async saveSourceLogin(f: { system: string; host: string; port: number; database: string; login: string; password: string }): Promise<{ credentialId: number; system: string; host: string; database: string; login: string }> {
       const res = await fetch(`${baseUrl}/v1/sources/login`, { method: 'POST', headers: headers(), body: JSON.stringify(f) });

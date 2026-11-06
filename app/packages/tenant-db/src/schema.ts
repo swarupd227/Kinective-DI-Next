@@ -47,7 +47,9 @@ export const TENANT_DDL = [
      ltv DECIMAL(6,2) NULL,
      term_months SMALLINT NULL,
      risk_rating TINYINT NULL,
+     source VARCHAR(80) NULL,
      KEY ix_loan_branch (branch_id),
+     KEY ix_loan_source (source),
      KEY ix_loan_party (party_id),
      KEY ix_loan_open (open_date)
    )`,

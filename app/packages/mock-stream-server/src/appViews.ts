@@ -7,6 +7,7 @@ import { memberNumber, WorkflowDefService, WorksheetService, TaskService, Campai
 import type { Pool } from '@dinext/tenant-db';
 import { SourceService, TableService, secretKeyFrom } from '@dinext/di-core';
 import { ApiService, apiHosts, stampUtc } from '@dinext/di-core';
+import { OffcoreService } from '@dinext/di-core';
 import { CONNECTION_COLUMNS, LOG_COLUMNS, connectionRows, logRows } from '@dinext/agents';
 import { EmailOutbox } from '@dinext/di-core';
 
@@ -675,6 +676,11 @@ export function createAppViews(deps: ViewDeps) {
       // API connections and their request log, once the tenant has the API tables.
       const apiSvc = new ApiService(deps.pool, { secretKey: secretKeyFrom(), allowedHosts: apiHosts() });
       const [apis, apiLog] = await Promise.all([apiSvc.connections().catch(() => []), apiSvc.log({ limit: 10 }).catch(() => [])]);
+      // Off-core loans: listing needs no build account, so none is given.
+      const offSvc = new OffcoreService(deps.pool, deps.person === 'customer' ? 'bank' : 'credit_union', () => {
+        throw new Error('Listing only');
+      }, '');
+      const [offFeeds, bySource] = await Promise.all([offSvc.feeds().catch(() => []), offSvc.bySource().catch(() => [])]);
       return {
         title: 'Integrations',
         lede: `Where the data comes from, and how the latest loads went. Data as of ${day(build.asOf)}.`,
@@ -695,6 +701,12 @@ export function createAppViews(deps: ViewDeps) {
             : []),
           ...(apis.length ? [table('API connections', 'api.connection.list', CONNECTION_COLUMNS, connectionRows(apis))] : []),
           ...(apiLog.length ? [table('Request log', 'api.log.list', LOG_COLUMNS, logRows(apiLog))] : []),
+          ...(offFeeds.length
+            ? [
+                table('Off-core loans', 'offcore.feed.list', [text('name', 'Spreadsheet'), text('servicer', 'Servicer'), text('asOf', 'As of'), { field: 'loans', headerName: 'Loans', type: 'count' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'skipped', headerName: 'Rows not loaded', type: 'count' }, text('loaded', 'Loaded')], offFeeds.map((f) => ({ name: f.name, servicer: f.servicer ?? '—', asOf: f.asOf ? day(f.asOf) : '—', loans: f.loans, balance: f.balance, skipped: f.skipped, loaded: f.loadedAt ? `${day(f.loadedAt.slice(0, 10))} by ${f.loadedBy ?? '—'}` : '—' }))),
+                table('Loans by source', 'offcore.by_source', [text('source', 'Source'), { field: 'loans', headerName: 'Loans', type: 'count' }, { field: 'balance', headerName: 'Balance', type: 'currency' }], bySource.map((x) => ({ source: x.source, loans: x.loans, balance: x.balance }))),
+              ]
+            : []),
           table('Data sources', 'ingestion.sources', [text('source', 'Source'), text('method', 'How it arrives'), text('dueBy', 'Due by'), text('arrived', 'Arrived'), text('state', 'Last load')], build.uploads.map((u) => ({ source: u.source, method: u.source === 'Core extract' && feeding ? `Replaced by the ${feeding.name} from the next build` : u.method, dueBy: u.dueBy, arrived: u.arrived, state: u.late ? 'Late' : 'On time' }))),
         ],
       };

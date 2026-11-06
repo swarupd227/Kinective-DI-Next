@@ -23,6 +23,7 @@ import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
 import { createSourceTables, seedCoreReplica } from './sources.ts';
 import { createApiTables } from './apis.ts';
+import { createOffcoreTables } from './offcore.ts';
 import { referralSeed, WORKFLOW_DDL, WORKFLOW_WRITE_TABLES, workflowSeed } from './workflow.ts';
 
 const BATCH = 2000;
@@ -161,6 +162,8 @@ async function main() {
     await createSourceTables(admin, profile.schema);
     // API connections: DI's store, and the simulated marketing platform with the campaigns it already ran.
     await createApiTables(admin, profile.schema);
+    // Off-core loans: DI's store, and the build account that publishes them into cdm_loan.
+    await createOffcoreTables(admin, profile.schema);
     if (profile.institutionType === 'credit_union') await seedCoreReplica(admin, profile.schema);
     console.log(`${profile.key}: ${t.parties.length} parties, ${t.loans.length} loans, ${t.deposits.length} deposit accounts, ${t.histLoan.length} loan history rows, ${rm.interactions.length} interactions in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   }

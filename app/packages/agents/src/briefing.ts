@@ -29,11 +29,13 @@ const num = (r: SemanticResult, metric: string, where: Record<string, string> = 
 
 export async function buildBriefing(svc: SemanticService, ctx: QueryContext, runId = 'home'): Promise<Briefing> {
   const m = svc.model.metrics;
-  const [now, history, joins, branches] = await Promise.all([
+  const [now, history, joins, branches, core] = await Promise.all([
     svc.query({ metrics: ['loan_balance', 'deposit_balance', 'delinquency_ratio_60_plus', 'member_count'] }, ctx),
     svc.query({ metrics: ['loan_balance', 'deposit_balance', 'delinquency_ratio_60_plus', 'member_count'], time: { grain: 'month', last: 12 } }, ctx),
     svc.query({ metrics: ['new_members'], time: { grain: 'month', last: 1 } }, ctx),
     svc.query({ metrics: ['delinquency_ratio_60_plus', 'loan_balance'], dimensions: ['branch'], order: [{ field: 'delinquency_ratio_60_plus', dir: 'desc' }] }, ctx),
+    // Core loans alone: month-end history holds only those, so changes compare like with like.
+    svc.query({ metrics: ['loan_balance', 'delinquency_ratio_60_plus'], filters: [{ dimension: 'loan_source', op: 'in', values: ['Core'] }] }, ctx).catch(() => null),
   ]);
   const periods = history.periods!;
   const last = periods[periods.length - 1]!.label;
@@ -44,11 +46,17 @@ export async function buildBriefing(svc: SemanticService, ctx: QueryContext, run
   const dq = num(now, 'delinquency_ratio_60_plus')!;
   const members = num(now, 'member_count')!;
   const loansThen = num(history, 'loan_balance', { period: last })!;
+  // With off-core loans in DI, the change is measured on core loans; the value shown includes both.
+  const coreLoans = core ? num(core, 'loan_balance') : null;
+  const offcore = coreLoans !== null && coreLoans !== undefined && Math.abs(loans - coreLoans) > 0.5 ? loans - coreLoans : 0;
+  const loansCmp = offcore ? coreLoans! : loans;
+  const dqCmp = offcore ? (num(core!, 'delinquency_ratio_60_plus') ?? dq) : dq;
   const depositsThen = num(history, 'deposit_balance', { period: last })!;
   const dqThen = num(history, 'delinquency_ratio_60_plus', { period: last })!;
   const joined = num(joins, 'new_members') ?? 0;
   const pct = (a: number, b: number) => (b ? ((a - b) / Math.abs(b)) * 100 : 0);
   const vsLabel = `vs ${monthName(svc.build.latestMonthEnd)} month-end`;
+  const loanVsLabel = offcore ? `${vsLabel}, core loans` : vsLabel;
   const dir = (v: number) => (v > 0.0005 ? 'up' : v < -0.0005 ? 'down' : 'flat') as 'up' | 'down' | 'flat';
 
   const asOf = `${svc.build.completedAt}${TENANT_UTC_OFFSET}`;
@@ -69,9 +77,9 @@ export async function buildBriefing(svc: SemanticService, ctx: QueryContext, run
     data: {
       layout: 'row',
       items: [
-        { label: m.loan_balance!.label, value: loans, unit: 'currency', format: { compact: true, decimals: 2 }, comparison: { label: vsLabel, value: Math.round(pct(loans, loansThen) * 10) / 10, unit: 'percent', direction: dir(pct(loans, loansThen)), goodWhen: 'up' }, sparkline: series('loan_balance'), metricRef: 'metric:loan_balance' },
+        { label: m.loan_balance!.label, value: loans, unit: 'currency', format: { compact: true, decimals: 2 }, comparison: { label: loanVsLabel, value: Math.round(pct(loansCmp, loansThen) * 10) / 10, unit: 'percent', direction: dir(pct(loansCmp, loansThen)), goodWhen: 'up' }, sparkline: series('loan_balance'), metricRef: 'metric:loan_balance' },
         { label: m.deposit_balance!.label, value: deposits, unit: 'currency', format: { compact: true, decimals: 2 }, comparison: { label: vsLabel, value: Math.round(pct(deposits, depositsThen) * 10) / 10, unit: 'percent', direction: dir(pct(deposits, depositsThen)), goodWhen: 'up' }, sparkline: series('deposit_balance'), metricRef: 'metric:deposit_balance' },
-        { label: 'Delinquency 60+', value: dq, unit: 'percent', format: { decimals: 2 }, comparison: { label: vsLabel, value: Math.round((dq - dqThen) * 100), unit: 'bp', direction: dir(dq - dqThen), goodWhen: 'down' }, sparkline: series('delinquency_ratio_60_plus'), metricRef: 'metric:delinquency_ratio_60_plus' },
+        { label: 'Delinquency 60+', value: dq, unit: 'percent', format: { decimals: 2 }, comparison: { label: loanVsLabel, value: Math.round((dqCmp - dqThen) * 100), unit: 'bp', direction: dir(dqCmp - dqThen), goodWhen: 'down' }, sparkline: series('delinquency_ratio_60_plus'), metricRef: 'metric:delinquency_ratio_60_plus' },
         { label: m.member_count!.label, value: members, unit: 'count', comparison: { label: `joined in ${monthName(svc.build.latestMonthEnd)}`, value: joined, unit: 'count', direction: 'flat', goodWhen: 'up' }, sparkline: series('member_count'), metricRef: 'metric:member_count' },
       ],
     },
@@ -99,8 +107,8 @@ export async function buildBriefing(svc: SemanticService, ctx: QueryContext, run
   // Narrative assembled from computed values only (spec 26.7).
   const worst = branches.rows[0];
   const lines = [
-    `${m.loan_balance!.label} is **${formatMetric(loans, 'currency')}**, ${pct(loans, loansThen) >= 0 ? 'up' : 'down'} ${formatMetric(Math.abs(pct(loans, loansThen)), 'pct')} since the ${monthName(svc.build.latestMonthEnd)} month-end, and ${m.deposit_balance!.label.toLowerCase()} is **${formatMetric(deposits, 'currency')}**.`,
-    `Delinquency 60+ is **${formatMetric(dq, 'percent_2')}**, ${dq >= dqThen ? 'up' : 'down'} ${formatMetric(Math.abs(dq - dqThen) * 100, 'bp')} over the same period${worst && branches.rows.length > 1 ? `; **${worst.branch}** is highest at ${formatMetric(Number(worst.delinquency_ratio_60_plus), 'percent_2')}` : ''}.`,
+    `${m.loan_balance!.label} is **${formatMetric(loans, 'currency')}**${offcore ? `, including ${formatMetric(offcore, 'currency')} of off-core loans; core loans are` : ','} ${pct(loansCmp, loansThen) >= 0 ? 'up' : 'down'} ${formatMetric(Math.abs(pct(loansCmp, loansThen)), 'pct')} since the ${monthName(svc.build.latestMonthEnd)} month-end, and ${m.deposit_balance!.label.toLowerCase()} is **${formatMetric(deposits, 'currency')}**.`,
+    `Delinquency 60+ is **${formatMetric(dq, 'percent_2')}**${offcore ? `; on core loans it is ${formatMetric(dqCmp, 'percent_2')},` : ','} ${dqCmp >= dqThen ? 'up' : 'down'} ${formatMetric(Math.abs(dqCmp - dqThen) * 100, 'bp')} over the same period${worst && branches.rows.length > 1 ? `; **${worst.branch}** is highest at ${formatMetric(Number(worst.delinquency_ratio_60_plus), 'percent_2')}` : ''}.`,
     `${formatMetric(joined, 'count')} new ${svc.model.institutionType === 'bank' ? 'customers' : 'members'} joined in ${monthName(svc.build.latestMonthEnd)}.`,
   ];
 
@@ -109,7 +117,7 @@ export async function buildBriefing(svc: SemanticService, ctx: QueryContext, run
   const times = dq ? Math.round((worstRate / dq) * 10) / 10 : 0;
   const outlier = worst && branches.rows.length > 1 && times >= 1.2;
   const move = (v: number, up: string, down: string, eps: number) => (v > eps ? up : v < -eps ? down : 'held steady');
-  const moves = [`loans ${move(pct(loans, loansThen), 'grew', 'slipped', 0.05)}`, `deposits ${move(pct(deposits, depositsThen), 'grew', 'slipped', 0.05)}`, `delinquency ${move((dq - dqThen) * 100, 'rose', 'eased', 0.5)}`];
+  const moves = [`loans ${move(pct(loansCmp, loansThen), 'grew', 'slipped', 0.05)}`, `deposits ${move(pct(deposits, depositsThen), 'grew', 'slipped', 0.05)}`, `delinquency ${move((dq - dqThen) * 100, 'rose', 'eased', 0.5)}`];
   const homeLines = [
     // The section title names the period ("Since the September month-end"), so the sentence doesn't.
     `${moves[0]!.charAt(0).toUpperCase()}${moves[0]!.slice(1)}, ${moves[1]} and ${moves[2]}.`,
@@ -126,11 +134,11 @@ export async function buildBriefing(svc: SemanticService, ctx: QueryContext, run
       question: `Show delinquency 60+ by loan category for ${worst.branch}`,
     });
   }
-  if (Math.abs(dq - dqThen) * 100 >= 3) {
+  if (Math.abs(dqCmp - dqThen) * 100 >= 3) {
     lookAt.push({
       kind: 'move',
-      title: `Delinquency 60+ ${dq > dqThen ? 'rose' : 'fell'} ${formatMetric(Math.abs(dq - dqThen) * 100, 'bp')} since the ${monthName(svc.build.latestMonthEnd)} month-end`,
-      subtitle: `Now ${formatMetric(dq, 'percent_2')}`,
+      title: `Delinquency 60+ ${offcore ? 'on core loans ' : ''}${dqCmp > dqThen ? 'rose' : 'fell'} ${formatMetric(Math.abs(dqCmp - dqThen) * 100, 'bp')} since the ${monthName(svc.build.latestMonthEnd)} month-end`,
+      subtitle: offcore ? `Now ${formatMetric(dqCmp, 'percent_2')} on core loans, ${formatMetric(dq, 'percent_2')} with off-core loans` : `Now ${formatMetric(dq, 'percent_2')}`,
       why: 'Changes of 3 basis points or more against the last month-end are flagged.',
       question: 'Show the delinquency 60+ trend by branch for the last 6 months',
     });

@@ -714,6 +714,11 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         const demo = live?.demoApi(persona());
         return demo ? json(res, 200, demo) : json(res, 404, { code: 'NOT_FOUND' });
       }
+      if (method === 'POST' && path === '/v1/files/demo-offcore') {
+        // The demo servicer spreadsheet, staged as though the person had uploaded it.
+        const staged = await live?.stageDemoOffcore(persona());
+        return staged ? json(res, 201, staged) : json(res, 403, { code: 'NO_ACCESS', message: 'Loading off-core loans is part of the Integrations administrator’s access.' });
+      }
       if (method === 'GET' && path === '/v1/sources/demo') {
         const demo = live?.demoSource(persona());
         return demo ? json(res, 200, demo) : json(res, 404, { code: 'NOT_FOUND' });
