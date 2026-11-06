@@ -449,6 +449,15 @@ measures:
       call_report_history: "SUM(CASE WHEN cvh.code = 'IS0010' THEN cvh.amount * 12 / MONTH(cvh.quarter_end) ELSE 0 END)"
       ffiec_report: "SUM(CASE WHEN fv.code = 'RIAD4074' THEN fv.amount ELSE 0 END * 12 / MONTH(fv.quarter_end))"
       ffiec_history: "SUM(CASE WHEN fvh.code = 'RIAD4074' THEN fvh.amount ELSE 0 END * 12 / MONTH(fvh.quarter_end))"
+  nim_base_sum:
+    # What NIM divides by: a credit union's total assets (NCUA's Financial Performance Report), a
+    # bank's earning assets, interest-bearing balances, securities and loans (the FFIEC's UBPR).
+    unit: usd
+    exprs:
+      call_report: "SUM(CASE WHEN cv.code = '010' THEN cv.amount ELSE 0 END)"
+      call_report_history: "SUM(CASE WHEN cvh.code = '010' THEN cvh.amount ELSE 0 END)"
+      ffiec_report: "SUM(CASE WHEN fv.code IN ('RCON0071', 'RCON1754', 'RCON1773', 'RCON2122') THEN fv.amount ELSE 0 END)"
+      ffiec_history: "SUM(CASE WHEN fvh.code IN ('RCON0071', 'RCON1754', 'RCON1773', 'RCON2122') THEN fvh.amount ELSE 0 END)"
   net_charge_off_annualized_sum:
     unit: usd
     exprs:
@@ -804,12 +813,25 @@ metrics:
     label: Net interest margin (NIM)
     type: ratio
     numerator: net_interest_income_annualized_sum
-    denominator: call_report_assets_sum
+    denominator: nim_base_sum
     format: percent_2
-    description: Year-to-date net interest income (5300 account IS0010, interest income less dividends and interest expense), annualized, divided by total assets (010), from the latest 5300.
+    description: Year-to-date net interest income (5300 account IS0010, interest income less dividends and interest expense), annualized. A credit union divides it by total assets (010), as NCUA does; a bank divides it by earning assets (loans, securities and interest-bearing balances), as the UBPR does. From the latest 5300.
     regulatory_basis: NCUA Financial Performance Report net interest margin, from 5300 accounts IS0010 and 010.
     synonyms: [nim, net interest margin, margin, interest margin, spread, net interest income ratio]
     requires_any: [nim, margin, spread]
+    owner: Finance data team
+    dimensions_allowed: []
+  yield_on_earning_assets:
+    label: Yield on earning assets
+    institution_types: [bank]
+    type: ratio
+    numerator: interest_income_annualized_sum
+    denominator: nim_base_sum
+    format: percent_2
+    description: Year-to-date interest income (RIAD4107), annualized, divided by earning assets (loans, securities and interest-bearing balances), from the latest Call Report. Less interest expense on the same base, it is the net interest margin.
+    regulatory_basis: FFIEC Uniform Bank Performance Report, yield on earning assets (period-end rather than average balances).
+    synonyms: [yield on earning assets, earning asset yield, earning-asset yield]
+    requires_any: [earning]
     owner: Finance data team
     dimensions_allowed: []
   net_charge_off_ratio:
