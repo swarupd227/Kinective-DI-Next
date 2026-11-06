@@ -230,6 +230,7 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
         { id: 'a8', title: 'Deposit pricing: cost of funds and beta through the rate cycle', kind: 'analysis', analysis: 'alco.pricing', metrics: [], size: 'full' },
         { id: 'a7', title: 'Loans: mix, yields, growth and concentration', kind: 'analysis', analysis: 'alco.loans', metrics: [], size: 'full' },
         { id: 'a9', title: 'New loans: yield on production against the book', kind: 'analysis', analysis: 'alco.newloans', metrics: [], size: 'full' },
+        { id: 'a10', title: 'Stress test: capital over nine quarters', kind: 'analysis', analysis: 'stress.capital', metrics: [], size: 'full' },
         { id: 'c1', title: 'Loan balance by category, last 13 months', kind: 'chart', chart: 'stacked_bar', metrics: ['loan_balance'], by: 'loan_category', trend: 13, size: 'half' },
         { id: 'c2', title: 'Deposit balance by product, last 13 months', kind: 'chart', chart: 'stacked_bar', metrics: ['deposit_balance'], by: 'deposit_category', trend: 13, size: 'half' },
       ],
@@ -250,6 +251,23 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
         { ...kpi('k1', 'Weighted average loan rate', 'average_loan_rate'), size: 'third' as const },
         { ...kpi('k2', 'Cost of deposits', 'cost_of_deposits'), size: 'third' as const },
         { ...kpi('k3', 'Yield on new loans', 'new_loan_yield'), size: 'third' as const },
+      ],
+    },
+    // The examiners' components and a community stress test: DI's read of each measure, never a rating.
+    {
+      templateId: 'camels_stress_quarterly',
+      name: 'CAMELS and stress test',
+      description: 'Each CAMELS component’s measures against minimums, policy and peers, with DI’s read (not a rating), and capital over nine quarters under baseline, adverse and severely adverse scenarios.',
+      folder: 'Board',
+      settings: { ...settings('quarter', ['Executive', 'Finance']), addHierarchyControls: false },
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        { id: 'a1', title: 'CAMELS components: DI’s read', kind: 'analysis', analysis: 'camels.summary', metrics: [], size: 'full' },
+        { id: 'a2', title: 'CAMELS measures', kind: 'analysis', analysis: 'camels.measures', metrics: [], size: 'full' },
+        { id: 'a3', title: 'Stress test: capital over nine quarters', kind: 'analysis', analysis: 'stress.capital', metrics: [], size: 'full' },
+        { id: 'a4', title: 'Stress test: severely adverse losses by loan type', kind: 'analysis', analysis: 'stress.losses', metrics: [], size: 'half' },
+        { id: 'a5', title: institutionType === 'bank' ? 'Commercial real estate: if property values fall' : 'Business loans: if property values fall', kind: 'analysis', analysis: 'stress.cre', metrics: [], size: 'half' },
       ],
     },
     {
@@ -463,6 +481,7 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
       pendingEdits: [],
       widgets: [
         { id: 'a1', title: 'Scorecard against plan and peers', kind: 'analysis', analysis: 'board.scorecard', metrics: [], size: 'full' },
+        { id: 'a2', title: 'CAMELS components: DI’s read', kind: 'analysis', analysis: 'camels.summary', metrics: [], size: 'full' },
         // Earnings and capital from the 5300 or the FFIEC Call Report.
         ...(institutionType === 'credit_union' || institutionType === 'bank'
           ? [

@@ -138,6 +138,12 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-PR-001', set: 'golden', persona: 'bank_cfo', q: 'What is our deposit beta?', agent: 'Interest Rate Risk', contains: ['beta'], approval: 'none' },
   { id: 'GQ-PF-001', set: 'golden', persona: 'bank_cfo', q: 'Which products are most profitable?', agent: 'Profitability', contains: ['before overhead'], approval: 'none' },
   { id: 'GQ-CMP-002', set: 'golden', persona: 'executive', q: 'Which campaigns paid for themselves?', agent: 'Campaigns', contains: ['control group'], approval: 'none' },
+  // CAMELS view (never a rating) and the community stress test.
+  { id: 'GQ-CAM-001', set: 'golden', persona: 'bank_cfo', q: 'Show our CAMELS view', agent: 'CAMELS and stress test', contains: ['not a CAMELS rating'], approval: 'none' },
+  { id: 'GQ-STR-001', set: 'golden', persona: 'bank_cfo', q: 'Run the stress test', agent: 'CAMELS and stress test', contains: ['severely adverse', 'times severe to reach the minimum'], approval: 'none' },
+  { id: 'GQ-STR-002', set: 'golden', persona: 'executive', q: 'How much could we lose before we breach the minimum?', agent: 'CAMELS and stress test', contains: ['times the severely adverse'], approval: 'none' },
+  { id: 'GQ-STR-003', set: 'golden', persona: 'bank_cfo', q: 'What if commercial property values fall 30%?', agent: 'CAMELS and stress test', contains: ['commercial real estate loans'], approval: 'none' },
+  { id: 'PM-CAM-001', set: 'permission', persona: 'branch', q: 'Run the stress test', refused: true, notContains: ['severely adverse'], approval: 'none', ref: 'the stress test is for finance and executives' },
   // The third way in: API connections, and the marketing round trip on them.
   { id: 'GQ-API-001', set: 'golden', persona: 'admin', q: 'Show the API connections', agent: 'API Connections', contains: ['API connection'], approval: 'none' },
   { id: 'GQ-API-002', set: 'golden', persona: 'admin', q: 'Show the last five errors from the request log', agent: 'API Connections', approval: 'none' },

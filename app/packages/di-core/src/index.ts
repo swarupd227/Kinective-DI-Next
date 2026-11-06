@@ -46,3 +46,4 @@ export { BranchScorecardService, type BranchLine } from './branchScorecard.ts';
 export { LendingProductionService, WINDOW_DAYS as PRODUCTION_WINDOW_DAYS, type OfficerLine } from './lendingProduction.ts';
 export { ApiService, stampUtc, AUTH_LABELS, PLATFORMS, PERSONAL_RETENTION_DAYS, REDACTED, apiHosts, type ApiConnection, type AuthKind, type LogEntry, type SavedApiLogin, type Transport } from './apis.ts';
 export { relayPlatform, type HttpRequest, type HttpResponse } from './relaySim.ts';
+export { StressService, SCENARIOS, type QuarterLine, type Scenario, type ScenarioKey } from './stress.ts';

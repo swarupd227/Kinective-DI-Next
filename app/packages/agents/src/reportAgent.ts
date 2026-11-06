@@ -343,8 +343,10 @@ function widgetFor(item: string, gateway: ReportGateway, periodType: 'month' | '
   return { title, kind: 'kpi' as const, metrics: [m.name], compare: true, size: 'third' as const };
 }
 
+/** Words too common to say which report someone means ("CAMELS and stress test" isn't named by "and"). */
+const COMMON = new Set(['and', 'the', 'for', 'with', 'all', 'our', 'from', 'this', 'that', 'into', 'per']);
 const overlap = (a: string, b: string) => {
-  const words = a.toLowerCase().split(/\W+/).filter((w) => w.length > 2);
+  const words = a.toLowerCase().split(/\W+/).filter((w) => w.length > 2 && !COMMON.has(w));
   return words.filter((w) => b.toLowerCase().includes(w)).length;
 };
 
