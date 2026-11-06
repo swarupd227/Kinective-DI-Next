@@ -148,6 +148,18 @@ export function createApiClient({ baseUrl, token }: ApiClientOptions) {
       if (!res.ok) throw new Error(json.message ?? 'Those connection details could not be saved.');
       return json;
     },
+    /** Saves API sign-in details. The key goes to DI Core and never comes back; the reply has its number. */
+    async saveApiLogin(f: { kind: string; label: string; placement?: string; username?: string; secret: string }): Promise<{ credentialId: number; kind: string; label: string }> {
+      const res = await fetch(`${baseUrl}/v1/apis/login`, { method: 'POST', headers: headers(), body: JSON.stringify(f) });
+      const json = (await res.json().catch(() => ({}))) as { credentialId: number; kind: string; label: string; message?: string };
+      if (!res.ok) throw new Error(json.message ?? 'Those sign-in details could not be saved.');
+      return json;
+    },
+    /** The simulated marketing platform's test key, where there is one. */
+    async demoApi(): Promise<{ platform: string; baseUrl: string; kind: string; label: string; placement: string; secret: string } | null> {
+      const res = await fetch(`${baseUrl}/v1/apis/demo`, { headers: headers() });
+      return res.ok ? ((await res.json()) as { platform: string; baseUrl: string; kind: string; label: string; placement: string; secret: string }) : null;
+    },
     /** The demo replica's details, where there is one. */
     async demoSource(): Promise<{ system: string; host: string; port: number; database: string; login: string; password: string } | null> {
       const res = await fetch(`${baseUrl}/v1/sources/demo`, { headers: headers() });

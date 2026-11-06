@@ -296,12 +296,108 @@ function ConnectSource() {
             </p>
           )}
         </form>
+      ) : kind === 'api' ? (
+        <ConnectApi />
       ) : (
         <p className={styles.notice} role="note">
-          {kind === 'sftp' ? 'SFTP folders are set up by Kinective today. They’ll join this flow next: DI checks the first file, proposes the mapping and the late-file time, and connects it when you approve.' : 'Vendor APIs, such as Jack Henry jXchange or Fiserv Communicator, are set up by Kinective today. They’ll join this flow next, with the same test, mapping and approval.'}
+          SFTP folders are set up by Kinective today. They’ll join this flow next: DI checks the first file, proposes the mapping and the late-file time, and connects it when you approve.
         </p>
       )}
     </section>
+  );
+}
+
+const AUTH_KINDS = [
+  { id: 'api_key', label: 'API key' },
+  { id: 'basic', label: 'Basic credentials' },
+  { id: 'session_token', label: 'Session token' },
+  { id: 'oauth', label: 'OAuth' },
+];
+const EMPTY_API = { platform: 'relay', kind: 'api_key', label: '', placement: 'X-Api-Key', username: '', secret: '' };
+
+/**
+ * Connect a vendor API (Integrations > APIs). The person picks the platform and enters its key; the
+ * key goes to DI Core, which seals it, and DI's agent only ever sees its number. DI then calls the
+ * platform once, read-only, and proposes the connection and its saved requests for approval.
+ */
+function ConnectApi() {
+  const { api, startThread } = useSession();
+  const navigate = useNavigate();
+  const [f, setF] = useState(EMPTY_API);
+  const demo = useQuery({ queryKey: ['apis', 'demo'], queryFn: () => api.demoApi(), staleTime: Infinity });
+  const set = (k: keyof typeof EMPTY_API) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const save = useMutation<void, Error, typeof EMPTY_API>({
+    mutationFn: async (v) => {
+      const saved = await api.saveApiLogin({ kind: v.kind, label: v.label.trim() || 'Relay Marketing key', placement: v.kind === 'api_key' ? v.placement : undefined, username: v.username || undefined, secret: v.secret });
+      setF((x) => ({ ...x, secret: '' }));
+      const id = await startThread(`Test the Relay Marketing API (API details #${saved.credentialId})`);
+      navigate(`/c/${id}`);
+    },
+  });
+  const needsUser = f.kind !== 'api_key';
+  const ready = f.secret && (!needsUser || f.username.trim()) && (f.kind !== 'api_key' || f.placement.trim());
+  return (
+    <form
+      className={styles.query}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (ready) save.mutate(f);
+      }}
+    >
+      <div className={styles.loginGrid}>
+        <label className={styles.field}>
+          <span className={styles.tileLabel}>Platform</span>
+          <select className={styles.select} value={f.platform} onChange={set('platform')}>
+            <option value="relay">Relay Marketing (demo platform)</option>
+          </select>
+        </label>
+        <label className={styles.field}>
+          <span className={styles.tileLabel}>Signs in with</span>
+          <select className={styles.select} value={f.kind} onChange={set('kind')}>
+            {AUTH_KINDS.map((k) => (
+              <option key={k.id} value={k.id}>
+                {k.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className={styles.field}>
+          <span className={styles.tileLabel}>Name for these details</span>
+          <input className={styles.select} value={f.label} onChange={set('label')} placeholder="Relay Marketing key" autoComplete="off" />
+        </label>
+        {f.kind === 'api_key' ? (
+          <label className={styles.field}>
+            <span className={styles.tileLabel}>Header</span>
+            <input className={styles.select} value={f.placement} onChange={set('placement')} autoComplete="off" spellCheck={false} />
+          </label>
+        ) : (
+          <label className={styles.field}>
+            <span className={styles.tileLabel}>{f.kind === 'oauth' ? 'Client ID' : 'User name'}</span>
+            <input className={styles.select} value={f.username} onChange={set('username')} autoComplete="off" spellCheck={false} />
+          </label>
+        )}
+        <label className={styles.field}>
+          <span className={styles.tileLabel}>{f.kind === 'api_key' ? 'API key' : f.kind === 'oauth' ? 'Client secret' : 'Password'}</span>
+          <input className={styles.select} type="password" value={f.secret} onChange={set('secret')} autoComplete="new-password" />
+        </label>
+      </div>
+      <p className={styles.tileLabel}>DI calls the platform once, read-only, to check the sign-in, then proposes the connection and its saved requests. Nothing connects until you approve. The key is encrypted, never shown again, kept out of the request log, and never seen by DI’s agents.</p>
+      <div className={styles.uploadRow}>
+        <Button type="submit" variant="primary" disabled={!ready || save.isPending}>
+          {save.isPending ? 'Saving…' : 'Test it and ask DI to connect it'}
+        </Button>
+        {demo.data && (
+          <Button type="button" variant="secondary" onClick={() => setF({ platform: demo.data!.platform, kind: demo.data!.kind, label: demo.data!.label, placement: demo.data!.placement, username: '', secret: demo.data!.secret })}>
+            Fill in the demo platform
+          </Button>
+        )}
+      </div>
+      {save.isError && (
+        <p className={styles.message} role="alert">
+          {save.error.message}
+        </p>
+      )}
+    </form>
   );
 }
 

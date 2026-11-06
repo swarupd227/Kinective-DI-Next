@@ -21,3 +21,4 @@ export { AGE_BANDS, generateMemberHistory } from './membership.ts';
 export { BENCHMARK_DDL, BUDGET_WRITE_TABLES, benchmarks, budgetSeed } from './benchmarks.ts';
 export { FFIEC_FILING, FFIEC_QUARTERS, generateFfiecCallReport } from './ffiecCallReport.ts';
 export { FFIEC_051, FFIEC_051_EDITION } from './ffiec051.ts';
+export { APIS_DDL, APIS_WRITE_TABLES, RELAY_BASE_URL, RELAY_HOST, createApiTables, relayCampaigns, relayDemoKey } from './apis.ts';

@@ -11,6 +11,9 @@ import type { JumpCard, AppNotification, AppView, AppViewId, QueryRun, DiTake, G
 import { createAppViews } from './appViews.ts';
 import { columnStatRows, dataLoadModule, sourcesModule, tablesModule } from '@dinext/agents';
 import { IngestService, SourceService, coreSystem, secretKeyFrom, TableService, type TableObject } from '@dinext/di-core';
+import { ApiService, apiHosts } from '@dinext/di-core';
+import { RELAY_BASE_URL, relayDemoKey } from '@dinext/tenant-db';
+import { apisModule } from '@dinext/agents';
 import { readWorkbook } from './spreadsheet.ts';
 import type { TableSavedItem, TableWorkbench } from '@dinext/block-schemas';
 import { renderExport } from './exports.ts';
@@ -88,6 +91,8 @@ interface Tenant {
   sources: SourceService | null;
   /** The demo core replica, when the tenant has one. */
   replica: string | null;
+  /** API connections, once the tenant has the API tables. */
+  apis: ApiService | null;
 }
 
 /**
@@ -176,6 +181,10 @@ export interface LiveRuntime {
   saveSourceLogin(persona: PersonaId, f: { system: string; host: string; port: number; database: string; login: string; password: string }): Promise<{ credentialId: number; system: string; host: string; database: string; login: string } | null>;
   /** The demo replica's connection details, so a demo can fill the form. Null where there's none. */
   demoSource(persona: PersonaId): { system: string; host: string; port: number; database: string; login: string; password: string } | null;
+  /** Saves API sign-in details for the person; the secret never comes back. Null without the access. */
+  saveApiLogin(persona: PersonaId, f: { kind: string; label: string; placement?: string; username?: string; secret: string; tokenUrl?: string }): Promise<{ credentialId: number; kind: string; label: string } | null>;
+  /** The simulated marketing platform's test key, so a demo can fill the form. Null without the access. */
+  demoApi(persona: PersonaId): { platform: string; baseUrl: string; kind: string; label: string; placement: string; secret: string } | null;
   /** An uploaded file's content, under the same folder rules as the page. Null reads as not found. */
   fileContent(persona: PersonaId, fileId: number): Promise<{ name: string; mime: string; body: Buffer } | null>;
   /** Runs every active schedule as the nightly build would (local stand-in for the after-build trigger). */
@@ -370,6 +379,13 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     const tablesModules = tables ? [dataLoadModule(files, new IngestService(pool, readWorkbook), today), tablesModule(tables, today)] : [];
     // "Connect the Symitar replica" and "pull from the core" go to Data Sources before anything else reads them.
     if (sources) tablesModules.unshift(sourcesModule(sources, today));
+    // API connections exist once the tenant was seeded with the API slice or later.
+    const hasApis = await pool.query('SELECT 1 FROM api_connection LIMIT 1').then(
+      () => true,
+      () => false,
+    );
+    const apis = hasApis ? new ApiService(pool, { secretKey: secretKeyFrom(), allowedHosts: apiHosts() }) : null;
+    if (apis) tablesModules.unshift(apisModule(apis));
     // Email notifications exist once the tenant has the outbox tables; the module goes first so its
     // narrow phrases ("stop emailing me …") are never read as another module's request.
     const hasOutbox = await pool.query('SELECT 1 FROM ntf_pref LIMIT 1').then(
@@ -379,7 +395,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     const outbox = hasOutbox ? new EmailOutbox(pool, tenantDomain(name)) : null;
     if (outbox) tablesModules.unshift(notificationsModule(outbox, today));
     const growthModules = growth ? [indirectModule(new IndirectService(pool), growth.dealers, today), prospectingModule(new ProspectService(pool), growth.companies, growth.stages, today)] : [];
-    const modules = hasModules ? new ModuleGateway(new ApprovalStore(pool), [...tablesModules, ...governanceModules, ...growthModulesExtra, calendarModule((ctx) => calendarFor(pool, institutionType, ctx, hasWorkspace), hasWorkspace ? new CalendarStore(pool) : null, colleagues, today), filesModule(files, today), ...growthModules, complianceModule(new IssueService(pool), pool), onboardingModule(new OnboardingService(pool)), dataLogsModule(new DataLogService(pool)), operationsModule(new OperationsService(pool)), institutionType === 'bank' ? ffiecModule(new CallReportService(pool)) : callReportModule(new CallReportService(pool)), irrModule(new IrrService(pool), () => new AlcoService(pool, institutionType).pricing()), profitabilityModule(new ProfitabilityService(pool, institutionType)), budgetModule(new BudgetService(pool), async () => semantic, pool, institutionType), delinquencyModule(new DelinquencyService(pool)), liquidityModule(new LiquidityService(pool, institutionType)), membershipModule(new MembershipService(pool)), recordsModule(semantic), collectionsModule(new CollectionsService(pool)), campaignModule(new CampaignService(pool)), segModule(new SegService(pool), () => new Date().toISOString().slice(0, 10))]) : null;
+    const modules = hasModules ? new ModuleGateway(new ApprovalStore(pool), [...tablesModules, ...governanceModules, ...growthModulesExtra, calendarModule((ctx) => calendarFor(pool, institutionType, ctx, hasWorkspace), hasWorkspace ? new CalendarStore(pool) : null, colleagues, today), filesModule(files, today), ...growthModules, complianceModule(new IssueService(pool), pool), onboardingModule(new OnboardingService(pool)), dataLogsModule(new DataLogService(pool)), operationsModule(new OperationsService(pool)), institutionType === 'bank' ? ffiecModule(new CallReportService(pool)) : callReportModule(new CallReportService(pool)), irrModule(new IrrService(pool), () => new AlcoService(pool, institutionType).pricing()), profitabilityModule(new ProfitabilityService(pool, institutionType)), budgetModule(new BudgetService(pool), async () => semantic, pool, institutionType), delinquencyModule(new DelinquencyService(pool)), liquidityModule(new LiquidityService(pool, institutionType)), membershipModule(new MembershipService(pool)), recordsModule(semantic), collectionsModule(new CollectionsService(pool)), campaignModule(new CampaignService(pool), apis), segModule(new SegService(pool), () => new Date().toISOString().slice(0, 10))]) : null;
     // Goals & Incentives exists once the tenant was seeded with Slice 14 or later.
     const hasGoals = await pool.query('SELECT 1 FROM mod_gi_goal LIMIT 1').then(
       () => true,
@@ -403,7 +419,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     const [reportNames, segNames, dealerNames] = await Promise.all([names('SELECT DISTINCT name FROM esp_report_templates'), names('SELECT name FROM seg_company'), names('SELECT name FROM ind_dealer')]);
     const metricNames = Object.values(semantic.model.metrics).map((m) => m.label.replace(/\s*\(.*\)$/, ''));
     const vocabulary = [...new Set([...(dims.branch ?? []), ...(dims.region ?? []), ...(dims.loan_category ?? []), ...(dims.deposit_category ?? []), ...(staff as { display_name: string }[]).map((s) => s.display_name).filter((s) => !/^\w\. /.test(s)), ...metricNames, ...reportNames, ...segNames, ...dealerNames])];
-    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, governance, files, tables, outbox, sources, replica, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules, alm: { irr: new IrrService(pool), liquidity: new LiquidityService(pool, institutionType) }, staff: (staff as { display_name: string }[]).map((s) => s.display_name) } });
+    tenants.set(tenantId, { pool, pipeline, goals, vocabulary, governance, files, tables, outbox, sources, replica, apis, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules, alm: { irr: new IrrService(pool), liquidity: new LiquidityService(pool, institutionType) }, staff: (staff as { display_name: string }[]).map((s) => s.display_name) } });
   }
   if (!tenants.size) return null;
 
@@ -463,6 +479,21 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       if (!t?.replica || !p.modules?.includes('sources')) return null;
       const url = new URL(dbUrl());
       return { system: coreSystem('symitar')!.id, host: url.hostname, port: Number(url.port || 3306), database: t.replica, login: CORE_READER, password: coreReaderPassword() };
+    },
+
+    async saveApiLogin(persona, f) {
+      const t = tenantFor(persona);
+      const p = PERSONAS[persona];
+      if (!t?.apis || !p.session.apps.includes('integrations') || !p.modules?.includes('apis')) return null;
+      const saved = await t.apis.saveLogin(f, { userId: p.session.user.id });
+      return { credentialId: saved.credentialId, kind: saved.kind, label: saved.label };
+    },
+
+    demoApi(persona) {
+      const t = tenantFor(persona);
+      const p = PERSONAS[persona];
+      if (!t?.apis || !p.modules?.includes('apis')) return null;
+      return { platform: 'relay', baseUrl: RELAY_BASE_URL, kind: 'api_key', label: 'Relay Marketing key', placement: 'X-Api-Key', secret: relayDemoKey() };
     },
 
     async fileContent(persona, fileId) {

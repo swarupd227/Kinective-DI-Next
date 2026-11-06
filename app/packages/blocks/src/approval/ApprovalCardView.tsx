@@ -431,7 +431,7 @@ function Affected({ affected }: { affected: ApprovalCardBlock['data']['affected'
   const parts = [
     `${affected.records.toLocaleString('en-US')} ${affected.records === 1 ? 'record' : 'records'}`,
     affected.users ? `${affected.users} ${affected.users === 1 ? 'person' : 'people'} notified` : null,
-    affected.external ? `${affected.external} external` : 'nothing leaves DI',
+    affected.external ? `${affected.external.toLocaleString('en-US')} ${affected.external === 1 ? 'leaves' : 'leave'} DI` : 'nothing leaves DI',
   ].filter(Boolean);
   return <p className={styles.affected}>{parts.join(' · ')}</p>;
 }

@@ -698,6 +698,22 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
           throw err;
         }
       }
+      // ---- API connections: the key stops here, sealed by DI Core ----
+      if (method === 'POST' && path === '/v1/apis/login') {
+        const body = await readBody<{ kind?: unknown; label?: unknown; placement?: unknown; username?: unknown; secret?: unknown; tokenUrl?: unknown }>(req);
+        const str = (v: unknown) => (typeof v === 'string' ? v : '');
+        try {
+          const saved = await live?.saveApiLogin(persona(), { kind: str(body.kind), label: str(body.label), placement: str(body.placement) || undefined, username: str(body.username) || undefined, secret: str(body.secret), tokenUrl: str(body.tokenUrl) || undefined });
+          return saved ? json(res, 201, saved) : json(res, 403, { code: 'NO_ACCESS', message: 'Connecting an API is part of the Integrations administrator’s access.' });
+        } catch (err) {
+          if (err instanceof CoreError) return json(res, 422, { code: err.code, message: err.message });
+          throw err;
+        }
+      }
+      if (method === 'GET' && path === '/v1/apis/demo') {
+        const demo = live?.demoApi(persona());
+        return demo ? json(res, 200, demo) : json(res, 404, { code: 'NOT_FOUND' });
+      }
       if (method === 'GET' && path === '/v1/sources/demo') {
         const demo = live?.demoSource(persona());
         return demo ? json(res, 200, demo) : json(res, 404, { code: 'NOT_FOUND' });

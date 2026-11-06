@@ -45,6 +45,8 @@ export interface ModuleChange {
   typed?: { prompt: string; expected: string };
   /** How many records the change touches, when it's more than one (an upload's rows). */
   records?: number;
+  /** How many records leave DI for another system, such as an audience sent to a marketing platform. */
+  external?: number;
   /** Needs a step-up token before approving, as every admin write does (AI-AGT-140). The demo issues it silently. */
   stepUp?: boolean;
   /** Needs someone other than the requester to approve it, such as an access change (AI-GRD-074). */
@@ -219,7 +221,7 @@ export function moduleCard(spec: Pick<ModuleSpec, 'agent' | 'sources'>, d: Modul
       operation: d.approval.operation,
       requestedBy: { kind: 'agent_run', runId: input.runId, agent: spec.agent, onBehalfOf: input.user.id, onBehalfOfName: input.user.name },
       preview: { kind: 'diff', changes: d.payload.changes.slice(0, 8) },
-      affected: { records: d.payload.records ?? 1, users: 0, external: 0 },
+      affected: { records: d.payload.records ?? 1, users: 0, external: d.payload.external ?? 0 },
       confirmation: { methods: high ? ['click', 'keyboard'] : ['click', 'keyboard', 'voice'], typedValue: d.payload.typed ?? null, stepUp: Boolean(d.payload.stepUp), secondApprover: d.payload.secondApprover ?? null, noteRequired: false },
       editablePlan: false,
       expiresAt: d.approval.expiresAt,

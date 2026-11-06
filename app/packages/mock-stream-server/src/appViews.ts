@@ -6,6 +6,8 @@ import type { AppTile, AppView, AppViewId, Block, ListBlock, TableBlock } from '
 import { memberNumber, WorkflowDefService, WorksheetService, TaskService, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, DelinquencyService, DQ_BUCKETS, IrrService, LiquidityService, pctAgainst, MEMBERSHIP_BENCHMARKS, MembershipService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 import { SourceService, TableService, secretKeyFrom } from '@dinext/di-core';
+import { ApiService, apiHosts, stampUtc } from '@dinext/di-core';
+import { CONNECTION_COLUMNS, LOG_COLUMNS, connectionRows, logRows } from '@dinext/agents';
 import { EmailOutbox } from '@dinext/di-core';
 
 type ColumnSpec = TableBlock['data']['columns'][number];
@@ -558,6 +560,14 @@ export function createAppViews(deps: ViewDeps) {
     async campaigns() {
       const cmp = new CampaignService(pool);
       const list = await cmp.results();
+      const platform = await new ApiService(pool, { secretKey: secretKeyFrom(), allowedHosts: apiHosts() }).platformResults().catch(() => ({ metrics: [], pushes: [] }));
+      const pct1 = (v: number) => `${v.toFixed(1)}%`;
+      const platformBlocks = platform.metrics.length
+        ? [
+            table(`Email results from ${platform.metrics[0]!.connection}`, 'campaign.platform.results', [text('name', 'Campaign'), text('sentAt', 'Sent on'), { field: 'delivered', headerName: 'Delivered', type: 'count' }, text('open', 'Opened'), text('click', 'Clicked'), { field: 'unsubscribed', headerName: 'Unsubscribed', type: 'count' }, text('source', 'Sent from')], platform.metrics.map((m) => ({ name: m.name, sentAt: m.sentAt ? day(m.sentAt) : '—', delivered: m.delivered, open: pct1(m.openPct), click: pct1(m.clickPct), unsubscribed: m.unsubscribed, source: m.pushId !== null ? 'DI audience' : m.campaignId !== null ? 'DI campaign' : 'The platform' }))),
+            ...(platform.pushes.length ? [table('Audiences sent from DI', 'campaign.push.list', [text('audience', 'Audience'), text('campaign', 'Campaign'), { field: 'contacts', headerName: 'Members', type: 'count' }, text('fields', 'Fields sent'), text('by', 'Approved by'), text('at', 'Sent')], platform.pushes.map((x) => ({ audience: x.audience, campaign: x.campaign, contacts: x.contacts, fields: x.fields, by: x.by, at: stampUtc(x.at) })))] : []),
+          ]
+        : [];
       const sum = (k: 'sent' | 'applications' | 'dollars') => list.reduce((n, c) => n + c[k], 0);
       const measured = list.filter((c) => c.roiPct !== null);
       const byRoi = [...measured].sort((a, b) => (b.roiPct ?? 0) - (a.roiPct ?? 0));
@@ -571,10 +581,12 @@ export function createAppViews(deps: ViewDeps) {
         lede: 'Campaigns by what they caused: each one held back a random 10% control group, so lift is measured against members who weren’t contacted, and the return weighs the lifetime contribution of what it caused against its cost.',
         take: { headline: byRoi[0] ? `${short(spend)} of spend caused about ${short(caused)} of lifetime contribution. ${byRoi[0].name} returned the most, ${pctOf(byRoi[0].roiPct)}.${losers.length ? ` ${losers.length > 1 ? `${losers.slice(0, -1).map((c) => c.name).join(', ')} and ${losers.at(-1)!.name}` : losers[0]!.name} didn’t pay for ${losers.length === 1 ? 'itself' : 'themselves'}.` : ''}` : list[0] ? `${list[0].name} produced the most loan dollars, ${usd(list[0].dollars)}.` : 'No campaigns have run.', action: { label: 'Which campaigns paid for themselves?', ask: 'Which campaigns paid for themselves?' } },
         tiles: [{ label: 'Campaigns', value: String(list.length) }, { label: 'Spend', value: short(spend) }, { label: 'Value caused', value: short(caused) }, { label: 'Return on spend', value: spend ? pctOf(((caused - spend) / spend) * 100) : '—' }, { label: 'Loan dollars', value: short(sum('dollars')) }],
-        prompts: ['Which campaigns paid for themselves?', 'Which campaigns produced the most loan dollars?', 'Build an audience of members with no auto loan'],
+        prompts: platform.metrics.length ? ['Which campaigns paid for themselves?', 'Send members with no auto loan to Relay', 'How did the email do?'] : ['Which campaigns paid for themselves?', 'Which campaigns produced the most loan dollars?', 'Build an audience of members with no auto loan'],
+        ...(platform.metrics.length ? { notice: `Email opens and clicks come from ${platform.metrics[0]!.connection} over its API, pulled ${stampUtc(platform.metrics.map((m) => m.pulledAt).sort().at(-1)!)}. Applications, loan dollars and lift come from DI’s own data.` } : {}),
         blocks: [
           bar('Return on spend by campaign', 'campaign.roi', byRoi.map((c) => [c.name, Math.round(c.roiPct ?? 0)]), 'percent', 'Return'),
           table('Lift and return', 'campaign.roi', [text('name', 'Campaign'), text('channel', 'Channel'), text('launched', 'Launched'), text('rate', 'Responded'), text('control', 'Control'), text('lift', 'Lift (pts)'), { field: 'caused', headerName: 'Caused', type: 'count' }, { field: 'cost', headerName: 'Cost', type: 'currency' }, { field: 'value', headerName: 'Value caused', type: 'currency' }, text('roi', 'Return')], byRoi.map((c) => ({ name: c.name, channel: c.channel, launched: c.launched ?? '', rate: `${c.responseRatePct.toFixed(2)}%`, control: `${c.controlRatePct!.toFixed(2)}%`, lift: c.liftPts!.toFixed(2), caused: c.incremental ?? 0, cost: Math.round(c.cost), value: Math.round(c.value ?? 0), roi: pctOf(c.roiPct) }))),
+          ...platformBlocks,
           table('Campaigns', 'campaign.results', [text('name', 'Campaign'), text('channel', 'Channel'), text('product', 'Product'), { field: 'sent', headerName: 'Sent', type: 'count' }, { field: 'applications', headerName: 'Applications', type: 'count' }, text('response', 'Response'), { field: 'dollars', headerName: 'Loan dollars', type: 'currency' }, { field: 'deposits', headerName: 'Deposits raised', type: 'currency' }], list.map((c) => ({ name: c.name, channel: c.channel, product: c.product, sent: c.sent, applications: c.applications, response: `${Math.round((c.applications / c.sent) * 1000) / 10}%`, dollars: c.dollars, deposits: c.depositDollars }))),
         ],
       };
@@ -660,6 +672,9 @@ export function createAppViews(deps: ViewDeps) {
       // Direct core connections, once the tenant has the source tables. Listing needs no key.
       const connections = await new SourceService(deps.pool, { secretKey: secretKeyFrom(), allowedHosts: [] }).connections().catch(() => []);
       const feeding = connections.find((c) => c.inUse);
+      // API connections and their request log, once the tenant has the API tables.
+      const apiSvc = new ApiService(deps.pool, { secretKey: secretKeyFrom(), allowedHosts: apiHosts() });
+      const [apis, apiLog] = await Promise.all([apiSvc.connections().catch(() => []), apiSvc.log({ limit: 10 }).catch(() => [])]);
       return {
         title: 'Integrations',
         lede: `Where the data comes from, and how the latest loads went. Data as of ${day(build.asOf)}.`,
@@ -678,6 +693,8 @@ export function createAppViews(deps: ViewDeps) {
                 ),
               ]
             : []),
+          ...(apis.length ? [table('API connections', 'api.connection.list', CONNECTION_COLUMNS, connectionRows(apis))] : []),
+          ...(apiLog.length ? [table('Request log', 'api.log.list', LOG_COLUMNS, logRows(apiLog))] : []),
           table('Data sources', 'ingestion.sources', [text('source', 'Source'), text('method', 'How it arrives'), text('dueBy', 'Due by'), text('arrived', 'Arrived'), text('state', 'Last load')], build.uploads.map((u) => ({ source: u.source, method: u.source === 'Core extract' && feeding ? `Replaced by the ${feeding.name} from the next build` : u.method, dueBy: u.dueBy, arrived: u.arrived, state: u.late ? 'Late' : 'On time' }))),
         ],
       };

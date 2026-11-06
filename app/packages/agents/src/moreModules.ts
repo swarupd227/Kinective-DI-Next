@@ -3,7 +3,7 @@
 // Each states its limits: the Call Report agent is read-only, the Admin agent can't change its own
 // user or impersonate anyone, and DI never contacts a borrower or changes a loan.
 import { z } from 'zod';
-import { CALL_REPORT_EDITION, CAPABILITIES, CLASSES, CoreError, SEG_STAGES, USER_CLASSES, type CallReportLine, type CallReportService, type CampaignService, type CollectionsService, type OperationsService, type SegService } from '@dinext/di-core';
+import { CALL_REPORT_EDITION, CAPABILITIES, CLASSES, CoreError, SEG_STAGES, USER_CLASSES, type CallReportLine, type CallReportService, stampUtc, type ApiService, type CampaignService, type CollectionsService, type OperationsService, type SegService } from '@dinext/di-core';
 import { money } from './pipelineAgent.ts';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
@@ -481,14 +481,14 @@ export function collectionsModule(col: CollectionsService): ModuleSpec {
 
 // ---- campaigns --------------------------------------------------------------------------------
 
-export function campaignModule(cmp: CampaignService): ModuleSpec {
+export function campaignModule(cmp: CampaignService, api: ApiService | null = null): ModuleSpec {
   const noAccess = 'Campaigns aren’t part of your DI access.';
   const need = (ctx: ModuleContext) => guard(ctx, 'campaigns', noAccess);
   const spec: ModuleSpec = {
     id: 'campaigns',
     prefix: 'cmp',
     agent: 'Campaigns',
-    request: /\bcampaigns?\b|\baudiences?\b|\bmarketing (roi|return|spend)\b|\bcampaign lift\b/i,
+    request: /\bcampaigns?\b|\baudiences?\b|\bmarketing (roi|return|spend)\b|\bcampaign lift\b|\b(?:send|push)\b[^.?!]*\bto (?:the )?(?:relay|marketing platform)\b|\bopen and click\b|\bclick rates?\b|\bhow did the email\b/i,
     noAccess,
     sources: [{ kind: 'table', label: 'Campaign Success', ref: 'table:cmp_campaign' }],
     prompt: ({ tenant, user, title }) => `You are the Campaign agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) reviews campaigns and builds audiences.
@@ -496,11 +496,16 @@ export function campaignModule(cmp: CampaignService): ModuleSpec {
 - "Which campaigns produced the most loan dollars?": cmp_results.
 - "Which campaigns paid for themselves?", "what was the lift?", "campaign ROI": cmp_roi. Lift is against each campaign's held-back control group.
 - "Build an audience of members with no auto loan": cmp_audience_prepare. Suppression is applied by the platform and its counts are shown.
-- Exporting an audience file isn't available here.`,
+- "Send the audience of members with no auto loan to Relay", "push it to the marketing platform": cmp_audience_send. It is high risk: contact details leave DI.
+- "Pull back the campaign results": cmp_platform_pull. "How did the email do?", "open and click rates": cmp_platform_results.
+- Exporting an audience as a file isn't available; sending goes through the connected marketing platform.`,
     plan: (text) => {
       const t = clean(text);
-      if (/\bexport\b/i.test(t)) return { say: 'Exporting an audience moves member contact data out of DI, and that isn’t built in this demo. I can save the audience.' };
       const no = /\bno ([\w ]+?) loan\b|\bwithout an? ([\w ]+?) loan\b/i.exec(t);
+      if (/\b(?:send|push|upload|sync)\b/i.test(t) && /\b(?:audience|list|relay|marketing platform)\b/i.test(t)) return no ? { tool: 'cmp_audience_send', args: { without_category: (no[1] ?? no[2])! } } : { say: 'Which audience should I send? For example, “Send members with no auto loan to Relay.”' };
+      if (/\bexport\b/i.test(t)) return { say: 'DI can’t export an audience as a file: member contact details would leave DI with no record of where they went. It can send an audience to the connected marketing platform, with an approval that shows who and which fields.' };
+      if (/\bpull\b[^.?!]*\bresults?\b|\bpull (?:them |it )?back\b|\brefresh\b[^.?!]*\bresults?\b/i.test(t)) return { tool: 'cmp_platform_pull', args: {} };
+      if (/\bopen(?:ed|s| rate)?\b|\bclick|\bdeliver|\bunsubscrib|\bplatform results\b|\bon relay\b|\bhow did\b[^.?!]*\b(?:email|send)\b/i.test(t)) return { tool: 'cmp_platform_results', args: {} };
       if (/\baudience\b/i.test(t)) return no ? { tool: 'cmp_audience_prepare', args: { without_category: (no[1] ?? no[2])! } } : { say: 'Which loan should the audience not already have?' };
       if (/\blift\b|\broi\b|\breturn\b|\bincremental\b|\bpa(id|y) (for|off)\b|\bworth it\b|\bprofitab|\bcost per\b|\bspend\b|\bcontrol group\b/i.test(t)) return { tool: 'cmp_roi', args: {} };
       return { tool: 'cmp_results', args: {} };
@@ -551,7 +556,91 @@ export function campaignModule(cmp: CampaignService): ModuleSpec {
         },
         apply: async (p: Parameters<CampaignService['save']>[0], meta) => cmp.save(p, meta),
       },
+      {
+        name: 'cmp_audience_send',
+        description: 'Prepare sending an audience of members without a loan type to the connected marketing platform and starting its email campaign. Members go as a reference, first name and email. Returns approval_required (high risk).',
+        input: z.object({ without_category: z.string().min(2).max(40), campaign_name: z.string().min(2).max(60).optional() }).strict(),
+        run: async (a: { without_category: string; campaign_name?: string }, ctx) => {
+          need(ctx);
+          const c = api ? await api.marketing() : null;
+          if (!c) throw new CoreError('NOT_FOUND', 'No marketing platform is connected that can take a list. An Integrations administrator connects one under Vendor API on Integrations; then I can send audiences to it.');
+          const x = await cmp.audienceMembers(a.without_category, ctx);
+          if (!x.members.length) throw new CoreError('INVALID', `No member without a ${x.category} loan can be emailed, after suppression.`);
+          const audience = `Members without ${x.category}`;
+          const campaign = (a.campaign_name ?? `${x.category} offer, ${new Date().toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })}`).trim();
+          const count = (v: number) => v.toLocaleString('en-US');
+          return {
+            change: {
+              summary: `Send ${count(x.members.length)} members to ${c.name} and start “${campaign}”`,
+              changes: [
+                { label: 'Audience', before: '—', after: `${audience}: ${count(x.found)} matched` },
+                { label: 'Removed first', before: '—', after: `${count(x.suppressed)} opted out or contacted recently; ${count(x.noEmail)} with no email on file` },
+                { label: 'Sent', before: '—', after: `${count(x.members.length)} members` },
+                { label: 'Fields', before: '—', after: 'A reference DI can match back, first name, email. No member number, balance or account detail.' },
+                { label: 'To', before: '—', after: `${c.name}, ${c.baseUrl}` },
+                { label: 'Campaign', before: '—', after: `${campaign}, email, sent by the platform` },
+              ],
+              text: `I’ll send **${count(x.members.length)} members** to **${c.name}** and start the email campaign “${campaign}”. Their contact details leave DI, so this is high risk. They go as a reference only DI can match back, first name and email; nothing else. DI pulls the results back each night, and matches who clicked to members inside DI.`,
+              done: `Sent the audience to ${c.name}.`,
+              risk: 'high',
+              records: x.members.length,
+              external: x.members.length,
+              apply: { connectionId: c.connectionId, category: x.category, audienceName: audience, campaignName: campaign, expected: x.members.length },
+            },
+          };
+        },
+        apply: async (p: { connectionId: number; category: string; audienceName: string; campaignName: string; expected: number }, meta, ctx) => {
+          if (!api) throw new CoreError('INVALID', 'API connections aren’t set up in this environment.');
+          const x = await cmp.audienceMembers(p.category, ctx);
+          // What's sent is exactly what was approved: if the audience changed, nothing goes.
+          if (x.members.length !== p.expected) throw new CoreError('INVALID', `The audience changed since you approved it (${p.expected.toLocaleString('en-US')} then, ${x.members.length.toLocaleString('en-US')} now), so nothing was sent. Ask again to see the new count.`);
+          const r = await api.pushAudience({ connectionId: p.connectionId, audienceName: p.audienceName, category: p.category, campaignName: p.campaignName, members: x.members }, { userId: ctx.user.id, name: ctx.user.name }, { approvalId: meta.approvalId, runId: ctx.runId });
+          return { text: `Sent **${r.accepted.toLocaleString('en-US')} members** to ${r.connection}${r.rejected ? ` (${r.rejected.toLocaleString('en-US')} refused for a malformed email)` : ''}, and it started “${p.campaignName}”. Results come back with tonight’s pull, or ask me to pull them now.`, suggestions: ['Pull back the campaign results', 'How did the email do?'] };
+        },
+      },
+      {
+        name: 'cmp_platform_pull',
+        description: 'Prepare pulling campaign results back from the connected marketing platform now, from where the last pull stopped. Returns approval_required.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const c = api ? (await api.connections()).find((x) => x.status === 'Active' && x.requests.some((q) => q.purpose === 'pull')) : null;
+          if (!c) throw new CoreError('NOT_FOUND', 'No marketing platform is connected, so there are no platform results to pull. An Integrations administrator connects one on Integrations.');
+          const q = c.requests.find((r) => r.purpose === 'pull')!;
+          return { change: { summary: `Pull campaign results from ${c.name} now`, changes: [{ label: q.name, before: q.lastRunAt ? `Last pulled ${stampUtc(q.lastRunAt)}` : 'Never pulled', after: 'What changed since then' }], text: `I’ll pull campaign results from **${c.name}** now, from where the last pull stopped.`, done: `Pulled from ${c.name}.`, risk: 'low', apply: { connectionId: c.connectionId } } };
+        },
+        apply: async (p: { connectionId: number }, _meta, ctx) => {
+          const r = await api!.pull(p.connectionId, ctx.runId);
+          const x = r.results[0];
+          const view = await platformView(ctx);
+          return { ...view, text: `Pulled from **${r.connection}**: ${x?.rows ?? 0} ${x?.rows === 1 ? 'campaign' : 'campaigns'} ${x?.since ? 'changed since the last pull' : 'in all'}. ${view.text}` };
+        },
+      },
+      {
+        name: 'cmp_platform_results',
+        description: 'Campaign results pulled from the marketing platform: sent, delivered, opened, clicked and unsubscribed, and for DI’s own sends, how many who clicked DI matched to members.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          return platformView(ctx);
+        },
+      },
     ],
+  };
+  const platformView = async (ctx: ModuleContext) => {
+    const r = api ? await api.platformResults() : { metrics: [], pushes: [] };
+    if (!r.metrics.length) return { text: api && (await api.connections()).length ? 'Nothing has been pulled from the marketing platform yet. Ask me to pull back the campaign results.' : 'No marketing platform is connected, so there are no platform results. Campaign results here come from DI’s own loan and deposit data.', suggestions: [] as string[] };
+    const pct = (v: number) => `${v.toFixed(1)}%`;
+    const latest = r.metrics[0]!;
+    const own = r.metrics.find((m) => m.pushId !== null);
+    const matched = own ? (await api!.clickers(own.pushId!)).length : 0;
+    const pulled = r.metrics.map((m) => m.pulledAt).sort().at(-1)!;
+    const avgOpen = r.metrics.reduce((s, m) => s + m.openPct, 0) / r.metrics.length;
+    return {
+      text: `${r.metrics.length} campaigns came back from **${latest.connection}**, pulled ${stampUtc(pulled)}. They opened at ${pct(avgOpen)} on average.${own ? ` DI’s own send, **${own.name}**, reached ${own.delivered.toLocaleString('en-US')} of ${own.sent.toLocaleString('en-US')}: ${pct(own.openPct)} opened and ${pct(own.clickPct)} clicked. DI matched ${matched.toLocaleString('en-US')} ${matched === 1 ? 'click' : 'clicks'} to members; applications from them are counted from DI’s own loan data as they arrive.` : ''}`,
+      blocks: [moduleTable(spec, `Results from ${latest.connection}`, ctx.runId, 'campaign.platform.results', [{ field: 'name', headerName: 'Campaign', type: 'text' }, { field: 'sentAt', headerName: 'Sent on', type: 'text' }, { field: 'sent', headerName: 'Sent', type: 'count' }, { field: 'delivered', headerName: 'Delivered', type: 'count' }, { field: 'open', headerName: 'Opened', type: 'text' }, { field: 'click', headerName: 'Clicked', type: 'text' }, { field: 'unsubscribed', headerName: 'Unsubscribed', type: 'count' }, { field: 'source', headerName: 'Sent from', type: 'text' }], r.metrics.map((m) => ({ name: m.name, sentAt: m.sentAt ? new Date(`${m.sentAt}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).replace('Sept', 'Sep') : '—', sent: m.sent, delivered: m.delivered, open: pct(m.openPct), click: pct(m.clickPct), unsubscribed: m.unsubscribed, source: m.pushId !== null ? 'DI audience' : m.campaignId !== null ? 'DI campaign' : 'The platform' })))],
+      suggestions: ['Which campaigns paid for themselves?', 'Pull back the campaign results'],
+    };
   };
   return spec;
 }

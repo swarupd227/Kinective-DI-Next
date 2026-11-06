@@ -44,3 +44,5 @@ export { ProfitabilityService, FTP_CURVE, LOSS_RATE, type ProfitLine } from './p
 export { BudgetService, type BudgetLine, type BudgetEvent } from './budget.ts';
 export { BranchScorecardService, type BranchLine } from './branchScorecard.ts';
 export { LendingProductionService, WINDOW_DAYS as PRODUCTION_WINDOW_DAYS, type OfficerLine } from './lendingProduction.ts';
+export { ApiService, stampUtc, AUTH_LABELS, PLATFORMS, PERSONAL_RETENTION_DAYS, REDACTED, apiHosts, type ApiConnection, type AuthKind, type LogEntry, type SavedApiLogin, type Transport } from './apis.ts';
+export { relayPlatform, type HttpRequest, type HttpResponse } from './relaySim.ts';

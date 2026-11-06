@@ -398,6 +398,18 @@ export class CampaignService {
     return { category: match.c, found: people.length, optOut, recent, size: people.length - optOut - recent };
   }
 
+  /** The audience's members who can be emailed: after suppression, with an email on file, in purview. */
+  async audienceMembers(category: string, ctx: CoreContext) {
+    const known = await rows<{ c: string }>(this.pool, 'SELECT DISTINCT loan_category AS c FROM cdm_loan');
+    const match = known.find((k) => k.c.toLowerCase().includes(category.toLowerCase()));
+    if (!match) throw new CoreError('NOT_FOUND', `There’s no loan category called ${category}. They are: ${known.map((k) => k.c).join(', ')}.`);
+    const scope = ctx.purviewBranches ? ' AND b.name IN (?)' : '';
+    const people = await rows<{ party_id: number; first_name: string; email: string | null }>(this.pool, `SELECT p.party_id, p.first_name, c.email FROM cdm_party p JOIN cdm_location b ON b.int_id = p.primary_branch_id LEFT JOIN cdm_party_contact c ON c.party_id = p.party_id LEFT JOIN (SELECT DISTINCT party_id FROM cdm_loan WHERE loan_category = ? AND close_date IS NULL) l ON l.party_id = p.party_id WHERE p.is_member = 1 AND l.party_id IS NULL${scope} ORDER BY p.party_id`, [match.c, ...(ctx.purviewBranches ? [ctx.purviewBranches.length ? ctx.purviewBranches : ['']] : [])]);
+    const kept = people.filter((p) => !suppressed(p.party_id));
+    const reachable = kept.filter((p) => p.email);
+    return { category: match.c, found: people.length, suppressed: people.length - kept.length, noEmail: kept.length - reachable.length, members: reachable.map((p) => ({ partyId: p.party_id, firstName: p.first_name, email: p.email! })) };
+  }
+
   async save(p: { name: string; category: string; size: number }, meta: { approvalId: string; userId: string }) {
     await this.pool.query('INSERT IGNORE INTO cmp_audience (name, category, size, created_by, approval_id) VALUES (?, ?, ?, ?, ?)', [p.name.slice(0, 80), p.category, p.size, meta.userId, meta.approvalId]);
   }
