@@ -270,6 +270,29 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
         { id: 'a5', title: institutionType === 'bank' ? 'Commercial real estate: if property values fall' : 'Business loans: if property values fall', kind: 'analysis', analysis: 'stress.cre', metrics: [], size: 'half' },
       ],
     },
+    // Basel III capital for a bank: the risk-based ratios beside the community bank leverage ratio. DI's estimate, not a filed RC-R Part II.
+    ...(institutionType === 'bank'
+      ? [
+          {
+            templateId: 'basel3_capital_quarterly',
+            name: 'Basel III capital',
+            description: 'Regulatory capital, risk-weighted assets and the CET1, tier 1, total capital and leverage ratios against their minimums, the conservation buffer and well capitalized; the community bank leverage ratio beside the full rules, and the ratios through the stress test. DI’s estimate from the Call Report.',
+            folder: 'Board',
+            settings: { ...settings('quarter', ['Executive', 'Finance']), addHierarchyControls: false },
+            layoutVersion: 1,
+            pendingEdits: [],
+            widgets: [
+              { id: 'a1', title: 'Basel III ratios', kind: 'analysis' as const, analysis: 'basel.ratios', metrics: [], size: 'full' as const },
+              { id: 'a2', title: 'Regulatory capital', kind: 'analysis' as const, analysis: 'basel.capital', metrics: [], size: 'half' as const },
+              { id: 'a3', title: 'Basel III ratios by quarter', kind: 'analysis' as const, analysis: 'basel.trend', metrics: [], size: 'half' as const },
+              { id: 'a4', title: 'Risk-weighted assets', kind: 'analysis' as const, analysis: 'basel.rwa', metrics: [], size: 'full' as const },
+              { id: 'a5', title: 'Community bank leverage ratio or the full rules', kind: 'analysis' as const, analysis: 'basel.cblr', metrics: [], size: 'full' as const },
+              { id: 'a6', title: 'Stress test: Basel III ratios at their lowest', kind: 'analysis' as const, analysis: 'basel.stress', metrics: [], size: 'full' as const },
+              { id: 'a7', title: 'Basel III assumptions', kind: 'analysis' as const, analysis: 'basel.assumptions', metrics: [], size: 'full' as const },
+            ],
+          },
+        ]
+      : []),
     {
       templateId: 'executive_summary_quarterly',
       name: 'Executive summary',

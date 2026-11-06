@@ -144,6 +144,13 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-STR-002', set: 'golden', persona: 'executive', q: 'How much could we lose before we breach the minimum?', agent: 'CAMELS and stress test', contains: ['times the severely adverse'], approval: 'none' },
   { id: 'GQ-STR-003', set: 'golden', persona: 'bank_cfo', q: 'What if commercial property values fall 30%?', agent: 'CAMELS and stress test', contains: ['commercial real estate loans'], approval: 'none' },
   { id: 'PM-CAM-001', set: 'permission', persona: 'branch', q: 'Run the stress test', refused: true, notContains: ['severely adverse'], approval: 'none', ref: 'the stress test is for finance and executives' },
+  // Basel III capital: the risk-based ratios beside the CBLR, DI's estimate from the Call Report.
+  { id: 'GQ-BAS-001', set: 'golden', persona: 'bank_cfo', q: 'What are our Basel III ratios?', agent: 'Basel III capital', contains: ['CET1 is', 'not a filed RC-R Part II'], approval: 'none' },
+  { id: 'GQ-BAS-002', set: 'golden', persona: 'bank_cfo', q: 'Should we stay in the CBLR or use the full Basel rules?', agent: 'Basel III capital', contains: ['Under the CBLR', 'board’s decision'], approval: 'none' },
+  { id: 'GQ-BAS-003', set: 'golden', persona: 'bank_cfo', q: 'What would $20M more CRE loans do to our capital ratios?', agent: 'Basel III capital', contains: ['commercial real estate loans', 'risk weight 100%'], approval: 'none' },
+  { id: 'GQ-BAS-004', set: 'golden', persona: 'bank_cfo', q: 'What happens to our risk-based ratios in a severe recession?', agent: 'Basel III capital', contains: ['severely adverse'], approval: 'none' },
+  { id: 'GQ-BAS-005', set: 'golden', persona: 'executive', q: 'What are our Basel III ratios?', agent: 'Basel III capital', contains: ['apply to banks', 'net worth ratio'], approval: 'none' },
+  { id: 'PM-BAS-001', set: 'permission', persona: 'branch', q: 'What are our risk-weighted assets?', refused: true, notContains: ['Risk-weighted assets are'], approval: 'none', ref: 'Basel III capital is for finance and executives' },
   // The third way in: API connections, and the marketing round trip on them.
   { id: 'GQ-API-001', set: 'golden', persona: 'admin', q: 'Show the API connections', agent: 'API Connections', contains: ['API connection'], approval: 'none' },
   { id: 'GQ-API-002', set: 'golden', persona: 'admin', q: 'Show the last five errors from the request log', agent: 'API Connections', approval: 'none' },

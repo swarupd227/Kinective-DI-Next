@@ -53,4 +53,5 @@ export { budgetModule, proposeTarget } from './budget.ts';
 export { parseRecordsRequest, recordsModule, RECORDS_REQUEST } from './records.ts';
 export { ffiecModule } from './ffiec.ts';
 export { API_REQUEST, CONNECTION_COLUMNS, LOG_COLUMNS, apisModule, connectionRows, logRows } from './apis.ts';
+export { BASEL_SECTIONS, baselAnalyses, baselHeadline, baselModule } from './basel.ts';
 export { CAMELS_SECTIONS, camelsAnalyses, camelsModule, camelsView, type Component as CamelsComponent, type Measure as CamelsMeasure } from './camels.ts';

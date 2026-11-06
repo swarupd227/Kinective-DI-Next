@@ -48,3 +48,4 @@ export { ApiService, stampUtc, AUTH_LABELS, PLATFORMS, PERSONAL_RETENTION_DAYS, 
 export { relayPlatform, type HttpRequest, type HttpResponse } from './relaySim.ts';
 export { OffcoreService, OFFCORE_FIELDS, OFFCORE_LOAN_BASE, OFFCORE_PREFIX, categoryFor, feedNameFrom, matchColumns, monthFromName, type ColumnMatch, type OffcorePlan, type OffcoreRow } from './offcore.ts';
 export { StressService, SCENARIOS, type QuarterLine, type Scenario, type ScenarioKey } from './stress.ts';
+export { BaselService, BASEL_ASSUMPTIONS, BASEL_THRESHOLDS, CBLR_PCT, CONSERVATION_BUFFER, type RatioKey, type RatioLine, type RwaLine } from './basel.ts';
