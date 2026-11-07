@@ -45,6 +45,7 @@ export { bankText } from './concierge.ts';
 export { ALCO_SECTIONS, alcoAnalyses } from './alco.ts';
 export { asksAboutStaff } from './incentives.ts';
 export { boardAnalyses, boardScorecard } from './scorecard.ts';
+export { cfoScorecard, type CfoLine, type CfoRead } from './cfo.ts';
 export { combineAnalyses } from './report.ts';
 export { branchAnalyses } from './branchScorecard.ts';
 export { lendingAnalyses } from './lendingProduction.ts';

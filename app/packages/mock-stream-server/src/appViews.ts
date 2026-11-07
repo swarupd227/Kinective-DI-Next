@@ -1,7 +1,8 @@
 // The workspace pages (spec 8.10 to 8.15, 8.19, 8.22). Each page opens on DI's view, then the figures
 // and records to check. They read the same DI Core services the agents use, under the same purview,
 // so a page and an answer always agree. Changes happen in a task, behind an approval card.
-import { bankText } from '@dinext/agents';
+import { bankText, cfoScorecard } from '@dinext/agents';
+import type { SemanticService } from '@dinext/semantic';
 import type { AppTile, AppView, AppViewId, Block, ListBlock, TableBlock } from '@dinext/block-schemas';
 import { memberNumber, WorkflowDefService, WorksheetService, TaskService, workToday, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, DelinquencyService, DQ_BUCKETS, IrrService, LiquidityService, pctAgainst, MEMBERSHIP_BENCHMARKS, MembershipService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
@@ -25,6 +26,9 @@ export interface ViewDeps {
   retention: boolean;
   /** Calendar events and uploads are loaded (Slice 23 or later). */
   workspace?: boolean;
+  /** The semantic catalog, for pages built from governed metrics (the CFO Scorecard). */
+  semantic?: SemanticService;
+  bank?: boolean;
 }
 
 const usd = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
@@ -657,6 +661,31 @@ export function createAppViews(deps: ViewDeps) {
         tiles: dims.map((d) => { const own = checks.items.filter((c) => c.dimension === d); const late = d === 'Timeliness' && build.stale; return { label: `${d} checks passed`, value: passed(own), ...(late ? { detail: `Out of date: no build for ${build.ageDays} days` } : {}), tone: own.some((c) => !c.passed) ? ('danger' as const) : late ? ('warning' as const) : ('neutral' as const) }; }),
         prompts: ['Which checks failed?', 'Where does 60+ delinquency come from?'],
         blocks: [table('By domain', 'dq.status_report', [text('domain', 'Domain'), text('passed', 'Passed'), { field: 'rows', headerName: 'Rows failing', type: 'count' }], domains.map((d) => { const own = checks.items.filter((c) => c.domain === d); return { domain: d, passed: passed(own), rows: own.reduce((n, c) => n + c.rowsFailed, 0) }; })), table('Checks', 'dq.status_report', [text('name', 'Check'), text('result', 'Result'), text('domain', 'Domain'), text('dimension', 'Dimension')], checks.items.map((c) => ({ domain: c.domain, dimension: c.dimension, name: c.name, result: c.passed ? 'Passed' : `Failed, ${c.rowsFailed} rows` })))],
+      };
+    },
+    async cfo() {
+      // A bank's finance page: capital, earnings and credit quality from the catalog, with plan and peers.
+      if (!deps.bank || !deps.semantic) return { title: 'CFO Scorecard', lede: 'The CFO Scorecard is for banks. A credit union’s finance figures are on the Board report.', take: { headline: 'The CFO Scorecard is for banks.' }, tiles: [], prompts: ['Show the board report'], blocks: [] };
+      const s = await cfoScorecard(deps.semantic, pool);
+      const pc = (n: number | null, places: number) => (n === null ? '—' : `${n.toFixed(places)}%`);
+      const tone = (r: string) => (r === 'Concern' ? ('danger' as const) : r === 'Watch' ? ('warning' as const) : ('neutral' as const));
+      const ask: Record<string, string> = { cet1_ratio: 'What are our Basel III ratios?', net_worth_ratio: 'Should we stay in the CBLR?', net_interest_margin: 'Why is our net interest margin below plan?', return_on_equity: 'Chart our return on equity by quarter', return_on_assets: 'What drives our return on assets?', efficiency_ratio: 'What does it cost us to make $1?', npl_ratio: 'What is our NPL ratio and net charge-off rate?', net_charge_off_ratio: 'Why are net charge-offs above peers?', allowance_coverage: 'Is our allowance enough for our nonperforming loans?' };
+      const chart = (titleText: string, op: string, metrics: string[]): Block | null => {
+        const ls = s.lines.filter((l) => metrics.includes(l.metric) && l.trend.length);
+        if (!ls.length) return null;
+        const periods = ls[0]!.trend.map((t) => t.period);
+        return { id: blockId(), type: 'chart', version: '2.0.0', title: titleText, provenance: { agent: 'DI', operations: [op], sources: [{ kind: 'table', label: 'FFIEC 051 Call Report values', ref: 'table:cr_value' }] }, freshness: { kind: 'workflow_event' }, data: { chartType: 'line', dataset: { dimensions: [{ name: 'period', displayName: 'Quarter', type: 'ordinal' }, ...ls.map((l) => ({ name: l.metric, displayName: l.label, type: 'number' as const }))], source: periods.map((p, i) => [p, ...ls.map((l) => (l.trend[i]?.value === null || l.trend[i]?.value === undefined ? null : Math.round(l.trend[i]!.value! * 100) / 100))]) }, series: ls.map((l) => ({ name: l.label, encode: { x: 'period', y: l.metric } })), axes: { y: [{ unit: 'percent' }] }, legend: ls.length > 1 } } as Block;
+      };
+      return {
+        title: 'CFO Scorecard',
+        lede: `Capital, earnings and credit quality for ${s.quarter}, from the Call Report, against plan, peers and regulatory minimums. Each figure is the catalog’s, so it matches DI’s answers.`,
+        take: { headline: s.headline, action: { label: 'What should I look at?', ask: 'Which CFO measures need attention, and why?' } },
+        tiles: s.lines.filter((l) => l.metric !== 'allowance_coverage').map((l) => ({ label: l.label, value: pc(l.now, l.places), detail: l.floor ? `${l.floor.tile}: ${pc(l.floor.value, l.places)}` : l.plan !== null ? `Plan ${pc(l.plan, l.places)}${l.peer !== null ? ` · peers ${pc(l.peer, l.places)}` : ''}` : l.yearAgo !== null ? `A year ago ${pc(l.yearAgo, l.places)}` : undefined, tone: tone(l.read), ...(l.read !== 'Strong' && ask[l.metric] ? { ask: ask[l.metric] } : {}) })),
+        prompts: ['What are our Basel III ratios?', 'Why is our net interest margin below plan?', 'What is our NPL ratio and net charge-off rate?'],
+        blocks: [
+          table('Scorecard', 'cfo.scorecard', [text('group', 'Area'), text('measure', 'Measure'), text('now', s.quarter || 'Now'), text('yearAgo', 'A year ago'), text('plan', 'Plan'), text('peer', 'Peers'), text('read', 'DI’s read'), text('why', 'Why')], s.lines.map((l) => ({ group: l.group, measure: l.label, now: pc(l.now, l.places), yearAgo: pc(l.yearAgo, l.places), plan: l.floor ? `${pc(l.floor.value, l.places)} (min.)` : pc(l.plan, l.places), peer: pc(l.peer, l.places), read: l.read, why: l.why }))),
+          ...[chart('Capital, last five quarters', 'cfo.capital', ['cet1_ratio', 'net_worth_ratio']), chart('Margin and returns on assets', 'cfo.earnings', ['net_interest_margin', 'return_on_assets']), chart('Return on equity', 'cfo.roe', ['return_on_equity']), chart('Credit quality', 'cfo.credit', ['npl_ratio', 'net_charge_off_ratio'])].filter((b): b is Block => b !== null),
+        ],
       };
     },
     async tasks() {

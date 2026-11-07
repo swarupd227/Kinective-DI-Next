@@ -136,7 +136,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       user: user('user:7001', 'Elena Ortiz', 'Chief Financial Officer', 'Finance leader'),
       tenant: BANK,
       // Bank tenants never see 5300 Call Report or SEG Management (FE-EXP-003).
-      apps: ['home', 'conversations', 'tasks', 'reports', 'tables', 'workflows', 'calendar', 'files', 'rm', 'lap', 'gi', 'indirect', 'prospecting', 'campaigns', 'compliance', 'predictive', 'dq', 'irr', 'delinquency', 'liquidity', 'membership', 'callreport'],
+      apps: ['home', 'conversations', 'tasks', 'reports', 'tables', 'workflows', 'calendar', 'files', 'cfo', 'rm', 'lap', 'gi', 'indirect', 'prospecting', 'campaigns', 'compliance', 'predictive', 'dq', 'irr', 'delinquency', 'liquidity', 'membership', 'callreport'],
       permissions: { queryBrowser: false, dashboardAdmin: false },
     },
     approvesIncentives: true,

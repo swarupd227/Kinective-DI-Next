@@ -293,7 +293,7 @@ const applicationView = ({ partyId, ...a }: PipelineApplication, rm: Relationshi
 const referralView = ({ partyId, senderUserId: _sender, ...i }: InboxItem, rm: RelationshipService | null): ReferralSummary => ({ ...i, memberRef: rm?.token(partyId) ?? '' });
 
 /** Which app each workspace page belongs to. */
-const APP_ACCESS: Record<AppViewId, AppId> = { calendar: 'calendar', files: 'files', queries: 'queries', users: 'users', admin: 'admin', datalogs: 'datalogs', seg: 'seg', callreport: 'callreport', irr: 'irr', delinquency: 'delinquency', liquidity: 'liquidity', membership: 'membership', workflows: 'workflows', rm: 'rm', indirect: 'indirect', prospecting: 'prospecting', campaigns: 'campaigns', onboarding: 'onboarding', compliance: 'compliance', predictive: 'predictive', dq: 'dq', tasks: 'tasks', integrations: 'integrations', classes: 'classes', wfbuilder: 'wfbuilder', tables: 'tables', emails: 'home' };
+const APP_ACCESS: Record<AppViewId, AppId> = { calendar: 'calendar', files: 'files', queries: 'queries', users: 'users', admin: 'admin', datalogs: 'datalogs', seg: 'seg', callreport: 'callreport', irr: 'irr', delinquency: 'delinquency', liquidity: 'liquidity', membership: 'membership', workflows: 'workflows', rm: 'rm', indirect: 'indirect', prospecting: 'prospecting', campaigns: 'campaigns', onboarding: 'onboarding', compliance: 'compliance', predictive: 'predictive', dq: 'dq', tasks: 'tasks', integrations: 'integrations', classes: 'classes', wfbuilder: 'wfbuilder', tables: 'tables', emails: 'home', cfo: 'cfo' };
 
 const viewDeps = (pool: Pool, institutionType: string, who: { purviewBranches?: string[]; employeeId?: number; modules: string[]; leads?: boolean; retention: boolean; user?: { id: string; name: string } }, workspace = false) => ({ pool, blockId, user: who.user ?? { id: '', name: '' }, person: institutionType === 'bank' ? ('customer' as const) : ('member' as const), ctx: { purviewBranches: who.purviewBranches } as CoreContext, employeeId: who.employeeId, leads: Boolean(who.leads), modules: who.modules, retention: who.retention, workspace });
 
@@ -469,7 +469,8 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       const t = tenantFor(persona);
       const p = PERSONAS[persona];
       if (!t || !t.runtime.modules || !p.session.apps.includes(APP_ACCESS[id])) return null;
-      return createAppViews(viewDeps(t.pool, t.runtime.institutionType, { purviewBranches: p.purview, employeeId: p.employeeId, modules: p.modules ?? [], leads: giAccess(persona).leads, retention: Boolean(p.retention), user: { id: p.session.user.id, name: p.session.user.name } }, Boolean(t.files))).views[id]();
+      // The CFO Scorecard reads the semantic catalog, so it agrees with every answer in a conversation.
+      return createAppViews({ ...viewDeps(t.pool, t.runtime.institutionType, { purviewBranches: p.purview, employeeId: p.employeeId, modules: p.modules ?? [], leads: giAccess(persona).leads, retention: Boolean(p.retention), user: { id: p.session.user.id, name: p.session.user.name } }, Boolean(t.files)), semantic: t.runtime.semantic ?? undefined, bank: t.runtime.institutionType === 'bank' }).views[id]();
     },
 
     async platform(persona) {
