@@ -9,6 +9,7 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:
 import mysql from 'mysql2/promise';
 import { landingTable, SYMITAR_CODES, type Pool } from '@dinext/tenant-db';
 import { CoreError } from './referrals.ts';
+import { compileMapExpr, MapExprError } from './mapExpr.ts';
 
 const rows = async <T>(pool: Pool | mysql.Connection, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
 
@@ -178,6 +179,9 @@ export function transform(v: Raw, t: Transform, processDate: string | null): Raw
   }
 }
 
+/** Core tables a custom mapping may read, besides its own (Symitar's, here). */
+export const CUSTOM_TABLES = ['ACCOUNT', 'NAME', 'SAVINGS', 'LOAN', 'LOANTRANSACTION', 'ACCOUNTTRACKING'];
+
 // ---- results ------------------------------------------------------------------------------------
 
 export interface SavedLogin {
@@ -267,6 +271,76 @@ const IDENT = /^[A-Za-z0-9_$-]{1,64}$/;
 const HOST = /^[A-Za-z0-9.-]{1,253}$/;
 const nowSql = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
 const BATCH = 2000;
+
+// ---- custom column mappings --------------------------------------------------------------------
+
+export type CustomValueType = 'text' | 'number' | 'date' | 'flag';
+export interface ColumnMapRow {
+  diTable: string;
+  target: string;
+  field: string;
+  label: string;
+  /** The core column or expression, as a person reads it. */
+  source: string;
+  how: string;
+  origin: 'Kinective' | 'Custom';
+  /** Standard rows can't be changed; custom rows can be replaced or removed, each by approval. */
+  locked: boolean;
+  addedBy?: string;
+  addedOn?: string;
+  note?: string;
+  mapId?: number;
+  valueType?: CustomValueType;
+  /** Records with a value after the last pull, for custom rows. */
+  filled?: number;
+}
+export interface MapPreview {
+  connectionId: number;
+  target: string;
+  diTable: string;
+  expression: string;
+  valueType: CustomValueType;
+  total: number;
+  filled: number;
+  distinct: number;
+  top: { value: string; count: number }[];
+  sample: { key: string; value: string }[];
+}
+export interface MapSuggestion {
+  target: string;
+  label: string;
+  expression: string;
+  valueType: CustomValueType;
+  why: string;
+  filled: number;
+  samples: string[];
+}
+/** Where a custom mapping can put its values: DI's tables a core connection feeds. */
+export const MAP_TARGETS: Record<string, string> = { members: 'cdm_party', deposits: 'cdm_deposit_account', loans: 'cdm_loan' };
+const targetOf = (diTable: string) => Object.entries(MAP_TARGETS).find(([, t]) => t === diTable)?.[0] ?? diTable;
+const day = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v ?? '')).slice(0, 10);
+const n = (x: number) => x.toLocaleString('en-US');
+const fieldKey = (label: string) =>
+  label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 60) || 'field';
+const customValue = (v: Raw, type: CustomValueType): { text: string | null; num: number | null } => {
+  if (v === null || v === undefined || String(v).trim() === '') return { text: null, num: null };
+  if (type === 'number') return Number.isFinite(Number(v)) ? { text: null, num: Number(v) } : { text: null, num: null };
+  if (type === 'flag') {
+    const t = String(v).trim().toUpperCase();
+    return { text: null, num: t === 'Y' || t === 'YES' || t === 'TRUE' || (Number.isFinite(Number(t)) && Number(t) !== 0) ? 1 : 0 };
+  }
+  if (type === 'date') return { text: date8(v) ?? (/^\d{4}-\d{2}-\d{2}/.test(String(v)) ? String(v).slice(0, 10) : null), num: null };
+  return { text: String(v).trim().slice(0, 200), num: null };
+};
+const showValue = (v: Raw, type: CustomValueType) => {
+  const c = customValue(v, type);
+  if (type === 'flag') return c.num === null ? '—' : c.num ? 'Yes' : 'No';
+  return c.num !== null ? String(c.num) : (c.text ?? '—');
+};
 
 export interface SourceOptions {
   secretKey: Buffer;
@@ -471,6 +545,8 @@ export class SourceService {
     try {
       let total = 0;
       let processDate: string | null = null;
+      const custom = await this.activeCustom(conn.system.id);
+      const customValues: { diTable: string; rows: { record: number; field: string; text: string | null; num: number | null }[]; fields: { field: string; label: string; filled: number }[] }[] = [];
       await this.withCore(cred!.credential_id, async (core) => {
         processDate = await this.processDate(core, conn.system);
         for (const map of maps) {
@@ -479,10 +555,14 @@ export class SourceService {
           const typed = found.map((r) => map.columns.map((col, i) => transform(r[`c${i}`] ?? null, col.how, processDate)));
           await this.land(map, typed);
           total += typed.length;
+          // The institution's own mappings for this table, compiled by DI from their checked expressions.
+          const mine = custom.filter((c) => c.di_table === map.diTable);
+          if (mine.length) customValues.push(await this.readCustom(core, map, mine, processDate));
         }
       });
+      for (const c of customValues) await this.landCustom(c.diTable, c.fields.map((f) => f.field), c.rows);
       const recon = await this.reconcile(maps);
-      const detail = { processDate, ...recon };
+      const detail = { processDate, ...recon, customFields: customValues.flatMap((c) => c.fields.map((f) => ({ ...f, diTable: c.diTable }))) };
       await this.pool.query("UPDATE src_sync_run SET finished_at = ?, state = 'Done', rows_pulled = ?, detail = ? WHERE run_id = ?", [nowSql(), total, JSON.stringify(detail), runId]);
       return this.run(runId);
     } catch (e) {
@@ -547,6 +627,174 @@ export class SourceService {
   }
 
   /** The latest finished pull for a connection, if any. */
+  // ---- custom column mappings ----
+
+  private async activeCustom(system: string) {
+    return rows<{ map_id: number; di_table: string; field: string; label: string; expression: string; value_type: CustomValueType }>(this.pool, "SELECT map_id, di_table, field, label, expression, value_type FROM src_column_map WHERE system_id = ? AND state = 'Active' ORDER BY map_id", [system]).catch(() => []);
+  }
+
+  /** The record key and each custom field's value, read in one query from the core. */
+  private async readCustom(core: mysql.Connection, map: TableMap, mine: { field: string; label: string; expression: string; value_type: CustomValueType }[], processDate: string | null) {
+    const keyCol = map.columns.find((c) => c.di === map.key)!;
+    const scope = { aliases: aliases(map), tables: CUSTOM_TABLES };
+    const compiled = mine.map((m) => compileMapExpr(m.expression, scope).sql);
+    const found = await rows<Record<string, Raw>>(core, `SELECT ${keyCol.their} AS k, ${compiled.map((sql, i) => `${sql} AS f${i}`).join(', ')} FROM ${map.from}`);
+    const out: { record: number; field: string; text: string | null; num: number | null }[] = [];
+    const filled = mine.map(() => 0);
+    for (const r of found) {
+      const record = Number(transform(r.k ?? null, keyCol.how, processDate));
+      mine.forEach((m, i) => {
+        const v = customValue(r[`f${i}`] ?? null, m.value_type);
+        if (v.text === null && v.num === null) return;
+        filled[i]!++;
+        out.push({ record, field: m.field, ...v });
+      });
+    }
+    return { diTable: map.diTable, rows: out, fields: mine.map((m, i) => ({ field: m.field, label: m.label, filled: filled[i]! })) };
+  }
+
+  /** Replaces the values of the fields a pull read, in one transaction. */
+  private async landCustom(diTable: string, fields: string[], values: { record: number; field: string; text: string | null; num: number | null }[]) {
+    const conn = await this.pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      await conn.query('DELETE FROM cdm_custom_field WHERE di_table = ? AND field IN (?)', [diTable, fields]);
+      const tuples = values.map((v) => [diTable, v.record, v.field, v.text, v.num]);
+      for (let i = 0; i < tuples.length; i += BATCH) await conn.query('INSERT INTO cdm_custom_field (di_table, record_id, field, value_text, value_num) VALUES ?', [tuples.slice(i, i + BATCH)]);
+      await conn.commit();
+    } catch (e) {
+      await conn.rollback().catch(() => {});
+      throw e;
+    } finally {
+      conn.release();
+    }
+  }
+
+  /** Every mapping for a core: Kinective's standard columns, locked, then the institution's own. */
+  async columnMaps(systemId = 'symitar'): Promise<ColumnMapRow[]> {
+    const system = coreSystem(systemId);
+    const standard: ColumnMapRow[] = (system?.mappings ?? []).flatMap((map) => map.columns.map((c) => ({ diTable: map.diTable, target: targetOf(map.diTable), field: c.di, label: c.di, source: c.their, how: describeTransform(c.how), origin: 'Kinective' as const, locked: true })));
+    const custom = await rows<{ map_id: number; di_table: string; field: string; label: string; expression: string; value_type: CustomValueType; note: string | null; added_name: string; added_on: unknown }>(this.pool, "SELECT map_id, di_table, field, label, expression, value_type, note, added_name, added_on FROM src_column_map WHERE system_id = ? AND state = 'Active' ORDER BY map_id", [systemId]).catch(() => []);
+    const filled = await rows<{ di_table: string; field: string; n: number }>(this.pool, 'SELECT di_table, field, COUNT(*) AS n FROM cdm_custom_field GROUP BY di_table, field').catch(() => []);
+    return [
+      ...standard,
+      ...custom.map((c) => ({ diTable: c.di_table, target: targetOf(c.di_table), field: c.field, label: c.label, source: c.expression, how: c.value_type, origin: 'Custom' as const, locked: false, addedBy: c.added_name, addedOn: day(c.added_on), ...(c.note ? { note: c.note } : {}), mapId: c.map_id, valueType: c.value_type, filled: Number(filled.find((f) => f.di_table === c.di_table && f.field === c.field)?.n ?? 0) })),
+    ];
+  }
+
+  /** The connection a mapping is tried on: the one named, or the first that's connected. */
+  private async mappingConnection(connectionId?: number) {
+    const all = await this.connections();
+    const conn = connectionId ? all.find((c) => c.connectionId === connectionId) : all[0];
+    if (!conn) throw new CoreError('NOT_FOUND', 'There’s no core connection yet. Connect the core replica first; a mapping is tried on real rows before it’s saved.');
+    const [cred] = await rows<{ credential_id: number }>(this.pool, 'SELECT credential_id FROM src_connection WHERE connection_id = ?', [conn.connectionId]);
+    const map = conn.system.mappings?.find((m) => m.diTable === MAP_TARGETS.members) ? conn.system : null;
+    if (!map) throw new CoreError('INVALID', `Kinective hasn’t mapped ${conn.system.label} yet, so there’s nothing to add a column to.`);
+    return { conn, credentialId: cred!.credential_id };
+  }
+
+  /** Compiles and runs a proposed mapping on the core, read-only: coverage, top values and ten records. Changes nothing. */
+  async previewMap(input: { target: string; expression: string; valueType: CustomValueType; connectionId?: number }): Promise<MapPreview> {
+    const diTable = MAP_TARGETS[input.target];
+    if (!diTable) throw new CoreError('INVALID', `A custom field can go on ${Object.keys(MAP_TARGETS).join(', ')}.`);
+    const { conn, credentialId } = await this.mappingConnection(input.connectionId);
+    const map = conn.system.mappings!.find((m) => m.diTable === diTable)!;
+    return this.withCore(credentialId, async (core) => {
+      const [{ db }] = (await rows<{ db: string }>(core, 'SELECT DATABASE() AS db')) as [{ db: string }];
+      const cols = await rows<{ t: string; c: string }>(core, 'SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ?', [db]);
+      const columns: Record<string, string[]> = {};
+      for (const x of cols) (columns[x.t.toUpperCase()] ??= []).push(x.c.toUpperCase());
+      let sql: string;
+      try {
+        sql = compileMapExpr(input.expression, { aliases: aliases(map), tables: CUSTOM_TABLES.filter((t) => columns[t]), columns }).sql;
+      } catch (e) {
+        if (e instanceof MapExprError) throw new CoreError('INVALID', `That expression can’t be used: ${e.message}`);
+        throw e;
+      }
+      const keyCol = map.columns.find((c) => c.di === map.key)!;
+      // A preview never runs long against the core.
+      await core.query('SET SESSION MAX_EXECUTION_TIME = 15000').catch(() => {});
+      const inner = `SELECT ${keyCol.their} AS k, ${sql} AS v FROM ${map.from}`;
+      const [counts] = await rows<{ total: number; filled: number; distinct_n: number }>(core, `SELECT COUNT(*) AS total, SUM(v IS NOT NULL AND TRIM(v) <> '') AS filled, COUNT(DISTINCT v) AS distinct_n FROM (${inner}) t`);
+      const top = await rows<{ v: Raw; n: number }>(core, `SELECT v, COUNT(*) AS n FROM (${inner}) t WHERE v IS NOT NULL AND TRIM(v) <> '' GROUP BY v ORDER BY n DESC LIMIT 6`);
+      const sample = await rows<{ k: Raw; v: Raw }>(core, `SELECT k, v FROM (${inner}) t WHERE v IS NOT NULL AND TRIM(v) <> '' ORDER BY k LIMIT 10`);
+      return {
+        connectionId: conn.connectionId,
+        target: input.target,
+        diTable,
+        expression: input.expression.trim(),
+        valueType: input.valueType,
+        total: Number(counts?.total ?? 0),
+        filled: Number(counts?.filled ?? 0),
+        distinct: Number(counts?.distinct_n ?? 0),
+        top: top.map((t) => ({ value: showValue(t.v, input.valueType), count: Number(t.n) })),
+        sample: sample.map((r) => ({ key: String(transform(r.k ?? null, keyCol.how, null)), value: showValue(r.v, input.valueType) })),
+      };
+    });
+  }
+
+  /** Records a custom mapping, once per approval; it takes effect from the next pull. A field of the same name is replaced. */
+  async addColumnMap(p: { target: string; label: string; expression: string; valueType: CustomValueType; note?: string; systemId?: string }, owner: { userId: string; name: string }, meta: { approvalId: string; on: string }) {
+    const [done] = await rows<{ map_id: number; field: string }>(this.pool, 'SELECT map_id, field FROM src_column_map WHERE approval_id = ?', [meta.approvalId]);
+    if (done) return { mapId: done.map_id, field: done.field, replayed: true };
+    const diTable = MAP_TARGETS[p.target];
+    if (!diTable) throw new CoreError('INVALID', `A custom field can go on ${Object.keys(MAP_TARGETS).join(', ')}.`);
+    const system = coreSystem(p.systemId ?? 'symitar');
+    const map = system?.mappings?.find((m) => m.diTable === diTable);
+    if (!map) throw new CoreError('INVALID', 'That core has no standard mapping to add to.');
+    // Checked again at apply: what was approved is what runs.
+    compileMapExpr(p.expression, { aliases: aliases(map), tables: CUSTOM_TABLES });
+    const field = fieldKey(p.label);
+    if (map.columns.some((c) => c.di === field)) throw new CoreError('INVALID', `${field} is one of Kinective’s standard columns, which can’t be changed.`);
+    await this.pool.query("UPDATE src_column_map SET state = 'Replaced' WHERE system_id = ? AND di_table = ? AND field = ? AND state = 'Active'", [system!.id, diTable, field]);
+    const [ins] = (await this.pool.query("INSERT INTO src_column_map (system_id, di_table, field, label, expression, value_type, state, note, added_by, added_name, added_on, approval_id) VALUES (?, ?, ?, ?, ?, ?, 'Active', ?, ?, ?, ?, ?)", [system!.id, diTable, field, p.label.slice(0, 80), p.expression.trim(), p.valueType, p.note?.slice(0, 200) ?? null, owner.userId, owner.name, meta.on, meta.approvalId])) as unknown as [{ insertId: number }];
+    return { mapId: ins.insertId, field, replayed: false };
+  }
+
+  /** Stops a custom mapping and clears the values it brought in. */
+  async removeColumnMap(mapId: number) {
+    const [m] = await rows<{ di_table: string; field: string; state: string }>(this.pool, 'SELECT di_table, field, state FROM src_column_map WHERE map_id = ?', [mapId]);
+    if (!m) throw new CoreError('NOT_FOUND', 'That custom mapping isn’t there.');
+    if (m.state !== 'Active') return { removed: false };
+    await this.pool.query("UPDATE src_column_map SET state = 'Removed' WHERE map_id = ?", [mapId]);
+    await this.pool.query('DELETE FROM cdm_custom_field WHERE di_table = ? AND field = ?', [m.di_table, m.field]);
+    return { removed: true };
+  }
+
+  /**
+   * Core fields Kinective's mapping doesn't cover, with a proposed mapping for each: for Symitar, the
+   * institution's account tracking records, by TYPE and USER field, with how many members have a value.
+   */
+  async suggestColumnMaps(connectionId?: number): Promise<MapSuggestion[]> {
+    const { conn, credentialId } = await this.mappingConnection(connectionId);
+    const mapped = new Set((await this.activeCustom(conn.system.id)).map((m) => m.expression.replace(/\s+/g, ' ').toUpperCase()));
+    return this.withCore(credentialId, async (core) => {
+      const [has] = await rows<{ n: number }>(core, "SELECT COUNT(*) AS n FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ACCOUNTTRACKING'");
+      if (!Number(has?.n)) return [];
+      const types = await rows<{ t: number; n: number; c1: number; c2: number; code: number; d1: number; a1: number }>(core, "SELECT TYPE AS t, COUNT(*) AS n, SUM(USERCHAR1 <> '') AS c1, SUM(USERCHAR2 <> '') AS c2, SUM(USERCODE1 <> 0) AS code, SUM(USERDATE1 <> '00000000') AS d1, SUM(USERAMOUNT1 <> 0) AS a1 FROM ACCOUNTTRACKING GROUP BY TYPE ORDER BY TYPE");
+      const out: MapSuggestion[] = [];
+      for (const t of types) {
+        const fields: [string, number, CustomValueType][] = [
+          ['USERCHAR1', Number(t.c1), 'text'],
+          ['USERCHAR2', Number(t.c2), 'text'],
+          ['USERCODE1', Number(t.code), 'number'],
+          ['USERDATE1', Number(t.d1), 'date'],
+          ['USERAMOUNT1', Number(t.a1), 'number'],
+        ];
+        for (const [f, filled, type0] of fields) {
+          if (!filled) continue;
+          const samples = (await rows<{ v: Raw }>(core, `SELECT ${f} AS v FROM ACCOUNTTRACKING WHERE TYPE = ? GROUP BY ${f} ORDER BY COUNT(*) DESC LIMIT 4`, [t.t])).map((r) => String(r.v ?? ''));
+          // A field holding only Y and N is a yes-or-no.
+          const type: CustomValueType = type0 === 'text' && samples.every((v) => /^[YN]$/.test(v)) ? 'flag' : type0;
+          const expression = `FIRST_OF(ACCOUNTTRACKING, ${f}, PARENTACCOUNT = a.ACCOUNTNUMBER AND TYPE = ${t.t})`;
+          if (mapped.has(expression.toUpperCase())) continue;
+          out.push({ target: 'members', label: `Tracking type ${t.t} ${f}`, expression, valueType: type, why: `${n(filled)} members have a value in tracking type ${t.t}’s ${f}; Kinective’s standard mapping doesn’t read tracking records.`, filled, samples });
+        }
+      }
+      return out;
+    });
+  }
+
   async lastPull(connectionId: number) {
     const [r] = await rows<{ run_id: number }>(this.pool, "SELECT run_id FROM src_sync_run WHERE connection_id = ? AND state = 'Done' ORDER BY run_id DESC LIMIT 1", [connectionId]);
     return r ? this.run(r.run_id) : null;

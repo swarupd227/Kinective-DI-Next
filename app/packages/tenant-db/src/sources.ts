@@ -58,6 +58,34 @@ export const SOURCES_DDL = [
      KEY ix_src_run_connection (connection_id),
      UNIQUE KEY ux_src_run_approval (approval_id)
    )`,
+  // Custom column mappings: what an institution adds beyond Kinective's standard mapping (a Symitar
+  // tracking record, a user-defined field). Each one was proposed, previewed and approved.
+  `CREATE TABLE IF NOT EXISTS src_column_map (
+     map_id INT AUTO_INCREMENT PRIMARY KEY,
+     system_id VARCHAR(20) NOT NULL,
+     di_table VARCHAR(64) NOT NULL,
+     field VARCHAR(64) NOT NULL,
+     label VARCHAR(80) NOT NULL,
+     expression VARCHAR(400) NOT NULL,
+     value_type VARCHAR(10) NOT NULL,
+     state VARCHAR(12) NOT NULL,
+     note VARCHAR(200) NULL,
+     added_by VARCHAR(40) NOT NULL,
+     added_name VARCHAR(80) NOT NULL,
+     added_on DATE NOT NULL,
+     approval_id VARCHAR(40) NOT NULL,
+     UNIQUE KEY ux_src_column_map_approval (approval_id),
+     KEY ix_src_column_map_field (di_table, field)
+   )`,
+  // The values custom mappings bring in, one row per record and field.
+  `CREATE TABLE IF NOT EXISTS cdm_custom_field (
+     di_table VARCHAR(64) NOT NULL,
+     record_id BIGINT NOT NULL,
+     field VARCHAR(64) NOT NULL,
+     value_text VARCHAR(200) NULL,
+     value_num DECIMAL(18,4) NULL,
+     PRIMARY KEY (di_table, field, record_id)
+   )`,
 ];
 
 /** DI's tables that a core connection can feed, and the landing table a pull writes for each. */
@@ -65,7 +93,7 @@ export const SOURCE_TARGETS = ['cdm_party', 'cdm_deposit_account', 'cdm_loan'] a
 export const landingTable = (diTable: string) => `src_land_${diTable.replace(/^cdm_/, '')}`;
 const LANDING_DDL = SOURCE_TARGETS.map((t) => `CREATE TABLE IF NOT EXISTS ${landingTable(t)} LIKE ${t}`);
 
-export const SOURCES_WRITE_TABLES = ['src_credential', 'src_connection', 'src_mapping', 'src_sync_run'];
+export const SOURCES_WRITE_TABLES = ['src_credential', 'src_connection', 'src_mapping', 'src_sync_run', 'src_column_map', 'cdm_custom_field'];
 /** A pull replaces what landed last time, so the landing tables also allow deletes. Nothing else does. */
 export const SOURCES_LANDING_TABLES = SOURCE_TARGETS.map(landingTable);
 
@@ -90,6 +118,8 @@ export async function createSourceTables(admin: mysql.Connection, schema: string
   for (const ddl of [...SOURCES_DDL, ...LANDING_DDL]) await admin.query(ddl);
   for (const table of SOURCES_WRITE_TABLES) await admin.query(`GRANT INSERT, UPDATE ON \`${schema}\`.\`${table}\` TO 'dinext'@'%'`);
   for (const table of SOURCES_LANDING_TABLES) await admin.query(`GRANT INSERT, UPDATE, DELETE ON \`${schema}\`.\`${table}\` TO 'dinext'@'%'`);
+  // A pull replaces the values each custom mapping brought in, so it may delete them.
+  await admin.query(`GRANT DELETE ON \`${schema}\`.\`cdm_custom_field\` TO 'dinext'@'%'`);
 }
 
 /**
@@ -109,6 +139,9 @@ export async function seedCoreReplica(admin: mysql.Connection, schema: string) {
     `CREATE TABLE NAME (PARENTACCOUNT CHAR(10) NOT NULL, ORDINAL SMALLINT NOT NULL, TYPE SMALLINT NOT NULL, FIRST VARCHAR(40) NOT NULL, LAST VARCHAR(40) NOT NULL, BIRTHDATE CHAR(8) NOT NULL, PRIMARY KEY (PARENTACCOUNT, ORDINAL))`,
     `CREATE TABLE SAVINGS (PARENTACCOUNT CHAR(10) NOT NULL, ID CHAR(4) NOT NULL, SERIAL INT NOT NULL UNIQUE, TYPE SMALLINT NOT NULL, BRANCH SMALLINT NOT NULL, OPENDATE CHAR(8) NOT NULL, CLOSEDATE CHAR(8) NOT NULL, MATURITYDATE CHAR(8) NOT NULL, BALANCE DECIMAL(14,2) NOT NULL, DIVRATE INT NOT NULL, PRIMARY KEY (PARENTACCOUNT, ID))`,
     `CREATE TABLE LOAN (PARENTACCOUNT CHAR(10) NOT NULL, ID CHAR(4) NOT NULL, SERIAL INT NOT NULL UNIQUE, TYPE SMALLINT NOT NULL, BRANCH SMALLINT NOT NULL, LOANOFFICER INT NOT NULL, DEALERNUMBER INT NOT NULL, OPENDATE CHAR(8) NOT NULL, CLOSEDATE CHAR(8) NOT NULL, CHARGEOFFDATE CHAR(8) NOT NULL, ORIGINALBALANCE DECIMAL(14,2) NOT NULL, BALANCE DECIMAL(14,2) NOT NULL, INTERESTRATE INT NOT NULL, DUEDATE CHAR(8) NOT NULL, PRIMARY KEY (PARENTACCOUNT, ID))`,
+    // Symitar's account tracking records: each institution decides what its TYPE numbers and USER
+    // fields hold, so Kinective's standard mapping can't know them.
+    `CREATE TABLE ACCOUNTTRACKING (PARENTACCOUNT CHAR(10) NOT NULL, ID CHAR(4) NOT NULL, TYPE SMALLINT NOT NULL, USERCHAR1 VARCHAR(40) NOT NULL, USERCHAR2 VARCHAR(40) NOT NULL, USERCODE1 SMALLINT NOT NULL, USERDATE1 CHAR(8) NOT NULL, USERAMOUNT1 DECIMAL(14,2) NOT NULL, PRIMARY KEY (PARENTACCOUNT, ID))`,
     `CREATE TABLE LOANTRANSACTION (PARENTACCOUNT CHAR(10) NOT NULL, PARENTID CHAR(4) NOT NULL, SEQUENCENUMBER INT NOT NULL, POSTDATE CHAR(8) NOT NULL, AMOUNT DECIMAL(14,2) NOT NULL, PRIMARY KEY (PARENTACCOUNT, PARENTID, SEQUENCENUMBER))`,
   ];
   for (const d of ddl) await admin.query(d);
@@ -124,6 +157,11 @@ export async function seedCoreReplica(admin: mysql.Connection, schema: string) {
     `INSERT INTO LOAN SELECT LPAD(party_id, 10, '0'), LPAD(ROW_NUMBER() OVER (PARTITION BY party_id ORDER BY loan_id) + 100, 4, '0'), loan_id, ${caseOf('loan_category', SYMITAR_CODES.loanType)}, branch_id, officer_id, IF(is_indirect = 1, 4000 + MOD(loan_id, 37), 0), ${ymd('open_date')}, ${ymd('close_date')}, ${ymd('charge_off_date')}, original_amount, balance, ROUND(rate * 1000), DATE_FORMAT(IF(days_delinquent > 0, DATE_SUB(?, INTERVAL days_delinquent DAY), DATE_ADD(?, INTERVAL 1 + MOD(loan_id, 27) DAY)), '%Y%m%d') FROM ${src}.cdm_loan`,
     [asOf, asOf],
   );
+  // Tracking records this credit union uses: type 12 marketing preferences (email and text consent,
+  // and when they were last confirmed), type 21 board and insider status, type 30 a representative payee.
+  await admin.query(`INSERT INTO ACCOUNTTRACKING SELECT LPAD(party_id, 10, '0'), '0012', 12, IF(MOD(party_id, 10) < 7, 'Y', 'N'), IF(MOD(party_id, 10) < 4, 'Y', 'N'), 0, ${ymd('join_date')}, 0 FROM ${src}.cdm_party WHERE MOD(party_id, 20) <> 0`);
+  await admin.query(`INSERT INTO ACCOUNTTRACKING SELECT LPAD(party_id, 10, '0'), '0021', 21, '', '', IF(MOD(party_id, 2) = 0, 1, 2), '00000000', 0 FROM ${src}.cdm_party WHERE MOD(party_id, 211) = 0`);
+  await admin.query(`INSERT INTO ACCOUNTTRACKING SELECT LPAD(party_id, 10, '0'), '0030', 30, CONCAT('Payee for ', first_name), '', 0, ${ymd('join_date')}, 0 FROM ${src}.cdm_party WHERE MOD(party_id, 97) = 0`);
   // What reconciliation should find: two accounts opened in the core that the build doesn't have, and
   // three open loans whose balances moved by a posted payment.
   const [[top]] = (await admin.query(`SELECT MAX(party_id) AS id FROM ${src}.cdm_party`)) as unknown as [{ id: number }[]];

@@ -88,7 +88,9 @@ export function DeskBar({ threadId }: { threadId?: string }) {
     ? [{ label: 'All tasks', to: '/c' }, ...(threadId ? [{ label: thread.data?.title ?? 'Task' }] : pathname.startsWith('/c/new') ? [{ label: 'New task' }] : [])]
     : pathname.startsWith('/home')
       ? []
-      : reportId && reportId !== 'summary'
+      : pathname.startsWith('/integrations/mappings')
+        ? [{ label: 'Integrations', to: '/integrations' }, { label: 'Core mapping' }]
+        : reportId && reportId !== 'summary'
         ? [{ label: 'Reports', to: '/reports' }, { label: report.data?.data.name ?? 'Report' }]
         : [{ label: page === 'View' ? (pageName(pathname) ?? appLabel ?? 'Page') : page }];
 

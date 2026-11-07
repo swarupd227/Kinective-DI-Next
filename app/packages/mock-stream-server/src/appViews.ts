@@ -29,6 +29,8 @@ export interface ViewDeps {
   /** The semantic catalog, for pages built from governed metrics (the CFO Scorecard). */
   semantic?: SemanticService;
   bank?: boolean;
+  /** Core connections with the network allow-list, for pages that read the core (Core mapping). */
+  sources?: SourceService;
 }
 
 const usd = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
@@ -663,6 +665,39 @@ export function createAppViews(deps: ViewDeps) {
         blocks: [table('By domain', 'dq.status_report', [text('domain', 'Domain'), text('passed', 'Passed'), { field: 'rows', headerName: 'Rows failing', type: 'count' }], domains.map((d) => { const own = checks.items.filter((c) => c.domain === d); return { domain: d, passed: passed(own), rows: own.reduce((n, c) => n + c.rowsFailed, 0) }; })), table('Checks', 'dq.status_report', [text('name', 'Check'), text('result', 'Result'), text('domain', 'Domain'), text('dimension', 'Dimension')], checks.items.map((c) => ({ domain: c.domain, dimension: c.dimension, name: c.name, result: c.passed ? 'Passed' : `Failed, ${c.rowsFailed} rows` })))],
       };
     },
+    async coremap() {
+      // Kinective's standard Symitar columns, locked, and this institution's own, with what's not mapped yet.
+      const svc = deps.sources ?? new SourceService(pool, { secretKey: secretKeyFrom(), allowedHosts: [] });
+      const all = await svc.columnMaps().catch(() => []);
+      const custom = all.filter((r) => r.origin === 'Custom');
+      const standard = all.filter((r) => r.origin === 'Kinective');
+      const connected = (await svc.connections().catch(() => [])).length > 0;
+      const suggestions = connected ? await svc.suggestColumnMaps().catch(() => []) : [];
+      const target = (t: string) => ({ members: 'Members', deposits: 'Deposit accounts', loans: 'Loans' })[t] ?? t;
+      const kind = (t?: string) => (t === 'flag' ? 'Yes or no' : t ? title(t) : '—');
+      return {
+        title: 'Core mapping',
+        lede: 'How the core’s columns become DI’s. Kinective’s standard columns are locked; your institution’s own, such as Symitar tracking records, are added by asking DI, tried on real rows and approved before they’re used.',
+        take: {
+          headline: custom.length
+            ? `${count(standard.length, 'standard column')} from Kinective and ${count(custom.length, 'custom column')} of your own.${suggestions.length ? ` ${count(suggestions.length, 'tracking field')} with values ${suggestions.length === 1 ? 'isn’t' : 'aren’t'} mapped yet.` : ''}`
+            : `${count(standard.length, 'standard column')} from Kinective, and none of your own yet.${suggestions.length ? ` ${count(suggestions.length, 'tracking field')} in the core ${suggestions.length === 1 ? 'has' : 'have'} values DI doesn’t read.` : ''}`,
+          action: suggestions.length ? { label: 'Suggest mappings', ask: 'What core fields aren’t mapped yet?' } : { label: 'Map a field', ask: 'Show the custom mappings' },
+        },
+        tiles: [{ label: 'Standard columns', value: String(standard.length), detail: 'Kinective, locked' }, { label: 'Custom columns', value: String(custom.length) }, { label: 'Not mapped yet', value: String(suggestions.length), ...(suggestions.length ? { tone: 'warning' as const, ask: 'What core fields aren’t mapped yet?' } : {}) }],
+        prompts: ['What core fields aren’t mapped yet?', 'Show the custom mappings', 'Pull from the Symitar replica now'],
+        ...(connected ? {} : { notice: 'Connect the core replica first: a mapping is tried on the core’s real rows before it’s saved.' }),
+        blocks: [
+          ...(custom.length
+            ? [{ ...openList(custom.map((c) => ({ id: `map_${c.mapId}`, title: `${c.label} · ${target(c.target)}`, subtitle: `${c.source} · ${kind(c.valueType)} · ${(c.filled ?? 0).toLocaleString('en-US')} with a value · added by ${c.addedBy ?? '—'}${c.addedOn ? `, ${day(c.addedOn)}` : ''}`, icon: 'database' as const, badge: { label: 'Custom', tone: 'accent' as const }, actions: [{ label: 'Remove', link: `/c/new?q=${encodeURIComponent(`Remove the ${c.label} mapping`)}` }] }))), title: 'Your custom mappings' } as Block]
+            : []),
+          ...(suggestions.length
+            ? [{ ...openList(suggestions.map((x, i) => ({ id: `sug_${i}`, title: x.label, subtitle: `${x.filled.toLocaleString('en-US')} members with a value, such as ${x.samples.slice(0, 3).join(', ')} · ${kind(x.valueType)}`, icon: 'alert' as const, badge: { label: 'Not mapped', tone: 'warning' as const }, why: x.why, actions: [{ label: 'Try it', link: `/c/new?q=${encodeURIComponent(`Try mapping ${x.expression} to ${x.label} as ${x.valueType === 'flag' ? 'a yes or no' : x.valueType}`)}` }] }))), title: 'In the core, not mapped yet' } as Block]
+            : []),
+          table('Kinective’s standard mapping (locked)', 'coremap.list', [text('target', 'In DI'), text('field', 'DI column'), text('source', 'From the core'), text('how', 'As'), text('by', 'Mapped by')], standard.map((r) => ({ target: target(r.target), field: r.field, source: r.source, how: r.how, by: 'Kinective, locked' }))),
+        ],
+      };
+    },
     async cfo() {
       // A bank's finance page: capital, earnings and credit quality from the catalog, with plan and peers.
       if (!deps.bank || !deps.semantic) return { title: 'CFO Scorecard', lede: 'The CFO Scorecard is for banks. A credit union’s finance figures are on the Board report.', take: { headline: 'The CFO Scorecard is for banks.' }, tiles: [], prompts: ['Show the board report'], blocks: [] };
@@ -730,6 +765,8 @@ export function createAppViews(deps: ViewDeps) {
         title: 'Integrations',
         lede: `Where the data comes from, and how the latest loads went. Data as of ${day(build.asOf)}.`,
         take: { headline: (build.stale ? `No new build for ${build.ageDays} days; the latest finished ${day(build.finishedOn)}, with data as of ${day(build.asOf)}. ` : '') + (late.length ? `${count(late.length, 'source')} arrived late: ${late.map((u) => `${u.source}, due ${u.dueBy}, arrived ${u.arrived}`).join('; ')}. The build ${build.state} with what was there.` : `Every source arrived on time, and the build ${build.state}.`), action: { label: 'Which data files arrived late?', ask: 'Which uploaders missed their late-file time?' } },
+        // The column mapping behind the core connection has its own page.
+        links: [{ label: 'Core mapping', to: '/integrations/mappings' }],
         tiles: [{ label: 'Sources', value: String(build.uploads.length) }, { label: 'Late', value: String(late.length), tone: late.length ? 'warning' : 'neutral' }, build.stale ? { label: 'Since the last build', value: `${build.ageDays} days`, detail: `Finished ${day(build.finishedOn)}`, tone: 'danger' as const } : { label: 'Last build', value: title(build.state), detail: day(build.asOf) }],
         prompts: ['Which uploaders missed their late-file time?', build.stale ? 'Why hasn’t a new build run?' : 'Did last night’s build finish?'],
         notice: `Connect the core’s reporting replica below with a read-only login: DI tests it, maps its tables and checks every row before anything changes. Or load a CSV or Excel file into a table of your own.${feeding ? ` Members, deposits and loans load from the ${feeding.name} from the next build.` : ''}`,

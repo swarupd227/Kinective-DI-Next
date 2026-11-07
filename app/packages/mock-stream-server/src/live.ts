@@ -3,7 +3,7 @@
 // key the Concierge runs its deterministic offline planner (spec 23.6.4).
 import { randomBytes } from 'node:crypto';
 import type { ApprovalCardBlock, ApprovalDecisionRequest, Block, KpiGroupBlock, ListBlock, Member360Block, SearchResult, StreamEvent, StreamingEnvelope, TableData } from '@dinext/block-schemas';
-import { budgetModule, profitAnalyses, profitabilityModule } from '@dinext/agents';
+import { coreMappingModule, budgetModule, profitAnalyses, profitabilityModule } from '@dinext/agents';
 import { camelsAnalyses, camelsModule } from '@dinext/agents';
 import { baselAnalyses, baselModule } from '@dinext/agents';
 import { workToday, BudgetService, ProfitabilityService } from '@dinext/di-core';
@@ -293,7 +293,7 @@ const applicationView = ({ partyId, ...a }: PipelineApplication, rm: Relationshi
 const referralView = ({ partyId, senderUserId: _sender, ...i }: InboxItem, rm: RelationshipService | null): ReferralSummary => ({ ...i, memberRef: rm?.token(partyId) ?? '' });
 
 /** Which app each workspace page belongs to. */
-const APP_ACCESS: Record<AppViewId, AppId> = { calendar: 'calendar', files: 'files', queries: 'queries', users: 'users', admin: 'admin', datalogs: 'datalogs', seg: 'seg', callreport: 'callreport', irr: 'irr', delinquency: 'delinquency', liquidity: 'liquidity', membership: 'membership', workflows: 'workflows', rm: 'rm', indirect: 'indirect', prospecting: 'prospecting', campaigns: 'campaigns', onboarding: 'onboarding', compliance: 'compliance', predictive: 'predictive', dq: 'dq', tasks: 'tasks', integrations: 'integrations', classes: 'classes', wfbuilder: 'wfbuilder', tables: 'tables', emails: 'home', cfo: 'cfo' };
+const APP_ACCESS: Record<AppViewId, AppId> = { calendar: 'calendar', files: 'files', queries: 'queries', users: 'users', admin: 'admin', datalogs: 'datalogs', seg: 'seg', callreport: 'callreport', irr: 'irr', delinquency: 'delinquency', liquidity: 'liquidity', membership: 'membership', workflows: 'workflows', rm: 'rm', indirect: 'indirect', prospecting: 'prospecting', campaigns: 'campaigns', onboarding: 'onboarding', compliance: 'compliance', predictive: 'predictive', dq: 'dq', tasks: 'tasks', integrations: 'integrations', classes: 'classes', wfbuilder: 'wfbuilder', tables: 'tables', emails: 'home', cfo: 'cfo', coremap: 'integrations' };
 
 const viewDeps = (pool: Pool, institutionType: string, who: { purviewBranches?: string[]; employeeId?: number; modules: string[]; leads?: boolean; retention: boolean; user?: { id: string; name: string } }, workspace = false) => ({ pool, blockId, user: who.user ?? { id: '', name: '' }, person: institutionType === 'bank' ? ('customer' as const) : ('member' as const), ctx: { purviewBranches: who.purviewBranches } as CoreContext, employeeId: who.employeeId, leads: Boolean(who.leads), modules: who.modules, retention: who.retention, workspace });
 
@@ -399,7 +399,8 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     // Data files load into the Tables store; the module goes first so "load x.csv into a table" is never read as Tables or Files.
     const tablesModules = tables ? [dataLoadModule(files, new IngestService(pool, readWorkbook), today, offcore), tablesModule(tables, today)] : [];
     // "Connect the Symitar replica" and "pull from the core" go to Data Sources before anything else reads them.
-    if (sources) tablesModules.unshift(sourcesModule(sources, today));
+    // Core mapping first: "show the Symitar mapping" is about columns, not the connection.
+    if (sources) tablesModules.unshift(coreMappingModule(sources, today), sourcesModule(sources, today));
     // API connections exist once the tenant was seeded with the API slice or later.
     const hasApis = await pool.query('SELECT 1 FROM api_connection LIMIT 1').then(
       () => true,
@@ -470,7 +471,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       const p = PERSONAS[persona];
       if (!t || !t.runtime.modules || !p.session.apps.includes(APP_ACCESS[id])) return null;
       // The CFO Scorecard reads the semantic catalog, so it agrees with every answer in a conversation.
-      return createAppViews({ ...viewDeps(t.pool, t.runtime.institutionType, { purviewBranches: p.purview, employeeId: p.employeeId, modules: p.modules ?? [], leads: giAccess(persona).leads, retention: Boolean(p.retention), user: { id: p.session.user.id, name: p.session.user.name } }, Boolean(t.files)), semantic: t.runtime.semantic ?? undefined, bank: t.runtime.institutionType === 'bank' }).views[id]();
+      return createAppViews({ ...viewDeps(t.pool, t.runtime.institutionType, { purviewBranches: p.purview, employeeId: p.employeeId, modules: p.modules ?? [], leads: giAccess(persona).leads, retention: Boolean(p.retention), user: { id: p.session.user.id, name: p.session.user.name } }, Boolean(t.files)), semantic: t.runtime.semantic ?? undefined, bank: t.runtime.institutionType === 'bank', sources: new SourceService(t.pool, sourceOptions()) }).views[id]();
     },
 
     async platform(persona) {

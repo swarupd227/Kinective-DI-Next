@@ -107,6 +107,7 @@ function Inside({ label, threadId, leave }: { label: string; threadId?: string; 
               <Route path="/queries/*" element={guard('queries', <QueriesPage />)} />
               <Route path="/tasks/*" element={guard('tasks', <AppViewPage app="tasks" />)} />
               <Route path="/dq/*" element={guard('dq', <AppViewPage app="dq" />)} />
+              <Route path="/integrations/mappings" element={guard('integrations', <AppViewPage app="coremap" />)} />
               <Route path="/integrations/*" element={guard('integrations', <AppViewPage app="integrations" />)} />
               <Route path="/admin/classes/*" element={guard('classes', <AppViewPage app="classes" />)} />
               <Route path="/admin/users/*" element={guard('users', <AppViewPage app="users" />)} />

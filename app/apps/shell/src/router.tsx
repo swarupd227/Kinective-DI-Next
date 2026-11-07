@@ -65,6 +65,7 @@ export const router = createBrowserRouter([
           { path: 'datalogs/*', element: guarded('datalogs', <AppViewPage app="datalogs" />) },
           { path: 'queries/*', element: guarded('queries', <QueriesPage />) },
           { path: 'admin/classes/*', element: guarded('classes', <AppViewPage app="classes" />) },
+          { path: 'integrations/mappings', element: guarded('integrations', <AppViewPage app="coremap" />) },
           { path: 'integrations/*', element: guarded('integrations', <AppViewPage app="integrations" />) },
           { path: 'admin/users/*', element: guarded('users', <AppViewPage app="users" />) },
           { path: 'admin/*', element: guarded('admin', <AppViewPage app="admin" />) },

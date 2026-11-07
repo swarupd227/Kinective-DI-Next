@@ -162,6 +162,10 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-EXP-002', set: 'golden', persona: 'bank_cfo', q: 'Export the CAMELS and stress test report for Q3 2026 to Excel', agent: 'Report Builder', approval: 'medium' },
   { id: 'GQ-NPL-001', set: 'golden', persona: 'bank_cfo', q: 'What is our NPL ratio and net charge-off rate?', agent: 'Delinquency', contains: ['NPL ratio', 'of average loans'], approval: 'none' },
   { id: 'GQ-NPL-002', set: 'golden', persona: 'bank_cfo', q: 'Chart our NPL ratio by quarter', agent: 'Analytics Q&A', approval: 'none' },
+  // Core mapping: Kinective's standard columns locked, the institution's own added by approval.
+  { id: 'GQ-MAP-001', set: 'golden', persona: 'admin', q: 'Show the Symitar mapping', agent: 'Core Mapping', contains: ['standard columns'], approval: 'none' },
+  { id: 'GQ-MAP-002', set: 'golden', persona: 'admin', q: 'What core fields aren’t mapped yet?', agent: 'Core Mapping', approval: 'none' },
+  { id: 'PM-MAP-001', set: 'permission', persona: 'branch', q: 'Show the Symitar mapping', refused: true, notContains: ['standard columns'], approval: 'none', ref: 'Core mappings are part of the Integrations administrator’s access' },
   { id: 'PM-BAS-001', set: 'permission', persona: 'branch', q: 'What are our risk-weighted assets?', refused: true, notContains: ['Risk-weighted assets are'], approval: 'none', ref: 'Basel III capital is for finance and executives' },
   // The third way in: API connections, and the marketing round trip on them.
   { id: 'GQ-API-001', set: 'golden', persona: 'admin', q: 'Show the API connections', agent: 'API Connections', contains: ['API connection'], approval: 'none' },
