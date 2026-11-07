@@ -217,6 +217,8 @@ export function verifyNarrative(template: string, resolved: Map<string, Resolved
     .replace(/((?:[A-Z][a-z]+ (?:rose|fell|grew) [-$\d][\d.,]*[KMB%]?(?:, | and ))*[A-Z][a-z]+ (?:rose|fell|grew) [-$\d][\d.,]*[KMB%]?)(?= (?:were|was|added|came|led|trailed|followed)\b)/g, (list: string) => list.replace(/([A-Z][a-z]+) (?:rose|fell|grew) ([-$\d][\d.,]*[KMB%]?)/g, '$1 ($2)'))
     // "fell least {{x}} by {{x}}" ends as "fell least fell $89.8K": the second word goes.
     .replace(/\b(rose|fell|grew)( most| least) \1 /g, '$1$2, by ')
+    // A rate's change already says "bp": "rose 34 bp percentage points" keeps "34 bp".
+    .replace(/(\d bp)\s+(?:basis |percentage )?(?:points?|pts?|bps?)\b/gi, '$1')
     .trim();
   return { text, removed, unresolved };
 }
