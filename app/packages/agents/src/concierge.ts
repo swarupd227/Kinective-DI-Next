@@ -146,6 +146,8 @@ const REPORT_WORDS = /\breports?\b|\bpack\b|scorecard|\bschedul|\bexport\b|\bdow
  * Asking to build a report is a report request whatever it contains: "a quarterly ALCO report with
  * certificates maturing" is for the Report Builder, not the certificate agent its words also match.
  */
+/** A report leaving as a file or on a schedule: "Export the CAMELS report to PDF", "Send the Basel III report to me every Monday". */
+export const REPORT_FILE = /^(?![\s\S]*\b(?:call report|5300|ffiec)\b)(?:[\s\S]*?)(?:\b(?:export|download)\b[^.?!]*\b(?:report|pack|scorecard)\b|\b(?:report|pack|scorecard)\b[^.?!]*\b(?:to|as|in) (?:excel|csv|pdf|a pdf|an excel)\b|\bsend (?:the |this |my )?[^.?!]*\b(?:report|pack|scorecard)\b[^.?!]*\bevery\b)/i;
 export const BUILD_REPORT = /\b(build|create|make|design|draft|put together|set up)\b(?:(?![.?!]).){0,100}?\b(reports?|pack|scorecard|dashboard)\b/i;
 /** A thread with a report on screen keeps routing there for "make the chart a donut", "save it" and the like. */
 const REPORT_FOLLOW_UP = /^(make|add|move|remove|delete|drop|save|export|download|schedule|send|change|put|run it|show it|switch|pin|unpin|publish|take|restore)\b/i;
@@ -327,7 +329,10 @@ export class Concierge {
 
       // A module's own request, or the answer to a question it asked, needs no model to route.
       const waiting = this.moduleAsking.get(turn.threadId);
-      const found = turn.tenant.modules?.match(screened.text) ?? null;
+      // Exporting, downloading or scheduling a report belongs to Report Builder, whatever the report is
+      // about: "Export the Basel III capital report to PDF" names Basel but asks for a file.
+      const reportFile = turn.apps.includes('reports') && REPORT_FILE.test(screened.text);
+      const found = reportFile ? null : (turn.tenant.modules?.match(screened.text) ?? null);
       // A question others may answer goes to them when this person lacks the module, instead of a refusal.
       const matched = found && !(turn.modules ?? []).includes(found.id) && found.shared?.test(screened.text) ? null : found;
       const module = matched ?? (waiting && screened.text.length <= 200 ? waiting.spec : null);
@@ -992,7 +997,7 @@ export class Concierge {
           } else if (x.operation === 'report.restore') await sink.text(`Restored **${x.templateName}** to ${x.folder}. [Open it](/reports/${x.templateId}).`, REPORT_AGENT, source);
           else if (x.operation === 'report.settings.update') await sink.text(`Changed the settings of **${x.templateName}**: ${x.changes.map((ch) => `${ch.label.toLowerCase()} is now ${ch.after.charAt(0).toLowerCase()}${ch.after.slice(1)}`).join('; ')}.${x.turnedOff ? ' Others no longer see it, and its schedules skip it until you turn it back on.' : ''} [See its settings](/reports/${x.templateId}?view=settings).`, REPORT_AGENT, source);
           else if (x.operation === 'report.schedule.cancel') await sink.text(`Stopped schedule #${x.schedule.scheduleId} for **${x.schedule.templateName}**. Nothing more will be sent.`, REPORT_AGENT, source);
-          else await sink.text(`Your ${x.format === 'xlsx' ? 'Excel' : 'CSV'} export of **${x.templateName}** is ready: [Download it](/v1/exports/${x.exportId}). The download is logged.`, REPORT_AGENT, source);
+          else await sink.text(`Your ${x.format === 'xlsx' ? 'Excel' : x.format === 'pdf' ? 'PDF' : 'CSV'} export of **${x.templateName}** is ready: [Download it](/v1/exports/${x.exportId}). The download is logged.`, REPORT_AGENT, source);
           sink.done?.(null);
         } catch (err) {
           void this.deps.audit.event({ eventType: 'ai.action.failed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, error: err instanceof Error ? err.message : String(err) });

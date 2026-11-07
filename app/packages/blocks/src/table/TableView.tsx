@@ -2,7 +2,9 @@
 // never sends grid options. Lazy-loaded so AG Grid stays out of the shell's initial bundle.
 import { useEffect, useState } from 'react';
 import type { TableBlock } from '@dinext/block-schemas';
-import { TextInput } from '@dinext/ui';
+import { Download } from 'lucide-react';
+import { Button, Menu, TextInput } from '@dinext/ui';
+import { useBlockHost } from '../context.tsx';
 import { formatValue } from '../format.ts';
 import DataGrid from './DataGrid.tsx';
 import styles from './TableView.module.css';
@@ -56,6 +58,8 @@ function Stacked({ columns, rows, label }: { columns: Column[]; rows: Record<str
 export default function TableView({ block }: { block: TableBlock }) {
   const { columns, rows = [], sort } = block.data;
   const [query, setQuery] = useState('');
+  const host = useBlockHost();
+  const [exporting, setExporting] = useState(false);
   const phone = usePhone();
   const autoHeight = rows.length <= MAX_AUTO_HEIGHT_ROWS;
   const visible = columns.filter((c) => !c.hidden);
@@ -65,8 +69,30 @@ export default function TableView({ block }: { block: TableBlock }) {
   const name = (block.title ?? 'this table').toLowerCase();
   return (
     <div className={styles.wrap}>
-      {rows.length > SEARCH_FROM_ROWS && (
-        <TextInput label={`Search ${name}`} hideLabel type="search" placeholder={`Search ${name}`} value={query} onChange={(e) => setQuery(e.target.value)} className={styles.search} />
+      {(rows.length > SEARCH_FROM_ROWS || (host.onExportTable && rows.length > 0)) && (
+        <div className={styles.tools}>
+          {rows.length > SEARCH_FROM_ROWS && (
+            <TextInput label={`Search ${name}`} hideLabel type="search" placeholder={`Search ${name}`} value={query} onChange={(e) => setQuery(e.target.value)} className={styles.search} />
+          )}
+          {/* Any table DI shows can leave as a file: the host writes it and logs the export. */}
+          {host.onExportTable && rows.length > 0 && (
+            <Menu
+              trigger={
+                <Button size="sm" variant="ghost" icon={<Download size={14} aria-hidden />} busy={exporting} aria-label={`Export ${name}`}>
+                  Export
+                </Button>
+              }
+              items={(['xlsx', 'csv'] as const).map((f) => ({
+                id: f,
+                label: f === 'xlsx' ? 'Excel (.xlsx)' : 'CSV',
+                onSelect: () => {
+                  setExporting(true);
+                  void host.onExportTable!(block, f).finally(() => setExporting(false));
+                },
+              }))}
+            />
+          )}
+        </div>
       )}
       {stacked ? (
         <Stacked columns={visible} rows={found} label={block.title ?? 'Table'} />

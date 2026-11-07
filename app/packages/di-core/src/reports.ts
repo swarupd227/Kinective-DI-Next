@@ -52,7 +52,7 @@ export interface ExportRow {
   exportId: string;
   templateId: string;
   userId: string;
-  format: 'xlsx' | 'csv';
+  format: 'xlsx' | 'csv' | 'pdf';
   controls: Record<string, string>;
   createdAt: string;
 }
@@ -384,7 +384,7 @@ export class ReportStore {
   }
 
   /** report.export: records an approved export once; the file is rendered when it is downloaded. */
-  async createExport(e: { templateId: string; format: 'xlsx' | 'csv'; controls: Record<string, string> }, meta: { approvalId: string; userId: string }): Promise<ExportRow & { replayed: boolean }> {
+  async createExport(e: { templateId: string; format: 'xlsx' | 'csv' | 'pdf'; controls: Record<string, string> }, meta: { approvalId: string; userId: string }): Promise<ExportRow & { replayed: boolean }> {
     const [done] = await this.pool.query('SELECT export_id FROM esp_report_exports WHERE approval_id = ?', [meta.approvalId]);
     const prior = (done as Row[])[0];
     if (prior) return { ...(await this.export(prior.export_id as string, meta.userId)), replayed: true };

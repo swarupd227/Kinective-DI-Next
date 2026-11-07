@@ -89,6 +89,7 @@ export function ReportCanvasView({ block }: { block: ReportCanvasBlock }) {
             items={[
               { id: 'xlsx', label: 'Excel (.xlsx)', onSelect: () => ask('export', 'Export', `Export the ${scope} report for ${d.periodLabel} to Excel`, 'export') },
               { id: 'csv', label: 'CSV', onSelect: () => ask('export', 'Export', `Export the ${scope} report for ${d.periodLabel} to CSV`, 'export') },
+              { id: 'pdf', label: 'PDF, print-ready', onSelect: () => ask('export', 'Export', `Export the ${scope} report for ${d.periodLabel} to PDF`, 'export') },
             ]}
           />
         </div>

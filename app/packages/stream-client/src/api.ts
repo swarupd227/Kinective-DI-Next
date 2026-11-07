@@ -172,6 +172,13 @@ export function createApiClient({ baseUrl, token }: ApiClientOptions) {
       const res = await fetch(`${baseUrl}/v1/sources/demo`, { headers: headers() });
       return res.ok ? ((await res.json()) as { system: string; host: string; port: number; database: string; login: string; password: string }) : null;
     },
+    /** A table DI showed, as an Excel or CSV file: the server writes it and logs the export. */
+    exportTable: async (t: { format: 'xlsx' | 'csv'; title: string; columns: { field: string; headerName: string; type?: string; hidden?: boolean }[]; rows: Record<string, unknown>[]; source?: string; asOf?: string }) => {
+      const res = await fetch(`${baseUrl}/v1/tables/export`, { method: 'POST', headers: headers(), body: JSON.stringify(t) });
+      if (!res.ok) throw new ApiError(res.status, '/v1/tables/export');
+      const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? `${t.title}.${t.format}`;
+      return { blob: await res.blob(), fileName: name };
+    },
     feedback: (f: { runId: string; rating: 'up' | 'down'; comment?: string }) => send<void>('POST', '/v1/feedback', f),
     table: (tableId: string) => get<TableData>(`/v1/tables/${encodeURIComponent(tableId)}`),
     tableWorkbench: (tableId: string) => get<TableWorkbench>(`/v1/tables/${encodeURIComponent(tableId)}/workbench`),

@@ -21,7 +21,7 @@ import { offcoreWorkbook } from './offcoreFile.ts';
 import { apisModule } from '@dinext/agents';
 import { readWorkbook } from './spreadsheet.ts';
 import type { TableSavedItem, TableWorkbench } from '@dinext/block-schemas';
-import { renderExport } from './exports.ts';
+import { renderExport, renderTableExport, type TableExport } from './exports.ts';
 import { callReportFile, type CallReportFileKind } from './callReportExport.ts';
 import type { AppId } from '@dinext/block-schemas';
 import type { ModuleContext } from '@dinext/agents';
@@ -180,6 +180,8 @@ export interface LiveRuntime {
   editReport(persona: PersonaId, templateId: string, op: Parameters<ReportGateway['edit']>[1], controls: ReportControls): Promise<ReportCanvasBlock | null>;
   /** An approved export, rendered under the user's purview when downloaded (spec 18.6). */
   exportFile(persona: PersonaId, exportId: string): Promise<{ fileName: string; contentType: string; body: Buffer } | null>;
+  /** A table DI showed, as a file: logged in the audit trail like a report export. */
+  tableExport(persona: PersonaId, table: TableExport, format: 'xlsx' | 'csv'): Promise<{ fileName: string; contentType: string; body: Buffer } | null>;
   /** The Call Report as files for the preparer: the item-and-value data file, or the review workbook. */
   callReportFile(persona: PersonaId, kind: CallReportFileKind): Promise<{ fileName: string; contentType: string; body: Buffer } | null>;
   /** Keeps an upload as Staged for its uploader; nothing is in a folder until a save is approved (spec 8.15). */
@@ -756,6 +758,14 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       if (!gw || !s.apps.includes('reports')) return null;
       const { canvas } = await gw.edit(templateId, op, controls, { ...personaContext(persona), user: { id: s.user.id, name: s.user.name }, runId: `R-rpt-${randomBytes(3).toString('hex')}`, threadId: 'canvas' });
       return canvas;
+    },
+
+    async tableExport(persona, table, format) {
+      const t = tenantFor(persona);
+      const s = PERSONAS[persona].session;
+      if (!t) return null;
+      void audit.event({ eventType: 'table.export.downloaded', tenant: t.runtime.key, userId: s.user.id, threadId: '', runId: '', approvalId: '', title: table.title, format, rows: table.rows.length, columns: table.columns.map((c) => c.headerName) });
+      return renderTableExport(table, format, { tenant: t.runtime.name, user: s.user.name });
     },
 
     async exportFile(persona, exportId) {

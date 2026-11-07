@@ -21,9 +21,11 @@
     "@dinext/tenant-db": "0.1.0",
     "@dinext/voice": "0.1.0",
     "exceljs": "^4.4.0",
+    "pdfkit": "^0.15.2",
     "ws": "^8.22.0"
   },
   "devDependencies": {
+    "@types/pdfkit": "^0.13.9",
     "@types/ws": "^8.18.2"
   }
 }

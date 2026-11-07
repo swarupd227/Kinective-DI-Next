@@ -625,6 +625,19 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
           throw err;
         }
       }
+      // A table DI showed, exported as the person saw it. The figures come from the page; the server
+      // writes the file and the audit record.
+      if (method === 'POST' && path === '/v1/tables/export') {
+        const body = await readBody<{ format?: unknown; title?: unknown; columns?: unknown; rows?: unknown; source?: unknown; asOf?: unknown }>(req);
+        const columns = Array.isArray(body.columns) ? body.columns.filter((c): c is { field: string; headerName: string; type?: string; hidden?: boolean } => !!c && typeof c === 'object' && typeof (c as { field?: unknown }).field === 'string' && typeof (c as { headerName?: unknown }).headerName === 'string').slice(0, 40) : [];
+        const rows = Array.isArray(body.rows) ? (body.rows.filter((r) => !!r && typeof r === 'object').slice(0, 5000) as Record<string, string | number | boolean | null>[]) : [];
+        if ((body.format !== 'xlsx' && body.format !== 'csv') || typeof body.title !== 'string' || !columns.length) return json(res, 400, { code: 'INVALID' });
+        const f = await live?.tableExport(persona(), { title: body.title.slice(0, 100), columns, rows, source: typeof body.source === 'string' ? body.source.slice(0, 200) : undefined, asOf: typeof body.asOf === 'string' ? body.asOf.slice(0, 30) : undefined }, body.format);
+        if (!f) return json(res, 503, { code: 'UNAVAILABLE' });
+        res.writeHead(200, { 'content-type': f.contentType, 'content-disposition': `attachment; filename="${f.fileName}"`, 'cache-control': 'no-store' });
+        res.end(f.body);
+        return;
+      }
       const exportFile = /^\/v1\/exports\/([^/]+)$/.exec(path);
       if (method === 'GET' && exportFile) {
         try {

@@ -48,6 +48,23 @@ export function useShellBlockHost({ threadId, onResolved, approvalDisplay = 'ful
       approvalDisplay,
       voiceMediumAllowed: session.flags.voiceMediumConfirm,
       runReport: (templateRef, controls) => api.runReport(templateRef, controls).catch(() => null),
+      onExportTable: async (block, format) => {
+        const source = block.provenance.sources.map((s) => s.label).filter(Boolean).join(', ');
+        const asOf = block.freshness.kind === 'nightly_build' ? block.freshness.asOf?.slice(0, 10) : undefined;
+        try {
+          const { blob, fileName } = await api.exportTable({ format, title: block.title ?? 'Table', columns: block.data.columns, rows: block.data.rows ?? [], ...(source ? { source } : {}), ...(asOf ? { asOf } : {}) });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 10_000);
+        } catch {
+          toast.show('That table could not be exported. Try again, or ask DI to export it.');
+        }
+      },
       editReport: (templateRef, op, controls) => api.editReport(templateRef, op, controls).catch(() => null),
       // Export downloads are plain links to the server, not routes in the app.
       onNavigate: (link) => {

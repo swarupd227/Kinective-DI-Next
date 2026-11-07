@@ -21,6 +21,8 @@ export interface BlockHost {
   onCancelRun?: (runId: string) => void;
   onRetry?: (block: Block) => void;
   onNoticeOption?: (block: Block, optionId: string) => void;
+  /** Downloads a table as the person sees it, as Excel or CSV; the host logs the export. */
+  onExportTable?: (block: Block & { type: 'table' }, format: 'xlsx' | 'csv') => Promise<void>;
   /** Opens a DI Next deep link (list items, text links) in the host's router. */
   onNavigate?: (link: string) => void;
   /** Whether the user may see SQL in plan steps (Query Browser permission, FE-EXP-061). */

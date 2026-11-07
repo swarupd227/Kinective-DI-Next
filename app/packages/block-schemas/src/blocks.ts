@@ -440,6 +440,8 @@ export const reportWidget = z.strictObject({
   view: z.discriminatedUnion('type', [kpiBlock, chartBlock, tableBlock, textBlock, noticeBlock]),
   /** The agent edit that produced this widget, highlighted until accepted or reverted (FE-BLD-003). */
   editId: z.string().max(20).optional(),
+  /** DI's read of this section, when its analysis gives one: an export carries it with the figures. */
+  take: diTake.optional(),
 });
 
 export const reportCanvasData = z.strictObject({

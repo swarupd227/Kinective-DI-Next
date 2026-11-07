@@ -157,6 +157,9 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-TSK-006', set: 'golden', persona: 'branch', q: 'What are my to-dos today?', agent: 'To-dos', approval: 'none' },
   { id: 'GQ-ROE-001', set: 'golden', persona: 'bank_cfo', q: 'What is our return on equity?', agent: 'Analytics Q&A', approval: 'none' },
   { id: 'GQ-EFF-001', set: 'golden', persona: 'bank_cfo', q: 'What does it cost us to make $1?', agent: 'Analytics Q&A', approval: 'none' },
+  // A report that names a module's topic still exports through Report Builder, with approval.
+  { id: 'GQ-EXP-001', set: 'golden', persona: 'bank_cfo', q: 'Export the Basel III capital report for Q3 2026 to PDF', agent: 'Report Builder', approval: 'medium' },
+  { id: 'GQ-EXP-002', set: 'golden', persona: 'bank_cfo', q: 'Export the CAMELS and stress test report for Q3 2026 to Excel', agent: 'Report Builder', approval: 'medium' },
   { id: 'PM-BAS-001', set: 'permission', persona: 'branch', q: 'What are our risk-weighted assets?', refused: true, notContains: ['Risk-weighted assets are'], approval: 'none', ref: 'Basel III capital is for finance and executives' },
   // The third way in: API connections, and the marketing round trip on them.
   { id: 'GQ-API-001', set: 'golden', persona: 'admin', q: 'Show the API connections', agent: 'API Connections', contains: ['API connection'], approval: 'none' },
