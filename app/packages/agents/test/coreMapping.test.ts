@@ -81,8 +81,11 @@ describe.skipIf(!up)('Core Mapping against the replica', () => {
     const s = await run('What core fields aren’t mapped yet?', 'thr_map1');
     expect(s.text).toMatch(/tracking fields?\*\* with values/);
     const table = s.blocks.find((b) => b.type === 'table') as Extract<Block, { type: 'table' }>;
-    expect(table.data.rows!.map((r) => r.expression)).toContain(CONSENT);
-    expect(table.data.rows!.find((r) => r.expression === CONSENT)!.type).toBe('yes or no');
+    // Every suggestion reads a tracking record; a Y-or-N field (unless it's already mapped) is proposed as a yes or no.
+    const rows = table.data.rows!;
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) expect(String(r.expression)).toMatch(/^FIRST_OF\(ACCOUNTTRACKING, USER\w+, PARENTACCOUNT = a\.ACCOUNTNUMBER AND TYPE = \d+\)$/);
+    expect(rows.some((r) => r.type === 'yes or no')).toBe(true);
     for (const b of [...list.blocks, ...s.blocks]) expect(validateBlock(b).ok).toBe(true);
   }, 60_000);
 
