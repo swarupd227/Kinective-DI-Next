@@ -24,7 +24,7 @@ export function delinquencyModule(dq: DelinquencyService): ModuleSpec {
     id: 'delinquency',
     prefix: 'dq',
     agent: 'Delinquency',
-    request: /\broll ?rates?\b|\brolled\b|\bvintages?\b|\bcohorts?\b|\baging\b|\bdays past due\b|\bdelinquency buckets?\b|\b30\+|\b30[-–]59\b|\b30 (day|plus)\b|\bcure rate|\bcured\b|\b(largest|biggest|top|most) delinquent\b|\bdelinquent loans to work\b|\bworst (segments?|branches and products)\b|\b(drives?|driving) (our |the )?delinquency\b|\bdelinquency drivers?\b|\bnet charge-?off|\bcharge-?off ratio|\ballowance coverage|\bcollections (list|queue)\b/i,
+    request: /\broll ?rates?\b|\brolled\b|\bvintages?\b|\bcohorts?\b|\baging\b|\bdays past due\b|\bdelinquency buckets?\b|\b30\+|\b30[-–]59\b|\b30 (day|plus)\b|\bcure rate|\bcured\b|\b(largest|biggest|top|most) delinquent\b|\bdelinquent loans to work\b|\bworst (segments?|branches and products)\b|\b(drives?|driving) (our |the )?delinquency\b|\bdelinquency drivers?\b|\bnet charge-?off|\bcharge-?off ratio|\ballowance coverage|^(?![\s\S]*\b(?:chart|graph|plot)\b)[\s\S]*?(?:\bnpl\b|\bnon-?performing loans?\b)|\bcollections (list|queue)\b/i,
     noAccess: NO_ACCESS,
     sources: [{ kind: 'table', label: 'Delinquency history (month-end)', ref: 'table:hist_loan_dq_month' }],
     prompt: ({ tenant, user, title }) => `You are the Delinquency agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) manages credit quality. Buckets are the 5300's: Current, 30–59, 60–89, 90–179, 180–359 and 360+ days; 60+ is reportable delinquency. Roll rates are the share of last month's balance in a status that moved to each status this month.
@@ -34,12 +34,12 @@ export function delinquencyModule(dq: DelinquencyService): ModuleSpec {
 - "How are recent vintages performing?": dq_vintages.
 - "Which branches and products are worst?": dq_segments.
 - "Show the largest delinquent loans", "which auto loans are 90+ days?": dq_loans with min_days and category.
-- "What's our net charge-off ratio?", "allowance coverage?": dq_losses.
+- "What's our net charge-off ratio?", "allowance coverage?", "what's our NPL ratio?": dq_losses.
 - You only read. Working a loan is the collector's action; offer the early-warning list for outreach.`,
     plan: (text) => {
       const t = text.toLowerCase();
       const category = toCategory(t);
-      if (/charge-?off|allowance|coverage|\bnco\b|loss/.test(t)) return { tool: 'dq_losses', args: {} };
+      if (/charge-?off|allowance|coverage|\bnco\b|loss|\bnpl\b|non-?performing/.test(t)) return { tool: 'dq_losses', args: {} };
       if (/roll|cure|migrat/.test(t)) return { tool: 'dq_rolls', args: {} };
       if (/vintage|cohort|year (opened|booked|made)|origination year/.test(t)) return { tool: 'dq_vintages', args: {} };
       if (/worst|segments?|hot ?spots?|drive|driving|drivers?/.test(t)) return { tool: 'dq_segments', args: {} };
@@ -147,13 +147,15 @@ export function delinquencyModule(dq: DelinquencyService): ModuleSpec {
       },
       {
         name: 'dq_losses',
-        description: 'Net charge-offs year to date and the annualized net charge-off ratio, the allowance for credit losses, and its coverage of 60+ delinquency, from the latest 5300.',
+        description: 'Net charge-offs year to date and the annualized net charge-off ratio, the allowance for credit losses and its coverage of problem loans; for a bank, the nonperforming loans ratio (nonaccrual plus 90+ days past due) too. From the latest 5300 or FFIEC Call Report.',
         input: z.object({}).strict(),
         run: async (_: unknown, ctx) => {
           guard(ctx);
           const l = await dq.losses();
-          if (!l) return { text: 'Charge-offs and the allowance come from the 5300, which isn’t loaded for this institution.' };
-          return { text: `Net charge-offs are **${m(l.netChargeOffs)}** year to date, an annualized **${p2(l.ncoRatio)}** of average loans (${m(l.averageLoans)}, the mean of this quarter’s and last year-end’s). The allowance is ${m(l.allowance)}, ${p2(l.allowanceToLoans)} of loans${l.coverage !== null ? `, covering 60+ delinquency **${l.coverage.toFixed(2)} times**` : ''}.` };
+          if (!l) return { text: 'Charge-offs and the allowance come from the Call Report, which isn’t loaded for this institution.' };
+          // A bank reads its nonperforming loans (RC-N nonaccrual plus 90+ days past due); a credit union, 60+ delinquency.
+          const npl = l.bank && l.nplRatio !== null ? ` Nonperforming loans are **${m(l.nonperforming ?? 0)}**, an NPL ratio of **${p2(l.nplRatio)}** of loans.` : '';
+          return { text: `Net charge-offs are **${m(l.netChargeOffs)}** year to date, an annualized **${p2(l.ncoRatio)}** of average loans (${m(l.averageLoans)}, the mean of this quarter’s and last year-end’s).${npl} The allowance is ${m(l.allowance)}, ${p2(l.allowanceToLoans)} of loans${l.coverage !== null ? `, covering ${l.bank ? 'nonperforming loans' : '60+ delinquency'} **${l.coverage.toFixed(2)} times**` : ''}.` };
         },
       },
     ],

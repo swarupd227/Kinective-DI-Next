@@ -172,15 +172,25 @@ export class DelinquencyService {
 
   /** Net charge-offs and the allowance, from the latest 5300 when there is one. */
   async losses() {
-    const cr = await rows<{ code: string; amount: number; q: unknown }>(this.pool, `SELECT code, amount, quarter_end AS q FROM cr_value WHERE quarter_end = (SELECT MAX(quarter_end) FROM cr_value) AND code IN ('550','551','025B','AS0048','041B')`).catch(() => []);
+    const cr = await rows<{ code: string; amount: number; q: unknown }>(this.pool, `SELECT code, amount, quarter_end AS q FROM cr_value WHERE quarter_end = (SELECT MAX(quarter_end) FROM cr_value) AND code IN ('550','551','025B','AS0048','041B','RIAD4635','RIAD4605','RCON2122','RCON3123','RCON1403','RCON1407')`).catch(() => []);
     if (!cr.length) return null;
     const v = (c: string) => Number(cr.find((x) => x.code === c)?.amount ?? 0);
     const quarterEnd = day(cr[0]!.q);
     const months = Number(quarterEnd.slice(5, 7));
+    // A bank files the FFIEC Call Report: RI-B charge-offs and recoveries, RC-C loans, RC-N noncurrent loans.
+    if (cr.some((x) => x.code === 'RIAD4635')) {
+      const [ye] = await rows<{ n: unknown }>(this.pool, "SELECT amount AS n FROM cr_value WHERE code = 'RCON2122' AND quarter_end = ?", [`${Number(quarterEnd.slice(0, 4)) - 1}-12-31`]).catch(() => []);
+      const loans = v('RCON2122');
+      const averageLoans = (loans + (Number(ye?.n ?? 0) || loans)) / 2;
+      const net = v('RIAD4635') - v('RIAD4605');
+      const nonperforming = v('RCON1403') + v('RCON1407');
+      return { bank: true, netChargeOffs: net, averageLoans, ncoRatio: ((net * (12 / months)) / averageLoans) * 100, allowance: v('RCON3123'), allowanceToLoans: (v('RCON3123') / loans) * 100, coverage: nonperforming ? v('RCON3123') / nonperforming : null, nonperforming, nplRatio: loans ? (nonperforming / loans) * 100 : null };
+    }
     // NCUA's average loans: this quarter's 025B and last year-end's loans, averaged.
     const [ye] = await rows<{ n: unknown }>(this.pool, 'SELECT SUM(balance) AS n FROM hist_loan_month WHERE month_end = (SELECT MAX(month_end) FROM hist_loan_month WHERE month_end < ?)', [`${quarterEnd.slice(0, 4)}-01-01`]);
     const yearEnd = Number(ye?.n ?? 0) || v('025B');
     const averageLoans = (v('025B') + yearEnd) / 2;
-    return { netChargeOffs: v('550') - v('551'), averageLoans, ncoRatio: (((v('550') - v('551')) * (12 / months)) / averageLoans) * 100, allowance: v('AS0048'), allowanceToLoans: (v('AS0048') / v('025B')) * 100, coverage: v('041B') ? v('AS0048') / v('041B') : null };
+    return { bank: false, netChargeOffs: v('550') - v('551'), averageLoans, ncoRatio: (((v('550') - v('551')) * (12 / months)) / averageLoans) * 100, allowance: v('AS0048'), allowanceToLoans: (v('AS0048') / v('025B')) * 100, coverage: v('041B') ? v('AS0048') / v('041B') : null, nonperforming: null, nplRatio: null };
   }
+
 }

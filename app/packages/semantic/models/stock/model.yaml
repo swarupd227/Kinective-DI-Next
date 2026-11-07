@@ -862,8 +862,33 @@ metrics:
     format: percent_2
     description: Year-to-date charge-offs less recoveries (5300 accounts 550 and 551), annualized, divided by average loans, the mean of this quarter's total loans (025B) and last year-end's.
     regulatory_basis: NCUA Financial Performance Report net charge-offs to average loans.
-    synonyms: [net charge-offs, nco, charge-off ratio, charge-offs, loan losses, loss rate]
+    synonyms: [net charge-offs, nco, nco ratio, net charge-off rate, charge-off ratio, charge-offs, loan losses, loss rate]
     requires_any: [charge, nco, loss]
+    owner: Finance data team
+    dimensions_allowed: []
+  npl_ratio:
+    label: Nonperforming loans ratio (NPL)
+    institution_types: [bank]
+    type: ratio
+    numerator: call_report_dq60_sum
+    denominator: call_report_loans_sum
+    format: percent_2
+    description: Nonperforming loans, nonaccrual loans (RC-N RCON1403) plus loans 90 days or more past due and still accruing (RCON1407), as a share of total loans (RCON2122), from the latest Call Report. Foreclosed real estate isn't included; with it, the measure would be nonperforming assets.
+    regulatory_basis: FFIEC Uniform Bank Performance Report, noncurrent loans to total loans.
+    synonyms: [npl, npl ratio, nonperforming loans ratio, nonperforming loans to total loans, non-performing loans to total loans, nonperforming loan ratio, npl to total loans, noncurrent loans, noncurrent loan ratio, bad loans, problem loans]
+    requires_any: [npl, nonperforming, non-performing, noncurrent, non-current, bad loan, problem loan]
+    owner: Finance data team
+    dimensions_allowed: []
+  nonperforming_loans:
+    label: Nonperforming loans
+    institution_types: [bank]
+    type: simple
+    measure: call_report_dq60_sum
+    format: currency
+    description: Nonaccrual loans (RC-N RCON1403) plus loans 90 days or more past due and still accruing (RCON1407), from the latest Call Report.
+    regulatory_basis: FFIEC Call Report Schedule RC-N.
+    synonyms: [nonperforming loan balance, nonperforming loan dollars, npls, nonaccrual and 90 days past due, nonperforming loans amount]
+    requires_any: [nonperforming, non-performing, npls, noncurrent, nonaccrual]
     owner: Finance data team
     dimensions_allowed: []
   allowance_coverage:

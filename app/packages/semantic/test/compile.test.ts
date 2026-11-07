@@ -152,6 +152,10 @@ describe('catalog search (spec 23.5.3)', () => {
     expect(top('What does it cost us to make $1?')).toBe('efficiency_ratio');
     expect(top('What is our cost to earn a dollar of revenue?')).toBe('efficiency_ratio');
     expect(top('efficiency ratio by quarter')).toBe('efficiency_ratio');
+    expect(top('What is our NPL ratio?')).toBe('npl_ratio');
+    expect(top('Show the nonperforming loans ratio by quarter')).toBe('npl_ratio');
+    expect(top('What is our net charge-off rate?')).toBe('net_charge_off_ratio');
+    expect(cu.metrics.npl_ratio).toBeUndefined();
   });
 
   it('finds the capital and earnings ratios by their everyday names', () => {

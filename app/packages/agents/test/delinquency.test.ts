@@ -14,6 +14,7 @@ describe('delinquency questions', () => {
     expect(plan('Which branches and products are worst?')).toEqual({ tool: 'dq_segments', args: {} });
     expect(plan('Show the largest delinquent auto loans 90+ days')).toEqual({ tool: 'dq_loans', args: { min_days: 90, category: 'Auto' } });
     expect(plan('What is our net charge-off ratio?')).toEqual({ tool: 'dq_losses', args: {} });
+    expect(plan('What is our NPL ratio?')).toEqual({ tool: 'dq_losses', args: {} });
     expect(plan('Show delinquency by aging bucket for HELOC')).toEqual({ tool: 'dq_aging', args: { category: 'HELOC' } });
   });
 
@@ -67,5 +68,26 @@ describe.skipIf(!up)('delinquency on the warehouse', () => {
     expect(loans.every((l) => l.days >= 30)).toBe(true);
     const seg = await svc.segments({ purviewBranches: ['Westport'] });
     expect(seg.every((s) => s.branch === 'Westport')).toBe(true);
+  });
+});
+
+// A bank's charge-offs and nonperforming loans come from its FFIEC Call Report, not a 5300.
+const bankUp = await warehouseAvailable('dinext_t_test_bank').then((ok) => ok && tenantPool('dinext_t_test_bank').query('SELECT 1 FROM cr_value LIMIT 1').then(() => true, () => false));
+describe.skipIf(!bankUp)('a bank’s losses and nonperforming loans', () => {
+  it('reads RI-B and RC-N, and gives the NPL ratio', async () => {
+    const pool = tenantPool('dinext_t_test_bank');
+    try {
+      const l = (await new DelinquencyService(pool).losses())!;
+      expect(l.bank).toBe(true);
+      expect(l.netChargeOffs).toBeGreaterThan(0);
+      expect(l.ncoRatio).toBeGreaterThan(0);
+      expect(l.ncoRatio).toBeLessThan(3);
+      expect(l.nonperforming).toBeGreaterThan(0);
+      expect(l.nplRatio!).toBeGreaterThan(0);
+      expect(l.nplRatio!).toBeLessThan(5);
+      expect(l.coverage!).toBeGreaterThan(1);
+    } finally {
+      await pool.end();
+    }
   });
 });
