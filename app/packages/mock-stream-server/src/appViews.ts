@@ -4,7 +4,7 @@
 import { bankText, cfoScorecard } from '@dinext/agents';
 import type { SemanticService } from '@dinext/semantic';
 import type { AppTile, AppView, AppViewId, Block, ListBlock, TableBlock } from '@dinext/block-schemas';
-import { memberNumber, WorkflowDefService, WorksheetService, TaskService, workToday, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, DelinquencyService, DQ_BUCKETS, IrrService, LiquidityService, pctAgainst, MEMBERSHIP_BENCHMARKS, MembershipService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
+import { FundingRiskService, memberNumber, WorkflowDefService, WorksheetService, TaskService, workToday, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, DelinquencyService, DQ_BUCKETS, IrrService, LiquidityService, pctAgainst, MEMBERSHIP_BENCHMARKS, MembershipService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 import { SourceService, TableService, secretKeyFrom } from '@dinext/di-core';
 import { ApiService, apiHosts, stampUtc } from '@dinext/di-core';
@@ -382,6 +382,28 @@ export function createAppViews(deps: ViewDeps) {
           table('Assumptions', 'liq.assumptions', [text('item', 'Assumption'), text('detail', 'What DI uses')], a.assumptions.map(([item, detail]) => ({ item, detail }))),
         ],
       };
+      // A bank's board asks the post-SVB question first: 30 days of withdrawals without selling at a loss.
+      const f = deps.person === 'customer' ? await new FundingRiskService(pool).analysis().catch(() => null) : null;
+      if (f) {
+        const [u, sev] = f.scenarios;
+        view.take = {
+          headline: `${f.scenarios.every((x) => x.covered) ? 'The bank could survive 30 days of withdrawals without selling at a loss' : 'Not every run can be met without selling at a loss'}: a run on ${u!.uninsuredPct}% of uninsured deposits (${m(u!.runoff)}) is met from ${m(f.lossFreeTotal)} of loss-free sources${sev!.covered ? ', and so is a severe, SVB-like one' : ''}. Unrealized securities losses are ${m(f.unrealized.total)}, ${p1(f.capital.lossToTier1Pct)} of tier 1. Estimated LCR ${f.lcr.pct.toFixed(0)}%, NSFR ${f.nsfr.pct.toFixed(0)}%.`,
+          action: { label: 'Can we survive 30 days?', ask: 'Can we survive 30 days of withdrawals without selling assets at a loss?' },
+        };
+        view.tiles = [
+          { label: 'LCR, estimated', value: `${f.lcr.pct.toFixed(0)}%`, detail: 'Minimum 100%', tone: f.lcr.pct < 100 ? 'danger' : 'neutral' },
+          { label: 'NSFR, estimated', value: `${f.nsfr.pct.toFixed(0)}%`, detail: 'Minimum 100%', tone: f.nsfr.pct < 100 ? 'danger' : 'neutral' },
+          { label: 'Uninsured deposits', value: p1(f.uninsuredPct), detail: m(f.uninsured), ...(f.uninsuredPct >= 40 ? { tone: 'warning' as const } : {}) },
+          { label: 'Unrealized losses to tier 1', value: p1(f.capital.lossToTier1Pct), detail: m(f.unrealized.total), ...(f.capital.lossToTier1Pct >= 25 ? { tone: 'warning' as const } : {}), ask: 'What are our unrealized losses?' },
+          ...view.tiles.slice(1, 3),
+        ];
+        view.prompts = ['Can we survive 30 days of withdrawals without selling assets at a loss?', 'What if 60% of uninsured deposits leave?', 'What’s our LCR and NSFR?', 'How much could we borrow tomorrow?'];
+        view.blocks = [
+          table('Thirty days of withdrawals, without selling at a loss', 'liquidity.funding', [text('scenario', 'Scenario'), { field: 'runoff', headerName: 'Leaves in 30 days', type: 'currency' }, text('covered', 'Met without a sale?'), text('days', 'Days the sources last'), { field: 'loss', headerName: 'Loss if sold instead', type: 'currency' }, text('capital', 'Of tier 1')], f.scenarios.map((x) => ({ scenario: `${x.name} (${x.uninsuredPct}% uninsured, ${x.insuredPct}% insured)`, runoff: Math.round(x.runoff), covered: x.covered ? 'Yes' : `No, ${m(x.shortfall)} short`, days: x.days >= 365 ? 'A year or more' : `${x.days} days`, loss: Math.round(x.sale.loss), capital: p1(x.sale.capitalPct) }))),
+          table('Sources that realize no loss, in order', 'liquidity.funding.sources', [text('source', 'Source'), { field: 'available', headerName: 'Available', type: 'currency' }], f.sources.map((x) => ({ source: x.source, available: Math.round(x.available) }))),
+          ...view.blocks,
+        ];
+      }
       // A bank reads deposits, not shares.
       return deps.person === 'customer' ? (JSON.parse(JSON.stringify(view), (_k, v: unknown) => (typeof v === 'string' ? bankText(v) : v)) as typeof view) : view;
     },

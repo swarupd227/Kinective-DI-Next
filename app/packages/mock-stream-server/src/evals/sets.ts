@@ -166,6 +166,11 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-MAP-001', set: 'golden', persona: 'admin', q: 'Show the Symitar mapping', agent: 'Core Mapping', contains: ['standard columns'], approval: 'none' },
   { id: 'GQ-MAP-002', set: 'golden', persona: 'admin', q: 'What core fields aren’t mapped yet?', agent: 'Core Mapping', approval: 'none' },
   { id: 'PM-MAP-001', set: 'permission', persona: 'branch', q: 'Show the Symitar mapping', refused: true, notContains: ['standard columns'], approval: 'none', ref: 'Core mappings are part of the Integrations administrator’s access' },
+  // After SVB: 30 days of withdrawals without selling at a loss, and the LCR and NSFR.
+  { id: 'GQ-SVB-001', set: 'golden', persona: 'bank_cfo', q: 'Can we survive 30 days of withdrawals without selling assets at a loss?', agent: 'Liquidity', contains: ['realize no loss', 'LCR'], approval: 'none' },
+  { id: 'GQ-SVB-002', set: 'golden', persona: 'bank_cfo', q: 'What if 60% of uninsured deposits leave?', agent: 'Liquidity', contains: ['of uninsured'], approval: 'none' },
+  { id: 'GQ-SVB-003', set: 'golden', persona: 'bank_cfo', q: 'What’s our LCR and NSFR?', agent: 'Liquidity', contains: ['LCR', 'NSFR'], approval: 'none' },
+  { id: 'GQ-SVB-004', set: 'golden', persona: 'bank_cfo', q: 'What are our unrealized losses?', agent: 'Liquidity', contains: ['of tier 1 capital'], approval: 'none' },
   { id: 'PM-BAS-001', set: 'permission', persona: 'branch', q: 'What are our risk-weighted assets?', refused: true, notContains: ['Risk-weighted assets are'], approval: 'none', ref: 'Basel III capital is for finance and executives' },
   // The third way in: API connections, and the marketing round trip on them.
   { id: 'GQ-API-001', set: 'golden', persona: 'admin', q: 'Show the API connections', agent: 'API Connections', contains: ['API connection'], approval: 'none' },
