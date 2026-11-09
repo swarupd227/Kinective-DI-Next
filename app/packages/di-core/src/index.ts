@@ -41,6 +41,7 @@ export { CHARGED_OFF, DQ_BUCKETS, DelinquencyService, type DqScope } from './del
 export { LIQUIDITY_POLICY, LiquidityService, pctAgainst } from './liquidity.ts';
 export { FundingRiskService, type RunScenario } from './fundingRisk.ts';
 export { NiiService, NII_GROWTH_WATCH } from './nii.ts';
+export { FeeIncomeService, FEE_LINES, MORTGAGE_SENSITIVITY } from './fees.ts';
 export { MEMBER_AGE_BANDS, MEMBERSHIP_BENCHMARKS, MembershipService, type MembershipScope } from './membership.ts';
 export { ALCO_POLICY, AlcoService, type PolicyLine, type PolicyStatus } from './alco.ts';
 export { ProfitabilityService, FTP_CURVE, LOSS_RATE, type ProfitLine } from './profitability.ts';

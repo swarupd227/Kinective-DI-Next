@@ -4,7 +4,7 @@
 // institution's own replace them.
 import { z } from 'zod';
 import type { Block, TableBlock } from '@dinext/block-schemas';
-import { CoreError, type NiiService, type ProfitabilityService } from '@dinext/di-core';
+import { CoreError, type FeeIncomeService, type NiiService, type ProfitabilityService } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 import type { ReportAnalyses } from './report.ts';
 
@@ -19,6 +19,18 @@ const allowed = (modules: string[]) => modules.includes('profitability') || modu
 // A bank's net interest income in dollars: growth, why, against plan, by quarter, the next 12 months.
 // Rate shocks and NII at risk stay with Interest Rate Risk, which routes first.
 export const NII_REQUEST = /\bnii\b(?![^.?!]*\bat risk\b)|\bnet interest income\b(?![^.?!]*\bat risk\b)|\binterest income\b[^.?!]*\b(?:grow|grew|growth|growing|up|down|fell|change[ds]?|dollars)\b|\bspread income\b|\b(?:nim|net interest margin|margin)\b[^.?!]*\bdollars\b|\bdollars\b[^.?!]*\b(?:nim|net interest margin|margin)\b/i;
+// A bank's noninterest income: how much, from where, share of revenue, and how much doesn't depend on rates.
+export const FEE_REQUEST = /\bnon-?interest income\b|\bfee income\b|\bfee revenue\b|\bfees\b[^.?!]*\b(?:earn|make|bring|revenue|income|share|diversif|grow|grew)\w*|\bservice charges\b|\binterchange\b|\bwealth management\b|\btrust (?:income|fees|department|business)\b|\bfiduciary\b|\bbrokerage\b|\bannuit(?:y|ies)\b|\binsurance (?:income|commissions?|agency)\b|\bmortgage banking\b|\bgains? on (?:the )?(?:sales?|loans? sold)\b|\bservicing (?:fees|income)\b|\btrading revenue\b|\bdiversif\w*\b[^.?!]*\b(?:rates|revenue|income)\b|\brevenue (?:that )?(?:doesn[’']?t|does not|don[’']?t) depend\b/i;
+export type FeeQuestion = 'overview' | 'mix' | 'share' | 'rates' | 'growth' | 'method';
+export function feeQuestion(text: string): FeeQuestion {
+  const t = text.toLowerCase();
+  if (/calculat|assum|method|worked out/.test(t)) return 'method';
+  if (/\brates?\b|diversif|depend|sensitiv/.test(t)) return 'rates';
+  if (/share of revenue|\bshare\b|\bplan\b|\bpeers?\b|percent|%|\brel(?:y|iant)\b/.test(t)) return 'share';
+  if (/where|come from|sources?|\bmix\b|breakdown|made up|which (?:lines|businesses)|wealth|mortgage banking|trading|insurance|interchange|service charges|trust|brokerage/.test(t)) return 'mix';
+  if (/\bgr[eo]w|growth|\bup\b|\bdown\b|change|trend|quarter/.test(t)) return 'growth';
+  return 'overview';
+}
 export type NiiQuestion = 'growth' | 'why' | 'plan' | 'quarter' | 'forward' | 'method';
 export function niiQuestion(text: string): NiiQuestion {
   const t = text.toLowerCase();
@@ -80,7 +92,7 @@ export function profitAnalyses(svc: ProfitabilityService): ReportAnalyses {
   };
 }
 
-export function profitabilityModule(svc: ProfitabilityService, nii?: NiiService | null): ModuleSpec {
+export function profitabilityModule(svc: ProfitabilityService, nii?: NiiService | null, fees?: FeeIncomeService | null): ModuleSpec {
   const need = (ctx: ModuleContext) => {
     if (!allowed(ctx.modules)) throw new CoreError('NO_ACCESS', NO_ACCESS);
   };
@@ -88,7 +100,7 @@ export function profitabilityModule(svc: ProfitabilityService, nii?: NiiService 
     id: 'profitability',
     prefix: 'profit',
     agent: 'Profitability',
-    request: new RegExp(`${nii ? `${NII_REQUEST.source}|` : ''}${/\bprofitab|\bcontribution\b|\bmost profitable\b|\bmake (the most )?money\b|\blose money\b|\bftp\b|funds transfer pricing|\ballowance by (segment|pool|loan type|product)\b|\bcecl pools?\b|\breserves? by (segment|pool|loan type|product)\b|\bwhere is the allowance\b/.source}`, 'i'),
+    request: new RegExp(`${fees ? `${FEE_REQUEST.source}|` : ''}${nii ? `${NII_REQUEST.source}|` : ''}${/\bprofitab|\bcontribution\b|\bmost profitable\b|\bmake (the most )?money\b|\blose money\b|\bftp\b|funds transfer pricing|\ballowance by (segment|pool|loan type|product)\b|\bcecl pools?\b|\breserves? by (segment|pool|loan type|product)\b|\bwhere is the allowance\b/.source}`, 'i'),
     noAccess: NO_ACCESS,
     sources: [{ kind: 'table', label: 'Loans and deposits, with DI’s FTP assumptions', ref: 'table:cdm_loan' }],
     prompt: ({ tenant, user, title }) => `You are the Profitability agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) asks which products and branches make money and where the allowance sits. Contribution is by funds transfer pricing, before overhead, on today's balances; the FTP curve, loss rates and costs are DI's standard assumptions until the institution's own replace them. The allowance by segment reconciles to the latest filed Call Report.
@@ -97,10 +109,12 @@ export function profitabilityModule(svc: ProfitabilityService, nii?: NiiService 
 - "Which branches contribute the most?": profit_branches.
 - "Where is the allowance?", "allowance by segment": profit_allowance.
 - "How is profitability calculated?": profit_assumptions.${nii ? `
-- For a bank, net interest income in dollars, not just NIM: profit_nii, with question growth ("How much did our NII grow?"), why ("why did it change?", "how much came from growth and how much from the margin?"), plan ("are we short of plan in dollars?"), quarter ("how did NII do this quarter?"), forward ("will NII keep growing?", "what do we expect over the next 12 months?") or method ("how is NII growth calculated?"). Its answer already opens with the direct reply; don't add another. NII under rate shocks is the Interest Rate Risk agent's.` : ''}
+- For a bank, net interest income in dollars, not just NIM: profit_nii, with question growth ("How much did our NII grow?"), why ("why did it change?", "how much came from growth and how much from the margin?"), plan ("are we short of plan in dollars?"), quarter ("how did NII do this quarter?"), forward ("will NII keep growing?", "what do we expect over the next 12 months?") or method ("how is NII growth calculated?"). Its answer already opens with the direct reply; don't add another. NII under rate shocks is the Interest Rate Risk agent's.` : ''}${fees ? `
+- For a bank, noninterest income (fees, wealth management, insurance, mortgage banking, trading): profit_fees, with question overview ("What's our non-interest income?"), mix ("where does our fee income come from?"), share ("what share of revenue is it?", "against plan and peers?"), rates ("how much does it diversify us away from rates?", "how much revenue doesn't depend on rates?"), growth ("how has fee income grown?") or method. Its answer already opens with the direct reply; don't add another.` : ''}
 - You are read-only.`,
     plan: (text) => {
       const t = text.toLowerCase();
+      if (fees && FEE_REQUEST.test(text) && !/\b(profitab|contribution|ftp|allowance)/.test(t)) return { tool: 'profit_fees', args: { question: feeQuestion(text) } };
       if (nii && NII_REQUEST.test(text) && !/\b(profitab|contribution|ftp|allowance)/.test(t)) return { tool: 'profit_nii', args: { question: niiQuestion(text) } };
       if (/allowance|reserve|cecl/.test(t)) return { tool: 'profit_allowance', args: {} };
       if (/how (is|are|do you)|calculat|assum|method|ftp|transfer pric/.test(t)) return { tool: 'profit_assumptions', args: {} };
@@ -109,6 +123,7 @@ export function profitabilityModule(svc: ProfitabilityService, nii?: NiiService 
     },
     tools: [
       ...(nii ? [niiTool(nii, need, () => spec)] : []),
+      ...(fees ? [feeTool(fees, need, () => spec)] : []),
       {
         name: 'profit_products',
         description: 'Contribution before overhead by loan and deposit product: spread after FTP, credit cost, servicing less fees, and the margin on balance.',
@@ -258,6 +273,84 @@ function niiTool(svc: NiiService, need: (ctx: ModuleContext) => void, spec: () =
         sources: s.sources,
         blocks,
         suggestions: [a.question === 'why' ? 'Are we short of plan in dollars?' : 'Why did net interest income change?', 'What happens to NII if rates rise 200 bp?', a.question === 'forward' ? 'How did NII do this quarter?' : 'Will net interest income keep growing?'],
+      };
+    },
+  };
+}
+
+function feeTool(svc: FeeIncomeService, need: (ctx: ModuleContext) => void, spec: () => ModuleSpec) {
+  return {
+    name: 'profit_fees',
+    description: 'A bank’s noninterest income from the Call Report: total and growth, the mix by source and business (deposit and card fees, wealth management, insurance, mortgage banking, trading), its share of revenue against plan and peers, and how much of revenue doesn’t depend on rates, with what a rate move does to net interest income and mortgage banking.',
+    input: z.object({ question: z.enum(['overview', 'mix', 'share', 'rates', 'growth', 'method']).optional() }).strict(),
+    run: async (a: { question?: FeeQuestion }, ctx: ModuleContext) => {
+      need(ctx);
+      if (a.question === 'method') return { text: `How DI works out noninterest income:\n\n${svc.assumptions().map((x) => `- ${x}`).join('\n')}` };
+      const f = await svc.income();
+      if (!f) throw new CoreError('INVALID', 'Noninterest income is built from a bank’s FFIEC Call Report, and none is loaded yet.');
+      const year = f.asOf.slice(0, 4);
+      const lastYear = String(Number(year) - 1);
+      const q = qLabel(f.asOf);
+      const groups = f.groups.filter((g) => g.ytd > 0).sort((x, y) => y.ytd - x.ytd);
+      const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+      const trading = f.groups.find((g) => g.group === 'Trading')!;
+      const up100 = f.rates.find((r) => r.bp === 100);
+      const sameWay = up100 ? Math.sign(up100.niiChange) === Math.sign(up100.mortgageChange) : false;
+      const ref = (r: NonNullable<typeof f.plan>, who: string) => `${who === 'peers' ? 'peers’' : `${who}’s`} ${r.sharePct.toFixed(1)}%`;
+      const vs = (r: NonNullable<typeof f.plan>) => (f.sharePct >= r.sharePct - 0.05 ? (f.sharePct > r.sharePct + 0.05 ? 'above' : 'on') : 'below');
+
+      const lead = {
+        overview: `**Noninterest income is ${mm(f.total)} for ${period(f.months, year)}${f.change !== null ? `, ${f.change >= 0 ? 'up' : 'down'} ${mm(Math.abs(f.change))} (${p1(Math.abs(f.pct ?? 0))})` : ''}**, ${p1(f.sharePct)} of revenue.`,
+        mix: `**Most comes from ${groups.slice(0, 3).map((g, i) => `${i === 2 ? 'and ' : ''}${lower(g.group)} (${p1(g.sharePct)})`).join(groups.length > 2 ? ', ' : ' ')}.**`,
+        share: `**${p1(f.sharePct)} of revenue${f.plan ? `, ${vs(f.plan)} ${ref(f.plan, 'plan')}` : ''}${f.peer ? `${f.plan ? ' and' : ','} ${vs(f.peer)} ${ref(f.peer, 'peers')}` : ''}.**${f.peer && f.peer.gap < 0 ? ` Matching peers would mean about ${mm(-f.peer.gap)} a year more.` : ''}`,
+        rates: `**${mm(f.steady)} a year, ${p1(f.steadyPct)} of revenue, doesn’t depend on rates.**`,
+        growth: f.change !== null ? `**Up ${mm(f.change)} (${p1(f.pct ?? 0)}) on the same months of ${lastYear}**, to ${mm(f.total)}.` : `**${mm(f.total)} so far this year.**`,
+      }[a.question ?? 'overview'];
+
+      const parts: string[] = [];
+      if (a.question !== 'overview' && a.question !== 'growth') parts.push(`Noninterest income is ${mm(f.total)} for ${period(f.months, year)} (${mm(f.annualized)} a year)${f.change !== null ? `, ${f.change >= 0 ? 'up' : 'down'} ${mm(Math.abs(f.change))} (${p1(Math.abs(f.pct ?? 0))}) on ${lastYear}` : ''}.`);
+      if (a.question !== 'mix') parts.push(`It comes from ${groups.map((g) => `${lower(g.group)} ${mm(g.ytd)} (${p1(g.sharePct)})`).join(', ')}.`);
+      else parts.push(`In all: ${groups.map((g) => `${lower(g.group)} ${mm(g.ytd)}`).join(', ')}.`);
+      if (trading.ytd === 0) parts.push('There’s no trading revenue, which is normal for a community bank: trading is a big-bank business.');
+      const movers = f.lines.filter((l) => l.change !== null && Math.abs(l.change) >= 20e3).sort((x, y) => Math.abs(y.change!) - Math.abs(x.change!));
+      const ups = movers.filter((l) => l.change! > 0).slice(0, 2);
+      const downs = movers.filter((l) => l.change! < 0).slice(0, 1);
+      if (ups.length || downs.length) parts.push(`${ups.length ? `Growth came from ${ups.map((l) => `${lower(l.name)} ${sm(l.change!)} (${p1(l.pct ?? 0)})`).join(' and ')}` : ''}${downs.length ? `${ups.length ? ', while ' : ''}${downs.map((l) => `${lower(l.name)} ${l.change! < 0 ? 'fell' : 'rose'} ${mm(Math.abs(l.change!))} (${p1(Math.abs(l.pct ?? 0))})`).join('')}` : ''}.`);
+      if (a.question !== 'share') parts.push(`That is ${p1(f.sharePct)} of revenue${f.shareBefore !== null ? ` (${p1(f.shareBefore)} a year ago)` : ''}${f.plan ? `, ${vs(f.plan)} ${ref(f.plan, 'plan')}` : ''}${f.peer ? `${f.plan ? ' and' : ','} ${vs(f.peer)} ${ref(f.peer, 'peers')}${f.peer.gap < 0 ? `, about ${mm(-f.peer.gap)} a year short of them` : ''}` : ''}.`);
+      else if (f.shareBefore !== null) parts.push(`A year ago it was ${p1(f.shareBefore)}; it is ${f.toAssetsPct !== null ? `${f.toAssetsPct.toFixed(2)}% of assets` : ''}.`);
+      if (up100) {
+        const steadyOnly = (up100.niiChange / f.revenue) * 100;
+        if (a.question !== 'rates') parts.push(`${mm(f.steady)} a year of it (${p1(f.steadyPct)} of revenue) doesn’t depend on rates.`);
+        parts.push(`If rates rise 100 bp, net interest income ${up100.niiChange < 0 ? 'falls' : 'rises'} ${mm(Math.abs(up100.niiChange))} (${p1(Math.abs(up100.niiPct))}). Fees that don’t move with rates would soften that to ${p1(Math.abs(steadyOnly))} of revenue, but mortgage banking ${up100.mortgageChange < 0 ? 'loses' : 'adds'} ${mm(Math.abs(up100.mortgageChange))} too, so revenue ${up100.revenueChange < 0 ? 'falls' : 'rises'} ${mm(Math.abs(up100.revenueChange))} (${p1(Math.abs(up100.revenuePct))}).`);
+        parts.push(sameWay ? 'For this bank, mortgage banking moves the same way as net interest income (both gain when rates fall), so it adds to rate risk rather than offsetting it; trust, brokerage, insurance and deposit fees are what diversify revenue.' : 'Mortgage banking moves against net interest income here, so it partly offsets rate risk, alongside trust, brokerage, insurance and deposit fees.');
+      }
+      if (f.quarter && a.question === 'growth') parts.push(`${q} on its own brought ${mm(f.quarter.now)}${f.quarter.change !== null ? `, ${sm(f.quarter.change)} on the quarter before` : ''}.`);
+
+      const s = { ...spec(), sources: [{ kind: 'table' as const, label: 'FFIEC 051 Call Report: income statement (RI)', ref: 'table:cr_value' }] };
+      const tbl = (title: string, op: string, cols: Cols, rowsIn: Record<string, string | number>[]) => moduleTable(s, title, ctx.runId, op, cols, rowsIn);
+      const moves = { steady: 'No', rises: 'Yes: up when rates fall', falls: 'Yes: down when rates fall' } as const;
+      const blocks: Block[] = [
+        tbl(`Noninterest income by source, ${period(f.months, year).replace(/^the /, '')}`, 'profit.fees.lines', [text('name', 'Source'), text('group', 'Business'), text('now', year), text('before', lastYear), text('change', 'Change'), text('share', 'Share'), text('rates', 'Moves with rates')], [
+          ...f.lines.map((l) => l.group === 'Trading' && !l.ytd && !l.before ? { name: l.name, group: l.group, now: 'None reported', before: 'None reported', change: '—', share: '—', rates: '—' } : ({ name: l.name, group: l.group, now: mm(l.ytd), before: l.before === null ? '—' : mm(l.before), change: l.change === null ? '—' : `${sm(l.change)}${l.pct !== null ? ` (${p1(l.pct)})` : ''}`, share: p1(l.sharePct), rates: moves[l.rates] })),
+          { name: 'Total noninterest income', group: '', now: mm(f.total), before: f.before === null ? '—' : mm(f.before), change: f.change === null ? '—' : `${sm(f.change)} (${p1(f.pct ?? 0)})`, share: '100.0%', rates: '' },
+        ]),
+        tbl('Share of revenue', 'profit.fees.share', [text('item', ''), text('share', 'Of revenue'), text('fees', 'Noninterest income, a year'), text('vs', 'Against today')], [
+          { item: 'Today', share: p1(f.sharePct), fees: mm(f.annualized), vs: '—' },
+          ...(f.shareBefore !== null && f.before !== null ? [{ item: 'A year ago', share: p1(f.shareBefore), fees: mm((f.before * 12) / f.months), vs: '—' }] : []),
+          ...(f.plan ? [{ item: 'Plan', share: p1(f.plan.sharePct), fees: mm(f.plan.fees), vs: sm(f.plan.fees - f.annualized) }] : []),
+          ...(f.peer ? [{ item: 'Peers', share: p1(f.peer.sharePct), fees: mm(f.peer.fees), vs: sm(f.peer.fees - f.annualized) }] : []),
+          { item: 'Doesn’t depend on rates', share: p1(f.steadyPct), fees: mm(f.steady), vs: '—' },
+        ]),
+        ...(f.rates.length
+          ? [tbl('If rates move, a year', 'profit.fees.rates', [text('shock', 'Rates'), text('nii', 'Net interest income'), text('mortgage', 'Mortgage banking'), text('revenue', 'Revenue'), text('revPct', 'Revenue change'), text('niiPct', 'NII alone')], [...f.rates].sort((x, y) => y.bp - x.bp).map((r) => ({ shock: `${r.bp > 0 ? '+' : '−'}${Math.abs(r.bp)} bp`, nii: sm(r.niiChange), mortgage: sm(r.mortgageChange), revenue: sm(r.revenueChange), revPct: p1(r.revenuePct), niiPct: p1(r.niiPct) })))]
+          : []),
+        tbl('Noninterest income by quarter', 'profit.fees.trend', [text('quarter', 'Quarter'), text('quarterly', 'In the quarter'), text('ytd', 'Year to date'), text('annualized', 'Annualized'), text('share', 'Of revenue')], f.trend.map((t) => ({ quarter: qLabel(t.end), quarterly: t.quarterly === null ? '—' : mm(t.quarterly), ytd: mm(t.ytd), annualized: mm(t.annualized), share: p1(t.sharePct) }))),
+      ];
+      return {
+        text: [lead, ...parts].filter(Boolean).join(' '),
+        sources: s.sources,
+        blocks,
+        suggestions: [a.question === 'rates' ? 'What share of revenue is fee income against peers?' : 'How much of our revenue doesn’t depend on rates?', 'How much did our net interest income grow?', 'How is noninterest income calculated?'],
       };
     },
   };

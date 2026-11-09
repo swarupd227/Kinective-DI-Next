@@ -31,6 +31,7 @@ const LINES: Line[] = [
   { metric: 'unrealized_loss_to_tier1', label: 'Unrealized losses to tier 1', group: 'Capital', good: 'down', places: 1, levels: { watch: 25, concern: 50, note: 'counted in capital only when realized' } },
   { metric: 'net_interest_margin', label: 'Net interest margin', group: 'Earnings', good: 'up', places: 2 },
   { metric: 'nii_growth', label: 'Net interest income growth', group: 'Earnings', good: 'up', places: 1, growth: { of: 'net_interest_income', watch: NII_GROWTH_WATCH } },
+  { metric: 'non_interest_income_share', label: 'Noninterest income to revenue', group: 'Earnings', good: 'up', places: 1 },
   { metric: 'return_on_equity', label: 'Return on equity', group: 'Earnings', good: 'up', places: 2 },
   { metric: 'return_on_assets', label: 'Return on assets', group: 'Earnings', good: 'up', places: 2 },
   { metric: 'efficiency_ratio', label: 'Efficiency ratio', group: 'Earnings', good: 'down', places: 1 },

@@ -20,7 +20,7 @@ export function lineageModule(lineage: LineageService): ModuleSpec {
     id: 'lineage',
     prefix: 'lin',
     agent: 'Data Lineage',
-    request: /\bwhere does\b.*\bcome from\b|\blineage\b|\btrace\b.*\bsources?\b|\bwhat breaks if\b|\bwhat depends on\b/i,
+    request: /^(?![\s\S]*\b(?:diversif\w*|share of revenue|how much|mix|fee income|non-?interest income|noninterest income)\b)[\s\S]*?\bwhere does\b.*\bcome from\b|\blineage\b|\btrace\b.*\bsources?\b|\bwhat breaks if\b|\bwhat depends on\b/i,
     noAccess,
     sources: [{ kind: 'table', label: 'Lineage catalog', ref: 'table:meta_lineage' }],
     prompt: ({ tenant, user, title }) => `You are the Data Lineage agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) wants to know where data comes from.

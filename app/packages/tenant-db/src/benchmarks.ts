@@ -69,6 +69,8 @@ export function benchmarks(institutionType: 'credit_union' | 'bank'): Row[] {
       ['peer', 'loan_growth', 4.1, PEER_BANK],
       ['peer', 'deposit_growth', 3.2, PEER_BANK],
       ['peer', 'member_growth', 1.0, PEER_BANK],
+      ['plan', 'non_interest_income_share', 15, PLAN_BANK],
+      ['peer', 'non_interest_income_share', 19.5, PEER_BANK],
     ];
   }
   return [

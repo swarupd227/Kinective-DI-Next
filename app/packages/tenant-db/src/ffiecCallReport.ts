@@ -208,10 +208,20 @@ export function generateFfiecCallReport(t: GeneratedTenant) {
     set('RIAD4180', get('RCON3190') * 0.046 * m);
     set('RIAD4073', add(['RIAD4508', 'RIAD0093', 'RIADHK03', 'RIADHK04', 'RIAD4180']));
     set('RIAD4074', get('RIAD4107') - get('RIAD4073'));
-    set('RIAD4080', parties * 3.1 * q.ytdMonths);
-    set('RIADF555', parties * 4.4 * q.ytdMonths);
-    set('RIADB497', get('RCON2170') * 0.0025 * m);
-    set('RIAD4079', add(['RIAD4080', 'RIADF555', 'RIADB497']));
+    // Noninterest income: deposit and card fees, a trust department, brokerage, annuity and insurance
+    // commissions, and mortgage banking (servicing fees and gains on loans sold, which rose as mortgage
+    // rates eased in 2026). No trading revenue: that's a big-bank business.
+    const wealth = [1, 1.015, 1.03, 1.045, 1.06][i]!;
+    set('RIAD4070', 1_050_000 * wealth * m);
+    set('RIAD4080', parties * 3.1 * [1.03, 1.02, 1.01, 1, 0.99][i]! * q.ytdMonths);
+    set('RIADC886', 320_000 * wealth * m);
+    set('RIADC887', 180_000 * [0.95, 0.97, 1, 1.02, 1.04][i]! * m);
+    set('RIADC387', 220_000 * [0.97, 0.98, 1, 1.01, 1.03][i]! * m);
+    set('RIADB492', 400_000 * [1, 1.01, 1.02, 1.03, 1.04][i]! * m);
+    set('RIAD5416', [700_000, 620_000, 850_000, 1_050_000, 1_100_000][i]! * m);
+    set('RIADF555', parties * 4.4 * [0.94, 0.96, 0.98, 1, 1.02][i]! * q.ytdMonths);
+    set('RIADB497', get('RCON2170') * 0.001 * m);
+    set('RIAD4079', add(['RIAD4070', 'RIAD4080', 'RIADC886', 'RIADC887', 'RIADC387', 'RIADB492', 'RIAD5416', 'RIADF555', 'RIADB497']));
     // Net income closes each year to date to its return on assets, about 1% for a well-run community bank.
     const netIncome = get('RCON2170') * [0.0094, 0.0097, 0.0103, 0.0101, 0.0099][i]! * m;
     set('RIAD4340', netIncome);

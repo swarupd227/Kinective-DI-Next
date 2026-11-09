@@ -303,6 +303,18 @@ measures:
       call_report_history: "SUM(CASE WHEN cvh.code IN ('018', '860C') THEN cvh.amount ELSE 0 END)"
       ffiec_report: "SUM(CASE WHEN fv.code = 'RCON2200' THEN fv.amount WHEN fv.code = 'RCON3190' THEN fv.amount ELSE 0 END)"
       ffiec_history: "SUM(CASE WHEN fvh.code = 'RCON2200' THEN fvh.amount WHEN fvh.code = 'RCON3190' THEN fvh.amount ELSE 0 END)"
+  wealth_management_income_annualized_sum:
+    unit: usd
+    exprs:
+      # Trust and fiduciary income, securities brokerage and annuity sales (RI 5.a and 5.d).
+      ffiec_report: "SUM(CASE WHEN fv.code IN ('RIAD4070', 'RIADC886', 'RIADC887') THEN fv.amount ELSE 0 END * 12 / MONTH(fv.quarter_end))"
+      ffiec_history: "SUM(CASE WHEN fvh.code IN ('RIAD4070', 'RIADC886', 'RIADC887') THEN fvh.amount ELSE 0 END * 12 / MONTH(fvh.quarter_end))"
+  mortgage_banking_income_annualized_sum:
+    unit: usd
+    exprs:
+      # Net servicing fees and gains on loans sold (RI 5.f and 5.i).
+      ffiec_report: "SUM(CASE WHEN fv.code IN ('RIADB492', 'RIAD5416') THEN fv.amount ELSE 0 END * 12 / MONTH(fv.quarter_end))"
+      ffiec_history: "SUM(CASE WHEN fvh.code IN ('RIADB492', 'RIAD5416') THEN fvh.amount ELSE 0 END * 12 / MONTH(fvh.quarter_end))"
   unrealized_securities_loss_sum:
     unit: usd
     exprs:
@@ -1113,6 +1125,39 @@ metrics:
     description: Annualized operating expense over total assets, from the 5300.
     synonyms: [operating expense ratio, operating expense to assets, opex ratio, expense ratio]
     requires_any: [operating expense ratio, operating expense to assets, opex ratio, expense ratio]
+    owner: Finance data team
+    dimensions_allowed: []
+  non_interest_income_share:
+    label: Non-interest income to revenue
+    type: ratio
+    numerator: non_interest_income_annualized_sum
+    denominator: revenue_annualized_sum
+    format: percent_1
+    description: Non-interest income as a share of net interest income plus non-interest income, from the 5300. The higher it is, the less revenue depends on rates; community banks often run 15% to 25%.
+    synonyms: [non-interest income share, fee income share, fee share of revenue, share of revenue from fees, revenue diversification, fee dependence]
+    requires_any: [share of revenue, fee share, income share, revenue diversification, fee dependence, of revenue]
+    owner: Finance data team
+    dimensions_allowed: []
+  wealth_management_income:
+    label: Wealth management income
+    institution_types: [bank]
+    type: simple
+    measure: wealth_management_income_annualized_sum
+    format: currency
+    description: Trust and fiduciary income, securities brokerage and annuity sales commissions, year to date from the Call Report (Schedule RI) and annualized.
+    synonyms: [wealth management income, trust income, fiduciary income, brokerage income, wealth fees]
+    requires_any: [wealth, trust income, fiduciary, brokerage]
+    owner: Finance data team
+    dimensions_allowed: []
+  mortgage_banking_income:
+    label: Mortgage banking income
+    institution_types: [bank]
+    type: simple
+    measure: mortgage_banking_income_annualized_sum
+    format: currency
+    description: Net loan servicing fees and gains on loans sold, year to date from the Call Report (Schedule RI) and annualized. Moves with rates, unlike most fee income.
+    synonyms: [mortgage banking income, mortgage banking, gain on sale, gains on loan sales, servicing income]
+    requires_any: [mortgage banking, gain on sale, gains on loan, servicing income, servicing fees]
     owner: Finance data team
     dimensions_allowed: []
   non_interest_income_ratio:
