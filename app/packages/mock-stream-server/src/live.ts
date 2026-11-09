@@ -114,6 +114,27 @@ const sourceHosts = () => {
 };
 const sourceOptions = () => ({ secretKey: secretKeyFrom(), allowedHosts: sourceHosts(), ...(process.env.DI_DB_SSL === '1' ? { ssl: { minVersion: 'TLSv1.2', rejectUnauthorized: true } } : {}) });
 
+/**
+ * The demo's core replica, connected for the administrator (Sam) whenever a tenant has none, as Sam
+ * would connect it on Integrations: the read-only login is saved, tested, recorded with its mappings
+ * and pulled once. A reset by the seed job clears connections, so core mapping is ready again after
+ * every deploy. Set DI_DEMO_CONNECT_REPLICA=0 to leave the replica for Sam to connect by hand.
+ */
+async function connectDemoReplica(sources: SourceService, database: string, on: string) {
+  if (process.env.DI_DEMO_CONNECT_REPLICA === '0') return null;
+  if ((await sources.connections()).length) return null;
+  const admin = PERSONAS.admin.session.user;
+  const url = new URL(dbUrl());
+  const saved = await sources.saveLogin({ system: coreSystem('symitar')!.id, host: url.hostname, port: Number(url.port || 3306), database, login: CORE_READER, password: coreReaderPassword() }, { userId: admin.id });
+  const t = await sources.test(saved.credentialId, admin.id);
+  const tables = (t.mappings ?? []).filter((m) => !m.missing.length).map((m) => m.map.diTable);
+  // One fixed approval per replica, so two servers starting together record one connection.
+  const approvalId = `demo-replica-${database}`.slice(0, 40);
+  const id = await sources.create({ credentialId: saved.credentialId, name: 'Symitar replica', schedule: 'Nightly at 2:00 am', tables }, { userId: admin.id, name: admin.name }, { approvalId, on });
+  const pulled = await sources.pull(id, { approvalId });
+  return { id, pulled };
+}
+
 export interface LiveRunResult {
   /** Set when the turn belongs to an agent that is still a scripted placeholder. */
   scripted: RouteAgent | null;
@@ -356,6 +377,11 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     let buildPool: Pool | null = null;
     const offcore = hasOffcore ? new OffcoreService(pool, institutionType, () => (buildPool ??= createPool(`${buildDbUrl()}/${t.schema}`, { connectionLimit: 2 })), AS_OF) : null;
     const replica = hasSources && institutionType === 'credit_union' ? replicaDatabase(t.schema) : null;
+    if (sources && replica)
+      await connectDemoReplica(sources, replica, new Date().toISOString().slice(0, 10)).then(
+        (r) => r && console.log(`[sources] ${t.key}: connected the demo Symitar replica for ${PERSONAS.admin.session.user.name}`),
+        (e: unknown) => console.warn(`[sources] ${t.key}: the demo replica wasn’t connected: ${(e as Error).message}`),
+      );
     const governanceModules = governance ? [lineageModule(new LineageService(pool, semantic.model, undefined, sources ? () => sources.feeds() : undefined, offcore ? () => offcore.feeds() : undefined)), governanceModule(governance, () => new Date().getFullYear())] : [];
     // Indirect Lending and Prospecting exist once the tenant was seeded with Slice 21 or later.
     const growth = await Promise.all([pool.query('SELECT name FROM ind_dealer ORDER BY dealer_id'), pool.query('SELECT company FROM prs_prospect ORDER BY prospect_id'), pool.query('SELECT name FROM prs_stage ORDER BY position')]).then(
