@@ -27,6 +27,9 @@ export function uninsuredRunFrom(text: string): { uninsured: number; insured: nu
   return { uninsured: Math.min(100, Number(u[1])), insured: Math.min(100, i ? Number(i[1]) : 5) };
 }
 
+// A source's name inside a sentence: only its first letter is lowered, so the Federal Reserve keeps its capitals and an opening acronym (FHLB) stays as it is.
+const inSentence = (name: string): string => (/^[A-Z]{2}/.test(name) ? name : name.charAt(0).toLowerCase() + name.slice(1));
+
 export function liquidityModule(liq: LiquidityService, funding?: FundingRiskService | null): ModuleSpec {
   const bankOnly = () => {
     if (!funding) throw new CoreError('INVALID', 'The 30-day funding test, LCR and NSFR are built from a bank’s FFIEC Call Report (uninsured deposits and the securities’ fair values). For a credit union, ask how long we’d last if shares ran off.');
@@ -88,7 +91,7 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
           const a = await liq.analysis();
           const top = [...a.capacity].sort((x, y) => y.available - x.available)[0]!;
           return {
-            text: `DI estimates **${m(a.contingent)}** could be raised quickly beyond liquid assets. The largest source is ${top.source.toLowerCase()}, **${m(top.available)}** available${top.used ? ` after ${m(top.used)} already drawn` : ''}.${a.clf ? ` ${a.clf}` : ''} These are estimates at typical lendable values; the FHLB’s and the Reserve Bank’s collateral rules and actual pledges set the real figures.`,
+            text: `DI estimates **${m(a.contingent)}** could be raised quickly beyond liquid assets. The largest source is ${inSentence(top.source)}, **${m(top.available)}** available${top.used ? ` after ${m(top.used)} already drawn` : ''}.${a.clf ? ` ${a.clf}` : ''} These are estimates at typical lendable values; the FHLB’s and the Reserve Bank’s collateral rules and actual pledges set the real figures.`,
             blocks: [moduleTable(spec, 'Borrowing capacity', ctx.runId, 'liq.capacity', [{ field: 'source', headerName: 'Source', type: 'text' }, { field: 'collateral', headerName: 'Collateral', type: 'text' }, { field: 'value', headerName: 'Collateral value', type: 'currency' }, { field: 'lendable', headerName: 'Lendable value', type: 'currency' }, { field: 'used', headerName: 'Used', type: 'currency' }, { field: 'available', headerName: 'Available', type: 'currency' }], a.capacity.map((c) => ({ source: c.source, collateral: c.collateral, value: Math.round(c.collateralValue), lendable: Math.round(c.lendable), used: Math.round(c.used), available: Math.round(c.available) })))],
           };
         },
@@ -102,7 +105,7 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
           const a = await liq.analysis();
           const s = a.stress.find((x) => x.pct === a0.runoff_pct) ?? a.stress.find((x) => x.pct === 20)!;
           return {
-            text: `If ${s.pct}% of shares (**${m(s.runoff)}**) left within 30 days, ${s.covered ? `available liquidity of ${m(s.available)} would cover it **${s.coverage.toFixed(1)} times**, for about **${s.days} days** at that pace` : `available liquidity would fall **${m(s.shortfall)} short**`}. It would draw on ${s.used.map((u) => `${u.name.toLowerCase()} (${m(u.amount)})`).join(', then ')}.`,
+            text: `If ${s.pct}% of shares (**${m(s.runoff)}**) left within 30 days, ${s.covered ? `available liquidity of ${m(s.available)} would cover it **${s.coverage.toFixed(1)} times**, for about **${s.days} days** at that pace` : `available liquidity would fall **${m(s.shortfall)} short**`}. It would draw on ${s.used.map((u) => `${inSentence(u.name)} (${m(u.amount)})`).join(', then ')}.`,
             blocks: [moduleTable(spec, 'Share runoff within 30 days', ctx.runId, 'liq.stress', [{ field: 'pct', headerName: 'Runoff', type: 'text' }, { field: 'runoff', headerName: 'Shares leaving', type: 'currency' }, { field: 'available', headerName: 'Available liquidity', type: 'currency' }, { field: 'coverage', headerName: 'Coverage', type: 'text' }, { field: 'days', headerName: 'Days covered', type: 'number' }, { field: 'result', headerName: 'Result', type: 'text' }], a.stress.map((x) => ({ pct: `${x.pct}%`, runoff: Math.round(x.runoff), available: Math.round(x.available), coverage: `${x.coverage.toFixed(2)}×`, days: x.days, result: x.covered ? 'Covered' : `Short ${m(x.shortfall)}` })))],
           };
         },
@@ -155,7 +158,7 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
           const x = f.scenarios.find((s) => s.key === 'custom')!;
           const short = x.used.filter((s) => s.used > 0);
           return {
-            text: `If ${a.uninsured_pct}% of uninsured and ${a.insured_pct}% of insured deposits left within 30 days, **${m(x.runoff)}** would go. ${x.covered ? `The bank could meet it without selling anything at a loss, using ${short.map((s) => `${s.source.toLowerCase()} (${m(s.used)})`).join(', ')}; the loss-free sources would last about ${x.days >= 365 ? 'a year or more' : `${x.days} days`} at that pace.` : `Loss-free sources (${m(x.lossFree)}) fall **${m(x.shortfall)} short**, so securities would have to be sold.`} Selling securities instead would realize about **${m(x.sale.loss)}** of loss, ${p1(x.sale.capitalPct)} of tier 1 after tax.`,
+            text: `If ${a.uninsured_pct}% of uninsured and ${a.insured_pct}% of insured deposits left within 30 days, **${m(x.runoff)}** would go. ${x.covered ? `The bank could meet it without selling anything at a loss, using ${short.map((s) => `${inSentence(s.source)} (${m(s.used)})`).join(', ')}; the loss-free sources would last about ${x.days >= 365 ? 'a year or more' : `${x.days} days`} at that pace.` : `Loss-free sources (${m(x.lossFree)}) fall **${m(x.shortfall)} short**, so securities would have to be sold.`} Selling securities instead would realize about **${m(x.sale.loss)}** of loss, ${p1(x.sale.capitalPct)} of tier 1 after tax.`,
             blocks: [moduleTable(spec, `Run: ${a.uninsured_pct}% of uninsured, ${a.insured_pct}% of insured`, ctx.runId, 'liquidity.funding.run', [{ field: 'source', headerName: 'Source, in order', type: 'text' }, { field: 'available', headerName: 'Available', type: 'currency' }, { field: 'used', headerName: 'Used', type: 'currency' }], x.used.map((s) => ({ source: s.source, available: Math.round(s.available), used: Math.round(s.used) })))],
             suggestions: ['Can we survive 30 days of withdrawals without selling assets at a loss?', 'What are our unrealized losses?'],
           };
