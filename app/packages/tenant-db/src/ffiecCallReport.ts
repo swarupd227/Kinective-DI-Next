@@ -148,6 +148,8 @@ export function generateFfiecCallReport(t: GeneratedTenant) {
     const time = depBy(/certific/i);
     set('RCONJ474', time * jumboShare);
     set('RCONJ473', time - get('RCONJ474'));
+    // Brokered certificates, a growing slice of time deposits: wholesale funding the CFO watches.
+    set('RCON2365', time * [0.07, 0.072, 0.075, 0.08, 0.085][i]!);
     set('RCON2385', get('RCON6810') + get('RCON0352') + get('RCONJ473') + get('RCONJ474'));
     set('RCON2200E', get('RCON2215') + get('RCON2385'));
     set('RCON2200', get('RCON2200E'));

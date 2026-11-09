@@ -24,6 +24,9 @@ const INFLOW_RATE = 0.5;
 const INFLOW_CAP = 0.75;
 /** A haircut on securities pledged to borrow: lent at 95% of fair value, so no loss is realized. */
 const PLEDGE = 0.95;
+/** A bank's loan-to-deposit band: below 80% deposits sit idle, above 100% loans lean on wholesale borrowing. */
+export const LTD_BAND = { low: 80, high: 100 };
+const LTD_CODES = ['RCON2122', 'RCON2200', 'RCON3190', 'RCON2365', 'RIAD4180', 'RIAD4073'];
 
 export interface RunScenario {
   key: 'uninsured' | 'severe' | 'even' | 'custom';
@@ -179,6 +182,71 @@ export class FundingRiskService {
     return { asOf: cr.end, deposits, uninsured, insured, uninsuredPct: deposits ? (uninsured / deposits) * 100 : 0, securities: { book, fair, pledged, unpledgedFair, lossRate }, unrealized, capital, sources, lossFreeTotal, scenarios, lcr, nsfr };
   }
 
+  /**
+   * Loan-to-deposit from the Call Report, against the 80% to 100% band, with the wholesale funding
+   * behind it (FHLB and other borrowed money, brokered deposits), what it costs against deposits, the
+   * plan and peers, and five quarters of trend.
+   */
+  async loanToDeposit() {
+    const list = await rows<{ code: string; amount: number | null; q: unknown }>(this.pool, `SELECT code, amount, quarter_end AS q FROM cr_value WHERE code IN (${LTD_CODES.map(() => '?').join(', ')}) ORDER BY quarter_end`, LTD_CODES).catch(() => []);
+    if (!list.length) return null;
+    const byQuarter = new Map<string, Map<string, number>>();
+    for (const r of list) {
+      const end = (r.q instanceof Date ? r.q.toISOString() : String(r.q)).slice(0, 10);
+      if (!byQuarter.has(end)) byQuarter.set(end, new Map());
+      byQuarter.get(end)!.set(r.code, Number(r.amount ?? 0));
+    }
+    const trend = [...byQuarter.entries()].map(([end, v]) => {
+      const g = (c: string) => v.get(c) ?? 0;
+      const loans = g('RCON2122');
+      const deposits = g('RCON2200');
+      const borrowings = g('RCON3190');
+      const brokered = Math.min(g('RCON2365'), deposits);
+      const wholesale = borrowings + brokered;
+      const core = deposits - brokered;
+      // Income is year to date: a September quarter holds nine months.
+      const years = Number(end.slice(5, 7)) / 12;
+      return {
+        end,
+        loans,
+        deposits,
+        borrowings,
+        brokered,
+        wholesale,
+        core,
+        pct: deposits ? (loans / deposits) * 100 : 0,
+        corePct: core ? (loans / core) * 100 : 0,
+        wholesaleSharePct: deposits + borrowings ? (wholesale / (deposits + borrowings)) * 100 : 0,
+        borrowingCostPct: borrowings && years ? (g('RIAD4180') / years / borrowings) * 100 : null,
+        depositCostPct: deposits && years ? ((g('RIAD4073') - g('RIAD4180')) / years / deposits) * 100 : null,
+      };
+    });
+    const now = trend.at(-1)!;
+    const [bench] = (await this.pool.query("SELECT kind, value FROM fin_benchmark WHERE metric = 'loan_to_share_ratio'").catch(() => [[]])) as [{ kind: string; value: number }[]];
+    const ref = (kind: string) => {
+      const b = bench.find((x) => x.kind === kind);
+      return b ? Number(b.value) : null;
+    };
+    const zone: 'idle' | 'healthy' | 'wholesale' = now.pct < LTD_BAND.low ? 'idle' : now.pct > LTD_BAND.high ? 'wholesale' : 'healthy';
+    return {
+      asOf: now.end,
+      ...now,
+      band: { ...LTD_BAND, zone },
+      /** Deposits not lent out below the band's floor: what could be lent before reaching 80%. */
+      idle: Math.max(0, (LTD_BAND.low / 100) * now.deposits - now.loans),
+      /** Room to lend before loans pass deposits and need borrowed money. */
+      roomTo100: Math.max(0, now.deposits - now.loans),
+      /** Loans that deposits don't cover, so wholesale money funds them. */
+      gap: Math.max(0, now.loans - now.deposits),
+      /** Loans beyond core deposits (deposits less brokered): the part resting on wholesale funding. */
+      beyondCore: Math.max(0, now.loans - now.core),
+      yearAgo: trend.length >= 5 ? trend[0]! : null,
+      plan: ref('plan'),
+      peer: ref('peer'),
+      trend,
+    };
+  }
+
   assumptions(): [string, string][] {
     return [
       ['Basis', 'The latest FFIEC 051 Call Report and DI’s liquidity model. DI’s estimates: a community bank doesn’t file the LCR or NSFR (the US rules start at $100 billion of assets).'],
@@ -189,6 +257,7 @@ export class FundingRiskService {
       ['LCR', `High-quality liquid assets: currency, Federal Reserve balances, Treasuries and Ginnie Mae (level 1), agency MBS at 85% (2A), general obligation munis at 50% (2B), unpledged only, with the level 2 caps. Outflows: insured deposits ${OUTFLOW.insuredStable * 100}%, uninsured retail ${OUTFLOW.uninsuredRetail * 100}%, operational ${OUTFLOW.operational * 100}%, non-operational ${OUTFLOW.nonOperational * 100}%, unused home equity lines ${OUTFLOW.retailLines * 100}%, business lines ${OUTFLOW.creditLines * 100}%. Inflows: half of 30 days’ loan payments, capped at 75% of outflows.`],
       ['NSFR', 'Available: equity 100%, insured deposits 95%, uninsured retail 90%, business deposits 50%, borrowings 50%. Required: level 2A securities 15%, munis 50%, first mortgages 65%, other loans 85%, nonperforming loans, premises and other assets 100%, unused commitments 5%.'],
       ['Securities mix', 'From the Basel III estimate: Treasuries 20%, Ginnie Mae 10%, agency MBS 45%, general obligation munis 20%, revenue munis 5%.'],
+      ['Loan-to-deposit', `Total loans (RC-C RCON2122) over deposits (RC RCON2200) at quarter end. A bank’s band is ${LTD_BAND.low}% to ${LTD_BAND.high}%: below, deposits sit idle in cash and securities; above, loans are funded with wholesale borrowing. Wholesale funding is other borrowed money (RCON3190, mostly FHLB advances) plus brokered deposits (RC-E RCON2365); core deposits exclude brokered. Costs are year-to-date interest annualized over quarter-end balances.`],
     ];
   }
 }

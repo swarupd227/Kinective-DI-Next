@@ -30,6 +30,9 @@ export function uninsuredRunFrom(text: string): { uninsured: number; insured: nu
 // A source's name inside a sentence: only its first letter is lowered, so the Federal Reserve keeps its capitals and an opening acronym (FHLB) stays as it is.
 const inSentence = (name: string): string => (/^[A-Z]{2}/.test(name) ? name : name.charAt(0).toLowerCase() + name.slice(1));
 
+/** A bank's loan-to-deposit questions, and the wholesale funding behind them. Charts and targets stay with Analytics and Budget. */
+export const LTD_REQUEST = /^(?![\s\S]*\b(?:chart|graph|plot|trend|by month|over time|by branch|target|goal|budget)\b)[\s\S]*(?:\bloan[- ]to[- ]deposits?\b|\bltd ratio\b|\bwholesale (?:funding|borrowing|borrowings|money)\b|\bbrokered (?:deposits?|cds?|certificates)\b|\bfunding gap\b|\b(?:money|cash|deposits?|funds?) (?:sitting |is |are )?idle\b|\bidle (?:money|cash|deposits|funds)\b|\blend before\b|\bdeposits? (?:cover|fund) (?:our |the )?loans\b)/i;
+
 export function liquidityModule(liq: LiquidityService, funding?: FundingRiskService | null): ModuleSpec {
   const bankOnly = () => {
     if (!funding) throw new CoreError('INVALID', 'The 30-day funding test, LCR and NSFR are built from a bank’s FFIEC Call Report (uninsured deposits and the securities’ fair values). For a credit union, ask how long we’d last if shares ran off.');
@@ -39,7 +42,7 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
     id: 'liquidity',
     prefix: 'liq',
     agent: 'Liquidity',
-    request: /\blcr\b|\bnsfr\b|\bliquidity coverage\b|\bnet stable funding\b|\bsvb\b|\bsilicon valley\b|\bwithout selling\b|\bsell(?:ing)? (?:assets|securities|bonds|investments) at a loss\b|\bunrealized loss|\buninsured (?:deposits? )?(?:run|runoff|run-off|outflows?|leave|flight)\b|\buninsured deposits?\b[^.?!]*\b(?:leave|left|run|withdraw)|\bliquidity\b|\bborrowing capacity\b|\bhow much (could|can) we borrow\b|\bfhlb\b|\bdiscount window\b|\bcontingency funding\b|\b(deposit|share) (run|runoff|run-off|outflows?)\b|\brun on (deposits|shares)\b|\bclf\b|\bcorporate (credit union )?line\b|\bcash.flow ladder\b|\bliquid assets\b|\bsurvive\b.*\b(run|outflow|leave)/i,
+    request: new RegExp(`${funding ? `${LTD_REQUEST.source}|` : ''}${/\blcr\b|\bnsfr\b|\bliquidity coverage\b|\bnet stable funding\b|\bsvb\b|\bsilicon valley\b|\bwithout selling\b|\bsell(?:ing)? (?:assets|securities|bonds|investments) at a loss\b|\bunrealized loss|\buninsured (?:deposits? )?(?:run|runoff|run-off|outflows?|leave|flight)\b|\buninsured deposits?\b[^.?!]*\b(?:leave|left|run|withdraw)|\bliquidity\b|\bborrowing capacity\b|\bhow much (could|can) we borrow\b|\bfhlb\b|\bdiscount window\b|\bcontingency funding\b|\b(deposit|share) (run|runoff|run-off|outflows?)\b|\brun on (deposits|shares)\b|\bclf\b|\bcorporate (credit union )?line\b|\bcash.flow ladder\b|\bliquid assets\b|\bsurvive\b.*\b(run|outflow|leave)/.source}`, 'i'),
     noAccess: NO_ACCESS,
     sources: [{ kind: 'table', label: 'Loans, investments, deposits and borrowings', ref: 'table:cdm_loan' }],
     prompt: ({ tenant, user, title }) => `You are the Liquidity agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) manages liquidity for the ALCO and the contingency funding plan. DI estimates on-balance-sheet liquidity, a 30/90/180/365-day cash-flow ladder, borrowing capacity (FHLB, the Federal Reserve discount window, unpledged securities, the corporate or correspondent line) and survival under share runoff. Capacity uses typical lendable values; the FHLB's and Reserve Bank's own collateral rules set the real figures, so say it is an estimate.
@@ -49,12 +52,14 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
 - "Can we survive a 20% deposit run?": liq_stress with runoff_pct.
 - "Show the cash-flow ladder": liq_ladder.
 - "What assumptions?": liq_assumptions.
+- For a bank, the loan-to-deposit ratio against its 80% to 100% band and the wholesale funding behind it: liq_ltd, with question band ("What's our loan-to-deposit ratio?", "is it too low or too high?"), wholesale ("are we funding loans with wholesale borrowing?"), room ("how much could we lend before 80%?") or cost ("what does our wholesale funding cost?"). Its answer already leads with the direct reply; don't add another.
 - For a bank, after SVB: "Can we survive 30 days of withdrawals without selling assets at a loss?": liq_funding. "What if 50% of uninsured deposits leave?": liq_run with uninsured_pct and insured_pct. "What's our LCR?", "NSFR?": liq_lcr. "What are our unrealized losses?", "what if we had to sell our securities?": liq_unrealized.
 - You only read, and give no investment advice.`,
     plan: (text) => {
       const t = text.toLowerCase();
       // After SVB, a bank's board asks about the run, selling at a loss, and the LCR and NSFR.
       if (/\blcr\b|\bnsfr\b|liquidity coverage|net stable funding/.test(t)) return { tool: 'liq_lcr', args: {} };
+      if (funding && LTD_REQUEST.test(text)) return { tool: 'liq_ltd', args: { question: /\b(?:cost|expensive|pay|rate)\b/.test(t) ? 'cost' : /\blend\b|\bidle\b|\broom\b|how much (?:more )?could/.test(t) ? 'room' : /\bwholesale\b|\bbrokered\b|\bfunding (?:our |the )?loans\b|\bfund(?:ing)? loans\b|\bcover\b/.test(t) ? 'wholesale' : 'band' } };
       const run = uninsuredRunFrom(text);
       if (run) return { tool: 'liq_run', args: { uninsured_pct: run.uninsured, insured_pct: run.insured } };
       if (/unrealized loss|underwater|(?:sell|selling|sold) (?:our |the )?(?:securities|bonds|investments)\b(?![^.?!]*without)/.test(t) && !/survive|30 days|withdraw/.test(t)) return { tool: 'liq_unrealized', args: {} };
@@ -161,6 +166,55 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
             text: `If ${a.uninsured_pct}% of uninsured and ${a.insured_pct}% of insured deposits left within 30 days, **${m(x.runoff)}** would go. ${x.covered ? `The bank could meet it without selling anything at a loss, using ${short.map((s) => `${inSentence(s.source)} (${m(s.used)})`).join(', ')}; the loss-free sources would last about ${x.days >= 365 ? 'a year or more' : `${x.days} days`} at that pace.` : `Loss-free sources (${m(x.lossFree)}) fall **${m(x.shortfall)} short**, so securities would have to be sold.`} Selling securities instead would realize about **${m(x.sale.loss)}** of loss, ${p1(x.sale.capitalPct)} of tier 1 after tax.`,
             blocks: [moduleTable(spec, `Run: ${a.uninsured_pct}% of uninsured, ${a.insured_pct}% of insured`, ctx.runId, 'liquidity.funding.run', [{ field: 'source', headerName: 'Source, in order', type: 'text' }, { field: 'available', headerName: 'Available', type: 'currency' }, { field: 'used', headerName: 'Used', type: 'currency' }], x.used.map((s) => ({ source: s.source, available: Math.round(s.available), used: Math.round(s.used) })))],
             suggestions: ['Can we survive 30 days of withdrawals without selling assets at a loss?', 'What are our unrealized losses?'],
+          };
+        },
+      },
+      {
+        name: 'liq_ltd',
+        description: 'A bank’s loan-to-deposit ratio from the Call Report against the 80% to 100% band (below: deposits sit idle; above: loans funded with wholesale borrowing), the wholesale funding (FHLB and other borrowings, brokered deposits) and its cost against deposits, plan, peers and five quarters.',
+        input: z.object({ question: z.enum(['band', 'wholesale', 'room', 'cost']).optional().describe('What was asked: band (too low or too high?, the default), wholesale (are loans funded with wholesale borrowing?), room (how much could we lend?), cost (what does wholesale funding cost?)') }).strict(),
+        run: async (a: { question?: 'band' | 'wholesale' | 'room' | 'cost' }, ctx) => {
+          guard(ctx);
+          const l = await bankOnly().loanToDeposit();
+          if (!l) throw new CoreError('NOT_FOUND', 'There’s no FFIEC Call Report on file yet.');
+          const quarter = new Date(`${l.asOf}T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+          const where =
+            l.band.zone === 'idle'
+              ? `below the ${l.band.low}% to ${l.band.high}% band: about **${m(l.idle)}** of deposits could be lent before reaching ${l.band.low}%, money now sitting in cash and securities at lower yields`
+              : l.band.zone === 'wholesale'
+                ? `above ${l.band.high}%: deposits don’t cover **${m(l.gap)}** of loans, so wholesale borrowing funds them, which costs more and can be pulled`
+                : `within the ${l.band.low}% to ${l.band.high}% band, with **${m(l.roomTo100)}** of room to lend before loans pass deposits`;
+          const refs = [l.plan !== null ? `plan ${p1(l.plan)}` : '', l.peer !== null ? `peers ${p1(l.peer)}` : ''].filter(Boolean).join(', ');
+          const cost = l.borrowingCostPct !== null && l.depositCostPct !== null ? ` Borrowings cost about **${l.borrowingCostPct.toFixed(2)}%** against **${l.depositCostPct.toFixed(2)}%** for deposits.` : '';
+          const core = l.beyondCore > 0 ? ` Against core deposits (excluding brokered), it is ${p1(l.corePct)}: ${m(l.beyondCore)} of loans rest on wholesale funding.` : ` Against core deposits (excluding brokered), it is ${p1(l.corePct)}, so core deposits cover every loan.`;
+          // The direct answer to what was asked comes first, then the figures behind it.
+          const lead = {
+            band: l.band.zone === 'idle' ? '**Too low.**' : l.band.zone === 'wholesale' ? '**Too high.**' : '**Within the band.**',
+            wholesale: l.beyondCore > 0 ? `**Yes, for ${m(l.beyondCore)} of loans.**` : '**No.** Core deposits cover every loan.',
+            room: `**About ${m(l.idle)} before 80%**, and ${m(l.roomTo100)} before loans pass deposits.`,
+            cost: l.borrowingCostPct !== null && l.depositCostPct !== null ? `**About ${l.borrowingCostPct.toFixed(2)}%**, against ${l.depositCostPct.toFixed(2)}% for deposits.` : '',
+          }[a.question ?? 'band'];
+          return {
+            text: `${lead ? `${lead} ` : ''}Loan-to-deposit is **${p1(l.pct)}** on the ${quarter} Call Report (${m(l.loans)} of loans, ${m(l.deposits)} of deposits), ${where}.${refs ? ` ${refs.charAt(0).toUpperCase()}${refs.slice(1)}.` : ''}${l.yearAgo ? ` A year ago it was ${p1(l.yearAgo.pct)}.` : ''} Wholesale funding is **${m(l.wholesale)}**, ${p1(l.wholesaleSharePct)} of funding: ${m(l.borrowings)} of FHLB advances and other borrowings and ${m(l.brokered)} of brokered deposits.${cost}${core}`,
+            blocks: [
+              moduleTable(
+                spec,
+                'Loan-to-deposit and wholesale funding, by quarter',
+                ctx.runId,
+                'liquidity.ltd',
+                [
+                  { field: 'quarter', headerName: 'Quarter', type: 'text' },
+                  { field: 'loans', headerName: 'Loans', type: 'currency' },
+                  { field: 'deposits', headerName: 'Deposits', type: 'currency' },
+                  { field: 'ltd', headerName: 'Loan-to-deposit', type: 'text' },
+                  { field: 'core', headerName: 'On core deposits', type: 'text' },
+                  { field: 'wholesale', headerName: 'Wholesale funding', type: 'currency' },
+                  { field: 'share', headerName: 'Of funding', type: 'text' },
+                ],
+                [...l.trend].reverse().map((q) => ({ quarter: `Q${Math.ceil(Number(q.end.slice(5, 7)) / 3)} ${q.end.slice(0, 4)}`, loans: Math.round(q.loans), deposits: Math.round(q.deposits), ltd: p1(q.pct), core: p1(q.corePct), wholesale: Math.round(q.wholesale), share: p1(q.wholesaleSharePct) })),
+              ),
+            ],
+            suggestions: l.band.zone === 'idle' ? ['How much could we borrow tomorrow?', 'Chart our loan-to-deposit ratio by quarter'] : ['Can we survive 30 days of withdrawals without selling assets at a loss?', 'What’s our cost of funds?'],
           };
         },
       },

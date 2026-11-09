@@ -59,6 +59,7 @@ const rce: Row[] = [
   ['RCON0352', 'RC-E', 'Deposit Liabilities', 'Memoranda', 5, 'Other savings deposits', 'memo', null],
   ['RCONJ473', 'RC-E', 'Deposit Liabilities', 'Memoranda', 6, 'Time deposits of $250,000 or less', 'memo', null],
   ['RCONJ474', 'RC-E', 'Deposit Liabilities', 'Memoranda', 7, 'Time deposits of more than $250,000', 'memo', null],
+  ['RCON2365', 'RC-E', 'Deposit Liabilities', 'Memoranda', 8, 'Total brokered deposits', 'memo', null],
 ];
 const rck: Row[] = [
   ['RCON3360', 'RC-K', 'Quarterly Averages', 'Assets', 1, 'Total loans', 'input', null],

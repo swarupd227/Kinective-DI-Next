@@ -40,6 +40,22 @@ describe('liquidity questions', () => {
     expect(spec.request.test('How much could we borrow tomorrow?')).toBe(true);
     expect(spec.request.test('Show the loan-to-share ratio trend')).toBe(false);
   });
+
+  it('answers a bank’s loan-to-deposit questions, and leaves charts and targets to Analytics and Budget', () => {
+    const bank = liquidityModule({} as LiquidityService, {} as never);
+    const bankPlan = (t: string) => bank.plan!(t, {} as never) as { tool: string; args: unknown };
+    for (const q of ['What’s our loan-to-deposit ratio? Is it too low or too high?', 'Are we funding loans with wholesale borrowing?', 'How much could we lend before 80%?', 'What does our wholesale funding cost?', 'How much do we rely on brokered deposits?', 'Is money sitting idle?']) {
+      expect(bank.request.test(q), q).toBe(true);
+      expect(bankPlan(q).tool, q).toBe('liq_ltd');
+    }
+    expect(bankPlan('Is our loan-to-deposit ratio too low or too high?').args).toEqual({ question: 'band' });
+    expect(bankPlan('Are we funding loans with wholesale borrowing?').args).toEqual({ question: 'wholesale' });
+    expect(bankPlan('How much could we lend before 80%?').args).toEqual({ question: 'room' });
+    expect(bankPlan('What does our wholesale funding cost?').args).toEqual({ question: 'cost' });
+    for (const q of ['Chart our loan-to-deposit ratio by quarter', 'Show the loan-to-deposit trend', 'Set our loan-to-deposit target to 85%']) expect(bank.request.test(q), q).toBe(false);
+    // A credit union's loan-to-share stays with Analytics.
+    expect(spec.request.test('What’s our loan-to-share ratio?')).toBe(false);
+  });
 });
 
 const SCHEMA = 'dinext_t_test_cu';
@@ -99,6 +115,16 @@ describe.skipIf(!bankUp)('a bank’s funding risk after SVB', () => {
       expect(f.nsfr.pct).toBeGreaterThan(50);
       const custom = (await new FundingRiskService(pool).analysis({ uninsuredPct: 90, insuredPct: 30 }))!.scenarios.find((s) => s.key === 'custom')!;
       expect(custom.runoff).toBeCloseTo(f.uninsured * 0.9 + f.insured * 0.3, 0);
+      // Loan-to-deposit against the 80% to 100% band, with the wholesale funding behind it.
+      const l = (await new FundingRiskService(pool).loanToDeposit())!;
+      expect(l.pct).toBeCloseTo((l.loans / l.deposits) * 100, 6);
+      expect(l.trend).toHaveLength(5);
+      expect(l.wholesale).toBeCloseTo(l.borrowings + l.brokered, 0);
+      expect(l.brokered).toBeGreaterThan(0);
+      expect(l.corePct).toBeGreaterThan(l.pct);
+      expect(l.band.zone).toBe(l.pct < 80 ? 'idle' : l.pct > 100 ? 'wholesale' : 'healthy');
+      if (l.band.zone === 'idle') expect(l.idle).toBeCloseTo(0.8 * l.deposits - l.loans, 0);
+      expect(l.borrowingCostPct!).toBeGreaterThan(l.depositCostPct!);
       // The model may name only the uninsured share; insured deposits then keep the standard 5%.
       const run = liquidityModule({} as LiquidityService, new FundingRiskService(pool)).tools.find((t) => t.name === 'liq_run')!;
       expect(run.input.safeParse({ uninsured_pct: 60 }).success).toBe(true);

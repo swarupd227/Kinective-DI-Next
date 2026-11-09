@@ -6,7 +6,7 @@ import type { SemanticService } from '@dinext/semantic';
 import type { Pool } from '@dinext/tenant-db';
 
 export type CfoRead = 'Strong' | 'Watch' | 'Concern';
-export type CfoGroup = 'Capital' | 'Earnings' | 'Credit quality';
+export type CfoGroup = 'Capital' | 'Earnings' | 'Funding' | 'Credit quality';
 
 interface Line {
   metric: string;
@@ -16,6 +16,8 @@ interface Line {
   places: number;
   /** A regulatory floor (capital) the measure must stay above, and how it's named. */
   floor?: { value: number; name: string; tile: string };
+  /** A range the measure should sit in, and what each side of it means. */
+  band?: { low: number; high: number; below: string; above: string };
 }
 
 const LINES: Line[] = [
@@ -25,6 +27,7 @@ const LINES: Line[] = [
   { metric: 'return_on_equity', label: 'Return on equity', group: 'Earnings', good: 'up', places: 2 },
   { metric: 'return_on_assets', label: 'Return on assets', group: 'Earnings', good: 'up', places: 2 },
   { metric: 'efficiency_ratio', label: 'Efficiency ratio', group: 'Earnings', good: 'down', places: 1 },
+  { metric: 'loan_to_share_ratio', label: 'Loan-to-deposit ratio', group: 'Funding', good: 'up', places: 1, band: { low: 80, high: 100, below: 'deposits sitting idle', above: 'loans funded with wholesale borrowing' } },
   { metric: 'npl_ratio', label: 'NPL ratio', group: 'Credit quality', good: 'down', places: 2 },
   { metric: 'net_charge_off_ratio', label: 'Net charge-offs', group: 'Credit quality', good: 'down', places: 2 },
   { metric: 'allowance_coverage', label: 'Allowance to nonperforming loans', group: 'Credit quality', good: 'up', places: 0 },
@@ -43,6 +46,7 @@ export interface CfoLine {
   plan: number | null;
   peer: number | null;
   floor?: { value: number; name: string; tile: string };
+  band?: { low: number; high: number; below: string; above: string };
   read: CfoRead;
   why: string;
 }
@@ -67,6 +71,13 @@ function judge(l: Line, now: number | null, plan: number | null, peer: number | 
     if (now < l.floor.value) return { read: 'Concern', why: `Below ${l.floor.name} (${f(l.floor.value)}).` };
     const room = now - l.floor.value;
     if (room < 1) return { read: 'Watch', why: `${room.toFixed(2)} points above ${l.floor.name}.` };
+  }
+  if (l.band) {
+    const refs = [plan !== null ? `plan ${f(plan)}` : '', peer !== null ? `peers ${f(peer)}` : ''].filter(Boolean).join(', ');
+    const tail = refs ? `; ${refs}.` : '.';
+    if (now > l.band.high) return { read: 'Concern', why: `Above ${l.band.high}%: ${l.band.above}${tail}` };
+    if (now < l.band.low) return { read: 'Watch', why: `Below ${l.band.low}%: ${l.band.below}${tail}` };
+    return { read: 'Strong', why: `Within the ${l.band.low}% to ${l.band.high}% band${tail}` };
   }
   const vsPlan = plan !== null && worse(now, plan, l.good, l.places);
   const vsPeer = peer !== null && worse(now, peer, l.good, l.places);

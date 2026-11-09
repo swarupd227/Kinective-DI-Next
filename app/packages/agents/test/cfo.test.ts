@@ -13,7 +13,7 @@ describe.skipIf(!up)('CFO Scorecard', () => {
     try {
       const svc = await SemanticService.create(pool, 'test_bank', 'bank');
       const s = await cfoScorecard(svc, pool);
-      expect(s.lines.map((l) => l.metric)).toEqual(['cet1_ratio', 'net_worth_ratio', 'net_interest_margin', 'return_on_equity', 'return_on_assets', 'efficiency_ratio', 'npl_ratio', 'net_charge_off_ratio', 'allowance_coverage']);
+      expect(s.lines.map((l) => l.metric)).toEqual(['cet1_ratio', 'net_worth_ratio', 'net_interest_margin', 'return_on_equity', 'return_on_assets', 'efficiency_ratio', 'loan_to_share_ratio', 'npl_ratio', 'net_charge_off_ratio', 'allowance_coverage']);
       for (const l of s.lines) {
         expect(l.now, l.metric).not.toBeNull();
         expect(l.trend.length, l.metric).toBe(5);
@@ -23,6 +23,10 @@ describe.skipIf(!up)('CFO Scorecard', () => {
       // Capital is judged against its regulatory floor; the CET1 ratio sits far above it.
       expect(by('cet1_ratio').read).toBe('Strong');
       expect(by('cet1_ratio').why).toMatch(/above well capitalized/);
+      // Loan-to-deposit is judged against the 80% to 100% band, not as more-is-better.
+      const ltd = by('loan_to_share_ratio');
+      expect(ltd.read).toBe(ltd.now! > 100 ? 'Concern' : ltd.now! < 80 ? 'Watch' : 'Strong');
+      if (ltd.now! < 80) expect(ltd.why).toMatch(/^Below 80%: deposits sitting idle/);
       // A measure behind both plan and peers is a concern, and the headline names it once, without nested brackets.
       const nim = by('net_interest_margin');
       if (nim.plan !== null && nim.peer !== null && nim.now! < nim.plan && nim.now! < nim.peer) expect(nim.read).toBe('Concern');

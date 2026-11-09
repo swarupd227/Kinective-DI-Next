@@ -303,6 +303,12 @@ measures:
       call_report_history: "SUM(CASE WHEN cvh.code IN ('018', '860C') THEN cvh.amount ELSE 0 END)"
       ffiec_report: "SUM(CASE WHEN fv.code = 'RCON2200' THEN fv.amount WHEN fv.code = 'RCON3190' THEN fv.amount ELSE 0 END)"
       ffiec_history: "SUM(CASE WHEN fvh.code = 'RCON2200' THEN fvh.amount WHEN fvh.code = 'RCON3190' THEN fvh.amount ELSE 0 END)"
+  wholesale_funding_sum:
+    unit: usd
+    exprs:
+      # Other borrowed money (mostly FHLB advances) plus brokered deposits.
+      ffiec_report: "SUM(CASE WHEN fv.code IN ('RCON3190', 'RCON2365') THEN fv.amount ELSE 0 END)"
+      ffiec_history: "SUM(CASE WHEN fvh.code IN ('RCON3190', 'RCON2365') THEN fvh.amount ELSE 0 END)"
   loan_balance_sum:
     unit: usd
     exprs:
@@ -792,6 +798,29 @@ metrics:
     requires_any: [cet, common equity, risk-based, risk based, basel]
     owner: Finance data team
     dimensions_allowed: []
+  wholesale_funding:
+    label: Wholesale funding
+    institution_types: [bank]
+    type: simple
+    measure: wholesale_funding_sum
+    format: currency
+    description: Other borrowed money (RC RCON3190, mostly FHLB advances) plus brokered deposits (RC-E RCON2365), from the Call Report. Funding that costs more than core deposits and can be pulled.
+    synonyms: [wholesale funding, wholesale borrowing, wholesale borrowings, wholesale money, non-core funding, noncore funding]
+    requires_any: [wholesale, non-core, noncore]
+    owner: Finance data team
+    dimensions_allowed: []
+  wholesale_funding_ratio:
+    label: Wholesale funding ratio
+    institution_types: [bank]
+    type: ratio
+    numerator: wholesale_funding_sum
+    denominator: funding_sum
+    format: percent_1
+    description: Wholesale funding (other borrowed money plus brokered deposits) as a share of deposits and borrowings, from the Call Report.
+    synonyms: [wholesale funding ratio, wholesale funding share, reliance on wholesale funding, non-core funding ratio, noncore funding ratio]
+    requires_any: [wholesale, non-core, noncore]
+    owner: Finance data team
+    dimensions_allowed: []
   risk_weighted_assets:
     label: Risk-weighted assets
     institution_types: [bank]
@@ -1037,7 +1066,7 @@ metrics:
     numerator: loan_balance_sum
     denominator: deposit_balance_sum
     format: percent_1
-    description: Total loans divided by total shares and deposits, from month-end balances. Most credit unions run 70% to 90%; higher leaves little room to lend or absorb outflows, lower means shares are not being put to work. Institution level only, because branch ratios mislead.
+    description: Total loans divided by total shares and deposits, from month-end balances. Most credit unions run 70% to 90%; higher leaves little room to lend or absorb outflows, lower means shares are not being put to work. A bank's band is 80% to 100%; below 80% deposits sit idle, above 100% loans are funded with wholesale borrowing, which costs more and can be pulled. Institution level only, because branch ratios mislead.
     regulatory_basis: NCUA basis - total loans and leases (5300 account 025B) divided by total shares and deposits (018).
     synonyms: [loan to share, loan to deposit, loan-to-share, loan-to-deposit, ltd, lts, ltd ratio, lts ratio]
     owner: Finance data team

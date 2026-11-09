@@ -170,6 +170,9 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-SVB-001', set: 'golden', persona: 'bank_cfo', q: 'Can we survive 30 days of withdrawals without selling assets at a loss?', agent: 'Liquidity', contains: ['realize no loss', 'LCR'], approval: 'none' },
   { id: 'GQ-SVB-002', set: 'golden', persona: 'bank_cfo', q: 'What if 60% of uninsured deposits leave?', agent: 'Liquidity', contains: ['of uninsured'], approval: 'none' },
   { id: 'GQ-SVB-003', set: 'golden', persona: 'bank_cfo', q: 'What’s our LCR and NSFR?', agent: 'Liquidity', contains: ['LCR', 'NSFR'], approval: 'none' },
+  { id: 'GQ-LTD-001', set: 'golden', persona: 'bank_cfo', q: 'What’s our loan-to-deposit ratio? Is it too low or too high?', agent: 'Liquidity', contains: ['80% to 100%'], approval: 'none' },
+  { id: 'GQ-LTD-002', set: 'golden', persona: 'bank_cfo', q: 'Are we funding loans with wholesale borrowing?', agent: 'Liquidity', contains: ['brokered deposits'], approval: 'none' },
+  { id: 'GQ-LTD-003', set: 'golden', persona: 'bank_cfo', q: 'How much could we lend before 80%?', agent: 'Liquidity', contains: ['Loan-to-deposit'], approval: 'none' },
   { id: 'GQ-SVB-004', set: 'golden', persona: 'bank_cfo', q: 'What are our unrealized losses?', agent: 'Liquidity', contains: ['of tier 1 capital'], approval: 'none' },
   { id: 'PM-BAS-001', set: 'permission', persona: 'branch', q: 'What are our risk-weighted assets?', refused: true, notContains: ['Risk-weighted assets are'], approval: 'none', ref: 'Basel III capital is for finance and executives' },
   // The third way in: API connections, and the marketing round trip on them.
