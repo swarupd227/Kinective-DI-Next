@@ -4,6 +4,7 @@
 // catalog, so the page and an answer in a conversation always agree.
 import type { SemanticService } from '@dinext/semantic';
 import type { Pool } from '@dinext/tenant-db';
+import { NII_GROWTH_WATCH } from '@dinext/di-core';
 
 export type CfoRead = 'Strong' | 'Watch' | 'Concern';
 export type CfoGroup = 'Capital' | 'Earnings' | 'Funding' | 'Credit quality';
@@ -20,6 +21,8 @@ interface Line {
   band?: { low: number; high: number; below: string; above: string };
   /** Levels a lower-is-better measure is watched at and is a concern at. */
   levels?: { watch: number; concern: number; note: string };
+  /** Year-over-year growth of a dollar measure (net interest income), watched below a level and a concern when it falls. */
+  growth?: { of: string; watch: number };
 }
 
 const LINES: Line[] = [
@@ -27,6 +30,7 @@ const LINES: Line[] = [
   { metric: 'net_worth_ratio', label: 'Tier 1 leverage ratio', group: 'Capital', good: 'up', places: 2, floor: { value: 8, name: 'the CBLR’s 8%', tile: 'CBLR minimum' } },
   { metric: 'unrealized_loss_to_tier1', label: 'Unrealized losses to tier 1', group: 'Capital', good: 'down', places: 1, levels: { watch: 25, concern: 50, note: 'counted in capital only when realized' } },
   { metric: 'net_interest_margin', label: 'Net interest margin', group: 'Earnings', good: 'up', places: 2 },
+  { metric: 'nii_growth', label: 'Net interest income growth', group: 'Earnings', good: 'up', places: 1, growth: { of: 'net_interest_income', watch: NII_GROWTH_WATCH } },
   { metric: 'return_on_equity', label: 'Return on equity', group: 'Earnings', good: 'up', places: 2 },
   { metric: 'return_on_assets', label: 'Return on assets', group: 'Earnings', good: 'up', places: 2 },
   { metric: 'efficiency_ratio', label: 'Efficiency ratio', group: 'Earnings', good: 'down', places: 1 },
@@ -52,6 +56,9 @@ export interface CfoLine {
   floor?: { value: number; name: string; tile: string };
   band?: { low: number; high: number; below: string; above: string };
   levels?: { watch: number; concern: number; note: string };
+  growth?: { of: string; watch: number };
+  /** For a growth line, the dollar figure a year ago and now (annualized). */
+  dollars?: { yearAgo: number; now: number };
   read: CfoRead;
   why: string;
 }
@@ -111,7 +118,34 @@ export async function cfoScorecard(svc: SemanticService, pool: Pool) {
   const end = svc.build.latestMonthEnd;
   const time = { grain: 'quarter' as const, from: quarterStart(end, 4), to: end.slice(0, 7) };
   const lines: CfoLine[] = [];
-  for (const l of LINES.filter((x) => svc.model.metrics[x.metric])) {
+  const money = (n: number) => `$${(n / 1e6).toFixed(2)}M`;
+  for (const l of LINES.filter((x) => svc.model.metrics[x.growth?.of ?? x.metric])) {
+    if (l.growth) {
+      // Year over year on the dollar measure: the latest quarter against the same quarter a year earlier.
+      let values: (number | null)[] = [];
+      try {
+        const r = await svc.query({ metrics: [l.growth.of], time }, { canViewSql: false });
+        values = r.rows.map((x) => (x[l.growth!.of] === null || x[l.growth!.of] === undefined ? null : Number(x[l.growth!.of])));
+      } catch {
+        values = [];
+      }
+      const last = values.at(-1) ?? null;
+      const first = values.length >= 5 ? (values[0] ?? null) : null;
+      const now = last !== null && first ? ((last - first) / Math.abs(first)) * 100 : null;
+      const dollars = last !== null && first !== null ? { yearAgo: first, now: last } : undefined;
+      const f = (n: number) => pct(n, l.places);
+      const span = dollars ? ` (${money(dollars.yearAgo)} to ${money(dollars.now)} a year, annualized)` : '';
+      const verdict: { read: CfoRead; why: string } =
+        now === null
+          ? { read: 'Watch', why: 'Needs five quarters of the Call Report.' }
+          : now < 0
+            ? { read: 'Concern', why: `Down ${f(-now)} on a year ago${span}.` }
+            : now < l.growth.watch
+              ? { read: 'Watch', why: `Up ${f(now)} on a year ago${span}, below DI’s ${l.growth.watch}% guide.` }
+              : { read: 'Strong', why: `Up ${f(now)} on a year ago${span}.` };
+      lines.push({ ...l, now, yearAgo: null, trend: [], plan: null, peer: null, ...(dollars ? { dollars } : {}), ...verdict });
+      continue;
+    }
     let trend: CfoLine['trend'] = [];
     try {
       const r = await svc.query({ metrics: [l.metric], time }, { canViewSql: false });

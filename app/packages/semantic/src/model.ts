@@ -148,7 +148,10 @@ export function loadModel(tenant: string, institutionType: InstitutionType, dir 
           .replace(/\bthe latest 5300\b/g, 'the latest Call Report')
           .replace(/\bthe 5300\b/g, 'the Call Report')
           .replace(/\b5300\b/g, 'Call Report')
-          .replace(/NCUA Financial Performance Report/g, 'FFIEC Uniform Bank Performance Report');
+          .replace(/NCUA Financial Performance Report/g, 'FFIEC Uniform Bank Performance Report')
+          // A bank pays interest, not dividends, and holds deposits, not shares.
+          .replace(/\bdividends and interest expense\b/g, 'interest expense')
+          .replace(/\bshares, deposits and borrowings\b/g, 'deposits and borrowings');
   const measures = Object.fromEntries(Object.entries(stock.measures).map(([name, m]) => [name, { name, ...m }]));
   const dimensions = Object.fromEntries(
     Object.entries(stock.dimensions).map(([name, d]) => [

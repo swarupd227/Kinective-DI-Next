@@ -13,13 +13,19 @@ describe.skipIf(!up)('CFO Scorecard', () => {
     try {
       const svc = await SemanticService.create(pool, 'test_bank', 'bank');
       const s = await cfoScorecard(svc, pool);
-      expect(s.lines.map((l) => l.metric)).toEqual(['cet1_ratio', 'net_worth_ratio', 'unrealized_loss_to_tier1', 'net_interest_margin', 'return_on_equity', 'return_on_assets', 'efficiency_ratio', 'loan_to_share_ratio', 'uninsured_deposit_ratio', 'npl_ratio', 'net_charge_off_ratio', 'allowance_coverage']);
+      expect(s.lines.map((l) => l.metric)).toEqual(['cet1_ratio', 'net_worth_ratio', 'unrealized_loss_to_tier1', 'net_interest_margin', 'nii_growth', 'return_on_equity', 'return_on_assets', 'efficiency_ratio', 'loan_to_share_ratio', 'uninsured_deposit_ratio', 'npl_ratio', 'net_charge_off_ratio', 'allowance_coverage']);
       for (const l of s.lines) {
         expect(l.now, l.metric).not.toBeNull();
-        expect(l.trend.length, l.metric).toBe(5);
+        // A growth line is one figure, this quarter on the same quarter a year ago.
+        expect(l.trend.length, l.metric).toBe(l.growth ? 0 : 5);
         expect(l.why.length, l.metric).toBeGreaterThan(5);
       }
       const by = (m: string) => s.lines.find((l) => l.metric === m)!;
+      // Net interest income growth is judged in dollars against a year ago: a fall is a concern, slow growth is watched.
+      const nii = by('nii_growth');
+      expect(nii.now!).toBeCloseTo(((nii.dollars!.now - nii.dollars!.yearAgo) / nii.dollars!.yearAgo) * 100, 6);
+      expect(nii.read).toBe(nii.now! < 0 ? 'Concern' : nii.now! < 3 ? 'Watch' : 'Strong');
+      expect(nii.why).toMatch(/\$\d+\.\d{2}M to \$\d+\.\d{2}M a year/);
       // Capital is judged against its regulatory floor; the CET1 ratio sits far above it.
       expect(by('cet1_ratio').read).toBe('Strong');
       expect(by('cet1_ratio').why).toMatch(/above well capitalized/);

@@ -1020,6 +1020,38 @@ metrics:
     requires_any: [net interest income, nii]
     owner: Finance data team
     dimensions_allowed: []
+  interest_income:
+    label: Interest income
+    type: simple
+    measure: interest_income_annualized_sum
+    format: currency
+    description: Interest and fees earned on loans, investments and cash, year to date from the 5300 (115) and annualized. Net interest income is this less dividends and interest expense.
+    synonyms: [interest income, total interest income, interest earned]
+    requires_any: [interest income, interest earned]
+    owner: Finance data team
+    dimensions_allowed: []
+  interest_expense:
+    label: Interest expense
+    labels_by_type: { credit_union: Dividends and interest expense }
+    type: simple
+    measure: interest_expense_annualized_sum
+    format: currency
+    description: Dividends and interest expense on shares, deposits and borrowings, year to date from the 5300 (350) and annualized.
+    synonyms: [interest expense, total interest expense, dividend expense, interest paid]
+    requires_any: [interest expense, dividend expense, interest paid]
+    owner: Finance data team
+    dimensions_allowed: []
+  earning_assets:
+    label: Earning assets
+    institution_types: [bank]
+    type: simple
+    measure: nim_base_sum
+    format: currency
+    description: Interest-bearing balances, securities and loans at quarter-end from the Call Report, the base net interest margin is measured on, as the UBPR does. Net interest income is earning assets times NIM, so its growth is part balance sheet, part margin.
+    synonyms: [earning assets, interest-earning assets, average earning assets]
+    requires_any: [earning assets]
+    owner: Finance data team
+    dimensions_allowed: []
   non_interest_income:
     label: Non-interest income
     type: simple

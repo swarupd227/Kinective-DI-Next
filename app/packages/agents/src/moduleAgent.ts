@@ -32,6 +32,8 @@ export interface ModuleView {
   text: string;
   blocks?: Block[];
   suggestions?: string[];
+  /** Where this answer's figures come from, when not the agent's usual sources. */
+  sources?: ModuleSpec['sources'];
 }
 
 /** A write, described in full. Nothing happens until it's approved on screen. */
@@ -251,7 +253,7 @@ async function show(spec: ModuleSpec, s: { view?: ModuleView; draft?: ModuleDraf
     return { ...base, outcome: 'approval', approval: { record: s.draft.approval, card }, superseded: s.draft.superseded };
   }
   if (s.view) {
-    await sink.text(`${s.view.text}${extra}`, spec.agent, spec.sources);
+    await sink.text(`${s.view.text}${extra}`, spec.agent, s.view.sources ?? spec.sources);
     for (const b of s.view.blocks ?? []) await sink.block(b);
     for (const t of s.view.suggestions ?? []) sink.suggestion(t);
     return { ...base, outcome: 'answer', superseded: [] };
