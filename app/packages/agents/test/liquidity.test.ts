@@ -53,6 +53,15 @@ describe('liquidity questions', () => {
     expect(bankPlan('How much could we lend before 80%?').args).toEqual({ question: 'room' });
     expect(bankPlan('What does our wholesale funding cost?').args).toEqual({ question: 'cost' });
     for (const q of ['Chart our loan-to-deposit ratio by quarter', 'Show the loan-to-deposit trend', 'Set our loan-to-deposit target to 85%']) expect(bank.request.test(q), q).toBe(false);
+    // The deposit book after SVB: the mix, uninsured money, and what rising rates do.
+    expect(bankPlan('What’s our deposit mix?')).toEqual({ tool: 'liq_deposits', args: { question: 'mix' } });
+    expect(bankPlan('How much of our deposits are uninsured?')).toEqual({ tool: 'liq_deposits', args: { question: 'uninsured' } });
+    expect(bankPlan('How fast will deposits leave if rates rise?')).toEqual({ tool: 'liq_rates_up', args: { shock_bp: 200 } });
+    expect(bankPlan('What happens to our deposits if rates rise 300 bp?')).toEqual({ tool: 'liq_rates_up', args: { shock_bp: 300 } });
+    expect(bankPlan('What if 60% of uninsured deposits leave?')).toEqual({ tool: 'liq_run', args: { uninsured_pct: 60, insured_pct: 5 } });
+    for (const q of ['How much of our deposits are uninsured?', 'How fast will deposits leave if rates rise?', 'What’s our deposit mix?']) expect(bank.request.test(q), q).toBe(true);
+    // Reporting questions stay with the Call Report agent.
+    expect(bank.request.test('What did we report for uninsured deposits on RC-O?')).toBe(false);
     // A credit union's loan-to-share stays with Analytics.
     expect(spec.request.test('What’s our loan-to-share ratio?')).toBe(false);
   });
@@ -125,6 +134,18 @@ describe.skipIf(!bankUp)('a bank’s funding risk after SVB', () => {
       expect(l.band.zone).toBe(l.pct < 80 ? 'idle' : l.pct > 100 ? 'wholesale' : 'healthy');
       if (l.band.zone === 'idle') expect(l.idle).toBeCloseTo(0.8 * l.deposits - l.loans, 0);
       expect(l.borrowingCostPct!).toBeGreaterThan(l.depositCostPct!);
+      // The deposit book: the mix adds up, uninsured money comes from RC-O, and more leaves as rates rise.
+      const d = (await new FundingRiskService(pool).deposits())!;
+      expect(d.mix.reduce((s, x) => s + x.sharePct, 0)).toBeCloseTo(100, 6);
+      expect(d.uninsured).toBeCloseTo(f.uninsured, 0);
+      expect(d.uninsuredTrend).toHaveLength(5);
+      expect(d.scenarios.map((s) => s.bp)).toEqual([100, 200, 300]);
+      for (const [lo, hi] of [[d.base, d.scenarios[0]!], [d.scenarios[0]!, d.scenarios[1]!], [d.scenarios[1]!, d.scenarios[2]!]] as const) {
+        expect(hi.leaves).toBeGreaterThan(lo.leaves);
+        expect(hi.costAfterPct).toBeGreaterThan(lo.costAfterPct);
+      }
+      expect(d.base.rateDriven).toBe(0);
+      expect(d.scenarios[1]!.uninsuredLeaves).toBeCloseTo(d.uninsured * 0.08 * 2, 0);
       // The model may name only the uninsured share; insured deposits then keep the standard 5%.
       const run = liquidityModule({} as LiquidityService, new FundingRiskService(pool)).tools.find((t) => t.name === 'liq_run')!;
       expect(run.input.safeParse({ uninsured_pct: 60 }).success).toBe(true);

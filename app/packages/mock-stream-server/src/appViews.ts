@@ -385,6 +385,7 @@ export function createAppViews(deps: ViewDeps) {
       // A bank's board asks the post-SVB question first: 30 days of withdrawals without selling at a loss.
       const f = deps.person === 'customer' ? await new FundingRiskService(pool).analysis().catch(() => null) : null;
       const ltd = f ? await new FundingRiskService(pool).loanToDeposit().catch(() => null) : null;
+      const dep = f ? await new FundingRiskService(pool).deposits().catch(() => null) : null;
       if (f) {
         const [u, sev] = f.scenarios;
         view.take = {
@@ -399,9 +400,10 @@ export function createAppViews(deps: ViewDeps) {
           ...(ltd ? [{ label: 'Loan-to-deposit', value: p1(ltd.pct), detail: `Band ${ltd.band.low}–${ltd.band.high}% · wholesale ${m(ltd.wholesale)}`, ...(ltd.band.zone !== 'healthy' ? { tone: 'warning' as const } : {}), ask: 'Is our loan-to-deposit ratio too low or too high?' }] : []),
           ...view.tiles.slice(1, 3),
         ];
-        view.prompts = ['Can we survive 30 days of withdrawals without selling assets at a loss?', 'What if 60% of uninsured deposits leave?', 'What’s our LCR and NSFR?', 'Is our loan-to-deposit ratio too low or too high?', 'How much could we borrow tomorrow?'];
+        view.prompts = ['Can we survive 30 days of withdrawals without selling assets at a loss?', 'How fast will deposits leave if rates rise?', 'How much of our deposits are uninsured?', 'What’s our LCR and NSFR?', 'Is our loan-to-deposit ratio too low or too high?', 'How much could we borrow tomorrow?'];
         view.blocks = [
           table('Thirty days of withdrawals, without selling at a loss', 'liquidity.funding', [text('scenario', 'Scenario'), { field: 'runoff', headerName: 'Leaves in 30 days', type: 'currency' }, text('covered', 'Met without a sale?'), text('days', 'Days the sources last'), { field: 'loss', headerName: 'Loss if sold instead', type: 'currency' }, text('capital', 'Of tier 1')], f.scenarios.map((x) => ({ scenario: `${x.name} (${x.uninsuredPct}% uninsured, ${x.insuredPct}% insured)`, runoff: Math.round(x.runoff), covered: x.covered ? 'Yes' : `No, ${m(x.shortfall)} short`, days: x.days >= 365 ? 'A year or more' : `${x.days} days`, loss: Math.round(x.sale.loss), capital: p1(x.sale.capitalPct) }))),
+          ...(dep ? [table('Deposit mix, and if rates rise', 'liquidity.deposits.mix', [text('product', 'Product'), { field: 'balance', headerName: 'Balance', type: 'currency' }, text('share', 'Share'), text('rate', 'Rate paid'), text('rising', 'Beta if rates rise'), { field: 'leaves', headerName: 'Leaving in 12 months at +200 bp', type: 'currency' }], dep.mix.map((x) => { const l = dep.scenarios.find((s) => s.bp === 200)!.lines.find((y) => y.product === x.product)!; return { product: x.product, balance: Math.round(x.balance), share: p1(x.sharePct), rate: `${x.ratePct.toFixed(2)}%`, rising: x.term ? 'At maturity' : x.betaRising.toFixed(2), leaves: Math.round(l.leaves) }; }))] : []),
           table('Sources that realize no loss, in order', 'liquidity.funding.sources', [text('source', 'Source'), { field: 'available', headerName: 'Available', type: 'currency' }], f.sources.map((x) => ({ source: x.source, available: Math.round(x.available) }))),
           ...view.blocks,
         ];
@@ -728,7 +730,7 @@ export function createAppViews(deps: ViewDeps) {
       const s = await cfoScorecard(deps.semantic, pool);
       const pc = (n: number | null, places: number) => (n === null ? '—' : `${n.toFixed(places)}%`);
       const tone = (r: string) => (r === 'Concern' ? ('danger' as const) : r === 'Watch' ? ('warning' as const) : ('neutral' as const));
-      const ask: Record<string, string> = { loan_to_share_ratio: 'Is our loan-to-deposit ratio too low or too high?', cet1_ratio: 'What are our Basel III ratios?', net_worth_ratio: 'Should we stay in the CBLR?', net_interest_margin: 'Why is our net interest margin below plan?', return_on_equity: 'Chart our return on equity by quarter', return_on_assets: 'What drives our return on assets?', efficiency_ratio: 'What does it cost us to make $1?', npl_ratio: 'What is our NPL ratio and net charge-off rate?', net_charge_off_ratio: 'Why are net charge-offs above peers?', allowance_coverage: 'Is our allowance enough for our nonperforming loans?' };
+      const ask: Record<string, string> = { uninsured_deposit_ratio: 'How much of our deposits are uninsured?', loan_to_share_ratio: 'Is our loan-to-deposit ratio too low or too high?', cet1_ratio: 'What are our Basel III ratios?', net_worth_ratio: 'Should we stay in the CBLR?', net_interest_margin: 'Why is our net interest margin below plan?', return_on_equity: 'Chart our return on equity by quarter', return_on_assets: 'What drives our return on assets?', efficiency_ratio: 'What does it cost us to make $1?', npl_ratio: 'What is our NPL ratio and net charge-off rate?', net_charge_off_ratio: 'Why are net charge-offs above peers?', allowance_coverage: 'Is our allowance enough for our nonperforming loans?' };
       const chart = (titleText: string, op: string, metrics: string[]): Block | null => {
         const ls = s.lines.filter((l) => metrics.includes(l.metric) && l.trend.length);
         if (!ls.length) return null;
@@ -739,7 +741,7 @@ export function createAppViews(deps: ViewDeps) {
         title: 'CFO Scorecard',
         lede: `Capital, earnings and credit quality for ${s.quarter}, from the Call Report, against plan, peers and regulatory minimums. Each figure is the catalog’s, so it matches DI’s answers.`,
         take: { headline: s.headline, action: { label: 'What should I look at?', ask: 'Which CFO measures need attention, and why?' } },
-        tiles: s.lines.filter((l) => l.metric !== 'allowance_coverage').map((l) => ({ label: l.label, value: pc(l.now, l.places), detail: l.floor ? `${l.floor.tile}: ${pc(l.floor.value, l.places)}` : l.band ? `Band ${l.band.low}–${l.band.high}%${l.plan !== null ? ` · plan ${pc(l.plan, l.places)}` : ''}` : l.plan !== null ? `Plan ${pc(l.plan, l.places)}${l.peer !== null ? ` · peers ${pc(l.peer, l.places)}` : ''}` : l.yearAgo !== null ? `A year ago ${pc(l.yearAgo, l.places)}` : undefined, tone: tone(l.read), ...(l.read !== 'Strong' && ask[l.metric] ? { ask: ask[l.metric] } : {}) })),
+        tiles: s.lines.filter((l) => l.metric !== 'allowance_coverage').map((l) => ({ label: l.label, value: pc(l.now, l.places), detail: l.floor ? `${l.floor.tile}: ${pc(l.floor.value, l.places)}` : l.levels ? `Watch above ${l.levels.watch}%` : l.band ? `Band ${l.band.low}–${l.band.high}%${l.plan !== null ? ` · plan ${pc(l.plan, l.places)}` : ''}` : l.plan !== null ? `Plan ${pc(l.plan, l.places)}${l.peer !== null ? ` · peers ${pc(l.peer, l.places)}` : ''}` : l.yearAgo !== null ? `A year ago ${pc(l.yearAgo, l.places)}` : undefined, tone: tone(l.read), ...(l.read !== 'Strong' && ask[l.metric] ? { ask: ask[l.metric] } : {}) })),
         prompts: ['What are our Basel III ratios?', 'Why is our net interest margin below plan?', 'What is our NPL ratio and net charge-off rate?'],
         blocks: [
           table('Scorecard', 'cfo.scorecard', [text('group', 'Area'), text('measure', 'Measure'), text('now', s.quarter || 'Now'), text('yearAgo', 'A year ago'), text('plan', 'Plan'), text('peer', 'Peers'), text('read', 'DI’s read'), text('why', 'Why')], s.lines.map((l) => ({ group: l.group, measure: l.label, now: pc(l.now, l.places), yearAgo: pc(l.yearAgo, l.places), plan: l.floor ? `${pc(l.floor.value, l.places)} (min.)` : pc(l.plan, l.places), peer: pc(l.peer, l.places), read: l.read, why: l.why }))),

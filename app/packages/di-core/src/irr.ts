@@ -34,13 +34,14 @@ const LOANS: [RegExp, string, LoanBehaviour][] = [
   [/business|commercial|c&i|industrial/i, 'Commercial loans', { term: 84, variable: false, cpr: 0.06 }],
   [/personal|consumer|unsecured/i, 'Consumer loans', { term: 48, variable: false, cpr: 0.12 }],
 ];
-interface ShareBehaviour {
+export interface ShareBehaviour {
   /** Share of the balance that leaves each year (non-maturity deposits). */
   decay: number;
   /** How much of a market rate move the product's rate follows. */
   beta: number;
 }
-const SHARES: [RegExp, string, ShareBehaviour | 'term'][] = [
+/** Each deposit product's decay and beta in the rate-risk model; certificates reprice at maturity. */
+export const SHARES: [RegExp, string, ShareBehaviour | 'term'][] = [
   [/certif|\bcd/i, 'Certificates', 'term'],
   [/money market/i, 'Money market', { decay: 0.25, beta: 0.55 }],
   [/ira|retire/i, 'IRAs', { decay: 0.08, beta: 0.4 }],

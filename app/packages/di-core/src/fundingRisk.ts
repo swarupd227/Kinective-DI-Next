@@ -10,6 +10,8 @@
 import type { Pool } from '@dinext/tenant-db';
 import { BASEL_ASSUMPTIONS } from './basel.ts';
 import { LiquidityService } from './liquidity.ts';
+import { AlcoService } from './alco.ts';
+import { SHARES } from './irr.ts';
 
 const rows = async <T>(pool: Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
 const TAX = 0.21;
@@ -27,6 +29,15 @@ const PLEDGE = 0.95;
 /** A bank's loan-to-deposit band: below 80% deposits sit idle, above 100% loans lean on wholesale borrowing. */
 export const LTD_BAND = { low: 80, high: 100 };
 const LTD_CODES = ['RCON2122', 'RCON2200', 'RCON3190', 'RCON2365', 'RIAD4180', 'RIAD4073'];
+/** Rising rates: the extra share of each product that leaves within a year for every 100 bp, on top of its usual decay. */
+const RATE_RUN_PER_100 = { checking: 0.02, savings: 0.03, moneyMarket: 0.06, certificates: 0.04, uninsured: 0.08 };
+/** Certificates that mature and don't renew in an ordinary year. */
+const CD_ATTRITION = 0.2;
+/** Non-maturity rates catch up with a lag: about three quarters of the beta within the year, as in the rate-risk model. */
+const NMD_LAG = 0.75;
+/** DI's watch levels for uninsured deposits as a share of deposits. SVB's was about 90%. */
+export const UNINSURED_LEVELS = { watch: 40, concern: 60 };
+export const RATE_SHOCKS = [100, 200, 300];
 
 export interface RunScenario {
   key: 'uninsured' | 'severe' | 'even' | 'custom';
@@ -247,6 +258,115 @@ export class FundingRiskService {
     };
   }
 
+  /**
+   * The deposit book a CFO is asked about after SVB: the mix by product with rates and betas, how much is
+   * uninsured and how that has moved, the largest depositors, and what happens if rates rise: how much
+   * more deposits cost and how much leaves within a year, uninsured money fastest.
+   */
+  async deposits() {
+    const cr = await rows<{ code: string; amount: number | null; q: unknown }>(this.pool, "SELECT code, amount, quarter_end AS q FROM cr_value WHERE code IN ('RCON2200', 'RCON5597', 'RCON2365') ORDER BY quarter_end").catch(() => []);
+    if (!cr.length) return null;
+    const byQuarter = new Map<string, Map<string, number>>();
+    for (const r of cr) {
+      const end = (r.q instanceof Date ? r.q.toISOString() : String(r.q)).slice(0, 10);
+      if (!byQuarter.has(end)) byQuarter.set(end, new Map());
+      byQuarter.get(end)!.set(r.code, Number(r.amount ?? 0));
+    }
+    const uninsuredTrend = [...byQuarter.entries()].map(([end, v]) => ({ end, deposits: v.get('RCON2200') ?? 0, uninsured: Math.min(v.get('RCON5597') ?? 0, v.get('RCON2200') ?? 0), pct: v.get('RCON2200') ? ((v.get('RCON5597') ?? 0) / v.get('RCON2200')!) * 100 : 0 }));
+    const now = uninsuredTrend.at(-1)!;
+    const brokered = byQuarter.get(now.end)?.get('RCON2365') ?? 0;
+
+    // The book by product, from open accounts, with the beta measured on the last rate move.
+    const book = await rows<{ c: string; n: number; bal: number; rw: number; zero: number; due: number }>(
+      this.pool,
+      'SELECT deposit_category AS c, COUNT(*) AS n, SUM(balance) AS bal, SUM(balance * rate) AS rw, SUM(CASE WHEN rate = 0 THEN balance ELSE 0 END) AS zero, SUM(CASE WHEN maturity_date IS NOT NULL AND maturity_date <= DATE_ADD((SELECT MAX(as_of_date) FROM meta_build), INTERVAL 12 MONTH) THEN balance ELSE 0 END) AS due FROM cdm_deposit_account WHERE close_date IS NULL GROUP BY deposit_category ORDER BY bal DESC',
+    );
+    const total = book.reduce((s, b) => s + Number(b.bal), 0);
+    const pricing = await new AlcoService(this.pool, 'bank').pricing().catch(() => null);
+    const kind = (c: string) => SHARES.find(([re]) => re.test(c))!;
+    const runKey = (c: string): keyof typeof RATE_RUN_PER_100 => (/certif|\bcd/i.test(c) ? 'certificates' : /money market/i.test(c) ? 'moneyMarket' : /check|demand/i.test(c) ? 'checking' : 'savings');
+    const mix = book.map((b) => {
+      const balance = Number(b.bal);
+      const k = kind(b.c);
+      const behaviour = k[2];
+      const measured = pricing?.products.find((p) => p.category === b.c)?.beta ?? null;
+      return {
+        product: b.c,
+        accounts: Number(b.n),
+        balance,
+        sharePct: total ? (balance / total) * 100 : 0,
+        ratePct: balance ? Number(b.rw) / balance : 0,
+        noInterest: Number(b.zero),
+        dueIn12: Number(b.due),
+        /** Measured on the last rate move (cuts since 2025). */
+        betaMeasured: measured,
+        /** The rate-risk model's beta for a move up; certificates reprice in full at maturity. */
+        betaRising: behaviour === 'term' ? 1 : behaviour.beta,
+        decay: behaviour === 'term' ? CD_ATTRITION : behaviour.decay,
+        term: behaviour === 'term',
+        runPer100: RATE_RUN_PER_100[runKey(b.c)],
+      };
+    });
+    const costNowPct = total ? book.reduce((s, b) => s + Number(b.rw), 0) / total : 0;
+    const noInterest = mix.reduce((s, x) => s + x.noInterest, 0);
+
+    // Largest depositors: the 20 customers with the most on deposit.
+    const [top] = await rows<{ t: number; n: number }>(this.pool, 'SELECT SUM(t) AS t, COUNT(*) AS n FROM (SELECT SUM(balance) AS t FROM cdm_deposit_account WHERE close_date IS NULL GROUP BY party_id ORDER BY t DESC LIMIT 20) x');
+    const top20 = Number(top?.t ?? 0);
+
+    // Rising rates over the next 12 months: added interest and deposits that leave.
+    const loss = await this.analysis().catch(() => null);
+    const lossFree = loss?.lossFreeTotal ?? 0;
+    const scenario = (bp: number) => {
+      const s = bp / 100;
+      const lines = mix.map((x) => {
+        // Certificates reprice as they mature, on average half way through the year; the rest follow with a lag.
+        const added = x.term ? x.dueIn12 * (bp / 10_000) * 0.5 : x.balance * x.betaRising * (bp / 10_000) * NMD_LAG;
+        const base = x.term ? x.dueIn12 * x.decay : x.balance * x.decay;
+        const rate = (x.term ? x.dueIn12 : x.balance) * x.runPer100 * s;
+        return { product: x.product, added, base, rate, leaves: base + rate };
+      });
+      const uninsuredExtra = now.uninsured * RATE_RUN_PER_100.uninsured * s;
+      const leaves = lines.reduce((a, l) => a + l.leaves, 0) + uninsuredExtra;
+      const rateDriven = lines.reduce((a, l) => a + l.rate, 0) + uninsuredExtra;
+      const added = lines.reduce((a, l) => a + l.added, 0);
+      const remaining = Math.max(1, total - leaves);
+      return {
+        bp,
+        leaves,
+        leavesPct: total ? (leaves / total) * 100 : 0,
+        rateDriven,
+        uninsuredLeaves: uninsuredExtra,
+        added,
+        costAfterPct: costNowPct + (added / remaining) * 100,
+        covered: leaves <= lossFree,
+        lossFree,
+        lines,
+      };
+    };
+    return {
+      asOf: now.end,
+      deposits: now.deposits,
+      uninsured: now.uninsured,
+      uninsuredPct: now.pct,
+      uninsuredYearAgo: uninsuredTrend.length >= 5 ? uninsuredTrend[0]! : null,
+      uninsuredTrend,
+      levels: UNINSURED_LEVELS,
+      brokered,
+      mix,
+      bookTotal: total,
+      costNowPct,
+      noInterest,
+      noInterestPct: total ? (noInterest / total) * 100 : 0,
+      top20,
+      top20Pct: total ? (top20 / total) * 100 : 0,
+      measuredBeta: pricing?.total.repricingBeta ?? null,
+      marketMoveBp: pricing?.marketMoveBp ?? null,
+      scenarios: RATE_SHOCKS.map(scenario),
+      base: scenario(0),
+    };
+  }
+
   assumptions(): [string, string][] {
     return [
       ['Basis', 'The latest FFIEC 051 Call Report and DI’s liquidity model. DI’s estimates: a community bank doesn’t file the LCR or NSFR (the US rules start at $100 billion of assets).'],
@@ -257,6 +377,8 @@ export class FundingRiskService {
       ['LCR', `High-quality liquid assets: currency, Federal Reserve balances, Treasuries and Ginnie Mae (level 1), agency MBS at 85% (2A), general obligation munis at 50% (2B), unpledged only, with the level 2 caps. Outflows: insured deposits ${OUTFLOW.insuredStable * 100}%, uninsured retail ${OUTFLOW.uninsuredRetail * 100}%, operational ${OUTFLOW.operational * 100}%, non-operational ${OUTFLOW.nonOperational * 100}%, unused home equity lines ${OUTFLOW.retailLines * 100}%, business lines ${OUTFLOW.creditLines * 100}%. Inflows: half of 30 days’ loan payments, capped at 75% of outflows.`],
       ['NSFR', 'Available: equity 100%, insured deposits 95%, uninsured retail 90%, business deposits 50%, borrowings 50%. Required: level 2A securities 15%, munis 50%, first mortgages 65%, other loans 85%, nonperforming loans, premises and other assets 100%, unused commitments 5%.'],
       ['Securities mix', 'From the Basel III estimate: Treasuries 20%, Ginnie Mae 10%, agency MBS 45%, general obligation munis 20%, revenue munis 5%.'],
+      ['Deposits if rates rise', `Usual yearly decay from the rate-risk model (checking 10%, savings 12%, money market 25%; ${CD_ATTRITION * 100}% of maturing certificates don’t renew), plus for every 100 bp: checking ${RATE_RUN_PER_100.checking * 100}%, savings ${RATE_RUN_PER_100.savings * 100}%, money market ${RATE_RUN_PER_100.moneyMarket * 100}%, maturing certificates ${RATE_RUN_PER_100.certificates * 100}%, and ${RATE_RUN_PER_100.uninsured * 100}% more of uninsured deposits, which chase yield first. Rates paid follow the model’s rising-rate betas (checking 0.05, savings 0.20, money market 0.55) at three quarters within the year; certificates reprice in full as they mature, on average half way through it.`],
+      ['Uninsured deposits', `RC-O’s estimate (RCON5597). DI watches above ${UNINSURED_LEVELS.watch}% of deposits and treats ${UNINSURED_LEVELS.concern}% or more as a concern; SVB’s was about 90%.`],
       ['Loan-to-deposit', `Total loans (RC-C RCON2122) over deposits (RC RCON2200) at quarter end. A bank’s band is ${LTD_BAND.low}% to ${LTD_BAND.high}%: below, deposits sit idle in cash and securities; above, loans are funded with wholesale borrowing. Wholesale funding is other borrowed money (RCON3190, mostly FHLB advances) plus brokered deposits (RC-E RCON2365); core deposits exclude brokered. Costs are year-to-date interest annualized over quarter-end balances.`],
     ];
   }

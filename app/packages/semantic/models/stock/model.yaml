@@ -303,6 +303,16 @@ measures:
       call_report_history: "SUM(CASE WHEN cvh.code IN ('018', '860C') THEN cvh.amount ELSE 0 END)"
       ffiec_report: "SUM(CASE WHEN fv.code = 'RCON2200' THEN fv.amount WHEN fv.code = 'RCON3190' THEN fv.amount ELSE 0 END)"
       ffiec_history: "SUM(CASE WHEN fvh.code = 'RCON2200' THEN fvh.amount WHEN fvh.code = 'RCON3190' THEN fvh.amount ELSE 0 END)"
+  uninsured_deposits_sum:
+    unit: usd
+    exprs:
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RCON5597' THEN fv.amount ELSE 0 END)"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RCON5597' THEN fvh.amount ELSE 0 END)"
+  call_report_deposits_sum:
+    unit: usd
+    exprs:
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RCON2200' THEN fv.amount ELSE 0 END)"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RCON2200' THEN fvh.amount ELSE 0 END)"
   wholesale_funding_sum:
     unit: usd
     exprs:
@@ -796,6 +806,29 @@ metrics:
     regulatory_basis: Basel III standardized approach, 12 CFR 3, 217 and 324; a bank on the community bank leverage ratio does not file it (RC-R Part II).
     synonyms: [cet1, cet 1, cet1 ratio, common equity tier 1, common equity tier 1 ratio, common equity ratio, risk-based capital, risk based capital, basel iii]
     requires_any: [cet, common equity, risk-based, risk based, basel]
+    owner: Finance data team
+    dimensions_allowed: []
+  uninsured_deposits:
+    label: Uninsured deposits
+    institution_types: [bank]
+    type: simple
+    measure: uninsured_deposits_sum
+    format: currency
+    description: Deposits over the $250,000 FDIC insurance limit, the bank's estimate on the Call Report (RC-O RCON5597). The money most likely to leave in a run or when rates rise.
+    synonyms: [uninsured deposits, uninsured, deposits over 250k, deposits over the insurance limit]
+    requires_any: [uninsured, insurance limit, over 250]
+    owner: Finance data team
+    dimensions_allowed: []
+  uninsured_deposit_ratio:
+    label: Uninsured deposit ratio
+    institution_types: [bank]
+    type: ratio
+    numerator: uninsured_deposits_sum
+    denominator: call_report_deposits_sum
+    format: percent_1
+    description: Uninsured deposits (RC-O RCON5597) as a share of deposits (RC RCON2200). DI watches above 40% and treats 60% or more as a concern; SVB's was about 90%.
+    synonyms: [uninsured deposit ratio, uninsured share, share of deposits uninsured, uninsured deposits share, percent uninsured]
+    requires_any: [uninsured]
     owner: Finance data team
     dimensions_allowed: []
   wholesale_funding:

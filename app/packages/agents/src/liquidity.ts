@@ -33,6 +33,10 @@ const inSentence = (name: string): string => (/^[A-Z]{2}/.test(name) ? name : na
 /** A bank's loan-to-deposit questions, and the wholesale funding behind them. Charts and targets stay with Analytics and Budget. */
 export const LTD_REQUEST = /^(?![\s\S]*\b(?:chart|graph|plot|trend|by month|over time|by branch|target|goal|budget)\b)[\s\S]*(?:\bloan[- ]to[- ]deposits?\b|\bltd ratio\b|\bwholesale (?:funding|borrowing|borrowings|money)\b|\bbrokered (?:deposits?|cds?|certificates)\b|\bfunding gap\b|\b(?:money|cash|deposits?|funds?) (?:sitting |is |are )?idle\b|\bidle (?:money|cash|deposits|funds)\b|\blend before\b|\bdeposits? (?:cover|fund) (?:our |the )?loans\b)/i;
 
+/** A bank's deposit questions after SVB: the mix, how much is uninsured, and what rising rates do to deposits. */
+export const DEPOSIT_REQUEST = /\bdeposit (?:mix|composition|franchise|concentration)\b|\bmix of (?:our )?deposits\b|\b(?:deposits?|money) (?:are|is) uninsured\b|\buninsured\b(?![\s\S]*\b(?:report|rc-o|schedule|call report)\b)|\blargest depositors\b|\bnoninterest[- ]bearing deposits\b|(?:\brates? (?:rise|rises|go up|goes up|increase|climb|keep rising)|\brising rates\b|\bhigher rates\b|\brate (?:hikes?|increases?)\b)[\s\S]*\b(?:deposits?|leave|outflows?|run ?off|runoff|flight)\b|\b(?:deposits?|money)\b[\s\S]*\b(?:leave|run ?off|flee)\b[\s\S]*\b(?:rates? (?:rise|go up|increase)|rising rates|higher rates)\b/i;
+const RATES_UP = /\brates? (?:rise|rises|go up|goes up|increase|climb|keep rising)|\brising rates\b|\bhigher rates\b|\brate (?:hikes?|increases?)\b|\bif rates\b/;
+
 export function liquidityModule(liq: LiquidityService, funding?: FundingRiskService | null): ModuleSpec {
   const bankOnly = () => {
     if (!funding) throw new CoreError('INVALID', 'The 30-day funding test, LCR and NSFR are built from a bank’s FFIEC Call Report (uninsured deposits and the securities’ fair values). For a credit union, ask how long we’d last if shares ran off.');
@@ -42,7 +46,7 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
     id: 'liquidity',
     prefix: 'liq',
     agent: 'Liquidity',
-    request: new RegExp(`${funding ? `${LTD_REQUEST.source}|` : ''}${/\blcr\b|\bnsfr\b|\bliquidity coverage\b|\bnet stable funding\b|\bsvb\b|\bsilicon valley\b|\bwithout selling\b|\bsell(?:ing)? (?:assets|securities|bonds|investments) at a loss\b|\bunrealized loss|\buninsured (?:deposits? )?(?:run|runoff|run-off|outflows?|leave|flight)\b|\buninsured deposits?\b[^.?!]*\b(?:leave|left|run|withdraw)|\bliquidity\b|\bborrowing capacity\b|\bhow much (could|can) we borrow\b|\bfhlb\b|\bdiscount window\b|\bcontingency funding\b|\b(deposit|share) (run|runoff|run-off|outflows?)\b|\brun on (deposits|shares)\b|\bclf\b|\bcorporate (credit union )?line\b|\bcash.flow ladder\b|\bliquid assets\b|\bsurvive\b.*\b(run|outflow|leave)/.source}`, 'i'),
+    request: new RegExp(`${funding ? `${LTD_REQUEST.source}|${DEPOSIT_REQUEST.source}|` : ''}${/\blcr\b|\bnsfr\b|\bliquidity coverage\b|\bnet stable funding\b|\bsvb\b|\bsilicon valley\b|\bwithout selling\b|\bsell(?:ing)? (?:assets|securities|bonds|investments) at a loss\b|\bunrealized loss|\buninsured (?:deposits? )?(?:run|runoff|run-off|outflows?|leave|flight)\b|\buninsured deposits?\b[^.?!]*\b(?:leave|left|run|withdraw)|\bliquidity\b|\bborrowing capacity\b|\bhow much (could|can) we borrow\b|\bfhlb\b|\bdiscount window\b|\bcontingency funding\b|\b(deposit|share) (run|runoff|run-off|outflows?)\b|\brun on (deposits|shares)\b|\bclf\b|\bcorporate (credit union )?line\b|\bcash.flow ladder\b|\bliquid assets\b|\bsurvive\b.*\b(run|outflow|leave)/.source}`, 'i'),
     noAccess: NO_ACCESS,
     sources: [{ kind: 'table', label: 'Loans, investments, deposits and borrowings', ref: 'table:cdm_loan' }],
     prompt: ({ tenant, user, title }) => `You are the Liquidity agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) manages liquidity for the ALCO and the contingency funding plan. DI estimates on-balance-sheet liquidity, a 30/90/180/365-day cash-flow ladder, borrowing capacity (FHLB, the Federal Reserve discount window, unpledged securities, the corporate or correspondent line) and survival under share runoff. Capacity uses typical lendable values; the FHLB's and Reserve Bank's own collateral rules set the real figures, so say it is an estimate.
@@ -53,12 +57,19 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
 - "Show the cash-flow ladder": liq_ladder.
 - "What assumptions?": liq_assumptions.
 - For a bank, the loan-to-deposit ratio against its 80% to 100% band and the wholesale funding behind it: liq_ltd, with question band ("What's our loan-to-deposit ratio?", "is it too low or too high?"), wholesale ("are we funding loans with wholesale borrowing?"), room ("how much could we lend before 80%?") or cost ("what does our wholesale funding cost?"). Its answer already leads with the direct reply; don't add another.
+- For a bank, the deposit book: "What's our deposit mix?", "how much of our deposits are uninsured?", "who are our largest depositors?": liq_deposits. "How fast will deposits leave if rates rise?", "what does a 200 bp rise do to our deposits?": liq_rates_up with shock_bp (100, 200 or 300; 200 if none is given). Each answer leads with the direct reply; don't add another.
 - For a bank, after SVB: "Can we survive 30 days of withdrawals without selling assets at a loss?": liq_funding. "What if 50% of uninsured deposits leave?": liq_run with uninsured_pct and insured_pct. "What's our LCR?", "NSFR?": liq_lcr. "What are our unrealized losses?", "what if we had to sell our securities?": liq_unrealized.
 - You only read, and give no investment advice.`,
     plan: (text) => {
       const t = text.toLowerCase();
       // After SVB, a bank's board asks about the run, selling at a loss, and the LCR and NSFR.
       if (/\blcr\b|\bnsfr\b|liquidity coverage|net stable funding/.test(t)) return { tool: 'liq_lcr', args: {} };
+      // A bank's deposit book: rising rates first, then a run by share (below), then the mix and uninsured.
+      if (funding && RATES_UP.test(t) && /\bdeposits?\b|\bleave\b|\boutflows?\b|\brun ?off\b|\bflight\b|\bbetas?\b|\buninsured\b/.test(t) && !uninsuredRunFrom(text)) {
+        const bp = Number(/(\d{3})\s*(?:bp|basis)/.exec(t)?.[1] ?? (/(\d)(?:\.0)?\s*%/.exec(t) ? Number(/(\d)(?:\.0)?\s*%/.exec(t)![1]) * 100 : 200));
+        return { tool: 'liq_rates_up', args: { shock_bp: [100, 200, 300].includes(bp) ? bp : 200 } };
+      }
+      if (funding && DEPOSIT_REQUEST.test(text) && !uninsuredRunFrom(text) && !/survive|withdraw|at a loss|\bsvb\b|silicon valley/.test(t)) return { tool: 'liq_deposits', args: { question: /uninsured/.test(t) ? 'uninsured' : 'mix' } };
       if (funding && LTD_REQUEST.test(text)) return { tool: 'liq_ltd', args: { question: /\b(?:cost|expensive|pay|rate)\b/.test(t) ? 'cost' : /\blend\b|\bidle\b|\broom\b|how much (?:more )?could/.test(t) ? 'room' : /\bwholesale\b|\bbrokered\b|\bfunding (?:our |the )?loans\b|\bfund(?:ing)? loans\b|\bcover\b/.test(t) ? 'wholesale' : 'band' } };
       const run = uninsuredRunFrom(text);
       if (run) return { tool: 'liq_run', args: { uninsured_pct: run.uninsured, insured_pct: run.insured } };
@@ -166,6 +177,49 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
             text: `If ${a.uninsured_pct}% of uninsured and ${a.insured_pct}% of insured deposits left within 30 days, **${m(x.runoff)}** would go. ${x.covered ? `The bank could meet it without selling anything at a loss, using ${short.map((s) => `${inSentence(s.source)} (${m(s.used)})`).join(', ')}; the loss-free sources would last about ${x.days >= 365 ? 'a year or more' : `${x.days} days`} at that pace.` : `Loss-free sources (${m(x.lossFree)}) fall **${m(x.shortfall)} short**, so securities would have to be sold.`} Selling securities instead would realize about **${m(x.sale.loss)}** of loss, ${p1(x.sale.capitalPct)} of tier 1 after tax.`,
             blocks: [moduleTable(spec, `Run: ${a.uninsured_pct}% of uninsured, ${a.insured_pct}% of insured`, ctx.runId, 'liquidity.funding.run', [{ field: 'source', headerName: 'Source, in order', type: 'text' }, { field: 'available', headerName: 'Available', type: 'currency' }, { field: 'used', headerName: 'Used', type: 'currency' }], x.used.map((s) => ({ source: s.source, available: Math.round(s.available), used: Math.round(s.used) })))],
             suggestions: ['Can we survive 30 days of withdrawals without selling assets at a loss?', 'What are our unrealized losses?'],
+          };
+        },
+      },
+      {
+        name: 'liq_deposits',
+        description: 'A bank’s deposit book: the mix by product (balance, share, rate, measured and rising-rate beta), uninsured deposits from the Call Report and their trend against DI’s watch levels, noninterest-bearing deposits, brokered deposits and the largest depositors.',
+        input: z.object({ question: z.enum(['mix', 'uninsured']).optional().describe('What was asked: mix (the default) or uninsured (how much of our deposits are uninsured?)') }).strict(),
+        run: async (a: { question?: 'mix' | 'uninsured' }, ctx) => {
+          guard(ctx);
+          const d = await bankOnly().deposits();
+          if (!d) throw new CoreError('NOT_FOUND', 'There’s no FFIEC Call Report on file yet.');
+          const level = d.uninsuredPct >= d.levels.concern ? `at or above ${d.levels.concern}%, a concern` : d.uninsuredPct >= d.levels.watch ? `above DI’s ${d.levels.watch}% watch level` : `below DI’s ${d.levels.watch}% watch level`;
+          const lead = a.question === 'uninsured' ? `**${p1(d.uninsuredPct)} of deposits are uninsured: ${m(d.uninsured)}.**` : `**${d.mix.map((x) => `${x.product.replace(/ of Deposit$/, 's').toLowerCase()} ${p1(x.sharePct)}`).join(', ')}.**`;
+          const trend = d.uninsuredYearAgo ? ` A year ago it was ${p1(d.uninsuredYearAgo.pct)} (${m(d.uninsuredYearAgo.uninsured)}).` : '';
+          const rateSensitive = d.mix.filter((x) => x.term || x.betaRising >= 0.5).reduce((s, x) => s + x.sharePct, 0);
+          return {
+            text: `${lead} ${a.question === 'uninsured' ? `That’s the Call Report’s estimate of deposits over the $250,000 insurance limit, out of **${m(d.deposits)}**, ${level}; SVB’s was about 90%.` : `Deposits are **${m(d.deposits)}** on the Call Report; **${m(d.uninsured)}** (${p1(d.uninsuredPct)}) is over the $250,000 insurance limit, ${level}; SVB’s was about 90%.`}${trend} By product, ${d.mix.map((x) => `${x.product.toLowerCase()} ${m(x.balance)} (${p1(x.sharePct)}) at ${x.ratePct.toFixed(2)}%`).join(', ')}, an average cost of ${d.costNowPct.toFixed(2)}%. ${p1(rateSensitive)} is rate-sensitive (certificates and money market), and ${p1(d.noInterestPct)} pays no interest. Brokered deposits are ${m(d.brokered)}; the 20 largest depositors hold ${m(d.top20)}, ${p1(d.top20Pct)} of deposits.${d.measuredBeta !== null ? ` On the last rate move the deposit beta was ${d.measuredBeta.toFixed(2)}; on the way up the model uses a higher one for money market (0.55), and certificates reprice in full as they mature.` : ''}`,
+            blocks: [
+              moduleTable(spec, 'Deposit mix', ctx.runId, 'liquidity.deposits.mix', [{ field: 'product', headerName: 'Product', type: 'text' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'share', headerName: 'Share', type: 'text' }, { field: 'rate', headerName: 'Rate paid', type: 'text' }, { field: 'measured', headerName: 'Beta, last move', type: 'text' }, { field: 'rising', headerName: 'Beta if rates rise', type: 'text' }, { field: 'due', headerName: 'Maturing in 12 months', type: 'currency' }], d.mix.map((x) => ({ product: x.product, balance: Math.round(x.balance), share: p1(x.sharePct), rate: `${x.ratePct.toFixed(2)}%`, measured: x.betaMeasured === null ? '—' : x.betaMeasured.toFixed(2), rising: x.term ? 'At maturity' : x.betaRising.toFixed(2), due: Math.round(x.dueIn12) }))),
+              moduleTable(spec, 'Uninsured deposits, by quarter', ctx.runId, 'liquidity.deposits.uninsured', [{ field: 'quarter', headerName: 'Quarter', type: 'text' }, { field: 'deposits', headerName: 'Deposits', type: 'currency' }, { field: 'uninsured', headerName: 'Uninsured', type: 'currency' }, { field: 'pct', headerName: 'Of deposits', type: 'text' }], [...d.uninsuredTrend].reverse().map((q) => ({ quarter: `Q${Math.ceil(Number(q.end.slice(5, 7)) / 3)} ${q.end.slice(0, 4)}`, deposits: Math.round(q.deposits), uninsured: Math.round(q.uninsured), pct: p1(q.pct) }))),
+            ],
+            suggestions: ['How fast will deposits leave if rates rise?', 'Can we survive 30 days of withdrawals without selling assets at a loss?'],
+          };
+        },
+      },
+      {
+        name: 'liq_rates_up',
+        description: 'A bank’s deposits if rates rise 100, 200 or 300 bp over the next 12 months: how much leaves (usual decay plus rate-driven outflow, uninsured fastest), how much more the rest costs, and whether loss-free sources cover the outflow.',
+        input: z.object({ shock_bp: z.number().int().refine((n) => [100, 200, 300].includes(n), 'Use 100, 200 or 300.').optional() }).strict(),
+        run: async (a: { shock_bp?: number }, ctx) => {
+          guard(ctx);
+          const d = await bankOnly().deposits();
+          if (!d) throw new CoreError('NOT_FOUND', 'There’s no FFIEC Call Report on file yet.');
+          const bp = a.shock_bp ?? 200;
+          const x = d.scenarios.find((s) => s.bp === bp)!;
+          const fastest = [...x.lines].sort((p, q) => q.rate - p.rate)[0]!;
+          return {
+            text: `**About ${m(x.leaves)} (${p1(x.leavesPct)}) within 12 months if rates rise ${bp} bp**, against ${m(d.base.leaves)} in a year with no rise: ${m(x.rateDriven)} more leaves because rates rose, ${m(x.uninsuredLeaves)} of it uninsured money chasing yield, and the most from ${fastest.product.toLowerCase()} (${m(fastest.rate)}). The deposits that stay would cost about **${x.costAfterPct.toFixed(2)}%**, up from ${d.costNowPct.toFixed(2)}%, ${m(x.added)} more interest in the year. ${x.covered ? `Loss-free sources (${m(x.lossFree)}: cash, loan payments and borrowing) cover that outflow without selling securities.` : `That outflow is more than the ${m(x.lossFree)} of loss-free sources, so securities would have to be sold or more borrowed.`} ${p1(d.uninsuredPct)} of deposits are uninsured. These are DI’s estimates with the rate-risk model’s decay and betas, shown in the assumptions.`,
+            blocks: [
+              moduleTable(spec, 'Deposits if rates rise, over 12 months', ctx.runId, 'liquidity.deposits.ratesUp', [{ field: 'shock', headerName: 'Rates rise', type: 'text' }, { field: 'leaves', headerName: 'Deposits leaving', type: 'currency' }, { field: 'pct', headerName: 'Of deposits', type: 'text' }, { field: 'rate', headerName: 'Because rates rose', type: 'currency' }, { field: 'cost', headerName: 'Cost of the rest', type: 'text' }, { field: 'added', headerName: 'Added interest', type: 'currency' }, { field: 'covered', headerName: 'Covered without a sale?', type: 'text' }], [d.base, ...d.scenarios].map((s) => ({ shock: s.bp ? `+${s.bp} bp` : 'No change', leaves: Math.round(s.leaves), pct: p1(s.leavesPct), rate: Math.round(s.rateDriven), cost: `${s.costAfterPct.toFixed(2)}%`, added: Math.round(s.added), covered: s.covered ? 'Yes' : 'No' }))),
+              moduleTable(spec, `By product, +${bp} bp`, ctx.runId, 'liquidity.deposits.ratesUp.products', [{ field: 'product', headerName: 'Product', type: 'text' }, { field: 'base', headerName: 'Usual decay', type: 'currency' }, { field: 'rate', headerName: 'Because rates rose', type: 'currency' }, { field: 'added', headerName: 'Added interest', type: 'currency' }], [...x.lines.map((l) => ({ product: l.product, base: Math.round(l.base), rate: Math.round(l.rate), added: Math.round(l.added) })), { product: 'Uninsured, on top', base: 0, rate: Math.round(x.uninsuredLeaves), added: 0 }]),
+            ],
+            suggestions: ['What’s our deposit mix?', 'Can we survive 30 days of withdrawals without selling assets at a loss?'],
           };
         },
       },
