@@ -99,6 +99,9 @@ describe.skipIf(!bankUp)('a bank’s funding risk after SVB', () => {
       expect(f.nsfr.pct).toBeGreaterThan(50);
       const custom = (await new FundingRiskService(pool).analysis({ uninsuredPct: 90, insuredPct: 30 }))!.scenarios.find((s) => s.key === 'custom')!;
       expect(custom.runoff).toBeCloseTo(f.uninsured * 0.9 + f.insured * 0.3, 0);
+      // The model may name only the uninsured share; insured deposits then keep the standard 5%.
+      const run = liquidityModule({} as LiquidityService, new FundingRiskService(pool)).tools.find((t) => t.name === 'liq_run')!;
+      expect(run.input.safeParse({ uninsured_pct: 60 }).success).toBe(true);
     } finally {
       await pool.end();
     }

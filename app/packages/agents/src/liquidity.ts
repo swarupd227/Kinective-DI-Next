@@ -144,10 +144,12 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
       },
       {
         name: 'liq_run',
-        description: 'A bank’s deposit run with the shares given: uninsured_pct of uninsured and insured_pct of insured deposits leave in 30 days. Whether loss-free sources meet it, how long they last, and the loss if securities were sold instead.',
-        input: z.object({ uninsured_pct: z.number().min(1).max(100), insured_pct: z.number().min(0).max(100) }).strict(),
-        run: async (a: { uninsured_pct: number; insured_pct: number }, ctx) => {
+        description: 'A bank’s deposit run with the shares given: uninsured_pct of uninsured and insured_pct of insured deposits leave in 30 days (insured_pct is 5 when the user gives none; never ask for it). Whether loss-free sources meet it, how long they last, and the loss if securities were sold instead.',
+        input: z.object({ uninsured_pct: z.number().min(1).max(100), insured_pct: z.number().min(0).max(100).optional() }).strict(),
+        run: async (given: { uninsured_pct: number; insured_pct?: number }, ctx) => {
           guard(ctx);
+          // A question that names only the uninsured share keeps the standard 5% of insured deposits.
+          const a = { uninsured_pct: given.uninsured_pct, insured_pct: given.insured_pct ?? 5 };
           const f = await bankOnly().analysis({ uninsuredPct: a.uninsured_pct, insuredPct: a.insured_pct });
           if (!f) throw new CoreError('NOT_FOUND', 'There’s no FFIEC Call Report on file yet.');
           const x = f.scenarios.find((s) => s.key === 'custom')!;
