@@ -35,6 +35,19 @@ export const LTD_REQUEST = /^(?![\s\S]*\b(?:chart|graph|plot|trend|by month|over
 
 /** A bank's deposit questions after SVB: the mix, how much is uninsured, and what rising rates do to deposits. */
 export const DEPOSIT_REQUEST = /\bdeposit (?:mix|composition|franchise|concentration)\b|\bmix of (?:our )?deposits\b|\b(?:deposits?|money) (?:are|is) uninsured\b|\buninsured\b(?![\s\S]*\b(?:report|rc-o|schedule|call report)\b)|\blargest depositors\b|\bnoninterest[- ]bearing deposits\b|(?:\brates? (?:rise|rises|go up|goes up|increase|climb|keep rising)|\brising rates\b|\bhigher rates\b|\brate (?:hikes?|increases?)\b)[\s\S]*\b(?:deposits?|leave|outflows?|run ?off|runoff|flight)\b|\b(?:deposits?|money)\b[\s\S]*\b(?:leave|run ?off|flee)\b[\s\S]*\b(?:rates? (?:rise|go up|increase)|rising rates|higher rates)\b/i;
+/** A bank's securities book: unrealized losses, AOCI, the bond portfolio, and selling it. */
+export const SECURITIES_REQUEST = /\bunrealized (?:loss|losses|gains?)\b|\baoci\b|\baccumulated other comprehensive\b|\b(?:bond|securities|investment) portfolio\b|\bunderwater\b|\bbonds? (?:are |is )?(?:down|worth|losing)\b|\b(?:sell|selling|sold) (?:\$?[\d.,]+\s*(?:m|mm|million|k|b|bn|billion)?\s*(?:of |in )?)?(?:our |the )?(?:securities|bonds|investments)\b/i;
+
+/** A dollar amount in a question: "$50M", "50 million", "$2.5 billion". */
+export function amountFrom(text: string): number | null {
+  const m = /\$?\s*(\d+(?:[.,]\d+)?)\s*(m|mm|million|k|thousand|b|bn|billion)?\b/i.exec(text.replace(/(\d),(\d{3})/g, '$1$2'));
+  if (!m) return null;
+  const n = Number(m[1]!.replace(',', '.'));
+  const unit = (m[2] ?? '').toLowerCase();
+  const x = unit.startsWith('b') ? n * 1e9 : unit === 'k' || unit === 'thousand' ? n * 1e3 : unit ? n * 1e6 : n >= 1000 ? n : n * 1e6;
+  return x > 0 ? x : null;
+}
+
 const RATES_UP = /\brates? (?:rise|rises|go up|goes up|increase|climb|keep rising)|\brising rates\b|\bhigher rates\b|\brate (?:hikes?|increases?)\b|\bif rates\b/;
 
 export function liquidityModule(liq: LiquidityService, funding?: FundingRiskService | null): ModuleSpec {
@@ -46,7 +59,7 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
     id: 'liquidity',
     prefix: 'liq',
     agent: 'Liquidity',
-    request: new RegExp(`${funding ? `${LTD_REQUEST.source}|${DEPOSIT_REQUEST.source}|` : ''}${/\blcr\b|\bnsfr\b|\bliquidity coverage\b|\bnet stable funding\b|\bsvb\b|\bsilicon valley\b|\bwithout selling\b|\bsell(?:ing)? (?:assets|securities|bonds|investments) at a loss\b|\bunrealized loss|\buninsured (?:deposits? )?(?:run|runoff|run-off|outflows?|leave|flight)\b|\buninsured deposits?\b[^.?!]*\b(?:leave|left|run|withdraw)|\bliquidity\b|\bborrowing capacity\b|\bhow much (could|can) we borrow\b|\bfhlb\b|\bdiscount window\b|\bcontingency funding\b|\b(deposit|share) (run|runoff|run-off|outflows?)\b|\brun on (deposits|shares)\b|\bclf\b|\bcorporate (credit union )?line\b|\bcash.flow ladder\b|\bliquid assets\b|\bsurvive\b.*\b(run|outflow|leave)/.source}`, 'i'),
+    request: new RegExp(`${funding ? `${SECURITIES_REQUEST.source}|${LTD_REQUEST.source}|${DEPOSIT_REQUEST.source}|` : ''}${/\blcr\b|\bnsfr\b|\bliquidity coverage\b|\bnet stable funding\b|\bsvb\b|\bsilicon valley\b|\bwithout selling\b|\bsell(?:ing)? (?:assets|securities|bonds|investments) at a loss\b|\bunrealized loss|\buninsured (?:deposits? )?(?:run|runoff|run-off|outflows?|leave|flight)\b|\buninsured deposits?\b[^.?!]*\b(?:leave|left|run|withdraw)|\bliquidity\b|\bborrowing capacity\b|\bhow much (could|can) we borrow\b|\bfhlb\b|\bdiscount window\b|\bcontingency funding\b|\b(deposit|share) (run|runoff|run-off|outflows?)\b|\brun on (deposits|shares)\b|\bclf\b|\bcorporate (credit union )?line\b|\bcash.flow ladder\b|\bliquid assets\b|\bsurvive\b.*\b(run|outflow|leave)/.source}`, 'i'),
     noAccess: NO_ACCESS,
     sources: [{ kind: 'table', label: 'Loans, investments, deposits and borrowings', ref: 'table:cdm_loan' }],
     prompt: ({ tenant, user, title }) => `You are the Liquidity agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) manages liquidity for the ALCO and the contingency funding plan. DI estimates on-balance-sheet liquidity, a 30/90/180/365-day cash-flow ladder, borrowing capacity (FHLB, the Federal Reserve discount window, unpledged securities, the corporate or correspondent line) and survival under share runoff. Capacity uses typical lendable values; the FHLB's and Reserve Bank's own collateral rules set the real figures, so say it is an estimate.
@@ -57,6 +70,7 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
 - "Show the cash-flow ladder": liq_ladder.
 - "What assumptions?": liq_assumptions.
 - For a bank, the loan-to-deposit ratio against its 80% to 100% band and the wholesale funding behind it: liq_ltd, with question band ("What's our loan-to-deposit ratio?", "is it too low or too high?"), wholesale ("are we funding loans with wholesale borrowing?"), room ("how much could we lend before 80%?") or cost ("what does our wholesale funding cost?"). Its answer already leads with the direct reply; don't add another.
+- For a bank, the securities book: liq_unrealized, with question overview ("what are our unrealized losses?", "how far are our bonds down?"), aoci ("what's our AOCI?"), rates with shock_bp ("how much more would we lose if rates rise 100 bp?") or sale with sell_amount in dollars ("what if we sold $50M of securities?").
 - For a bank, the deposit book: "What's our deposit mix?", "how much of our deposits are uninsured?", "who are our largest depositors?": liq_deposits. "How fast will deposits leave if rates rise?", "what does a 200 bp rise do to our deposits?": liq_rates_up with shock_bp (100, 200 or 300; 200 if none is given). Each answer leads with the direct reply; don't add another.
 - For a bank, after SVB: "Can we survive 30 days of withdrawals without selling assets at a loss?": liq_funding. "What if 50% of uninsured deposits leave?": liq_run with uninsured_pct and insured_pct. "What's our LCR?", "NSFR?": liq_lcr. "What are our unrealized losses?", "what if we had to sell our securities?": liq_unrealized.
 - You only read, and give no investment advice.`,
@@ -64,6 +78,14 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
       const t = text.toLowerCase();
       // After SVB, a bank's board asks about the run, selling at a loss, and the LCR and NSFR.
       if (/\blcr\b|\bnsfr\b|liquidity coverage|net stable funding/.test(t)) return { tool: 'liq_lcr', args: {} };
+      // A bank's securities: unrealized losses, AOCI, rate rises on the bonds, and a sale. The 30-day test keeps "without selling".
+      if (funding && SECURITIES_REQUEST.test(text) && !/survive|30 days|withdraw|without selling|run\b/.test(t)) {
+        const sells = /\b(?:sell|selling|sold)\b/.test(t) ? amountFrom(t.replace(/\d{3}\s*(?:bp|basis)/g, '')) : null;
+        const bp = Number(/(\d{3})\s*(?:bp|basis)/.exec(t)?.[1] ?? (/\b(\d)(?:\.0)?\s*%/.exec(t) && RATES_UP.test(t) ? Number(/\b(\d)(?:\.0)?\s*%/.exec(t)![1]) * 100 : 0));
+        if (sells) return { tool: 'liq_unrealized', args: { question: 'sale', sell_amount: sells } };
+        if (RATES_UP.test(t)) return { tool: 'liq_unrealized', args: { question: 'rates', shock_bp: [100, 200, 300].includes(bp) ? bp : 100 } };
+        return { tool: 'liq_unrealized', args: { question: /\baoci\b|accumulated other comprehensive/.test(t) ? 'aoci' : 'overview' } };
+      }
       // A bank's deposit book: rising rates first, then a run by share (below), then the mix and uninsured.
       if (funding && RATES_UP.test(t) && /\bdeposits?\b|\bleave\b|\boutflows?\b|\brun ?off\b|\bflight\b|\bbetas?\b|\buninsured\b/.test(t) && !uninsuredRunFrom(text)) {
         const bp = Number(/(\d{3})\s*(?:bp|basis)/.exec(t)?.[1] ?? (/(\d)(?:\.0)?\s*%/.exec(t) ? Number(/(\d)(?:\.0)?\s*%/.exec(t)![1]) * 100 : 200));
@@ -315,25 +337,52 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
       },
       {
         name: 'liq_unrealized',
-        description: 'A bank’s unrealized securities losses, held-to-maturity and available-for-sale, against tier 1 capital, and the leverage ratio if they were realized by selling.',
-        input: z.object({}).strict(),
-        run: async (_: unknown, ctx) => {
+        description: 'A bank’s securities book: unrealized losses (how far below book, held to maturity and available for sale) against tier 1, AOCI and why regulatory capital doesn’t show it until a sale, the added loss if rates rise 100, 200 or 300 bp, what selling an amount would realize, and five quarters.',
+        input: z
+          .object({
+            question: z.enum(['overview', 'aoci', 'rates', 'sale']).optional().describe('What was asked: overview (the default), aoci, rates (with shock_bp) or sale (with sell_amount)'),
+            shock_bp: z.number().int().refine((n) => [100, 200, 300].includes(n), 'Use 100, 200 or 300.').optional(),
+            sell_amount: z.number().positive().max(1e12).optional().describe('Dollars of securities to sell'),
+          })
+          .strict(),
+        run: async (a: { question?: 'overview' | 'aoci' | 'rates' | 'sale'; shock_bp?: number; sell_amount?: number }, ctx) => {
           guard(ctx);
-          const f = await bankOnly().analysis();
-          if (!f) throw new CoreError('NOT_FOUND', 'There’s no FFIEC Call Report on file yet.');
+          const s = await bankOnly().securities(a.sell_amount ? { sell: a.sell_amount } : {});
+          if (!s) throw new CoreError('NOT_FOUND', 'There’s no FFIEC Call Report on file yet.');
+          const question = a.question ?? (a.sell_amount ? 'sale' : a.shock_bp ? 'rates' : 'overview');
+          const shock = s.shocks.find((x) => x.bp === (a.shock_bp ?? 100))!;
+          const level = s.lossToTier1Pct >= s.levels.concern ? `at or above ${s.levels.concern}% of tier 1, a concern` : s.lossToTier1Pct >= s.levels.watch ? `above DI’s ${s.levels.watch}% watch level` : `below DI’s ${s.levels.watch}% watch level`;
+          const lead = {
+            overview: `**${m(s.loss)}, ${p1(s.pctDown)} below book value.**`,
+            aoci: `**AOCI is ${s.aoci < 0 ? '−' : ''}${m(Math.abs(s.aoci))}:** the after-tax loss on available-for-sale securities, already out of book equity but not out of regulatory capital.`,
+            rates: `**About ${m(shock.added)} more if rates rise ${shock.bp} bp**, ${p1(shock.pctDown)} below book in all.`,
+            sale: s.sale ? `**Selling ${m(s.sale.amount)} would realize about ${m(s.sale.loss)}**, ${m(s.sale.afterTax)} after tax, ${p1(s.sale.tier1Pct)} of tier 1.` : '',
+          }[question];
+          // The CBLR's 8%: the first rise at which selling everything would breach it.
+          const breach = s.shocks.find((x) => x.leverageAfter < 8);
+          const body = `The securities are worth **${m(s.fair)}** against a book value of ${m(s.book)}: an unrealized loss of **${m(s.loss)}** (${m(s.afsLoss)} available for sale, ${m(s.htmLoss)} held to maturity), ${p1(s.lossToTier1Pct)} of tier 1 capital, ${level}.${s.yearAgo ? ` A year ago it was ${m(s.yearAgo.loss)} (${p1(s.yearAgo.pctDown)} below book).` : ''} The available-for-sale loss is already in AOCI, ${m(Math.abs(s.aoci))} after tax, so book equity is ${m(s.equity)} instead of ${m(s.equityExAoci)}. The bank has opted out of AOCI in regulatory capital, so tier 1 (${m(s.tier1)}) and the leverage ratio (${p1(s.leverageNow)}) don’t show the loss until it is realized: selling everything would take leverage to ${p1(s.allSold.leverageAfter)}. If rates rise, the loss grows to ${s.shocks.map((x) => `${m(x.loss)} at +${x.bp} bp`).join(', ').replace(/, ([^,]*)$/, ' and $1')}.${s.allSold.leverageAfter < 8 ? ' Selling everything today would take leverage below the community bank leverage ratio’s 8%.' : breach ? ` At +${breach.bp} bp, selling everything would take leverage to ${p1(breach.leverageAfter)}, below the community bank leverage ratio’s 8%.` : ''}${s.sale ? ` Selling ${m(s.sale.amount)} would take tier 1 to ${m(s.sale.tier1After)} and leverage to ${p1(s.sale.leverageAfter)}.` : ''} Borrowing against the ${m(s.unpledged)} of unpledged securities instead realizes nothing.`;
+          const q = (end: string) => `Q${Math.ceil(Number(end.slice(5, 7)) / 3)} ${end.slice(0, 4)}`;
           return {
-            text: `The securities are worth **${m(f.securities.fair)}** against a book value of ${m(f.securities.book)}: an unrealized loss of **${m(f.unrealized.total)}** (${m(f.unrealized.afs)} available for sale, ${m(f.unrealized.htm)} held to maturity), **${p1(f.capital.lossToTier1Pct)} of tier 1 capital**. Sold today, the loss after tax would take the tier 1 leverage ratio from ${p1(f.capital.leveragePct)} to **${p1(f.capital.leverageIfRealizedPct)}**. Borrowing against them instead realizes nothing: ${m(f.securities.unpledgedFair)} of them are unpledged.`,
-            blocks: [moduleTable(spec, 'Unrealized losses against capital', ctx.runId, 'liquidity.unrealized', [{ field: 'item', headerName: 'Item', type: 'text' }, { field: 'value', headerName: 'Value', type: 'text' }], [
-              { item: 'Securities at book value', value: m(f.securities.book) },
-              { item: 'At fair value', value: m(f.securities.fair) },
-              { item: 'Unrealized loss: available for sale', value: m(f.unrealized.afs) },
-              { item: 'Unrealized loss: held to maturity', value: m(f.unrealized.htm) },
-              { item: 'Total, as a share of tier 1', value: `${m(f.unrealized.total)} (${p1(f.capital.lossToTier1Pct)})` },
-              { item: 'Tier 1 leverage ratio now', value: p1(f.capital.leveragePct) },
-              { item: 'If every loss were realized, after tax', value: p1(f.capital.leverageIfRealizedPct) },
-              { item: 'Pledged already', value: m(f.securities.pledged) },
-            ])],
-            suggestions: ['Can we survive 30 days of withdrawals without selling assets at a loss?'],
+            text: `${lead} ${body}`,
+            blocks: [
+              moduleTable(spec, 'Unrealized losses against capital', ctx.runId, 'liquidity.unrealized', [{ field: 'item', headerName: 'Item', type: 'text' }, { field: 'value', headerName: 'Value', type: 'text' }], [
+                { item: 'Securities at book value', value: m(s.book) },
+                { item: 'At fair value', value: `${m(s.fair)} (${p1(s.pctDown)} below book)` },
+                { item: 'Unrealized loss: available for sale, in AOCI', value: m(s.afsLoss) },
+                { item: 'Unrealized loss: held to maturity, off the balance sheet', value: m(s.htmLoss) },
+                { item: 'Total, as a share of tier 1', value: `${m(s.loss)} (${p1(s.lossToTier1Pct)})` },
+                { item: 'AOCI, after tax', value: `${s.aoci < 0 ? '−' : ''}${m(Math.abs(s.aoci))}` },
+                { item: 'Book equity, with AOCI and without', value: `${m(s.equity)} and ${m(s.equityExAoci)}` },
+                { item: 'Tier 1 leverage ratio now (AOCI opted out)', value: p1(s.leverageNow) },
+                { item: 'If every loss were realized, after tax', value: p1(s.allSold.leverageAfter) },
+                ...(s.sale ? [{ item: `If ${m(s.sale.amount)} were sold`, value: `${m(s.sale.loss)} realized, leverage ${p1(s.sale.leverageAfter)}` }] : []),
+                { item: 'Pledged already', value: m(s.pledged) },
+              ]),
+              moduleTable(spec, 'If rates rise', ctx.runId, 'liquidity.unrealized.rates', [{ field: 'shock', headerName: 'Rates rise', type: 'text' }, { field: 'price', headerName: 'Portfolio value', type: 'text' }, { field: 'added', headerName: 'Added loss', type: 'currency' }, { field: 'loss', headerName: 'Total unrealized loss', type: 'currency' }, { field: 'down', headerName: 'Below book', type: 'text' }, { field: 'tier1', headerName: 'Of tier 1', type: 'text' }, { field: 'lev', headerName: 'Leverage if all sold', type: 'text' }], [{ shock: 'Today', price: '—', added: 0, loss: Math.round(s.loss), down: p1(s.pctDown), tier1: p1(s.lossToTier1Pct), lev: p1(s.allSold.leverageAfter) }, ...s.shocks.map((x) => ({ shock: `+${x.bp} bp`, price: `${x.pricePct.toFixed(1)}%`, added: Math.round(x.added), loss: Math.round(x.loss), down: p1(x.pctDown), tier1: p1(x.lossToTier1Pct), lev: p1(x.leverageAfter) }))]),
+              moduleTable(spec, 'Securities by quarter', ctx.runId, 'liquidity.unrealized.trend', [{ field: 'quarter', headerName: 'Quarter', type: 'text' }, { field: 'book', headerName: 'Book value', type: 'currency' }, { field: 'fair', headerName: 'Fair value', type: 'currency' }, { field: 'loss', headerName: 'Unrealized loss', type: 'currency' }, { field: 'down', headerName: 'Below book', type: 'text' }, { field: 'aoci', headerName: 'AOCI', type: 'currency' }], [...s.trend].reverse().map((x) => ({ quarter: q(x.end), book: Math.round(x.book), fair: Math.round(x.fair), loss: Math.round(x.loss), down: p1(x.pctDown), aoci: Math.round(x.aoci) }))),
+              moduleTable(spec, 'Portfolio mix (the Basel III estimate’s)', ctx.runId, 'liquidity.unrealized.mix', [{ field: 'name', headerName: 'Type', type: 'text' }, { field: 'share', headerName: 'Share', type: 'text' }, { field: 'fair', headerName: 'Fair value', type: 'currency' }], s.mix.map((x) => ({ name: x.name, share: p1(x.share), fair: Math.round(x.fair) }))),
+            ],
+            suggestions: ['How much more would we lose if rates rise 200 bp?', 'What if we sold $50M of securities?', 'Can we survive 30 days of withdrawals without selling assets at a loss?'],
           };
         },
       },

@@ -11,7 +11,7 @@ import type { Pool } from '@dinext/tenant-db';
 import { BASEL_ASSUMPTIONS } from './basel.ts';
 import { LiquidityService } from './liquidity.ts';
 import { AlcoService } from './alco.ts';
-import { SHARES } from './irr.ts';
+import { IrrService, SHARES } from './irr.ts';
 
 const rows = async <T>(pool: Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
 const TAX = 0.21;
@@ -38,6 +38,9 @@ const NMD_LAG = 0.75;
 /** DI's watch levels for uninsured deposits as a share of deposits. SVB's was about 90%. */
 export const UNINSURED_LEVELS = { watch: 40, concern: 60 };
 export const RATE_SHOCKS = [100, 200, 300];
+const SEC_CODES = ['RCON1754', 'RCON1771', 'RCON1772', 'RCON1773', 'RCONB530', 'RCON3210', 'RCON8274', 'RCONA224', 'RCON0416'];
+/** DI's levels for unrealized securities losses as a share of tier 1 capital. SVB's were nearly all of its equity. */
+export const UNREALIZED_LEVELS = { watch: 25, concern: 50 };
 
 export interface RunScenario {
   key: 'uninsured' | 'severe' | 'even' | 'custom';
@@ -367,6 +370,90 @@ export class FundingRiskService {
     };
   }
 
+  /**
+   * The securities book: how far it is below book value, held to maturity and available for sale, AOCI
+   * (the after-tax loss already out of book equity but, under the AOCI opt-out, not out of regulatory
+   * capital), what more rate rises would take off it, what a sale would realize, and five quarters.
+   */
+  async securities(opts: { sell?: number } = {}) {
+    const list = await rows<{ code: string; amount: number | null; q: unknown }>(this.pool, `SELECT code, amount, quarter_end AS q FROM cr_value WHERE code IN (${SEC_CODES.map(() => '?').join(', ')}) ORDER BY quarter_end`, SEC_CODES).catch(() => []);
+    if (!list.length) return null;
+    const byQuarter = new Map<string, Map<string, number>>();
+    for (const r of list) {
+      const end = (r.q instanceof Date ? r.q.toISOString() : String(r.q)).slice(0, 10);
+      if (!byQuarter.has(end)) byQuarter.set(end, new Map());
+      byQuarter.get(end)!.set(r.code, Number(r.amount ?? 0));
+    }
+    const trend = [...byQuarter.entries()].map(([end, v]) => {
+      const g = (c: string) => v.get(c) ?? 0;
+      const htmBook = g('RCON1754');
+      const htmFair = g('RCON1771') || htmBook;
+      const afsBook = g('RCON1772');
+      const afsFair = g('RCON1773');
+      const book = htmBook + afsBook;
+      const fair = htmFair + afsFair;
+      const loss = book - fair;
+      const tier1 = g('RCON8274');
+      return { end, htmBook, htmFair, afsBook, afsFair, book, fair, loss, htmLoss: htmBook - htmFair, afsLoss: afsBook - afsFair, pctDown: book ? (loss / book) * 100 : 0, aoci: g('RCONB530'), equity: g('RCON3210'), tier1, levAssets: g('RCONA224'), pledged: Math.min(g('RCON0416'), fair), lossToTier1Pct: tier1 ? (Math.max(0, loss) / tier1) * 100 : 0 };
+    });
+    const now = trend.at(-1)!;
+    const lossRate = now.fair ? Math.max(0, now.loss) / now.fair : 0;
+    const leverage = (tier1: number, assets: number) => (assets ? (tier1 / assets) * 100 : 0);
+    const realize = (loss: number) => {
+      const afterTax = Math.max(0, loss) * (1 - TAX);
+      return { afterTax, tier1After: now.tier1 - afterTax, tier1Pct: now.tier1 ? (afterTax / now.tier1) * 100 : 0, leverageAfter: leverage(now.tier1 - afterTax, now.levAssets - Math.max(0, loss)) };
+    };
+
+    // Rate rises: the portfolio revalued on the rate-risk model's cash flows, as its NEV does.
+    const irr = await new IrrService(this.pool).positions().catch(() => null);
+    const inv = irr?.positions.find((p) => p.name === 'Investments');
+    const value = (bp: number) => {
+      if (!inv) return 0;
+      const flows = inv.flows(bp);
+      const monthly = inv.rate / 12;
+      const disc = Math.max(0.0005, inv.discount + bp / 10_000) / 12;
+      let left = inv.balance;
+      let v = 0;
+      for (let m = 0; m < flows.length; m++) {
+        v += (flows[m]! + left * monthly) / Math.pow(1 + disc, m + 1);
+        left -= flows[m]!;
+        if (left <= 0.5) break;
+      }
+      return v;
+    };
+    const v0 = value(0);
+    const shocks = RATE_SHOCKS.map((bp) => {
+      const pricePct = v0 ? (value(bp) / v0 - 1) * 100 : 0;
+      const added = -now.fair * (pricePct / 100);
+      const afsAdded = -now.afsFair * (pricePct / 100);
+      const loss = now.loss + added;
+      return { bp, pricePct, added, loss, pctDown: now.book ? (loss / now.book) * 100 : 0, aociAfter: now.aoci - afsAdded * (1 - TAX), lossToTier1Pct: now.tier1 ? (loss / now.tier1) * 100 : 0, ...realize(loss) };
+    });
+
+    // A sale realizes its share of the loss at the portfolio's average discount.
+    const sale = opts.sell ? (() => {
+      const amount = Math.min(opts.sell!, now.fair);
+      const loss = amount * lossRate;
+      return { asked: opts.sell!, amount, loss, ...realize(loss) };
+    })() : null;
+
+    return {
+      asOf: now.end,
+      ...now,
+      lossRate,
+      unpledged: now.fair - now.pledged,
+      equityExAoci: now.equity - now.aoci,
+      leverageNow: leverage(now.tier1, now.levAssets),
+      allSold: realize(now.loss),
+      mix: BASEL_ASSUMPTIONS.securities.map((s) => ({ name: s.name, share: s.share * 100, fair: now.fair * s.share })),
+      shocks,
+      sale,
+      yearAgo: trend.length >= 5 ? trend[0]! : null,
+      trend,
+      levels: UNREALIZED_LEVELS,
+    };
+  }
+
   assumptions(): [string, string][] {
     return [
       ['Basis', 'The latest FFIEC 051 Call Report and DI’s liquidity model. DI’s estimates: a community bank doesn’t file the LCR or NSFR (the US rules start at $100 billion of assets).'],
@@ -377,6 +464,8 @@ export class FundingRiskService {
       ['LCR', `High-quality liquid assets: currency, Federal Reserve balances, Treasuries and Ginnie Mae (level 1), agency MBS at 85% (2A), general obligation munis at 50% (2B), unpledged only, with the level 2 caps. Outflows: insured deposits ${OUTFLOW.insuredStable * 100}%, uninsured retail ${OUTFLOW.uninsuredRetail * 100}%, operational ${OUTFLOW.operational * 100}%, non-operational ${OUTFLOW.nonOperational * 100}%, unused home equity lines ${OUTFLOW.retailLines * 100}%, business lines ${OUTFLOW.creditLines * 100}%. Inflows: half of 30 days’ loan payments, capped at 75% of outflows.`],
       ['NSFR', 'Available: equity 100%, insured deposits 95%, uninsured retail 90%, business deposits 50%, borrowings 50%. Required: level 2A securities 15%, munis 50%, first mortgages 65%, other loans 85%, nonperforming loans, premises and other assets 100%, unused commitments 5%.'],
       ['Securities mix', 'From the Basel III estimate: Treasuries 20%, Ginnie Mae 10%, agency MBS 45%, general obligation munis 20%, revenue munis 5%.'],
+      ['Securities if rates rise', `The portfolio revalued on the rate-risk model’s investment cash flows (maturity bands of 1 to 20 years at 3.05%), discounted at its yield plus the rise, as its NEV does. The loss on available-for-sale securities moves AOCI after ${TAX * 100}% tax; held-to-maturity losses stay off the balance sheet until a sale. The mix by type is the Basel III estimate’s, not security by security.`],
+      ['A sale', `Realizes the portfolio’s average discount to book value on the amount sold, after ${TAX * 100}% tax, out of tier 1 and leverage assets. The bank has made the AOCI opt-out election, so unrealized losses don’t reduce regulatory capital until they are realized. DI watches above ${UNREALIZED_LEVELS.watch}% of tier 1 and treats ${UNREALIZED_LEVELS.concern}% or more as a concern.`],
       ['Deposits if rates rise', `Usual yearly decay from the rate-risk model (checking 10%, savings 12%, money market 25%; ${CD_ATTRITION * 100}% of maturing certificates don’t renew), plus for every 100 bp: checking ${RATE_RUN_PER_100.checking * 100}%, savings ${RATE_RUN_PER_100.savings * 100}%, money market ${RATE_RUN_PER_100.moneyMarket * 100}%, maturing certificates ${RATE_RUN_PER_100.certificates * 100}%, and ${RATE_RUN_PER_100.uninsured * 100}% more of uninsured deposits, which chase yield first. Rates paid follow the model’s rising-rate betas (checking 0.05, savings 0.20, money market 0.55) at three quarters within the year; certificates reprice in full as they mature, on average half way through it.`],
       ['Uninsured deposits', `RC-O’s estimate (RCON5597). DI watches above ${UNINSURED_LEVELS.watch}% of deposits and treats ${UNINSURED_LEVELS.concern}% or more as a concern; SVB’s was about 90%.`],
       ['Loan-to-deposit', `Total loans (RC-C RCON2122) over deposits (RC RCON2200) at quarter end. A bank’s band is ${LTD_BAND.low}% to ${LTD_BAND.high}%: below, deposits sit idle in cash and securities; above, loans are funded with wholesale borrowing. Wholesale funding is other borrowed money (RCON3190, mostly FHLB advances) plus brokered deposits (RC-E RCON2365); core deposits exclude brokered. Costs are year-to-date interest annualized over quarter-end balances.`],

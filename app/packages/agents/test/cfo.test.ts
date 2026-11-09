@@ -13,7 +13,7 @@ describe.skipIf(!up)('CFO Scorecard', () => {
     try {
       const svc = await SemanticService.create(pool, 'test_bank', 'bank');
       const s = await cfoScorecard(svc, pool);
-      expect(s.lines.map((l) => l.metric)).toEqual(['cet1_ratio', 'net_worth_ratio', 'net_interest_margin', 'return_on_equity', 'return_on_assets', 'efficiency_ratio', 'loan_to_share_ratio', 'uninsured_deposit_ratio', 'npl_ratio', 'net_charge_off_ratio', 'allowance_coverage']);
+      expect(s.lines.map((l) => l.metric)).toEqual(['cet1_ratio', 'net_worth_ratio', 'unrealized_loss_to_tier1', 'net_interest_margin', 'return_on_equity', 'return_on_assets', 'efficiency_ratio', 'loan_to_share_ratio', 'uninsured_deposit_ratio', 'npl_ratio', 'net_charge_off_ratio', 'allowance_coverage']);
       for (const l of s.lines) {
         expect(l.now, l.metric).not.toBeNull();
         expect(l.trend.length, l.metric).toBe(5);

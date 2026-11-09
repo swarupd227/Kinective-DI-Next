@@ -2,7 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LiquidityService, pctAgainst } from '@dinext/di-core';
 import { tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
-import { liquidityModule, runoffFrom, uninsuredRunFrom } from '../src/liquidity.ts';
+import { amountFrom, liquidityModule, runoffFrom, uninsuredRunFrom } from '../src/liquidity.ts';
 import { bankText } from '../src/index.ts';
 
 describe('liquidity questions', () => {
@@ -60,6 +60,15 @@ describe('liquidity questions', () => {
     expect(bankPlan('What happens to our deposits if rates rise 300 bp?')).toEqual({ tool: 'liq_rates_up', args: { shock_bp: 300 } });
     expect(bankPlan('What if 60% of uninsured deposits leave?')).toEqual({ tool: 'liq_run', args: { uninsured_pct: 60, insured_pct: 5 } });
     for (const q of ['How much of our deposits are uninsured?', 'How fast will deposits leave if rates rise?', 'What’s our deposit mix?']) expect(bank.request.test(q), q).toBe(true);
+    // The securities book: unrealized losses, AOCI, rate rises on the bonds and a sale.
+    expect(bankPlan('What are our unrealized losses?')).toEqual({ tool: 'liq_unrealized', args: { question: 'overview' } });
+    expect(bankPlan('What’s our AOCI?')).toEqual({ tool: 'liq_unrealized', args: { question: 'aoci' } });
+    expect(bankPlan('How much more would we lose on our bond portfolio if rates rise 200 bp?')).toEqual({ tool: 'liq_unrealized', args: { question: 'rates', shock_bp: 200 } });
+    expect(bankPlan('What’s our AOCI, and how much would we lose if rates rise another 100 bp?')).toEqual({ tool: 'liq_unrealized', args: { question: 'rates', shock_bp: 100 } });
+    expect(bankPlan('What if we sold $50M of securities?')).toEqual({ tool: 'liq_unrealized', args: { question: 'sale', sell_amount: 50e6 } });
+    expect(bankPlan('Can we survive 30 days of withdrawals without selling assets at a loss?')).toEqual({ tool: 'liq_funding', args: {} });
+    expect(amountFrom('sell $2.5 billion of bonds')).toBe(2.5e9);
+    expect(amountFrom('sell 750k of bonds')).toBe(750e3);
     // Reporting questions stay with the Call Report agent.
     expect(bank.request.test('What did we report for uninsured deposits on RC-O?')).toBe(false);
     // A credit union's loan-to-share stays with Analytics.
@@ -146,6 +155,16 @@ describe.skipIf(!bankUp)('a bank’s funding risk after SVB', () => {
       }
       expect(d.base.rateDriven).toBe(0);
       expect(d.scenarios[1]!.uninsuredLeaves).toBeCloseTo(d.uninsured * 0.08 * 2, 0);
+      // The securities book: losses grow with each rise, a sale realizes the average discount, AOCI is in book equity.
+      const sec = (await new FundingRiskService(pool).securities({ sell: 50e6 }))!;
+      expect(sec.loss).toBeCloseTo(f.unrealized.total, 0);
+      expect(sec.equityExAoci).toBeCloseTo(sec.equity - sec.aoci, 0);
+      expect(sec.trend).toHaveLength(5);
+      expect(sec.shocks.map((x) => x.bp)).toEqual([100, 200, 300]);
+      for (let i = 1; i < sec.shocks.length; i++) expect(sec.shocks[i]!.loss).toBeGreaterThan(sec.shocks[i - 1]!.loss);
+      expect(sec.shocks[0]!.pricePct).toBeLessThan(0);
+      expect(sec.sale!.loss).toBeCloseTo(50e6 * sec.lossRate, 0);
+      expect(sec.sale!.leverageAfter).toBeLessThan(sec.leverageNow);
       // The model may name only the uninsured share; insured deposits then keep the standard 5%.
       const run = liquidityModule({} as LiquidityService, new FundingRiskService(pool)).tools.find((t) => t.name === 'liq_run')!;
       expect(run.input.safeParse({ uninsured_pct: 60 }).success).toBe(true);

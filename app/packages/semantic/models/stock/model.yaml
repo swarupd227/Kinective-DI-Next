@@ -303,6 +303,17 @@ measures:
       call_report_history: "SUM(CASE WHEN cvh.code IN ('018', '860C') THEN cvh.amount ELSE 0 END)"
       ffiec_report: "SUM(CASE WHEN fv.code = 'RCON2200' THEN fv.amount WHEN fv.code = 'RCON3190' THEN fv.amount ELSE 0 END)"
       ffiec_history: "SUM(CASE WHEN fvh.code = 'RCON2200' THEN fvh.amount WHEN fvh.code = 'RCON3190' THEN fvh.amount ELSE 0 END)"
+  unrealized_securities_loss_sum:
+    unit: usd
+    exprs:
+      # Book value (held to maturity at amortized cost, available for sale at amortized cost) less fair value.
+      ffiec_report: "SUM(CASE WHEN fv.code IN ('RCON1754', 'RCON1772') THEN fv.amount WHEN fv.code IN ('RCON1771', 'RCON1773') THEN -fv.amount ELSE 0 END)"
+      ffiec_history: "SUM(CASE WHEN fvh.code IN ('RCON1754', 'RCON1772') THEN fvh.amount WHEN fvh.code IN ('RCON1771', 'RCON1773') THEN -fvh.amount ELSE 0 END)"
+  aoci_sum:
+    unit: usd
+    exprs:
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RCONB530' THEN fv.amount ELSE 0 END)"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RCONB530' THEN fvh.amount ELSE 0 END)"
   uninsured_deposits_sum:
     unit: usd
     exprs:
@@ -806,6 +817,40 @@ metrics:
     regulatory_basis: Basel III standardized approach, 12 CFR 3, 217 and 324; a bank on the community bank leverage ratio does not file it (RC-R Part II).
     synonyms: [cet1, cet 1, cet1 ratio, common equity tier 1, common equity tier 1 ratio, common equity ratio, risk-based capital, risk based capital, basel iii]
     requires_any: [cet, common equity, risk-based, risk based, basel]
+    owner: Finance data team
+    dimensions_allowed: []
+  unrealized_securities_loss:
+    label: Unrealized securities losses
+    institution_types: [bank]
+    type: simple
+    measure: unrealized_securities_loss_sum
+    format: currency
+    description: Book value of the securities less their fair value, held to maturity (RC-B RCON1754 less RCON1771) and available for sale (RCON1772 less RCON1773), from the Call Report. Realized only if the securities are sold.
+    synonyms: [unrealized losses, unrealized securities losses, unrealized loss, securities losses, bond losses, underwater bonds, paper losses]
+    requires_any: [unrealized, underwater, paper loss, bond loss, securities loss]
+    owner: Finance data team
+    dimensions_allowed: []
+  unrealized_loss_to_tier1:
+    label: Unrealized losses to tier 1
+    institution_types: [bank]
+    type: ratio
+    numerator: unrealized_securities_loss_sum
+    denominator: net_worth_sum
+    format: percent_1
+    description: Unrealized securities losses as a share of tier 1 capital (RC-R RCON8274). Under the AOCI opt-out they don't reduce regulatory capital until realized. DI watches above 25% and treats 50% or more as a concern; SVB's were nearly all of its equity.
+    synonyms: [unrealized losses to tier 1, unrealized losses to capital, unrealized loss ratio, securities losses to capital]
+    requires_any: [unrealized, underwater]
+    owner: Finance data team
+    dimensions_allowed: []
+  aoci:
+    label: Accumulated other comprehensive income (AOCI)
+    institution_types: [bank]
+    type: simple
+    measure: aoci_sum
+    format: currency
+    description: Accumulated other comprehensive income (RC RCONB530), mostly the after-tax unrealized gain or loss on available-for-sale securities. It is part of book equity; a bank that has made the AOCI opt-out election leaves it out of regulatory capital.
+    synonyms: [aoci, accumulated other comprehensive income, accumulated other comprehensive loss, other comprehensive income]
+    requires_any: [aoci, comprehensive]
     owner: Finance data team
     dimensions_allowed: []
   uninsured_deposits:
