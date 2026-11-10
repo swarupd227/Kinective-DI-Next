@@ -3,7 +3,17 @@
 import { describe, expect, it } from 'vitest';
 import { SemanticService } from '@dinext/semantic';
 import { tenantPool, warehouseAvailable } from '@dinext/tenant-db';
-import { cfoScorecard } from '../src/index.ts';
+import { CFO_REQUEST, cfoModule, cfoScorecard } from '../src/index.ts';
+
+describe('CFO Scorecard in a conversation', () => {
+  it('answers scorecard requests and leaves the branch scorecard to Report Builder', () => {
+    for (const q of ['Show me the CFO scorecard', 'Open the CFO Scorecard', 'How do the CFO measures look?', 'Which CFO measures need attention, and why?', 'Show the scorecard for the CFO']) expect(CFO_REQUEST.test(q), q).toBe(true);
+    for (const q of ['Show the branch scorecard', 'Open the August branch scorecard for Riverside', 'What does a CFO care about in deposits?']) expect(CFO_REQUEST.test(q), q).toBe(false);
+    const spec = cfoModule(async () => ({}) as never, {} as never);
+    expect(spec.plan('Show me the CFO scorecard', {} as never)).toEqual({ tool: 'cfo_scorecard', args: {} });
+    expect(spec.plan('Which CFO measures need attention, and why?', {} as never)).toEqual({ tool: 'cfo_attention', args: {} });
+  });
+});
 
 const up = await warehouseAvailable('dinext_t_test_bank').then((ok) => ok && tenantPool('dinext_t_test_bank').query('SELECT 1 FROM cr_value LIMIT 1').then(() => true, () => false));
 
@@ -42,6 +52,13 @@ describe.skipIf(!up)('CFO Scorecard', () => {
       if (nim.plan !== null && nim.peer !== null && nim.now! < nim.plan && nim.now! < nim.peer) expect(nim.read).toBe('Concern');
       expect(s.headline).not.toMatch(/\([^)]*\(/);
       expect(s.quarter).toMatch(/^Q[1-4] \d{4}$/);
+      // The conversation answer carries the same lines as the page.
+      const spec = cfoModule(async () => svc, pool);
+      const ctx = { user: { id: 'u', name: 'Elena Ortiz' }, modules: ['cfo'], runId: 'r', threadId: 't' };
+      const view = (await spec.tools[0]!.run({} as never, ctx)) as { text: string; blocks: { data: { rows: unknown[] } }[] };
+      expect(view.text).toContain(s.headline);
+      expect(view.blocks[0]!.data.rows).toHaveLength(s.lines.length);
+      await expect(spec.tools[0]!.run({} as never, { ...ctx, modules: [] })).rejects.toThrow(/isn’t part of your DI access/);
     } finally {
       await pool.end();
     }

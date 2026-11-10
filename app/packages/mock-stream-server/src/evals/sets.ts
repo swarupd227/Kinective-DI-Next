@@ -170,6 +170,8 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-SVB-001', set: 'golden', persona: 'bank_cfo', q: 'Can we survive 30 days of withdrawals without selling assets at a loss?', agent: 'Liquidity', contains: ['realize no loss', 'LCR'], approval: 'none' },
   { id: 'GQ-SVB-002', set: 'golden', persona: 'bank_cfo', q: 'What if 60% of uninsured deposits leave?', agent: 'Liquidity', contains: ['of uninsured'], approval: 'none' },
   { id: 'GQ-SVB-003', set: 'golden', persona: 'bank_cfo', q: 'What’s our LCR and NSFR?', agent: 'Liquidity', contains: ['LCR', 'NSFR'], approval: 'none' },
+  { id: 'GQ-CFO-001', set: 'golden', persona: 'bank_cfo', q: 'Show me the CFO scorecard', agent: 'CFO Scorecard', contains: ['CFO Scorecard for'], approval: 'none' },
+  { id: 'GQ-CFO-002', set: 'golden', persona: 'bank_cfo', q: 'Which CFO measures need attention, and why?', agent: 'CFO Scorecard', contains: ['To watch'], approval: 'none' },
   { id: 'GQ-FEE-001', set: 'golden', persona: 'bank_cfo', q: 'What’s our non-interest income?', agent: 'Profitability', contains: ['of revenue'], approval: 'none' },
   { id: 'GQ-FEE-002', set: 'golden', persona: 'bank_cfo', q: 'How much of our revenue doesn’t depend on rates?', agent: 'Profitability', contains: ['depend on rates'], approval: 'none' },
   { id: 'GQ-FEE-003', set: 'golden', persona: 'bank_cfo', q: 'Where does our fee income come from?', agent: 'Profitability', contains: ['wealth management'], approval: 'none' },

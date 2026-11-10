@@ -4,7 +4,9 @@
 // catalog, so the page and an answer in a conversation always agree.
 import type { SemanticService } from '@dinext/semantic';
 import type { Pool } from '@dinext/tenant-db';
-import { NII_GROWTH_WATCH } from '@dinext/di-core';
+import { z } from 'zod';
+import { CoreError, NII_GROWTH_WATCH } from '@dinext/di-core';
+import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 export type CfoRead = 'Strong' | 'Watch' | 'Concern';
 export type CfoGroup = 'Capital' | 'Earnings' | 'Funding' | 'Credit quality';
@@ -171,4 +173,81 @@ export async function cfoScorecard(svc: SemanticService, pool: Pool) {
       ? `Nothing is a concern. To watch: ${watch.map(name).join('; ')}.${capitalLine}`
       : `Every measure is on or better than plan and peers.${capitalLine}`;
   return { lines, headline, asOf: end, quarter: lines[0]?.trend.at(-1)?.period ?? '' };
+}
+
+// The scorecard in a conversation: "Show me the CFO scorecard" answers with the same lines as the page,
+// and "Which CFO measures need attention?" with the ones DI reads as a concern or to watch. Banks only.
+export const CFO_REQUEST = /\bcfo\b[^.?!]{0,40}\b(?:scorecard|measures?|metrics?|view|dashboard|page|figures|numbers|kpis?)\b|\b(?:scorecard|dashboard)\b[^.?!]{0,30}\bcfo\b|\bfinance scorecard\b/i;
+const CFO_NO_ACCESS = 'The CFO Scorecard isn’t part of your DI access. It is for a bank’s finance leaders.';
+const CFO_COLS = [
+  { field: 'group', headerName: 'Area', type: 'text' as const },
+  { field: 'measure', headerName: 'Measure', type: 'text' as const },
+  { field: 'now', headerName: 'Now', type: 'text' as const },
+  { field: 'yearAgo', headerName: 'A year ago', type: 'text' as const },
+  { field: 'plan', headerName: 'Plan', type: 'text' as const },
+  { field: 'peer', headerName: 'Peers', type: 'text' as const },
+  { field: 'read', headerName: 'DI’s read', type: 'text' as const },
+  { field: 'why', headerName: 'Why', type: 'text' as const },
+];
+const cfoRow = (l: CfoLine) => ({
+  group: l.group,
+  measure: l.label,
+  now: pct(l.now, l.places),
+  yearAgo: l.growth ? '—' : pct(l.yearAgo, l.places),
+  plan: l.plan === null && l.floor ? `${pct(l.floor.value, l.places)} minimum` : pct(l.plan, l.places),
+  peer: pct(l.peer, l.places),
+  read: l.read,
+  why: l.why,
+});
+
+export function cfoModule(svc: () => Promise<SemanticService>, pool: Pool): ModuleSpec {
+  const need = (ctx: ModuleContext) => {
+    if (!ctx.modules.includes('cfo')) throw new CoreError('NO_ACCESS', CFO_NO_ACCESS);
+  };
+  const spec: ModuleSpec = {
+    id: 'cfo',
+    prefix: 'cfo',
+    agent: 'CFO Scorecard',
+    request: CFO_REQUEST,
+    noAccess: CFO_NO_ACCESS,
+    sources: [{ kind: 'table', label: 'FFIEC 051 Call Report values', ref: 'table:cr_value' }],
+    prompt: ({ tenant, user, title }) => `You are the CFO Scorecard agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) runs the bank's finances. The scorecard is capital, earnings, funding and credit quality from the Call Report, each against plan, peers and regulatory minimums, with DI's read.
+
+- "Show me the CFO scorecard", "how do the CFO measures look?": cfo_scorecard.
+- "Which CFO measures need attention, and why?": cfo_attention.`,
+    plan: (text) => (/\b(attention|concern|watch|worry|worst|behind|problems?|wrong)\b/i.test(text) ? { tool: 'cfo_attention', args: {} } : { tool: 'cfo_scorecard', args: {} }),
+    tools: [
+      {
+        name: 'cfo_scorecard',
+        description: 'Every CFO Scorecard measure for the latest quarter, with a year ago, plan, peers, minimums and DI’s read.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const s = await cfoScorecard(await svc(), pool);
+          return {
+            text: `CFO Scorecard for ${s.quarter}. ${s.headline} The CFO Scorecard page has the five-quarter charts.`,
+            blocks: [moduleTable(spec, `CFO Scorecard, ${s.quarter}`, ctx.runId, 'cfo.scorecard', CFO_COLS, s.lines.map(cfoRow))],
+            suggestions: ['Which CFO measures need attention, and why?', 'How much did our net interest income grow?', 'What are our Basel III ratios?'],
+          };
+        },
+      },
+      {
+        name: 'cfo_attention',
+        description: 'The CFO Scorecard measures DI reads as a concern or to watch, and why.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const s = await cfoScorecard(await svc(), pool);
+          const flagged = s.lines.filter((l) => l.read !== 'Strong').sort((a, b) => (a.read === b.read ? 0 : a.read === 'Concern' ? -1 : 1));
+          const ask: Record<string, string> = { net_interest_margin: 'Why is our net interest margin below peers?', nii_growth: 'How much did our net interest income grow, and why?', non_interest_income_share: 'How much of our revenue doesn’t depend on rates?', loan_to_share_ratio: 'Is our loan-to-deposit ratio too low or too high?', uninsured_deposit_ratio: 'How much of our deposits are uninsured?', unrealized_loss_to_tier1: 'What are our unrealized losses on securities?', return_on_assets: 'Which products are most profitable?' };
+          return {
+            text: flagged.length ? `${s.headline}` : `Nothing on the CFO Scorecard needs attention for ${s.quarter}. ${s.headline}`,
+            blocks: flagged.length ? [moduleTable(spec, `Needs attention, ${s.quarter}`, ctx.runId, 'cfo.attention', CFO_COLS, flagged.map(cfoRow))] : [],
+            suggestions: [...flagged.map((l) => ask[l.metric]).filter((q): q is string => Boolean(q)).slice(0, 3), 'Show me the CFO scorecard'].slice(0, 4),
+          };
+        },
+      },
+    ],
+  };
+  return spec;
 }
