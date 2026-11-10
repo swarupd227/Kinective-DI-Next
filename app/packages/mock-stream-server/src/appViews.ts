@@ -1,7 +1,7 @@
 // The workspace pages (spec 8.10 to 8.15, 8.19, 8.22). Each page opens on DI's view, then the figures
 // and records to check. They read the same DI Core services the agents use, under the same purview,
 // so a page and an answer always agree. Changes happen in a task, behind an approval card.
-import { bankText, cfoScorecard } from '@dinext/agents';
+import { RAMP_COLUMNS, bankText, cfoScorecard, rampRows } from '@dinext/agents';
 import type { SemanticService } from '@dinext/semantic';
 import type { AppTile, AppView, AppViewId, Block, ListBlock, TableBlock } from '@dinext/block-schemas';
 import { FundingRiskService, memberNumber, WorkflowDefService, WorksheetService, TaskService, workToday, CampaignService, CollectionsService, IndirectService, ProspectService, attritionBand, CalendarService, CalendarStore, CallReportService, DataLogService, DelinquencyService, DQ_BUCKETS, IrrService, LiquidityService, pctAgainst, MEMBERSHIP_BENCHMARKS, MembershipService, FILE_FOLDERS, FILE_LIBRARY, FileStore, foldersFor, GovernanceService, IssueService, OnboardingService, OperationsService, RetentionService, SAVED_QUERIES, SegService, type CalendarEvent, type CoreContext } from '@dinext/di-core';
@@ -426,6 +426,38 @@ export function createAppViews(deps: ViewDeps) {
       const oneYear = a.gap.find((g) => g.label === '3–12 months')!;
       const asOf = new Date(`${a.asOf}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
       const topNev = [...a.drivers].sort((x, y) => x.nevChange - y.nevChange)[0]!;
+      if (a.bank) {
+        // A bank: EVE and NII against the board's limit for each shock, and NII over two years as the Fed moves.
+        const two = a.scenarios.find((x) => x.shockBp === 200)!;
+        const ramp2 = a.ramps.find((r) => r.shockBp === 200 && r.ramp)!;
+        const flagged = a.scenarios.filter((x) => x.status !== 'Within');
+        const topEve = [...(a.driversByShock[200] ?? a.drivers)].sort((x, y) => x.nevChange - y.nevChange)[0]!;
+        const tone = (x: { status: string }) => (x.status === 'Breach' ? 'danger' : x.status === 'Watch' ? 'warning' : 'neutral');
+        return {
+          title: 'Interest Rate Risk',
+          lede: `Net interest income over the next 12 months and two years, the economic value of equity (EVE) and the repricing gap, under rate shocks and gradual moves, against the board’s limit for each shock, from the balances as of ${asOf}. DI’s estimate from core data; the ALM vendor’s model remains the one of record.`,
+          take: {
+            headline: `If the Fed raised rates 200 bp at once, EVE would fall ${Math.abs(two.nevPct).toFixed(1)}% (limit −${two.nevLimitPct}%) and net interest income ${Math.abs(two.niiPct).toFixed(1)}% over the next 12 months (limit −${two.niiLimitPct}%), mostly from ${topEve.name.toLowerCase()}; over a year, NII would be ${pc(ramp2.year1Pct)} then ${pc(ramp2.year2Pct)} in the second. ${flagged.length ? flagged.map((x) => `${bp(x.shockBp)} ${x.status === 'Breach' ? 'breaches' : 'is close to'} its limit (EVE ${pc(x.nevPct)} against −${x.nevLimitPct}%)`).join('; ') + '.' : 'Every shock is within the board’s limits.'}`,
+            action: { label: 'What happens to our value?', ask: 'What happens to our value if the Fed hikes 200 bp?' },
+          },
+          tiles: [
+            { label: 'EVE at +200 bp', value: pc(two.nevPct), detail: `limit −${two.nevLimitPct}%`, tone: tone(two) },
+            { label: 'NII at +200 bp', value: pc(two.niiPct), detail: `limit −${two.niiLimitPct}%`, tone: two.niiPct < -two.niiLimitPct ? 'danger' : 'neutral' },
+            { label: 'NII, +200 bp over a year', value: pc(ramp2.year2Pct), detail: `second year; first ${pc(ramp2.year1Pct)}` },
+            { label: '1-year cumulative gap', value: `${oneYear.cumulativePct.toFixed(1)}%`, detail: 'of total assets' },
+          ],
+          prompts: ['What happens to our value if the Fed hikes 200 bp?', 'What if the Fed raises rates 200 bp gradually over a year?', 'What drives our interest rate risk at plus 300 basis points?', 'What assumptions does the model use?'],
+          blocks: [
+            table('Rate shocks against the board’s limits', 'irr.scenarios', [text('shock', 'Rate shock'), { field: 'nii', headerName: 'NII, next 12 months', type: 'currency' }, text('niiPct', 'NII change'), text('niiLimit', 'NII limit'), { field: 'nev', headerName: 'EVE', type: 'currency' }, text('nevPct', 'EVE change'), text('nevLimit', 'EVE limit'), text('limits', 'Status')], a.scenarios.map((x) => ({ shock: bp(x.shockBp), nii: Math.round(x.nii), niiPct: x.shockBp ? pc(x.niiPct) : '', niiLimit: x.shockBp ? `−${x.niiLimitPct}%` : '', nev: Math.round(x.nev), nevPct: x.shockBp ? pc(x.nevPct) : '', nevLimit: x.shockBp ? `−${x.nevLimitPct}%` : '', limits: x.shockBp ? x.status : '' }))),
+            bar('Change in EVE', 'irr.nev', a.scenarios.filter((x) => x.shockBp).map((x) => [bp(x.shockBp), Math.round(x.nevChange)] as [string, number]), 'currency', 'Change in EVE', `Base ${m(a.base.nev)}. Worst: ${bp(worstNev.shockBp)}, ${pc(worstNev.nevPct)}; at −300 bp, ${pc(down.nevPct)}.`),
+            bar('Change in 12-month net interest income', 'irr.nii', a.scenarios.filter((x) => x.shockBp).map((x) => [bp(x.shockBp), Math.round(x.niiChange)] as [string, number]), 'currency', 'Change in NII', `Base ${m(a.base.nii)}. Worst: ${bp(worstNii.shockBp)}, ${pc(worstNii.niiPct)}.`),
+            table('Net interest income over two years: rates moving at once or over a year', 'irr.ramps', RAMP_COLUMNS, rampRows(a)),
+            table('What drives the change at +200 bp', 'irr.drivers', [text('name', 'Product'), text('side', 'Side'), { field: 'balance', headerName: 'Balance', type: 'currency' }, text('rate', 'Rate'), { field: 'nii', headerName: 'NII change', type: 'currency' }, { field: 'nev', headerName: 'EVE change', type: 'currency' }], [...(a.driversByShock[200] ?? a.drivers)].sort((x, y) => Math.abs(y.nevChange) - Math.abs(x.nevChange)).map((d) => ({ name: d.name, side: d.side === 'asset' ? 'Asset' : 'Liability', balance: Math.round(d.balance), rate: `${d.rate.toFixed(2)}%`, nii: Math.round(d.niiChange), nev: Math.round(d.nevChange) }))),
+            table('Repricing gap', 'irr.gap', [text('band', 'Reprices or matures in'), { field: 'assets', headerName: 'Assets', type: 'currency' }, { field: 'liabilities', headerName: 'Liabilities', type: 'currency' }, { field: 'gap', headerName: 'Gap', type: 'currency' }, { field: 'cumulative', headerName: 'Cumulative gap', type: 'currency' }, text('pct', 'Cumulative, % of assets')], a.gap.map((g) => ({ band: g.label, assets: Math.round(g.assets), liabilities: Math.round(g.liabilities), gap: Math.round(g.gap), cumulative: Math.round(g.cumulative), pct: `${g.cumulativePct.toFixed(1)}%` }))),
+            table('Assumptions', 'irr.assumptions', [text('item', 'Assumption'), text('detail', 'What DI uses')], a.assumptions.map(([item, detail]) => ({ item, detail }))),
+          ],
+        };
+      }
       return {
         title: 'Interest Rate Risk',
         lede: `Net interest income at risk over the next 12 months, net economic value (NEV) and the repricing gap under parallel rate shocks, from the balances as of ${asOf}. DI’s estimate from core data; the ALM vendor’s model remains the one of record.`,

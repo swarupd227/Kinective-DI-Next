@@ -1,6 +1,8 @@
 // Interest rate risk (ALM): the repricing gap, net interest income at risk over the next 12 months
-// and net economic value (NEV) under parallel rate shocks, the measures NCUA examiners and the ALCO
-// review. It is computed from the institution's own loans, shares and certificates (balances, rates,
+// and economic value under parallel rate shocks, the measures examiners and the ALCO review. A credit
+// union calls economic value net economic value (NEV) and NCUA adds an NEV ratio; a bank calls it the
+// economic value of equity (EVE) and sets a limit for each shock, on NII and on EVE. Gradual ramps and
+// a second year of NII show what a Fed that moves step by step does to income. It is computed from the institution's own loans, shares and certificates (balances, rates,
 // ages and maturity dates), with the investments, cash and borrowings from the latest 5300 when there
 // is one. Behaviour that the data can't show (prepayment speeds, deposit decay and betas, the market
 // rate) is stated as assumptions, as an ALM model does. It is DI's estimate, not the model of record.
@@ -16,6 +18,15 @@ const MARKET_RATE = 0.0425;
 
 /** Board policy limits for the demo institution; an ALCO sets its own. */
 export const IRR_LIMITS = { niiDeclinePct: 20, nevDeclinePct: 30, nevRatioMinPct: 6 };
+/** A bank's limits, one for each shock up or down: the most NII and EVE may fall, percent. */
+export const IRR_LIMITS_BANK: { niiDeclinePct: Record<number, number>; eveDeclinePct: Record<number, number> } = {
+  niiDeclinePct: { 100: 5, 200: 10, 300: 15, 400: 20 },
+  eveDeclinePct: { 100: 10, 200: 20, 300: 30, 400: 35 },
+};
+/** A limit is close when the change has used this much of it. */
+export const IRR_WATCH_SHARE = 0.85;
+/** The shocks DI also runs as a gradual ramp over 12 months, with NII for two years. */
+export const RAMPS_BP = [-200, -100, 100, 200, 300];
 
 interface LoanBehaviour {
   /** Contractual term in months. */
@@ -158,8 +169,8 @@ export class IrrService {
           flows[m] = m === HORIZON - 1 ? left : left * monthly;
           left -= flows[m]!;
         }
-        // Non-maturity rates move with a lag: about three quarters of the beta within the year.
-        out.push({ name, side: 'liability', balance, rate, flows: () => flows, repriced: () => 0.75, beta: k.beta, discount: MARKET_RATE, floating: true });
+        // Non-maturity rates move with a lag: about three quarters of the beta within the year, all of it in the second.
+        out.push({ name, side: 'liability', balance, rate, flows: () => flows, repriced: (m) => (m <= 12 ? 0.75 : 1), beta: k.beta, discount: MARKET_RATE, floating: true });
       }
     }
     if (borrowings > 0) {
@@ -183,6 +194,22 @@ export class IrrService {
     const income = ps.filter((p) => p.side === 'asset').reduce((s, p) => s + of(p), 0);
     const expense = ps.filter((p) => p.side === 'liability').reduce((s, p) => s + of(p), 0);
     return { income, expense, nii: income - expense, byPosition: ps.map((p) => ({ name: p.name, side: p.side, amount: (p.side === 'asset' ? 1 : -1) * of(p) })) };
+  }
+
+  /**
+   * Net interest income month by month over two years on a static balance sheet, as a shock reaches each
+   * position when it reprices. Instantly, the market is at the shock from month one; as a ramp, it moves
+   * a twelfth of the way each month and holds after a year.
+   */
+  private niiPath(ps: Position[], shockBp: number, ramp: boolean) {
+    const year = [0, 0];
+    for (let m = 1; m <= 24; m++) {
+      const move = (shockBp / 10_000) * (ramp ? Math.min(m, 12) / 12 : 1);
+      let net = 0;
+      for (const p of ps) net += ((p.side === 'asset' ? 1 : -1) * p.balance * Math.max(0, p.rate + move * p.beta * Math.min(1, p.repriced(m)))) / 12;
+      year[m <= 12 ? 0 : 1]! += net;
+    }
+    return { year1: year[0]!, year2: year[1]! };
   }
 
   /** Present value of each position's cash flows plus interest, discounted at its rate plus the shock. */
@@ -211,15 +238,24 @@ export class IrrService {
 
   async analysis() {
     const { asOf, positions, netWorth, totalAssets, fromCallReport, form } = await this.positions();
+    const bank = form === 'FFIEC 051';
+    const limitsFor = (s: number) => (bank ? { nii: IRR_LIMITS_BANK.niiDeclinePct[Math.abs(s)] ?? IRR_LIMITS.niiDeclinePct, ev: IRR_LIMITS_BANK.eveDeclinePct[Math.abs(s)] ?? IRR_LIMITS.nevDeclinePct } : { nii: IRR_LIMITS.niiDeclinePct, ev: IRR_LIMITS.nevDeclinePct });
     // Non-rate-sensitive assets and equity are carried at book in both NEV and the ratio's denominator.
     const rateAssets = positions.filter((p) => p.side === 'asset').reduce((s, p) => s + p.balance, 0);
     const otherAssets = totalAssets ? Math.max(0, totalAssets - rateAssets) : rateAssets * 0.04;
     const base = { nii: this.nii(positions, 0), nev: this.nev(positions, 0) };
+    const perShock = new Map<number, { n: ReturnType<IrrService['nii']>; e: ReturnType<IrrService['nev']> }>();
     const scenarios = SHOCKS_BP.map((s) => {
       const n = this.nii(positions, s);
       const e = this.nev(positions, s);
+      perShock.set(s, { n, e });
       const nev = e.nev + otherAssets;
       const ratio = (nev / (e.assets + otherAssets)) * 100;
+      const niiPct = ((n.nii - base.nii.nii) / base.nii.nii) * 100;
+      const nevPct = ((nev - (base.nev.nev + otherAssets)) / (base.nev.nev + otherAssets)) * 100;
+      const lim = limitsFor(s);
+      // How much of each limit a fall uses; a bank has no NEV ratio floor.
+      const used = Math.max(-niiPct / lim.nii, -nevPct / lim.ev, bank ? 0 : IRR_LIMITS.nevRatioMinPct / ratio);
       return {
         shockBp: s,
         nii: n.nii,
@@ -229,9 +265,18 @@ export class IrrService {
         nevChange: nev - (base.nev.nev + otherAssets),
         nevPct: ((nev - (base.nev.nev + otherAssets)) / (base.nev.nev + otherAssets)) * 100,
         nevRatio: ratio,
-        withinLimits: ((n.nii - base.nii.nii) / base.nii.nii) * 100 >= -IRR_LIMITS.niiDeclinePct && ((nev - (base.nev.nev + otherAssets)) / (base.nev.nev + otherAssets)) * 100 >= -IRR_LIMITS.nevDeclinePct && ratio >= IRR_LIMITS.nevRatioMinPct,
+        niiLimitPct: lim.nii,
+        nevLimitPct: lim.ev,
+        withinLimits: s === 0 || used <= 1,
+        status: (s === 0 || used < IRR_WATCH_SHARE ? 'Within' : used <= 1 ? 'Watch' : 'Breach') as 'Within' | 'Watch' | 'Breach',
       };
     });
+    // Gradual ramps: the market moves a twelfth of the shock each month for a year, with NII for two years.
+    const flat = this.niiPath(positions, 0, false);
+    const ramps = RAMPS_BP.flatMap((s) => [false, true].map((ramp) => {
+      const p = this.niiPath(positions, s, ramp);
+      return { shockBp: s, ramp, year1: p.year1, year1Pct: ((p.year1 - flat.year1) / flat.year1) * 100, year2: p.year2, year2Pct: ((p.year2 - flat.year2) / flat.year2) * 100 };
+    }));
     // The repricing gap: what reprices or matures in each band, assets against liabilities.
     const gap = BUCKETS.map(([label, from, to]) => {
       // Variable-rate products and cash reprice in the first band; the rest as their cash flows come back.
@@ -246,35 +291,48 @@ export class IrrService {
       running += g.gap;
       return { ...g, cumulative: running, cumulativePct: (running / denominator) * 100 };
     });
-    // What drives the change at +300 bp: each position's contribution to NII and to NEV.
-    const up = this.nii(positions, 300);
-    const upNev = this.nev(positions, 300);
-    const drivers = positions.map((p, i) => ({
-      name: p.name,
-      side: p.side,
-      balance: p.balance,
-      rate: p.rate * 100,
-      niiChange: up.byPosition[i]!.amount - base.nii.byPosition[i]!.amount,
-      nevChange: (p.side === 'asset' ? 1 : -1) * (upNev.byPosition[i]!.value - base.nev.byPosition[i]!.value),
-    }));
+    // What drives the change at each shock: each position's contribution to NII and to economic value.
+    const driversAt = (s: number) => {
+      const { n: up, e: upNev } = perShock.get(s) ?? perShock.get(300)!;
+      return positions.map((p, i) => ({
+        name: p.name,
+        side: p.side,
+        balance: p.balance,
+        rate: p.rate * 100,
+        niiChange: up.byPosition[i]!.amount - base.nii.byPosition[i]!.amount,
+        nevChange: (p.side === 'asset' ? 1 : -1) * (upNev.byPosition[i]!.value - base.nev.byPosition[i]!.value),
+      }));
+    };
+    const drivers = driversAt(300);
+    const driversByShock = Object.fromEntries(SHOCKS_BP.filter((s) => s).map((s) => [s, driversAt(s)])) as Record<number, ReturnType<typeof driversAt>>;
     return {
       asOf,
+      bank,
+      /** What economic value is called: EVE for a bank, NEV for a credit union. */
+      ev: bank ? ('EVE' as const) : ('NEV' as const),
       fromCallReport,
       netWorth,
+      ramps,
+      niiFlat: flat,
       totalAssets: denominator,
       scenarios,
       base: scenarios.find((s) => s.shockBp === 0)!,
       gap: gapRows,
       drivers,
+      driversByShock,
       limits: IRR_LIMITS,
+      bankLimits: bank ? IRR_LIMITS_BANK : null,
       assumptions: [
         ['Balance sheet', 'Static: maturing balances are replaced like for like at the new rates.'],
         ['Rate shocks', `Instantaneous, parallel shifts of ${SHOCKS_BP.filter((s) => s).map((s) => `${s > 0 ? '+' : ''}${s}`).join(', ')} bp; rates are floored at zero.`],
-        ['Market rate', `${(MARKET_RATE * 100).toFixed(2)}% for new money and for discounting deposits and shares.`],
+        ['Rate ramps', `Gradual, parallel moves of ${RAMPS_BP.map((s) => `${s > 0 ? '+' : ''}${s}`).join(', ')} bp, a twelfth each month over 12 months, then held; net interest income for the first and second year on the same static balance sheet. The second year shows the full effect once more of the book has repriced.`],
+        ['Yield curve', 'Every move is parallel. Steeper or flatter curves (short and long rates moving apart) aren’t modeled.'],
+        ['Market rate', `${(MARKET_RATE * 100).toFixed(2)}% for new money and for discounting ${bank ? 'deposits' : 'deposits and shares'}.`],
         ['Loan prepayments', 'Auto 18%, consumer 12%, mortgages 8%, commercial 5–6% a year (CPR); 12% faster per 100 bp fall, slower when rates rise.'],
         ['Variable-rate loans', 'Credit cards and home equity lines reprice monthly.'],
-        ['Share decay and betas', 'Savings 12% a year, beta 0.20; checking 10%, 0.05; money market 25%, 0.55; IRAs 8%, 0.40. Certificates reprice at maturity.'],
+        [bank ? 'Deposit decay and betas' : 'Share decay and betas', `Savings 12% a year, beta 0.20; checking 10%, 0.05; money market 25%, 0.55; IRAs 8%, 0.40, reaching three quarters of the beta in the first year and all of it in the second. ${bank ? 'Time deposits' : 'Certificates'} reprice at maturity.`],
         ['Investments and borrowings', form === 'FFIEC 051' ? 'From the latest Call Report: securities (RC-B, held to maturity and available for sale) on a typical ladder, yielding 3.05%, and FHLB advances (RCON3190) over 1–3 years at 4.6%.' : fromCallReport ? 'From the latest 5300: Schedule B’s maturity distribution, yielding 3.05%, and FHLB borrowings over 1–3 years at 4.6%.' : 'Estimated from the balance sheet: a 24% investment ladder at 3.05% and borrowings of 1.5% of deposits.'],
+        ...(bank ? [['Limits', `The board’s limits for each shock, up or down: NII no worse than ${Object.entries(IRR_LIMITS_BANK.niiDeclinePct).map(([s, v]) => `−${v}% at ${s} bp`).join(', ')}; EVE no worse than ${Object.entries(IRR_LIMITS_BANK.eveDeclinePct).map(([s, v]) => `−${v}% at ${s} bp`).join(', ')}. A change using ${IRR_WATCH_SHARE * 100}% of a limit is watched.`] as [string, string]] : []),
         ['Model of record', 'This is DI’s estimate from core data. The ALM vendor’s model remains the one reported to the board and examiners.'],
       ] as [string, string][],
     };

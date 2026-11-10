@@ -232,10 +232,24 @@ export class AlcoService {
     const s20 = liq.stress.find((s) => s.pct === 20)!;
     const word = bank ? 'deposits' : 'shares';
     const line = (area: string, measure: string, policy: string, actual: string, j: { status: PolicyStatus; closeness: number }, brief: string): PolicyLine => ({ area, measure, policy, actual, brief, ...j });
+    // A bank sets a limit for each shock: the line is the shock that uses most of its limit.
+    const closest = (k: 'niiPct' | 'nevPct', lim: 'niiLimitPct' | 'nevLimitPct') => [...irr.scenarios].filter((s) => s.shockBp !== 0).sort((a, b) => b[k] / b[lim] - a[k] / a[lim]).at(-1)!;
+    const irrLines: PolicyLine[] = bank
+      ? (() => {
+          const n = closest('niiPct', 'niiLimitPct');
+          const e = closest('nevPct', 'nevLimitPct');
+          return [
+            line('Interest rate risk', `Net interest income, closest to its limit (${shock(n.shockBp)})`, `No worse than −${n.niiLimitPct}% at ±${Math.abs(n.shockBp)} bp`, signed(n.niiPct), judge(-n.niiPct, n.niiLimitPct, 'max'), `net interest income at ${shock(n.shockBp)} is ${signed(n.niiPct)} (limit −${n.niiLimitPct}%)`),
+            line('Interest rate risk', `EVE, closest to its limit (${shock(e.shockBp)})`, `No worse than −${e.nevLimitPct}% at ±${Math.abs(e.shockBp)} bp`, signed(e.nevPct), judge(-e.nevPct, e.nevLimitPct, 'max'), `EVE at ${shock(e.shockBp)} is ${signed(e.nevPct)} (limit −${e.nevLimitPct}%)`),
+          ];
+        })()
+      : [
+          line('Interest rate risk', `Net interest income, worst shock (${shock(niiWorst.shockBp)})`, `No worse than −${IRR_LIMITS.niiDeclinePct}%`, signed(niiWorst.niiPct), judge(-niiWorst.niiPct, IRR_LIMITS.niiDeclinePct, 'max'), `net interest income at ${shock(niiWorst.shockBp)} is ${signed(niiWorst.niiPct)} (limit −${IRR_LIMITS.niiDeclinePct}%)`),
+          line('Interest rate risk', `NEV, worst shock (${shock(nevWorst.shockBp)})`, `No worse than −${IRR_LIMITS.nevDeclinePct}%`, signed(nevWorst.nevPct), judge(-nevWorst.nevPct, IRR_LIMITS.nevDeclinePct, 'max'), `NEV at ${shock(nevWorst.shockBp)} is ${signed(nevWorst.nevPct)} (limit −${IRR_LIMITS.nevDeclinePct}%)`),
+          line('Interest rate risk', `NEV ratio, lowest (${shock(ratioWorst.shockBp)})`, `At least ${IRR_LIMITS.nevRatioMinPct}%`, p1(ratioWorst.nevRatio), judge(ratioWorst.nevRatio, IRR_LIMITS.nevRatioMinPct, 'min'), `the NEV ratio at ${shock(ratioWorst.shockBp)} is ${p1(ratioWorst.nevRatio)} (minimum ${IRR_LIMITS.nevRatioMinPct}%)`),
+        ];
     const policy: PolicyLine[] = [
-      line('Interest rate risk', `Net interest income, worst shock (${shock(niiWorst.shockBp)})`, `No worse than −${IRR_LIMITS.niiDeclinePct}%`, signed(niiWorst.niiPct), judge(-niiWorst.niiPct, IRR_LIMITS.niiDeclinePct, 'max'), `net interest income at ${shock(niiWorst.shockBp)} is ${signed(niiWorst.niiPct)} (limit −${IRR_LIMITS.niiDeclinePct}%)`),
-      line('Interest rate risk', `NEV, worst shock (${shock(nevWorst.shockBp)})`, `No worse than −${IRR_LIMITS.nevDeclinePct}%`, signed(nevWorst.nevPct), judge(-nevWorst.nevPct, IRR_LIMITS.nevDeclinePct, 'max'), `NEV at ${shock(nevWorst.shockBp)} is ${signed(nevWorst.nevPct)} (limit −${IRR_LIMITS.nevDeclinePct}%)`),
-      line('Interest rate risk', `NEV ratio, lowest (${shock(ratioWorst.shockBp)})`, `At least ${IRR_LIMITS.nevRatioMinPct}%`, p1(ratioWorst.nevRatio), judge(ratioWorst.nevRatio, IRR_LIMITS.nevRatioMinPct, 'min'), `the NEV ratio at ${shock(ratioWorst.shockBp)} is ${p1(ratioWorst.nevRatio)} (minimum ${IRR_LIMITS.nevRatioMinPct}%)`),
+      ...irrLines,
       line('Liquidity', 'Liquid assets to total assets', `At least ${LIQUIDITY_POLICY.liquidToAssetsMinPct}%`, la.toFixed(1) === LIQUIDITY_POLICY.liquidToAssetsMinPct.toFixed(1) ? `${la.toFixed(2)}%` : p1(la), judge(la, LIQUIDITY_POLICY.liquidToAssetsMinPct, 'min'), `liquid assets are ${la.toFixed(1) === LIQUIDITY_POLICY.liquidToAssetsMinPct.toFixed(1) ? la.toFixed(2) : la.toFixed(1)}% of total assets (minimum ${LIQUIDITY_POLICY.liquidToAssetsMinPct}%)`),
       line('Liquidity', `Available liquidity to ${word}`, `At least ${LIQUIDITY_POLICY.availableToSharesMinPct}%`, p1(liq.availableToShares), judge(liq.availableToShares, LIQUIDITY_POLICY.availableToSharesMinPct, 'min'), `available liquidity is ${p1(liq.availableToShares)} of ${word} (minimum ${LIQUIDITY_POLICY.availableToSharesMinPct}%)`),
       line('Liquidity', `Days covered if 20% of ${word} leave in 30 days`, `At least ${LIQUIDITY_POLICY.survivalMinDays} days`, `${s20.days} days`, judge(s20.days, LIQUIDITY_POLICY.survivalMinDays, 'min'), `a 20% run is covered for ${s20.days} days (minimum ${LIQUIDITY_POLICY.survivalMinDays})`),

@@ -223,7 +223,8 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
         { id: 'k3', title: 'Total deposits', kind: 'kpi', metrics: ['deposit_balance'], compare: true, size: 'quarter' },
         { id: 'k7', title: 'Certificates maturing in 90 days', kind: 'kpi', metrics: ['certificates_maturing_90_days'], size: 'quarter' },
         { id: 'a2', title: 'Earnings: yields, cost of funds and margin', kind: 'analysis', analysis: 'alco.earnings', metrics: [], size: 'half' },
-        { id: 'a3', title: 'Interest rate risk: NII and NEV under rate shocks', kind: 'analysis', analysis: 'alco.irr', metrics: [], size: 'half' },
+        { id: 'a3', title: institutionType === 'bank' ? 'Interest rate risk: NII and EVE under rate shocks' : 'Interest rate risk: NII and NEV under rate shocks', kind: 'analysis', analysis: 'alco.irr', metrics: [], size: 'half' },
+        ...(institutionType === 'bank' ? [{ id: 'a10', title: 'Net interest income over two years: rates moving at once or over a year', kind: 'analysis' as const, analysis: 'alco.ramps', metrics: [], size: 'full' as const }] : []),
         { id: 'a4', title: 'Liquidity: available funds and a deposit run', kind: 'analysis', analysis: 'alco.liquidity', metrics: [], size: 'half' },
         { id: 'a5', title: 'Capital', kind: 'analysis', analysis: 'alco.capital', metrics: [], size: 'half' },
         { id: 'a6', title: 'Funding: deposits and certificate maturities', kind: 'analysis', analysis: 'alco.funding', metrics: [], size: 'full' },
@@ -497,7 +498,7 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
     {
       templateId: 'board_report_quarterly',
       name: 'Board report',
-      description: `The quarter for the board: a scorecard against the 2026 plan and peers, earnings, capital, growth, ${persons}, loan-to-share and credit quality, with five quarters of trend.`,
+      description: `The quarter for the board: a scorecard against the 2026 plan and peers, earnings, capital, growth, ${persons}, ${institutionType === 'bank' ? 'loan-to-deposit' : 'loan-to-share'} and credit quality, with five quarters of trend.`,
       folder: 'Board',
       settings: { ...settings('quarter', ['Executive']), addHierarchyControls: false },
       layoutVersion: 2,

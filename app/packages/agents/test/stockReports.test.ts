@@ -29,7 +29,7 @@ for (const [schema, tenant, type] of [['dinext_t_test_cu', 'test_cu', 'credit_un
       } finally {
         await pool.end();
       }
-    });
+    }, 30_000);
 
     it('the ALCO pack leads with policy compliance and carries rate risk, liquidity, capital, funding and loans', async () => {
       const pool = tenantPool(schema);
@@ -37,15 +37,15 @@ for (const [schema, tenant, type] of [['dinext_t_test_cu', 'test_cu', 'credit_un
       try {
         const def = stockReports(type).find((d) => d.templateId === 'alco_monthly_pack')!;
         const { canvas } = await runReport(def, {}, svc, { canViewSql: false, analyses: combineAnalyses(alcoAnalyses(new AlcoService(pool, type)), profitAnalyses(new ProfitabilityService(pool, type)), camelsAnalyses({ pool, institutionType: type, semantic: async () => svc }), baselAnalyses({ pool, institutionType: type }), boardAnalyses(svc, pool, type), branchAnalyses(new BranchScorecardService(pool), new GoalsService(pool), type === 'bank' ? 'customers' : 'members'), lendingAnalyses(new LendingProductionService(pool), new GoalsService(pool))) }, { runId: `R-alco-${type}`, mode: 'read', status: 'stock', version: 2 });
-        expect(validateBlock(canvas).ok).toBe(true);
+        expect(validateBlock(canvas)).toMatchObject({ ok: true });
         const titles = canvas.data.widgets.map((w) => w.title);
         expect(titles[0]).toBe('Policy compliance');
-        expect(titles).toEqual(expect.arrayContaining(['Interest rate risk: NII and NEV under rate shocks', 'Liquidity: available funds and a deposit run', 'Capital', 'Funding: deposits and certificate maturities', 'Loans: mix, yields, growth and concentration']));
+        expect(titles).toEqual(expect.arrayContaining([type === 'bank' ? 'Interest rate risk: NII and EVE under rate shocks' : 'Interest rate risk: NII and NEV under rate shocks', ...(type === 'bank' ? ['Net interest income over two years: rates moving at once or over a year'] : []), 'Liquidity: available funds and a deposit run', 'Capital', 'Funding: deposits and certificate maturities', 'Loans: mix, yields, growth and concentration']));
         const policy = canvas.data.widgets[0]!.view;
         expect(policy.type).toBe('table');
         if (type === 'bank') {
-          // With capital from the Call Report, the bank's one breach is NEV at +400 bp, and the pack says so first.
-          expect(canvas.data.take?.headline).toMatch(/^1 of \d+ policy limits is breached\. NEV at \+400 bp is −\d+\.\d% \(limit −30%\)/);
+          // With capital from the Call Report, the bank's one breach is EVE at +400 bp against that shock's limit, and the pack says so first.
+          expect(canvas.data.take?.headline).toMatch(/^1 of \d+ policy limits is breached\. EVE at \+400 bp is −\d+\.\d% \(limit −35%\)/);
         } else {
           expect(canvas.data.take?.headline).toMatch(/^All \d+ policy limits are met/);
         }

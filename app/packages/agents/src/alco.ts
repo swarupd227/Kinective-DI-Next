@@ -4,6 +4,7 @@
 // whole review, not only the balances. One analysis per run serves every section.
 import type { Block, DiTake, TableBlock } from '@dinext/block-schemas';
 import type { AlcoService } from '@dinext/di-core';
+import { RAMP_COLUMNS, rampRows } from './irr.ts';
 import { moduleTable } from './moduleAgent.ts';
 import type { ReportAnalyses } from './report.ts';
 
@@ -13,7 +14,7 @@ const p2 = (n: number) => `${n.toFixed(2)}%`;
 const signed = (n: number) => `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(1)}%`;
 const shock = (bp: number) => (bp === 0 ? 'Base' : `${bp > 0 ? '+' : ''}${bp} bp`);
 
-export const ALCO_SECTIONS = ['alco.policy', 'alco.earnings', 'alco.irr', 'alco.liquidity', 'alco.capital', 'alco.funding', 'alco.pricing', 'alco.loans', 'alco.newloans'] as const;
+export const ALCO_SECTIONS = ['alco.policy', 'alco.earnings', 'alco.irr', 'alco.ramps', 'alco.liquidity', 'alco.capital', 'alco.funding', 'alco.pricing', 'alco.loans', 'alco.newloans'] as const;
 
 export function alcoAnalyses(svc: AlcoService): ReportAnalyses {
   const runs = new Map<string, ReturnType<AlcoService['analysis']>>();
@@ -60,9 +61,17 @@ export function alcoAnalyses(svc: AlcoService): ReportAnalyses {
         }
         case 'alco.irr': {
           const s = a.irr.scenarios;
+          if (a.bank) {
+            return {
+              block: t('Interest rate risk: NII and EVE under rate shocks', 'alco.irr', [text('shock', 'Shock'), text('nii', 'NII change'), text('niiLimit', 'NII limit'), text('eve', 'EVE change'), text('eveLimit', 'EVE limit'), text('limits', 'Status')], s.map((x) => ({ shock: shock(x.shockBp), nii: x.shockBp ? signed(x.niiPct) : '—', niiLimit: x.shockBp ? `−${x.niiLimitPct}%` : '', eve: x.shockBp ? signed(x.nevPct) : '—', eveLimit: x.shockBp ? `−${x.nevLimitPct}%` : '', limits: x.shockBp ? x.status : '' })), `NII over the next 12 months and the economic value of equity (EVE), each against the board’s limit for that shock. EVE is $${(a.irr.base.nev / 1e6).toFixed(1)}M at today’s rates.`),
+            };
+          }
           return {
             block: t('Interest rate risk: NII and NEV under rate shocks', 'alco.irr', [text('shock', 'Shock'), text('nii', 'NII change'), text('nev', 'NEV change'), text('ratio', 'NEV ratio'), text('limits', 'Board limits')], s.map((x) => ({ shock: shock(x.shockBp), nii: x.shockBp ? signed(x.niiPct) : '—', nev: x.shockBp ? signed(x.nevPct) : '—', ratio: p1(x.nevRatio), limits: x.withinLimits ? 'Within' : 'Breach' }))),
           };
+        }
+        case 'alco.ramps': {
+          return { block: t('Net interest income over two years: rates moving at once or over a year', 'alco.ramps', RAMP_COLUMNS, rampRows(a.irr), 'Change in NII against rates held flat, static balance sheet. The Fed usually moves step by step; by year two rates are at the same level either way, and more of the book has repriced.') };
         }
         case 'alco.liquidity': {
           const l = a.liq;

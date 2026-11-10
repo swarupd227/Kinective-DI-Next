@@ -521,7 +521,7 @@ export async function almSummary(alm: AlmDeps, institutionType: 'credit_union' |
   const run = liq.stress.find((s) => s.pct === 30)!;
   const la = liq.ratios[0]!;
   const lines = [
-    `At +300 bp, net interest income ${up.niiPct < 0 ? 'falls' : 'rises'} ${Math.abs(up.niiPct).toFixed(1)}% and NEV ${up.nevPct < 0 ? 'falls' : 'rises'} ${Math.abs(up.nevPct).toFixed(1)}% (NEV ratio ${up.nevRatio.toFixed(1)}%); at -300 bp, NEV ${down.nevPct < 0 ? 'falls' : 'rises'} ${Math.abs(down.nevPct).toFixed(1)}%. ${breaches.length ? `${breaches.map((b) => `${b.shockBp > 0 ? '+' : ''}${b.shockBp} bp`).join(' and ')} breaches the board's rate risk limits.` : 'Every rate shock is within the board limits.'}`,
+    `At +300 bp, net interest income ${up.niiPct < 0 ? 'falls' : 'rises'} ${Math.abs(up.niiPct).toFixed(1)}% and ${irr.ev} ${up.nevPct < 0 ? 'falls' : 'rises'} ${Math.abs(up.nevPct).toFixed(1)}%${irr.bank ? '' : ` (NEV ratio ${up.nevRatio.toFixed(1)}%)`}; at -300 bp, ${irr.ev} ${down.nevPct < 0 ? 'falls' : 'rises'} ${Math.abs(down.nevPct).toFixed(1)}%. ${breaches.length ? `${breaches.map((b) => `${b.shockBp > 0 ? '+' : ''}${b.shockBp} bp`).join(' and ')} breaches the board's rate risk limits.` : 'Every rate shock is within the board limits.'}`,
     `Available liquidity is ${m(liq.available)}, ${liq.availableToShares.toFixed(1)}% of ${funds}, with ${m(liq.contingent)} of borrowing capacity; liquid assets are ${pctAgainst(la.value, liq.policy.liquidToAssetsMinPct)} of total assets${la.value < liq.policy.liquidToAssetsMinPct ? `, below the ${liq.policy.liquidToAssetsMinPct}% policy` : ''}. A 30% ${run30} within 30 days would be covered ${run.coverage.toFixed(1)} times.`,
   ];
   return { lines, irr, liq };
