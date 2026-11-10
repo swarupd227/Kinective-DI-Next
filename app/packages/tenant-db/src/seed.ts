@@ -28,6 +28,7 @@ import { referralSeed, WORKFLOW_DDL, WORKFLOW_WRITE_TABLES, workflowSeed } from 
 import { generateTransactions, LOAN_GROWTH_DDL, LOAN_GROWTH_WRITE_TABLES, planLoanGrowth } from './loanGrowth.ts';
 import { CONCENTRATION_DDL, generateLoanDetail } from './concentration.ts';
 import { BSA_DDL, generateBsa } from './bsa.ts';
+import { generateOpRisk, OPRISK_DDL } from './oprisk.ts';
 
 const BATCH = 2000;
 
@@ -81,6 +82,17 @@ async function main() {
     await insert(admin, 'cdm_account_activity', ['account_kind', 'account_id', 'balance_30d', 'fees_30d'], rm.activity);
     for (const ddl of LOAN_GROWTH_DDL) await admin.query(ddl);
     for (const ddl of BSA_DDL) await admin.query(ddl);
+    for (const ddl of OPRISK_DDL) await admin.query(ddl);
+    if (profile.institutionType === 'bank') {
+      // The information security officer's register: incidents, vendors, controls, measures, tests and insurance.
+      const ops = generateOpRisk();
+      await insert(admin, 'ops_incident', ['incident_id', 'opened', 'category', 'severity', 'summary', 'downtime_minutes', 'customers_affected', 'loss', 'notification_incident', 'determined_at', 'notified_at', 'status'], ops.incidents);
+      await insert(admin, 'ops_vendor', ['vendor', 'service', 'criticality', 'last_review', 'next_review', 'soc_report_date', 'soc_opinion', 'exit_plan', 'note'], ops.vendors);
+      await insert(admin, 'ops_control', ['control', 'csf_function', 'status', 'target_date', 'note'], ops.controls);
+      await insert(admin, 'ops_metric', ['month', 'metric', 'value'], ops.metrics);
+      await insert(admin, 'ops_test', ['test', 'kind', 'tested_on', 'result', 'rto_target_hours', 'rto_actual_hours', 'findings_open', 'note'], ops.tests);
+      await insert(admin, 'ops_insurance', ['coverage', 'carrier', 'limit_amount', 'retention', 'premium', 'renewal', 'note'], ops.insurance);
+    }
     if (profile.institutionType === 'bank') {
       // The BSA officer's case system and the fraud team's records.
       const bsa = generateBsa(t.parties.length);

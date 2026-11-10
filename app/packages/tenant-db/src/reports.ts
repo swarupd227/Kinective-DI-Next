@@ -335,6 +335,28 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
               { id: 'a10', title: 'How DI measures BSA and fraud', kind: 'analysis' as const, analysis: 'bsa.assumptions', metrics: [], size: 'full' as const },
             ],
           },
+          // Operational and cyber risk: incidents, vendors, controls, resilience and whether insurance covers a ransomware event.
+          {
+            templateId: 'oprisk_cyber_quarterly',
+            name: 'Operational and cyber risk report',
+            description: 'Incidents and whether the regulator heard within 36 hours, critical vendors and their SOC reports, controls by NIST CSF 2.0 function, security measures, resilience tests against recovery targets, and whether cyber insurance would cover a ransomware event that stopped the bank.',
+            folder: 'Board',
+            settings: { ...settings('quarter', ['Executive', 'Finance']), addHierarchyControls: false },
+            layoutVersion: 1,
+            pendingEdits: [],
+            widgets: [
+              { id: 'a1', title: 'What needs attention', kind: 'analysis' as const, analysis: 'ops.attention', metrics: [], size: 'full' as const },
+              { id: 'a2', title: 'Cyber insurance against a ransomware event', kind: 'analysis' as const, analysis: 'ops.insurance', metrics: [], size: 'full' as const },
+              { id: 'a3', title: 'Incidents by quarter', kind: 'analysis' as const, analysis: 'ops.quarters', metrics: [], size: 'half' as const },
+              { id: 'a4', title: 'Security measures', kind: 'analysis' as const, analysis: 'ops.measures', metrics: [], size: 'half' as const },
+              { id: 'a5', title: 'Incidents', kind: 'analysis' as const, analysis: 'ops.incidents', metrics: [], size: 'full' as const },
+              { id: 'a6', title: 'Critical and high vendors', kind: 'analysis' as const, analysis: 'ops.vendors', metrics: [], size: 'full' as const },
+              { id: 'a7', title: 'Controls by NIST CSF 2.0 function', kind: 'analysis' as const, analysis: 'ops.controls', metrics: [], size: 'full' as const },
+              { id: 'a8', title: 'Resilience tests', kind: 'analysis' as const, analysis: 'ops.tests', metrics: [], size: 'full' as const },
+              { id: 'a9', title: 'Insurance in force', kind: 'analysis' as const, analysis: 'ops.policies', metrics: [], size: 'full' as const },
+              { id: 'a10', title: 'How DI measures operational and cyber risk', kind: 'analysis' as const, analysis: 'ops.assumptions', metrics: [], size: 'full' as const },
+            ],
+          },
         ]
       : []),
     {
