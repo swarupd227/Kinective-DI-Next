@@ -5,7 +5,7 @@
 import type { SemanticService } from '@dinext/semantic';
 import type { Pool } from '@dinext/tenant-db';
 import { z } from 'zod';
-import { CoreError, NII_GROWTH_WATCH } from '@dinext/di-core';
+import { CoreError, NII_GROWTH_WATCH, PerShareService } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 export type CfoRead = 'Strong' | 'Watch' | 'Concern';
@@ -62,6 +62,8 @@ export interface CfoLine {
   growth?: { of: string; watch: number };
   /** For a growth line, the dollar figure a year ago and now (annualized). */
   dollars?: { yearAgo: number; now: number };
+  /** For tangible book value per share growth, the figure a share a year ago and now. */
+  perShare?: { yearAgo: number; now: number };
   read: CfoRead;
   why: string;
 }
@@ -161,6 +163,20 @@ export async function cfoScorecard(svc: SemanticService, pool: Pool) {
     const plan = ref('plan', l.metric);
     const peer = ref('peer', l.metric);
     lines.push({ ...l, now, yearAgo, trend, plan, peer, ...judge(l, now, plan, peer) });
+  }
+  // Tangible book value per share, once the CFO has entered shares outstanding: what analysts value the bank on.
+  const ps = await new PerShareService(pool).figures().catch(() => null);
+  if (ps && !ps.missing && ps.tbvGrowth !== null && ps.yearAgo?.tbvps && ps.now.tbvps) {
+    const l: Line = { metric: 'tbv_per_share_growth', label: 'Tangible book value per share growth', group: 'Capital', good: 'up', places: 1 };
+    const plan = ref('plan', l.metric);
+    const peer = ref('peer', l.metric);
+    const span = `$${ps.yearAgo.tbvps.toFixed(2)} to $${ps.now.tbvps.toFixed(2)} a share`;
+    const v: { read: CfoRead; why: string } = ps.tbvGrowth < 0 ? { read: 'Concern', why: `Falling: ${span}, which analysts mark the stock down for.` } : (() => {
+      const j = judge(l, ps.tbvGrowth, plan, peer);
+      return { read: j.read, why: `${j.why.replace(/\.$/, '')}; ${span}.` };
+    })();
+    const at = lines.findIndex((x) => x.metric === 'unrealized_loss_to_tier1');
+    lines.splice(at < 0 ? lines.length : at + 1, 0, { ...l, now: ps.tbvGrowth, yearAgo: null, trend: [], plan, peer, perShare: { yearAgo: ps.yearAgo.tbvps, now: ps.now.tbvps }, ...v });
   }
   const concerns = lines.filter((l) => l.read === 'Concern');
   const watch = lines.filter((l) => l.read === 'Watch');

@@ -16,6 +16,8 @@ export const FFIEC_QUARTERS = [
   { end: '2026-06-30', label: 'Q2 2026', ytdMonths: 6 },
   { end: '2026-09-30', label: 'Q3 2026', ytdMonths: 9 },
 ] as const;
+/** The bank pays out 35% of earnings as common dividends. */
+const DIVIDEND_PAYOUT = 0.35;
 
 /** Due 30 days after quarter end through the FFIEC Central Data Repository (CDR); 35 only with more than one foreign office. */
 export const FFIEC_FILING = { form: 'FFIEC 051', quarter: 'Q3 2026', periodEnd: '2026-09-30', dueDate: '2026-10-30', priorQuarter: 'Q2 2026', edition: FFIEC_051_EDITION, filedIn: 'the FFIEC Central Data Repository (CDR)', preparer: 'Elena Ortiz, Chief Financial Officer' };
@@ -95,6 +97,8 @@ export function generateFfiecCallReport(t: GeneratedTenant) {
 
   const results: { values: Map<string, number>; text: Map<string, string> }[] = [];
   const equityAt = new Map<string, number>();
+  // Equity rolls forward from the first quarter: earnings, less dividends, plus the change in AOCI.
+  let carried: { equity: number; niYtd: number; aoci: number; year: string } | null = null;
   const aclAt = new Map<string, number>();
   FFIEC_QUARTERS.forEach((q, i) => {
     const v = new Map<string, number>();
@@ -161,12 +165,15 @@ export function generateFfiecCallReport(t: GeneratedTenant) {
     set('RCON0081', deps * 0.016);
     set('RCON0071', deps * 0.046);
     set('RCON2145', deps * 0.011);
-    set('RCON2160', deps * 0.012);
+    // Goodwill and a core deposit intangible from a 2021 branch purchase; the intangible amortizes.
+    set('RCON3163', 1_600_000);
+    set('RCON0426', 450_000 - 30_000 * i);
+    set('RCON2160', deps * 0.012 - get('RCON3163') - get('RCON0426'));
     set('RCON3190', [30_000_000, 29_000_000, 28_500_000, 27_000_000, 25_000_000][i]!);
     set('RCON2930', deps * 0.008);
     const eq = [0.0925, 0.093, 0.0935, 0.094, 0.0945][i]!;
     const assets = (get('RCON2200') + get('RCON3190') + get('RCON2930')) / (1 - eq);
-    const securities = assets - add(['RCON0081', 'RCON0071', 'RCONB529', 'RCON2145', 'RCON2160']);
+    const securities = assets - add(['RCON0081', 'RCON0071', 'RCONB529', 'RCON2145', 'RCON3163', 'RCON0426', 'RCON2160']);
     set('RCON1754', securities * 0.2);
     set('RCON1773', securities - get('RCON1754'));
     set('RCON1754B', get('RCON1754'));
@@ -175,12 +182,23 @@ export function generateFfiecCallReport(t: GeneratedTenant) {
     // Available-for-sale securities carry an unrealized loss of about 6%, after rate rises: an AOCI story.
     set('RCON1772', get('RCON1773') / [0.935, 0.938, 0.94, 0.942, 0.944][i]!);
     set('RCON0416', securities * 0.35);
-    set('RCON2170', add(['RCON0081', 'RCON0071', 'RCON1754', 'RCON1773', 'RCONB529', 'RCON2145', 'RCON2160']));
+    set('RCON2170', add(['RCON0081', 'RCON0071', 'RCON1754', 'RCON1773', 'RCONB529', 'RCON2145', 'RCON3163', 'RCON0426', 'RCON2160']));
+    set('RCONB530', -(get('RCON1772') - get('RCON1773')) * 0.79);
+    // Net income closes each year to date to its return on assets, about 1% for a well-run community bank.
+    const netIncome = get('RCON2170') * [0.0094, 0.0097, 0.0103, 0.0101, 0.0099][i]! * m;
+    const year = q.end.slice(0, 4);
+    if (carried) {
+      // The quarter's own earnings: year to date less the last quarter's in the same year.
+      const earned = netIncome - (carried.year === year ? carried.niYtd : 0);
+      const equity = carried.equity + earned * (1 - DIVIDEND_PAYOUT) + (get('RCONB530') - carried.aoci);
+      // Other liabilities take up the difference, so the balance sheet still balances.
+      set('RCON2930', get('RCON2170') - get('RCON2200') - get('RCON3190') - equity);
+    }
     set('RCON2948', add(['RCON2200', 'RCON3190', 'RCON2930']));
     set('RCON3210', get('RCON2170') - get('RCON2948'));
+    carried = { equity: get('RCON3210'), niYtd: netIncome, aoci: get('RCONB530'), year };
     set('RCON3230', 5_000_000);
     set('RCON3839', 45_000_000);
-    set('RCONB530', -(get('RCON1772') - get('RCON1773')) * 0.79);
     set('RCON3632', get('RCON3210') - get('RCON3230') - get('RCON3839') - get('RCONB530'));
     set('RCON3300', get('RCON2948') + get('RCON3210'));
     equityAt.set(q.end, get('RCON3210'));
@@ -222,8 +240,6 @@ export function generateFfiecCallReport(t: GeneratedTenant) {
     set('RIADF555', parties * 4.4 * [0.94, 0.96, 0.98, 1, 1.02][i]! * q.ytdMonths);
     set('RIADB497', get('RCON2170') * 0.001 * m);
     set('RIAD4079', add(['RIAD4070', 'RIAD4080', 'RIADC886', 'RIADC887', 'RIADC387', 'RIADB492', 'RIAD5416', 'RIADF555', 'RIADB497']));
-    // Net income closes each year to date to its return on assets, about 1% for a well-run community bank.
-    const netIncome = get('RCON2170') * [0.0094, 0.0097, 0.0103, 0.0101, 0.0099][i]! * m;
     set('RIAD4340', netIncome);
     set('RIAD4302', netIncome * (0.21 / 0.79));
     set('RIAD4301', get('RIAD4340') + get('RIAD4302'));
@@ -234,14 +250,17 @@ export function generateFfiecCallReport(t: GeneratedTenant) {
     // ---- RI-A changes in equity ----
     set('RIAD3217', equityAt.get(yearEnd) ?? get('RCON3210') * 0.965);
     set('RIAD4340A', get('RIAD4340'));
-    set('RIAD4460', get('RIAD4340') * 0.35);
+    set('RIAD4460', get('RIAD4340') * DIVIDEND_PAYOUT);
     set('RIADB511', get('RCON3210') - get('RIAD3217') - get('RIAD4340A') + get('RIAD4460'));
     set('RIAD3210', get('RCON3210'));
 
     // ---- RC-R Part I: the community bank leverage ratio ----
     text.set('RCONLE74', 'Yes');
     // AOCI opt-out: unrealized losses on available-for-sale securities don't reduce regulatory capital.
-    set('RCON8274', get('RCON3210') - get('RCONB530'));
+    // Goodwill and other intangibles come out of capital (the purchase was an asset deal, so no deferred tax offsets them).
+    set('RCONP841', get('RCON3163'));
+    set('RCONP842', get('RCON0426'));
+    set('RCON8274', get('RCON3210') - get('RCONB530') - get('RCONP841') - get('RCONP842'));
     set('RCONP742', get('RCON8274'));
     set('RCONA224', get('RCON3368'));
     v.set('RCON7204', Math.round((get('RCON8274') / get('RCONA224')) * 10_000) / 100);

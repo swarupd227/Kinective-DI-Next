@@ -30,9 +30,33 @@ export const BENCHMARK_DDL = [
      at DATETIME NOT NULL,
      approval_id VARCHAR(40) NULL
    )`,
+  // A bank's shares outstanding and share price at each quarter end. Neither is on the Call Report: the
+  // CFO enters them from the transfer agent's report and the market close, and each change is approved.
+  `CREATE TABLE fin_share (
+     quarter_end DATE NOT NULL PRIMARY KEY,
+     shares_outstanding BIGINT NOT NULL,
+     weighted_shares BIGINT NOT NULL,
+     price DECIMAL(10,2) NULL,
+     source VARCHAR(160) NOT NULL,
+     entered_by VARCHAR(80) NOT NULL,
+     approval_id VARCHAR(40) NULL
+   )`,
 ];
 
-export const BUDGET_WRITE_TABLES = ['fin_budget', 'fin_budget_event'];
+export const BUDGET_WRITE_TABLES = ['fin_budget', 'fin_budget_event', 'fin_share'];
+
+/** A bank's share register by quarter, as the CFO entered it: shares edge up as restricted stock vests. */
+export function shareSeed(institutionType: 'credit_union' | 'bank') {
+  if (institutionType !== 'bank') return [];
+  const q: [string, number, number, number][] = [
+    ['2025-09-30', 4_872_400, 4_871_100, 26.1],
+    ['2025-12-31', 4_875_900, 4_874_300, 25.4],
+    ['2026-03-31', 4_881_200, 4_878_800, 26.8],
+    ['2026-06-30', 4_884_000, 4_882_700, 27.2],
+    ['2026-09-30', 4_886_500, 4_885_300, 27.9],
+  ];
+  return q.map(([end, out, avg, price]) => [end, out, avg, price, 'Transfer agent report and OTCQX close', 'Elena Ortiz', null]);
+}
 
 /** This year's plan as approved lines, and the event that approved it. */
 export function budgetSeed(institutionType: 'credit_union' | 'bank') {
@@ -71,6 +95,10 @@ export function benchmarks(institutionType: 'credit_union' | 'bank'): Row[] {
       ['peer', 'member_growth', 1.0, PEER_BANK],
       ['plan', 'non_interest_income_share', 15, PLAN_BANK],
       ['peer', 'non_interest_income_share', 19.5, PEER_BANK],
+      ['plan', 'tbv_per_share_growth', 7, PLAN_BANK],
+      ['peer', 'tbv_per_share_growth', 6.5, PEER_BANK],
+      ['peer', 'price_to_tangible_book', 1.2, PEER_BANK],
+      ['peer', 'price_to_earnings', 11.5, PEER_BANK],
     ];
   }
   return [

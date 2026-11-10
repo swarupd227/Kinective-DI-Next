@@ -186,7 +186,7 @@ export class FundingRiskService {
       mortgages: g('RCON5367') * 0.65,
       otherLoans: Math.max(0, loans - g('RCON5367') - nonperforming) * 0.85,
       nonperforming,
-      fixedAndOther: g('RCON2145') + g('RCON2160'),
+      fixedAndOther: g('RCON2145') + g('RCON3163') + g('RCON0426') + g('RCON2160'),
       commitments: (g('RCON1797') * UNUSED.heloc + g('RCON1766') * UNUSED.ci + g('RCONF159') * UNUSED.construction) * 0.05,
     };
     const asfTotal = Object.values(asf).reduce((s, x) => s + x, 0);

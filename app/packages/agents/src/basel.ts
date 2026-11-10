@@ -75,7 +75,7 @@ const blocksFor = (who: Who, runId: string, v: View) => {
     capital: t('Regulatory capital', 'basel.capital', [text('item', 'Item'), { field: 'amount', headerName: 'Amount', type: 'currency' }, text('note', 'How it counts')], [
       { item: 'Total bank equity capital', amount: Math.round(c.equity), note: 'RCON3210.' },
       { item: c.aoci < 0 ? 'Add back: accumulated other comprehensive loss' : 'Less: accumulated other comprehensive income', amount: Math.round(Math.abs(c.aoci)), note: 'Removed under the AOCI opt-out election, so unrealized securities gains and losses don’t move regulatory capital.' },
-      { item: 'Less: goodwill, intangibles and deferred tax assets', amount: 0, note: 'None on the balance sheet DI holds.' },
+      { item: 'Less: goodwill and other intangibles', amount: Math.round(c.deductions), note: c.deductions ? 'RCONP841 and RCONP842: a core deposit intangible and goodwill from a branch purchase. No deferred tax assets to deduct.' : 'None on the balance sheet DI holds.' },
       { item: 'Common equity tier 1 capital', amount: Math.round(c.cet1), note: 'RCONP742.' },
       { item: 'Additional tier 1 capital', amount: Math.round(c.additionalTier1), note: 'No noncumulative perpetual preferred stock.' },
       { item: 'Tier 1 capital', amount: Math.round(c.tier1), note: 'RCON8274.' },

@@ -321,6 +321,12 @@ measures:
       # Book value (held to maturity at amortized cost, available for sale at amortized cost) less fair value.
       ffiec_report: "SUM(CASE WHEN fv.code IN ('RCON1754', 'RCON1772') THEN fv.amount WHEN fv.code IN ('RCON1771', 'RCON1773') THEN -fv.amount ELSE 0 END)"
       ffiec_history: "SUM(CASE WHEN fvh.code IN ('RCON1754', 'RCON1772') THEN fvh.amount WHEN fvh.code IN ('RCON1771', 'RCON1773') THEN -fvh.amount ELSE 0 END)"
+  tangible_common_equity_sum:
+    unit: usd
+    exprs:
+      # Equity less goodwill and other intangible assets (the demo bank has no preferred stock).
+      ffiec_report: "SUM(CASE WHEN fv.code = 'RCON3210' THEN fv.amount WHEN fv.code IN ('RCON3163', 'RCON0426') THEN -fv.amount ELSE 0 END)"
+      ffiec_history: "SUM(CASE WHEN fvh.code = 'RCON3210' THEN fvh.amount WHEN fvh.code IN ('RCON3163', 'RCON0426') THEN -fvh.amount ELSE 0 END)"
   aoci_sum:
     unit: usd
     exprs:
@@ -863,6 +869,17 @@ metrics:
     description: Accumulated other comprehensive income (RC RCONB530), mostly the after-tax unrealized gain or loss on available-for-sale securities. It is part of book equity; a bank that has made the AOCI opt-out election leaves it out of regulatory capital.
     synonyms: [aoci, accumulated other comprehensive income, accumulated other comprehensive loss, other comprehensive income]
     requires_any: [aoci, comprehensive]
+    owner: Finance data team
+    dimensions_allowed: []
+  tangible_common_equity:
+    label: Tangible common equity
+    institution_types: [bank]
+    type: simple
+    measure: tangible_common_equity_sum
+    format: currency
+    description: Equity (RC RCON3210) less goodwill (RCON3163) and other intangible assets (RCON0426); there is no preferred stock. Over shares outstanding, which the CFO enters each quarter, it is tangible book value per share, the figure analysts value a bank on.
+    synonyms: [tangible common equity, tce, tangible equity, tangible book value]
+    requires_any: [tangible, tce]
     owner: Finance data team
     dimensions_allowed: []
   uninsured_deposits:

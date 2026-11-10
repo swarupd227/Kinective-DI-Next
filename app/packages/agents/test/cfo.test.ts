@@ -23,11 +23,11 @@ describe.skipIf(!up)('CFO Scorecard', () => {
     try {
       const svc = await SemanticService.create(pool, 'test_bank', 'bank');
       const s = await cfoScorecard(svc, pool);
-      expect(s.lines.map((l) => l.metric)).toEqual(['cet1_ratio', 'net_worth_ratio', 'unrealized_loss_to_tier1', 'net_interest_margin', 'nii_growth', 'non_interest_income_share', 'return_on_equity', 'return_on_assets', 'efficiency_ratio', 'loan_to_share_ratio', 'uninsured_deposit_ratio', 'npl_ratio', 'net_charge_off_ratio', 'allowance_coverage']);
+      expect(s.lines.map((l) => l.metric)).toEqual(['cet1_ratio', 'net_worth_ratio', 'unrealized_loss_to_tier1', 'tbv_per_share_growth', 'net_interest_margin', 'nii_growth', 'non_interest_income_share', 'return_on_equity', 'return_on_assets', 'efficiency_ratio', 'loan_to_share_ratio', 'uninsured_deposit_ratio', 'npl_ratio', 'net_charge_off_ratio', 'allowance_coverage']);
       for (const l of s.lines) {
         expect(l.now, l.metric).not.toBeNull();
         // A growth line is one figure, this quarter on the same quarter a year ago.
-        expect(l.trend.length, l.metric).toBe(l.growth ? 0 : 5);
+        expect(l.trend.length, l.metric).toBe(l.growth || l.perShare ? 0 : 5);
         expect(l.why.length, l.metric).toBeGreaterThan(5);
       }
       const by = (m: string) => s.lines.find((l) => l.metric === m)!;
@@ -36,6 +36,10 @@ describe.skipIf(!up)('CFO Scorecard', () => {
       expect(nii.now!).toBeCloseTo(((nii.dollars!.now - nii.dollars!.yearAgo) / nii.dollars!.yearAgo) * 100, 6);
       expect(nii.read).toBe(nii.now! < 0 ? 'Concern' : nii.now! < 3 ? 'Watch' : 'Strong');
       expect(nii.why).toMatch(/\$\d+\.\d{2}M to \$\d+\.\d{2}M a year/);
+      // Tangible book value per share growth is judged against plan and peers, with the figure a share.
+      const tbv = by('tbv_per_share_growth');
+      expect(tbv.now!).toBeCloseTo(((tbv.perShare!.now - tbv.perShare!.yearAgo) / tbv.perShare!.yearAgo) * 100, 6);
+      expect(tbv.why).toMatch(/\$\d+\.\d{2} to \$\d+\.\d{2} a share/);
       // Capital is judged against its regulatory floor; the CET1 ratio sits far above it.
       expect(by('cet1_ratio').read).toBe('Strong');
       expect(by('cet1_ratio').why).toMatch(/above well capitalized/);

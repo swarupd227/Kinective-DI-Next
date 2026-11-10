@@ -52,8 +52,9 @@ for (const [schema, type] of [['dinext_t_test_bank', 'bank'], ['dinext_t_test_cu
       expect(n.rwa).toBeCloseTo(n.lines.reduce((s, l) => s + l.rwa, 0), 0);
       expect(n.rwa).toBeLessThan(n.totalAssets);
       expect(n.density).toBeGreaterThan(40);
-      // CET1 is equity less AOCI; tier 2 is the allowance within 1.25% of risk-weighted assets.
-      expect(n.capital.cet1).toBeCloseTo(n.capital.equity - n.capital.aoci, 0);
+      // CET1 is equity less AOCI, goodwill and other intangibles; tier 2 is the allowance within 1.25% of risk-weighted assets.
+      expect(n.capital.cet1).toBeCloseTo(n.capital.equity - n.capital.aoci - n.capital.deductions, 0);
+      if (type === 'bank') expect(n.capital.deductions).toBeGreaterThan(0);
       expect(n.capital.allowanceInTier2).toBeLessThanOrEqual(n.rwa * 0.0125 + 1);
       expect(n.capital.totalCapital).toBeCloseTo(n.capital.tier1 + n.capital.tier2, 0);
       const [cet1, tier1, total, leverage] = n.ratios;

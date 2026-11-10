@@ -129,6 +129,7 @@ export class BaselService {
     // Past due 90 days or more and nonaccrual loans are weighted 150% (residential mortgages 100%): 50 points more.
     add({ group: 'Loans', name: 'Past due 90+ days and nonaccrual: extra weight', code: 'RCON1407, RCON1403', exposure: g('RCON1407') + g('RCON1403'), weightPct: 50, basis: 'Past-due exposures rise to 150% (residential mortgages to 100%): 50 points on top of the loan’s weight.' });
     add({ group: 'Other assets', name: 'Premises and fixed assets', code: 'RCON2145', exposure: g('RCON2145'), weightPct: 100, basis: '100%.' });
+    add({ group: 'Other assets', name: 'Goodwill and other intangibles', code: 'RCON3163, RCON0426', exposure: g('RCON3163') + g('RCON0426'), weightPct: 0, basis: 'Deducted from capital (RCONP841, RCONP842), so not risk weighted.' });
     add({ group: 'Other assets', name: 'Other assets', code: 'RCON2160', exposure: g('RCON2160'), weightPct: 100, basis: 'Counted at 100%; any deferred tax assets over the threshold would be 250%.' });
     let obsNotional = 0;
     for (const c of A.commitments) {
@@ -165,7 +166,7 @@ export class BaselService {
       leverageAssets,
       density: totalAssets ? (rwa / totalAssets) * 100 : 0,
       loanWeightPct: loans ? (loanRwa / loans) * 100 : 0,
-      capital: { equity: g('RCON3210'), aoci: g('RCONB530'), cet1, additionalTier1, tier1, allowance, allowanceInTier2, allowanceExcluded: allowance - allowanceInTier2, tier2, totalCapital },
+      capital: { equity: g('RCON3210'), aoci: g('RCONB530'), deductions: g('RCONP841') + g('RCONP842'), cet1, additionalTier1, tier1, allowance, allowanceInTier2, allowanceExcluded: allowance - allowanceInTier2, tier2, totalCapital },
       ratios,
       bufferPct,
       distributionsLimited: bufferPct < CONSERVATION_BUFFER,
@@ -234,7 +235,7 @@ export class BaselService {
     const A = BASEL_ASSUMPTIONS;
     return [
       ['Basis', 'The standardized approach for community banks (12 CFR 3, 217 and 324), from the latest FFIEC 051 Call Report. DI’s estimate, not a filed RC-R Part II.'],
-      ['Capital', 'CET1 is equity less accumulated other comprehensive income (the AOCI opt-out election), with no goodwill, intangibles or deferred tax assets to deduct. No additional tier 1 or subordinated debt. Tier 2 is the allowance, up to 1.25% of risk-weighted assets.'],
+      ['Capital', 'CET1 is equity less accumulated other comprehensive income (the AOCI opt-out election) and less goodwill and other intangibles (RCONP841, RCONP842); there are no deferred tax assets to deduct. No additional tier 1 or subordinated debt. Tier 2 is the allowance, up to 1.25% of risk-weighted assets.'],
       ['Cash', `${A.cashVaultShare * 100}% of cash and noninterest-bearing balances is currency and coin (0%), the rest due from US banks (20%); interest-bearing balances are at the Federal Reserve (0%).`],
       ['Securities', `At amortized cost: ${A.securities.map((s) => `${s.name} ${Math.round(s.share * 100)}% at ${s.weight}%`).join('; ')}. The Call Report DI holds gives totals, not this mix.`],
       ['Construction loans', `${A.hvcreShare * 100}% are high-volatility commercial real estate (150%); the rest meet the exemptions (100%).`],
