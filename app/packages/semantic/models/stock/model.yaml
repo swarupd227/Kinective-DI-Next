@@ -1039,6 +1039,28 @@ metrics:
     requires_any: [allowance, acl, reserve, alll, coverage]
     owner: Finance data team
     dimensions_allowed: []
+  allowance_to_loans:
+    label: Allowance to loans
+    type: ratio
+    numerator: allowance_sum
+    denominator: call_report_loans_sum
+    format: percent_2
+    description: The allowance for credit losses on loans as a share of total loans at quarter end, from the latest Call Report (FFIEC 051 RCON3123 over RCON2122; 5300 AS0048 over 025B). Under CECL it is the lifetime loss the institution expects on today's loans.
+    synonyms: [allowance to loans, acl to loans, reserve to loans, allowance ratio, reserve ratio, cecl reserve, cecl coverage]
+    requires_any: [allowance, acl, reserve, cecl]
+    owner: Finance data team
+    dimensions_allowed: []
+  provision_to_average_loans:
+    label: Provision to average loans
+    type: ratio
+    numerator: provision_annualized_sum
+    denominator: average_loans_sum
+    format: percent_2
+    description: The provision for credit losses year to date, annualized (FFIEC 051 RIADJJ33; 5300 IS0017), as a share of average loans, the mean of this quarter's total loans and last year-end's.
+    synonyms: [provision to average loans, provision ratio, provision rate, credit loss expense ratio, provision to loans]
+    requires_any: [provision, credit loss expense]
+    owner: Finance data team
+    dimensions_allowed: []
   net_interest_income:
     label: Net interest income
     type: simple
@@ -1106,7 +1128,7 @@ metrics:
     type: simple
     measure: provision_annualized_sum
     format: currency
-    description: Credit loss expense, year to date from the 5300 (IS0017) and annualized.
+    description: Credit loss expense, year to date from the 5300 (IS0017) or the FFIEC 051 (RIADJJ33), annualized.
     synonyms: [provision, provision for credit losses, provision expense, credit loss expense, pll, loan loss provision]
     requires_any: [provision, credit loss expense, pll]
     owner: Finance data team

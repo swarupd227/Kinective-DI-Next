@@ -5,7 +5,7 @@
 import type { SemanticService } from '@dinext/semantic';
 import type { Pool } from '@dinext/tenant-db';
 import { z } from 'zod';
-import { CoreError, NII_GROWTH_WATCH, PerShareService } from '@dinext/di-core';
+import { CECL_HEAVY, CECL_LIGHT, CECL_SHORT, CeclService, CoreError, NII_GROWTH_WATCH, PerShareService } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 export type CfoRead = 'Strong' | 'Watch' | 'Concern';
@@ -64,6 +64,8 @@ export interface CfoLine {
   dollars?: { yearAgo: number; now: number };
   /** For tangible book value per share growth, the figure a share a year ago and now. */
   perShare?: { yearAgo: number; now: number };
+  /** For the allowance against DI's CECL estimate, both in dollars. */
+  cecl?: { booked: number; estimate: number };
   read: CfoRead;
   why: string;
 }
@@ -178,6 +180,20 @@ export async function cfoScorecard(svc: SemanticService, pool: Pool) {
     const at = lines.findIndex((x) => x.metric === 'unrealized_loss_to_tier1');
     lines.splice(at < 0 ? lines.length : at + 1, 0, { ...l, now: ps.tbvGrowth, yearAgo: null, trend: [], plan, peer, perShare: { yearAgo: ps.yearAgo.tbvps, now: ps.now.tbvps }, ...v });
   }
+  // The booked allowance against DI's own CECL estimate from the loan book: is the reserve enough?
+  const cecl = await new CeclService(pool).analysis().catch(() => null);
+  if (cecl?.bookedPct != null) {
+    const l: Line = { metric: 'allowance_to_cecl_estimate', label: 'Allowance to DI’s CECL estimate', group: 'Credit quality', good: 'up', places: 0 };
+    const b = cecl.bookedPct;
+    const span = `${money(cecl.now.allowance)} booked against ${money(cecl.estimate.total)}`;
+    const v: { read: CfoRead; why: string } =
+      b < CECL_SHORT ? { read: 'Concern', why: `Short: ${span}, under ${CECL_SHORT}% of DI’s estimate.` }
+      : b < CECL_LIGHT ? { read: 'Watch', why: `Light: ${span}, below DI’s ${CECL_LIGHT}% guide.` }
+      : b > CECL_HEAVY ? { read: 'Watch', why: `Heavy: ${span}, above ${CECL_HEAVY}% of DI’s estimate, holding back earnings.` }
+      : { read: 'Strong', why: `About right: ${span}.` };
+    const at = lines.findIndex((x) => x.metric === 'allowance_coverage');
+    lines.splice(at < 0 ? lines.length : at + 1, 0, { ...l, now: b, yearAgo: null, trend: [], plan: null, peer: null, cecl: { booked: cecl.now.allowance, estimate: cecl.estimate.total }, ...v });
+  }
   const concerns = lines.filter((l) => l.read === 'Concern');
   const watch = lines.filter((l) => l.read === 'Watch');
   const name = (l: CfoLine) => `${l.label === 'NPL ratio' ? 'the NPL ratio' : l.label.charAt(0).toLowerCase() + l.label.slice(1)} at ${pct(l.now, l.places)}, ${l.why.replace(/\.$/, '').replace(/^./, (c) => c.toLowerCase())}`;
@@ -255,7 +271,7 @@ export function cfoModule(svc: () => Promise<SemanticService>, pool: Pool): Modu
           need(ctx);
           const s = await cfoScorecard(await svc(), pool);
           const flagged = s.lines.filter((l) => l.read !== 'Strong').sort((a, b) => (a.read === b.read ? 0 : a.read === 'Concern' ? -1 : 1));
-          const ask: Record<string, string> = { net_interest_margin: 'Why is our net interest margin below peers?', nii_growth: 'How much did our net interest income grow, and why?', non_interest_income_share: 'How much of our revenue doesn’t depend on rates?', loan_to_share_ratio: 'Is our loan-to-deposit ratio too low or too high?', uninsured_deposit_ratio: 'How much of our deposits are uninsured?', unrealized_loss_to_tier1: 'What are our unrealized losses on securities?', return_on_assets: 'Which products are most profitable?' };
+          const ask: Record<string, string> = { net_interest_margin: 'Why is our net interest margin below peers?', nii_growth: 'How much did our net interest income grow, and why?', non_interest_income_share: 'How much of our revenue doesn’t depend on rates?', loan_to_share_ratio: 'Is our loan-to-deposit ratio too low or too high?', uninsured_deposit_ratio: 'How much of our deposits are uninsured?', unrealized_loss_to_tier1: 'What are our unrealized losses on securities?', allowance_to_cecl_estimate: 'Is our allowance enough under CECL?', return_on_assets: 'Which products are most profitable?' };
           return {
             text: flagged.length ? `${s.headline}` : `Nothing on the CFO Scorecard needs attention for ${s.quarter}. ${s.headline}`,
             blocks: flagged.length ? [moduleTable(spec, `Needs attention, ${s.quarter}`, ctx.runId, 'cfo.attention', CFO_COLS, flagged.map(cfoRow))] : [],

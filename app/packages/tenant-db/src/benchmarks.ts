@@ -41,9 +41,31 @@ export const BENCHMARK_DDL = [
      entered_by VARCHAR(80) NOT NULL,
      approval_id VARCHAR(40) NULL
    )`,
+  // The CFO's CECL assumptions: the economic scenario weights (weight:baseline, weight:adverse,
+  // weight:severe, in percent) and the qualitative adjustment for each loan type (q:<loan type>, in basis
+  // points of its balance). Each change is approved.
+  `CREATE TABLE fin_cecl (
+     setting VARCHAR(60) NOT NULL PRIMARY KEY,
+     value DECIMAL(10,4) NOT NULL,
+     note VARCHAR(200) NULL,
+     updated_by VARCHAR(80) NULL,
+     approval_id VARCHAR(40) NULL
+   )`,
 ];
 
-export const BUDGET_WRITE_TABLES = ['fin_budget', 'fin_budget_event', 'fin_share'];
+export const BUDGET_WRITE_TABLES = ['fin_budget', 'fin_budget_event', 'fin_share', 'fin_cecl'];
+
+/** A bank CFO's CECL assumptions as set for the third quarter: mostly the baseline forecast, and two Q-factors. */
+export function ceclSeed(institutionType: 'credit_union' | 'bank') {
+  if (institutionType !== 'bank') return [];
+  return [
+    ['weight:baseline', 75, 'Consensus forecast: growth slows, unemployment near 4.5%', 'Elena Ortiz', null],
+    ['weight:adverse', 20, 'A moderate recession', 'Elena Ortiz', null],
+    ['weight:severe', 5, 'A deep recession', 'Elena Ortiz', null],
+    ['q:Commercial Real Estate', 5, 'Office and retail exposure in a concentrated CRE book', 'Elena Ortiz', null],
+    ['q:Consumer', 25, 'Unsecured consumer delinquency rising nationally', 'Elena Ortiz', null],
+  ];
+}
 
 /** A bank's share register by quarter, as the CFO entered it: shares edge up as restricted stock vests. */
 export function shareSeed(institutionType: 'credit_union' | 'bank') {
@@ -99,6 +121,9 @@ export function benchmarks(institutionType: 'credit_union' | 'bank'): Row[] {
       ['peer', 'tbv_per_share_growth', 6.5, PEER_BANK],
       ['peer', 'price_to_tangible_book', 1.2, PEER_BANK],
       ['peer', 'price_to_earnings', 11.5, PEER_BANK],
+      ['plan', 'provision_to_average_loans', 0.3, PLAN_BANK],
+      ['peer', 'provision_to_average_loans', 0.24, PEER_BANK],
+      ['peer', 'allowance_to_loans', 1.25, PEER_BANK],
     ];
   }
   return [

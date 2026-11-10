@@ -28,14 +28,14 @@ const DEPOSIT_FTP: Record<string, number> = { Checking: 3.55, 'Share Savings': 3
 /** Annual expected loss on today's balance, by product: through-the-cycle rates for a community lender. */
 export const LOSS_RATE: Record<string, number> = { Mortgage: 0.05, HELOC: 0.15, Auto: 0.55, Personal: 2.3, 'Credit Card': 3.1, Consumer: 2.0, Business: 0.5, 'Commercial Real Estate': 0.25, 'Commercial & Industrial': 0.6 };
 /** Expected remaining life in years: CECL losses are over a loan's life, long for mortgages, short for cards. */
-const LIFE_YEARS: Record<string, number> = { Mortgage: 7, HELOC: 4.5, Auto: 2.2, Personal: 1.9, 'Credit Card': 1.5, Consumer: 1.9, Business: 3, 'Commercial Real Estate': 4.5, 'Commercial & Industrial': 2.5 };
+export const LIFE_YEARS: Record<string, number> = { Mortgage: 7, HELOC: 4.5, Auto: 2.2, Personal: 1.9, 'Credit Card': 1.5, Consumer: 1.9, Business: 3, 'Commercial Real Estate': 4.5, 'Commercial & Industrial': 2.5 };
 /** Servicing cost and fee income per account per year. */
 const LOAN_COST: Record<string, [cost: number, fees: number]> = { Mortgage: [620, 140], HELOC: [310, 60], Auto: [190, 25], Personal: [170, 30], 'Credit Card': [95, 70], Consumer: [160, 25], Business: [1800, 450], 'Commercial Real Estate': [3600, 900], 'Commercial & Industrial': [2600, 700] };
 const DEPOSIT_COST: Record<string, [cost: number, fees: number]> = { Checking: [165, 120], 'Share Savings': [38, 6], Savings: [38, 6], 'Money Market': [70, 10], Certificates: [45, 4], 'Certificates of Deposit': [45, 4], IRA: [60, 4] };
 
 /** How much more a weaker credit band loses than the product's average. */
-const BAND_FACTOR = (score: number | null, rating: number | null) => (rating !== null ? (rating >= 7 ? 6 : rating === 6 ? 3 : 0.8) : score === null ? 1 : score >= 740 ? 0.45 : score >= 680 ? 0.9 : score >= 620 ? 2.1 : 4.2);
-const bandName = (score: number | null, rating: number | null) => (rating !== null ? (rating >= 7 ? 'Substandard (7)' : rating === 6 ? 'Special mention (6)' : 'Pass (1–5)') : score === null ? 'Not scored' : score >= 740 ? 'Super prime (740+)' : score >= 680 ? 'Prime (680–739)' : score >= 620 ? 'Near prime (620–679)' : 'Subprime (under 620)');
+export const BAND_FACTOR = (score: number | null, rating: number | null) => (rating !== null ? (rating >= 7 ? 6 : rating === 6 ? 3 : 0.8) : score === null ? 1 : score >= 740 ? 0.45 : score >= 680 ? 0.9 : score >= 620 ? 2.1 : 4.2);
+export const bandName = (score: number | null, rating: number | null) => (rating !== null ? (rating >= 7 ? 'Substandard (7)' : rating === 6 ? 'Special mention (6)' : 'Pass (1–5)') : score === null ? 'Not scored' : score >= 740 ? 'Super prime (740+)' : score >= 680 ? 'Prime (680–739)' : score >= 620 ? 'Near prime (620–679)' : 'Subprime (under 620)');
 
 export interface ProfitLine {
   name: string;

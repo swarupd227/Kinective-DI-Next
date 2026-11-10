@@ -23,11 +23,11 @@ describe.skipIf(!up)('CFO Scorecard', () => {
     try {
       const svc = await SemanticService.create(pool, 'test_bank', 'bank');
       const s = await cfoScorecard(svc, pool);
-      expect(s.lines.map((l) => l.metric)).toEqual(['cet1_ratio', 'net_worth_ratio', 'unrealized_loss_to_tier1', 'tbv_per_share_growth', 'net_interest_margin', 'nii_growth', 'non_interest_income_share', 'return_on_equity', 'return_on_assets', 'efficiency_ratio', 'loan_to_share_ratio', 'uninsured_deposit_ratio', 'npl_ratio', 'net_charge_off_ratio', 'allowance_coverage']);
+      expect(s.lines.map((l) => l.metric)).toEqual(['cet1_ratio', 'net_worth_ratio', 'unrealized_loss_to_tier1', 'tbv_per_share_growth', 'net_interest_margin', 'nii_growth', 'non_interest_income_share', 'return_on_equity', 'return_on_assets', 'efficiency_ratio', 'loan_to_share_ratio', 'uninsured_deposit_ratio', 'npl_ratio', 'net_charge_off_ratio', 'allowance_coverage', 'allowance_to_cecl_estimate']);
       for (const l of s.lines) {
         expect(l.now, l.metric).not.toBeNull();
         // A growth line is one figure, this quarter on the same quarter a year ago.
-        expect(l.trend.length, l.metric).toBe(l.growth || l.perShare ? 0 : 5);
+        expect(l.trend.length, l.metric).toBe(l.growth || l.perShare || l.cecl ? 0 : 5);
         expect(l.why.length, l.metric).toBeGreaterThan(5);
       }
       const by = (m: string) => s.lines.find((l) => l.metric === m)!;

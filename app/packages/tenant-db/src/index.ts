@@ -18,7 +18,7 @@ export { WORKFLOW_DDL, WORKFLOW_WRITE_TABLES, REFERRAL_TYPES, workflowSeed, refe
 export { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 export { CORE_READER, SOURCES_DDL, SOURCES_LANDING_TABLES, SOURCES_WRITE_TABLES, SOURCE_TARGETS, SYMITAR_CODES, coreReaderPassword, createSourceTables, landingTable, replicaDatabase, seedCoreReplica } from './sources.ts';
 export { AGE_BANDS, generateMemberHistory } from './membership.ts';
-export { BENCHMARK_DDL, BUDGET_WRITE_TABLES, benchmarks, budgetSeed, shareSeed } from './benchmarks.ts';
+export { BENCHMARK_DDL, BUDGET_WRITE_TABLES, benchmarks, budgetSeed, ceclSeed, shareSeed } from './benchmarks.ts';
 export { FFIEC_FILING, FFIEC_QUARTERS, generateFfiecCallReport } from './ffiecCallReport.ts';
 export { FFIEC_051, FFIEC_051_EDITION } from './ffiec051.ts';
 export { APIS_DDL, APIS_WRITE_TABLES, RELAY_BASE_URL, RELAY_HOST, createApiTables, relayCampaigns, relayDemoKey } from './apis.ts';

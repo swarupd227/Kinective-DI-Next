@@ -46,6 +46,7 @@ export { bankText } from './concierge.ts';
 export { ALCO_SECTIONS, alcoAnalyses } from './alco.ts';
 export { asksAboutStaff } from './incentives.ts';
 export { boardAnalyses, boardScorecard } from './scorecard.ts';
+export { CECL_REQUEST, ceclModule, ceclQuestion, parseCecl, type CeclQuestion } from './cecl.ts';
 export { SHARE_REQUEST, parseShares, shareModule, shareQuestion, type ShareQuestion } from './perShare.ts';
 export { CFO_REQUEST, cfoModule, cfoScorecard, type CfoLine, type CfoRead } from './cfo.ts';
 export { combineAnalyses } from './report.ts';
