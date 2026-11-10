@@ -292,6 +292,27 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
               { id: 'a7', title: 'Basel III assumptions', kind: 'analysis' as const, analysis: 'basel.assumptions', metrics: [], size: 'full' as const },
             ],
           },
+          // Concentrations: CRE against the interagency guidance, and office, property type, geography, industry and relationships against the board's limits.
+          {
+            templateId: 'concentration_quarterly',
+            name: 'Concentration report',
+            description: 'Commercial real estate against the interagency guidance, and property type (office above all), geography, industry and the largest relationships against the board’s limits, with the office loans that balloon soon and what a fall in property values would leave uncovered.',
+            folder: 'Board',
+            settings: { ...settings('quarter', ['Executive', 'Finance']), addHierarchyControls: false },
+            layoutVersion: 1,
+            pendingEdits: [],
+            widgets: [
+              { id: 'a1', title: 'Concentration limits', kind: 'analysis' as const, analysis: 'conc.policy', metrics: [], size: 'full' as const },
+              { id: 'a2', title: 'Commercial real estate against the interagency guidance', kind: 'analysis' as const, analysis: 'conc.regulatory', metrics: [], size: 'half' as const },
+              { id: 'a3', title: 'Office loans: when they balloon', kind: 'analysis' as const, analysis: 'conc.office', metrics: [], size: 'half' as const },
+              { id: 'a4', title: 'Commercial real estate by property type', kind: 'analysis' as const, analysis: 'conc.property', metrics: [], size: 'full' as const },
+              { id: 'a5', title: 'If property values fall', kind: 'analysis' as const, analysis: 'conc.stress', metrics: [], size: 'half' as const },
+              { id: 'a6', title: 'Loans by county', kind: 'analysis' as const, analysis: 'conc.geography', metrics: [], size: 'half' as const },
+              { id: 'a7', title: 'Business lending by industry', kind: 'analysis' as const, analysis: 'conc.industry', metrics: [], size: 'half' as const },
+              { id: 'a8', title: 'Largest relationships', kind: 'analysis' as const, analysis: 'conc.relationships', metrics: [], size: 'half' as const },
+              { id: 'a9', title: 'Concentration assumptions', kind: 'analysis' as const, analysis: 'conc.assumptions', metrics: [], size: 'full' as const },
+            ],
+          },
         ]
       : []),
     {

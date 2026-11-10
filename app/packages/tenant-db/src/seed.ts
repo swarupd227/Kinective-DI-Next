@@ -26,6 +26,7 @@ import { createApiTables } from './apis.ts';
 import { createOffcoreTables } from './offcore.ts';
 import { referralSeed, WORKFLOW_DDL, WORKFLOW_WRITE_TABLES, workflowSeed } from './workflow.ts';
 import { generateTransactions, LOAN_GROWTH_DDL, LOAN_GROWTH_WRITE_TABLES, planLoanGrowth } from './loanGrowth.ts';
+import { CONCENTRATION_DDL, generateLoanDetail } from './concentration.ts';
 
 const BATCH = 2000;
 
@@ -54,6 +55,9 @@ async function main() {
     await insert(admin, 'cdm_employee', ['employee_id', 'display_name', 'role', 'branch_id'], t.employees);
     await insert(admin, 'cdm_party', ['party_id', 'first_name', 'last_name', 'birth_date', 'join_date', 'primary_branch_id', 'segment_code', 'household_id', 'is_member'], t.parties);
     await insert(admin, 'cdm_loan', ['loan_id', 'party_id', 'branch_id', 'officer_id', 'loan_category', 'is_indirect', 'open_date', 'close_date', 'charge_off_date', 'original_amount', 'balance', 'rate', 'days_delinquent', 'credit_score', 'ltv', 'term_months', 'risk_rating'], t.loans);
+    // A bank's commercial loan detail for concentration reviews: property type, county, industry, maturity.
+    for (const ddl of CONCENTRATION_DDL) await admin.query(ddl);
+    if (profile.institutionType === 'bank') await insert(admin, 'cdm_loan_detail', ['loan_id', 'property_type', 'owner_occupied', 'county', 'state', 'naics_sector', 'industry', 'maturity_date', 'dscr', 'appraised_value', 'appraisal_date', 'relationship_id'], generateLoanDetail(t));
     await insert(admin, 'cdm_deposit_account', ['account_id', 'party_id', 'branch_id', 'deposit_category', 'open_date', 'close_date', 'maturity_date', 'balance', 'rate'], t.deposits);
     await insert(admin, 'hist_loan_month', ['month_end', 'branch_id', 'loan_category', 'is_indirect', 'balance', 'delinquent_60_balance', 'loan_count', 'new_loan_amount', 'new_loan_count', 'new_rate_weighted'], t.histLoan);
     await insert(admin, 'hist_deposit_month', ['month_end', 'branch_id', 'deposit_category', 'balance', 'account_count', 'rate_weighted'], t.histDeposit);
