@@ -70,7 +70,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     lendingAdmin: true,
     approvesIncentives: true,
     retention: true,
-    modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'ai-admin', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'callreport', 'collections', 'campaigns', 'seg', 'tables', 'irr', 'profitability', 'budget', 'camels', 'basel', 'delinquency', 'liquidity', 'membership', 'records', 'records-members'],
+    modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'ai-admin', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'callreport', 'collections', 'campaigns', 'loangrowth', 'seg', 'tables', 'irr', 'profitability', 'budget', 'camels', 'basel', 'delinquency', 'liquidity', 'membership', 'records', 'records-members'],
     suggestions: ['What should I do today?', 'Show the October payouts', 'Which regulatory issues are open more than 3 weeks?', 'Which branches and products drive delinquency?', 'What’s our interest rate risk?', 'How much could we borrow tomorrow?', 'Are we ready to file Q3?', 'Show our CAMELS view', 'Show the early-warning list', 'Get me ready for the next ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'What changed since last month-end?'],
   },
   analyst: {
@@ -82,7 +82,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
       permissions: { queryBrowser: true, dashboardAdmin: false },
     },
     retention: true,
-    modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-finance', 'lineage', 'compliance', 'datalogs', 'operations', 'callreport', 'campaigns', 'tables', 'irr', 'profitability', 'budget', 'camels', 'basel', 'delinquency', 'liquidity', 'membership', 'records'],
+    modules: ['governance', 'tasks', 'mytime', 'calendar', 'files', 'files-finance', 'lineage', 'compliance', 'datalogs', 'operations', 'callreport', 'campaigns', 'loangrowth', 'tables', 'irr', 'profitability', 'budget', 'camels', 'basel', 'delinquency', 'liquidity', 'membership', 'records'],
     suggestions: ['/query loans opened last week by branch', 'Which campaigns produced the most loan dollars?', 'Which checks failed?', 'Is the data current?', 'Show loan growth by branch for Q3 vs Q2', 'What’s our interest rate risk?', 'How much could we borrow tomorrow?', 'Find certificates at risk of leaving'],
   },
   branch: {

@@ -25,6 +25,7 @@ import { createSourceTables, seedCoreReplica } from './sources.ts';
 import { createApiTables } from './apis.ts';
 import { createOffcoreTables } from './offcore.ts';
 import { referralSeed, WORKFLOW_DDL, WORKFLOW_WRITE_TABLES, workflowSeed } from './workflow.ts';
+import { generateTransactions, LOAN_GROWTH_DDL, LOAN_GROWTH_WRITE_TABLES, planLoanGrowth } from './loanGrowth.ts';
 
 const BATCH = 2000;
 
@@ -47,6 +48,8 @@ async function main() {
     await admin.query(`CREATE DATABASE \`${profile.schema}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
     await admin.query(`USE \`${profile.schema}\``);
     for (const ddl of TENANT_DDL) await admin.query(ddl);
+    // A credit union's members who borrow elsewhere, and the July refinance campaign's loans, before loans load.
+    const growthPlan = profile.institutionType === 'credit_union' ? planLoanGrowth(t) : null;
     await insert(admin, 'cdm_location', ['int_id', 'name', 'region', 'opened_date'], t.locations);
     await insert(admin, 'cdm_employee', ['employee_id', 'display_name', 'role', 'branch_id'], t.employees);
     await insert(admin, 'cdm_party', ['party_id', 'first_name', 'last_name', 'birth_date', 'join_date', 'primary_branch_id', 'segment_code', 'household_id', 'is_member'], t.parties);
@@ -71,6 +74,12 @@ async function main() {
     await insert(admin, 'cdm_loan_application', LAP_APPLICATION_COLUMNS, lap.applications);
     await insert(admin, 'cdm_interaction', ['interaction_id', 'party_id', 'occurred_at', 'channel', 'kind', 'summary', 'employee_id'], rm.interactions);
     await insert(admin, 'cdm_account_activity', ['account_kind', 'account_id', 'balance_30d', 'fees_30d'], rm.activity);
+    for (const ddl of LOAN_GROWTH_DDL) await admin.query(ddl);
+    if (growthPlan) {
+      await insert(admin, 'cdm_transaction', ['txn_id', 'account_id', 'party_id', 'post_date', 'amount', 'txn_type', 'description', 'counterparty'], generateTransactions(growthPlan, t, rm.digital));
+      await insert(admin, 'lg_campaign', ['campaign_id', 'name', 'segments', 'holdout_pct', 'treatment', 'control', 'status', 'created_by', 'created_on', 'sent_on', 'push_id', 'approval_id'], growthPlan.campaign);
+      await insert(admin, 'lg_campaign_member', ['campaign_id', 'party_id', 'segment', 'arm', 'lender', 'est_monthly_saving'], growthPlan.members);
+    }
     for (const ddl of PIPELINE_DDL) await admin.query(ddl);
     await insert(admin, 'mod_lap_status_map', ['status_code', 'label', 'definition', 'in_progress', 'visible', 'reporting_group', 'sort_order', 'stall_days'], LAP_STATUSES.map((s) => [...s]));
     await insert(admin, 'cdm_loan_app_status_history', ['application_id', 'status_code', 'entered_date'], lap.history);
@@ -159,7 +168,7 @@ async function main() {
     // The application account reads tenant data only (spec 26.2: read-only on customer tables), and
     // writes only the workflow store, through approved DI Core operations.
     await admin.query(`GRANT SELECT ON \`${profile.schema}\`.* TO 'dinext'@'%'`);
-    for (const table of [...WORKFLOW_WRITE_TABLES, ...PIPELINE_WRITE_TABLES, ...GOALS_WRITE_TABLES, ...MODULES_WRITE_TABLES, ...GROWTH_WRITE_TABLES, ...TASKS_WRITE_TABLES, ...WORKFLOW_DEF_WRITE_TABLES, ...WORKSPACE_WRITE_TABLES, ...CALENDAR_SERIES_WRITE_TABLES, ...TABLES_WRITE_TABLES, ...BUDGET_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
+    for (const table of [...WORKFLOW_WRITE_TABLES, ...PIPELINE_WRITE_TABLES, ...GOALS_WRITE_TABLES, ...MODULES_WRITE_TABLES, ...GROWTH_WRITE_TABLES, ...TASKS_WRITE_TABLES, ...WORKFLOW_DEF_WRITE_TABLES, ...WORKSPACE_WRITE_TABLES, ...CALENDAR_SERIES_WRITE_TABLES, ...TABLES_WRITE_TABLES, ...BUDGET_WRITE_TABLES, ...LOAN_GROWTH_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     // Add-only: a run record or a rating can't be changed once written (AI-GRD-090).
     for (const table of GOVERNANCE_APPEND_TABLES) await admin.query(`GRANT INSERT ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     // Direct core connections: DI's store for every tenant, and a Symitar-style replica for the credit union.

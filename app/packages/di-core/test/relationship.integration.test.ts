@@ -106,9 +106,13 @@ describe.skipIf(!available)('relationship.suggestion.decline (spec 17.2)', () =>
   // Victor Patel (party 99, Westport) has a HELOC suggestion; the demo member is left untouched.
   it('hides the suggestion for 90 days, records it once per approval, and shows it as an interaction', async () => {
     const meta = { approvalId: 'apr_testDecl0001', userId: 'user:5120', userName: 'Marcus Reed' };
-    expect((await rm.profile(99, westport)).opportunities.map((o) => o.product)).toContain('HELOC');
-    const first = await rm.decline({ partyId: 99, suggestionId: 220, product: 'HELOC' }, meta, westport);
-    await rm.decline({ partyId: 99, suggestionId: 220, product: 'HELOC' }, meta, westport);
+    const before = (await rm.profile(99, westport)).opportunities;
+    expect(before.map((o) => o.product)).toContain('HELOC');
+    // The suggestion's number comes from the seed, which renumbers as the data grows: look it up.
+    const [found] = await admin.query("SELECT suggestion_id AS id FROM cdm_suggestion WHERE party_id = 99 AND product = 'HELOC'");
+    const suggestionId = (found as { id: number }[])[0]!.id;
+    const first = await rm.decline({ partyId: 99, suggestionId, product: 'HELOC' }, meta, westport);
+    await rm.decline({ partyId: 99, suggestionId, product: 'HELOC' }, meta, westport);
     expect(first).toEqual({ product: 'HELOC', until: '2027-01-23' });
     const [rows] = await admin.query("SELECT COUNT(*) AS n FROM mod_suggestion_decline WHERE approval_id = 'apr_testDecl0001'");
     expect((rows as { n: number }[])[0]!.n).toBe(1);
