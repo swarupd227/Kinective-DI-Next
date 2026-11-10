@@ -357,6 +357,24 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
               { id: 'a10', title: 'How DI measures operational and cyber risk', kind: 'analysis' as const, analysis: 'ops.assumptions', metrics: [], size: 'full' as const },
             ],
           },
+          // Capital plan: what the bank can return in dividends and buybacks without falling below the board's floors.
+          {
+            templateId: 'capital_plan_quarterly',
+            name: 'Capital plan: dividend and buyback capacity',
+            description: 'How much capital the bank can return over the next four quarters without falling below the board’s floors (the internal CET1 and leverage targets, or the minimum plus the stress test’s decline), what dividends take, the room left for buybacks and what they do per share, and the dividend approval limit.',
+            folder: 'Board',
+            settings: { ...settings('quarter', ['Executive', 'Finance']), addHierarchyControls: false },
+            layoutVersion: 1,
+            pendingEdits: [],
+            widgets: [
+              { id: 'a1', title: 'What the bank can return over the next four quarters', kind: 'analysis' as const, analysis: 'cap.capacity', metrics: [], size: 'full' as const },
+              { id: 'a2', title: 'Ratios a year ahead', kind: 'analysis' as const, analysis: 'cap.ahead', metrics: [], size: 'full' as const },
+              { id: 'a3', title: 'Buybacks at today’s price', kind: 'analysis' as const, analysis: 'cap.buyback', metrics: [], size: 'full' as const },
+              { id: 'a4', title: 'Dividends without regulatory approval', kind: 'analysis' as const, analysis: 'cap.dividends', metrics: [], size: 'half' as const },
+              { id: 'a5', title: 'The capital plan’s targets', kind: 'analysis' as const, analysis: 'cap.settings', metrics: [], size: 'half' as const },
+              { id: 'a6', title: 'How DI works out capital capacity', kind: 'analysis' as const, analysis: 'cap.assumptions', metrics: [], size: 'full' as const },
+            ],
+          },
         ]
       : []),
     {

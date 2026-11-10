@@ -51,9 +51,30 @@ export const BENCHMARK_DDL = [
      updated_by VARCHAR(80) NULL,
      approval_id VARCHAR(40) NULL
    )`,
+  // A bank CFO's capital plan: internal ratio targets, growth and payout plans. Each change is approved.
+  `CREATE TABLE fin_capital_plan (
+     setting VARCHAR(40) NOT NULL PRIMARY KEY,
+     value DECIMAL(16,4) NOT NULL,
+     note VARCHAR(200) NULL,
+     updated_by VARCHAR(80) NULL,
+     approval_id VARCHAR(40) NULL
+   )`,
 ];
 
-export const BUDGET_WRITE_TABLES = ['fin_budget', 'fin_budget_event', 'fin_share', 'fin_cecl'];
+export const BUDGET_WRITE_TABLES = ['fin_budget', 'fin_budget_event', 'fin_share', 'fin_cecl', 'fin_capital_plan'];
+
+/** A bank CFO's capital plan: the board's internal targets, the growth plan and the payout plan. */
+export function capitalPlanSeed(institutionType: 'credit_union' | 'bank') {
+  if (institutionType !== 'bank') return [];
+  return [
+    ['cet1_target', 10, 'Board capital policy, approved December 2025', 'Elena Ortiz', null],
+    ['leverage_target', 9, 'Board capital policy: one point above the CBLR’s 8%', 'Elena Ortiz', null],
+    ['rwa_growth', 5, '2026 plan: loans up 5%', 'Elena Ortiz', null],
+    ['asset_growth', 4, '2026 plan: deposits up 4%', 'Elena Ortiz', null],
+    ['dividend_per_share_q', 0.22, 'Quarterly dividend declared in October', 'Elena Ortiz', null],
+    ['buyback_planned', 0, 'No buyback authorized', 'Elena Ortiz', null],
+  ];
+}
 
 /** A bank CFO's CECL assumptions as set for the third quarter: mostly the baseline forecast, and two Q-factors. */
 export function ceclSeed(institutionType: 'credit_union' | 'bank') {

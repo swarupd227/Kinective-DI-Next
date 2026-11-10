@@ -16,7 +16,7 @@ import { generateGoals, GI_GOALS, GI_INCENTIVES, GI_TIERS, GOALS_DDL, GOALS_WRIT
 import { generatePipeline, LAP_APPLICATION_COLUMNS, LAP_HOLDS, LAP_STATUSES, PIPELINE_DDL, PIPELINE_WRITE_TABLES } from './pipeline.ts';
 import { generateRelationship, RELATIONSHIP_DDL } from './relationship.ts';
 import { generateMemberHistory } from './membership.ts';
-import { BENCHMARK_DDL, BUDGET_WRITE_TABLES, benchmarks, budgetSeed, ceclSeed, shareSeed } from './benchmarks.ts';
+import { BENCHMARK_DDL, BUDGET_WRITE_TABLES, benchmarks, budgetSeed, capitalPlanSeed, ceclSeed, shareSeed } from './benchmarks.ts';
 import { reportSeed } from './reports.ts';
 import { CR_FILING, generateCallReport } from './callReport.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
@@ -134,6 +134,8 @@ async function main() {
     if (shares.length) await insert(admin, 'fin_share', ['quarter_end', 'shares_outstanding', 'weighted_shares', 'price', 'source', 'entered_by', 'approval_id'], shares);
     const cecl = ceclSeed(profile.institutionType);
     if (cecl.length) await insert(admin, 'fin_cecl', ['setting', 'value', 'note', 'updated_by', 'approval_id'], cecl);
+    const capPlan = capitalPlanSeed(profile.institutionType);
+    if (capPlan.length) await insert(admin, 'fin_capital_plan', ['setting', 'value', 'note', 'updated_by', 'approval_id'], capPlan);
     for (const ddl of MODULES_DDL) await admin.query(ddl);
     const mods = generateModules(t, profile.institutionType);
     await insert(admin, 'cpm_issue', ['issue_id', 'party_id', 'kind', 'source', 'category', 'summary', 'status', 'owner_employee_id', 'branch_id', 'opened', 'respond_by', 'resolve_by', 'closed', 'resolution', 'root_cause'], mods.issues);

@@ -43,6 +43,7 @@ export { FundingRiskService, type RunScenario } from './fundingRisk.ts';
 export { NiiService, NII_GROWTH_WATCH } from './nii.ts';
 export { FeeIncomeService, FEE_LINES, MORTGAGE_SENSITIVITY } from './fees.ts';
 export { PerShareService, type ShareEntry } from './perShare.ts';
+export { CAPITAL_MINIMUMS, CAPITAL_PLAN_DEFAULTS, CapitalPlanService, type CapitalPlanSettings } from './capitalPlan.ts';
 export { NOTIFY_HOURS, OPRISK_TARGETS, OpRiskService, type OpRead } from './oprisk.ts';
 export { BSA_RULES, BsaService, type BsaRead } from './bsa.ts';
 export { CONCENTRATION_LIMITS, CONCENTRATION_STRESS, CONCENTRATION_WATCH, ConcentrationService, type ConcentrationStatus } from './concentration.ts';

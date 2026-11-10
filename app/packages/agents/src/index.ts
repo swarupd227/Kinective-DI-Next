@@ -46,6 +46,7 @@ export { bankText } from './concierge.ts';
 export { ALCO_SECTIONS, alcoAnalyses } from './alco.ts';
 export { asksAboutStaff } from './incentives.ts';
 export { boardAnalyses, boardScorecard } from './scorecard.ts';
+export { CAPITAL_PLAN_REQUEST, CAPITAL_PLAN_SECTIONS, amountFrom, capitalPlanAnalyses, capitalPlanModule, capitalPlanQuestion, parseCapitalPlan, type CapitalPlanQuestion } from './capitalPlan.ts';
 export { OPRISK_REQUEST, OPRISK_SECTIONS, opRiskAnalyses, opRiskModule, opRiskQuestion, type OpRiskQuestion } from './oprisk.ts';
 export { BSA_REQUEST, BSA_SECTIONS, bsaAnalyses, bsaModule, bsaQuestion, type BsaQuestion } from './bsa.ts';
 export { CONCENTRATION_REQUEST, CONCENTRATION_SECTIONS, concentrationAnalyses, concentrationModule, concentrationQuestion, type ConcentrationQuestion } from './concentration.ts';

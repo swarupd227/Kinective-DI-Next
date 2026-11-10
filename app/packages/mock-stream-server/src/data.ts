@@ -141,7 +141,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     },
     approvesIncentives: true,
     retention: true,
-    modules: ['governance', 'tasks', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'datalogs', 'datalogs-approve', 'collections', 'campaigns', 'tables', 'cfo', 'pershare', 'cecl', 'concentration', 'bsa', 'oprisk', 'irr', 'profitability', 'budget', 'camels', 'basel', 'delinquency', 'liquidity', 'membership', 'records', 'records-members', 'callreport'],
+    modules: ['governance', 'tasks', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'datalogs', 'datalogs-approve', 'collections', 'campaigns', 'tables', 'cfo', 'pershare', 'cecl', 'concentration', 'bsa', 'oprisk', 'capplan', 'irr', 'profitability', 'budget', 'camels', 'basel', 'delinquency', 'liquidity', 'membership', 'records', 'records-members', 'callreport'],
     suggestions: ['Get me ready for the next ALCO meeting', 'Are we ready to file the Call Report?', 'What’s our interest rate risk?', 'How much could we borrow tomorrow?', 'What’s our deposit beta?', 'Which products are most profitable?', 'How would our capital hold up in a severe recession?', 'Show our CAMELS view', 'What are our Basel III ratios?', 'Draft the 2027 budget', 'What changed since last month-end?', 'Show loan growth by branch for Q3 vs Q2', 'Show the October payouts'],
   },
   admin: {
