@@ -27,6 +27,7 @@ import { createOffcoreTables } from './offcore.ts';
 import { referralSeed, WORKFLOW_DDL, WORKFLOW_WRITE_TABLES, workflowSeed } from './workflow.ts';
 import { generateTransactions, LOAN_GROWTH_DDL, LOAN_GROWTH_WRITE_TABLES, planLoanGrowth } from './loanGrowth.ts';
 import { CONCENTRATION_DDL, generateLoanDetail } from './concentration.ts';
+import { BSA_DDL, generateBsa } from './bsa.ts';
 
 const BATCH = 2000;
 
@@ -79,6 +80,18 @@ async function main() {
     await insert(admin, 'cdm_interaction', ['interaction_id', 'party_id', 'occurred_at', 'channel', 'kind', 'summary', 'employee_id'], rm.interactions);
     await insert(admin, 'cdm_account_activity', ['account_kind', 'account_id', 'balance_30d', 'fees_30d'], rm.activity);
     for (const ddl of LOAN_GROWTH_DDL) await admin.query(ddl);
+    for (const ddl of BSA_DDL) await admin.query(ddl);
+    if (profile.institutionType === 'bank') {
+      // The BSA officer's case system and the fraud team's records.
+      const bsa = generateBsa(t.parties.length);
+      await insert(admin, 'bsa_alert', ['alert_id', 'opened', 'source', 'typology', 'party_id', 'amount', 'status', 'closed', 'sar_id'], bsa.alerts);
+      await insert(admin, 'bsa_sar', ['sar_id', 'detected_on', 'filed_on', 'typology', 'amount', 'continuing', 'party_id', 'next_review', 'reviewed_on'], bsa.sars);
+      await insert(admin, 'bsa_ctr', ['month', 'filed', 'late', 'exempt_customers'], bsa.ctr);
+      await insert(admin, 'bsa_ofac', ['month', 'screened', 'potential', 'true_matches', 'blocked_amount', 'rejected_amount'], bsa.ofac);
+      await insert(admin, 'bsa_customer_risk', ['party_id', 'rating', 'category', 'last_review', 'next_review'], bsa.risk);
+      await insert(admin, 'fraud_case', ['case_id', 'opened', 'fraud_type', 'channel', 'party_id', 'gross_loss', 'recovered', 'prevented', 'elder', 'status'], bsa.fraud);
+      await insert(admin, 'bsa_program', ['item', 'area', 'status', 'as_of', 'due', 'detail'], bsa.program);
+    }
     if (growthPlan) {
       await insert(admin, 'cdm_transaction', ['txn_id', 'account_id', 'party_id', 'post_date', 'amount', 'txn_type', 'description', 'counterparty'], generateTransactions(growthPlan, t, rm.digital));
       await insert(admin, 'lg_campaign', ['campaign_id', 'name', 'segments', 'holdout_pct', 'treatment', 'control', 'status', 'created_by', 'created_on', 'sent_on', 'push_id', 'approval_id'], growthPlan.campaign);

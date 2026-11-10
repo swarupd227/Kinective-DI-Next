@@ -313,6 +313,28 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
               { id: 'a9', title: 'Concentration assumptions', kind: 'analysis' as const, analysis: 'conc.assumptions', metrics: [], size: 'full' as const },
             ],
           },
+          // BSA/AML and fraud: what an examination tests and the board should see. SARs in aggregate only.
+          {
+            templateId: 'bsa_fraud_quarterly',
+            name: 'BSA/AML and fraud report',
+            description: 'SARs and their timeliness, the alert backlog, CTRs and OFAC screening, high-risk customer reviews and the BSA program’s open items, with fraud losses by quarter and type. SARs appear only in aggregate.',
+            folder: 'Board',
+            settings: { ...settings('quarter', ['Executive', 'Finance']), addHierarchyControls: false },
+            layoutVersion: 1,
+            pendingEdits: [],
+            widgets: [
+              { id: 'a1', title: 'What needs attention', kind: 'analysis' as const, analysis: 'bsa.attention', metrics: [], size: 'full' as const },
+              { id: 'a2', title: 'SARs by quarter', kind: 'analysis' as const, analysis: 'bsa.sars', metrics: [], size: 'full' as const },
+              { id: 'a3', title: 'SARs by activity, last four quarters', kind: 'analysis' as const, analysis: 'bsa.typologies', metrics: [], size: 'half' as const },
+              { id: 'a4', title: 'Open alerts by age', kind: 'analysis' as const, analysis: 'bsa.alerts', metrics: [], size: 'half' as const },
+              { id: 'a5', title: 'CTRs and OFAC screening', kind: 'analysis' as const, analysis: 'bsa.ofac', metrics: [], size: 'full' as const },
+              { id: 'a6', title: 'High-risk customers', kind: 'analysis' as const, analysis: 'bsa.customers', metrics: [], size: 'half' as const },
+              { id: 'a7', title: 'BSA program', kind: 'analysis' as const, analysis: 'bsa.program', metrics: [], size: 'half' as const },
+              { id: 'a8', title: 'Fraud losses by quarter', kind: 'analysis' as const, analysis: 'bsa.fraudq', metrics: [], size: 'full' as const },
+              { id: 'a9', title: 'Fraud by type, last four quarters', kind: 'analysis' as const, analysis: 'bsa.fraudtypes', metrics: [], size: 'full' as const },
+              { id: 'a10', title: 'How DI measures BSA and fraud', kind: 'analysis' as const, analysis: 'bsa.assumptions', metrics: [], size: 'full' as const },
+            ],
+          },
         ]
       : []),
     {

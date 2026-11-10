@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { validateBlock } from '@dinext/block-schemas';
 import { SemanticService } from '@dinext/semantic';
 import { stockReports, tenantPool, warehouseAvailable } from '@dinext/tenant-db';
-import { AlcoService, BranchScorecardService, ConcentrationService, GoalsService, LendingProductionService, ProfitabilityService } from '@dinext/di-core';
-import { alcoAnalyses, boardAnalyses, branchAnalyses, baselAnalyses, camelsAnalyses, combineAnalyses, concentrationAnalyses, lendingAnalyses, profitAnalyses, runReport } from '../src/index.ts';
+import { AlcoService, BranchScorecardService, BsaService, ConcentrationService, GoalsService, LendingProductionService, ProfitabilityService } from '@dinext/di-core';
+import { alcoAnalyses, boardAnalyses, branchAnalyses, baselAnalyses, bsaAnalyses, camelsAnalyses, combineAnalyses, concentrationAnalyses, lendingAnalyses, profitAnalyses, runReport } from '../src/index.ts';
 
 describe('the named reports', () => {
   it('include the ones today’s DI shows on its Dashboards home', () => {
@@ -22,7 +22,7 @@ for (const [schema, tenant, type] of [['dinext_t_test_cu', 'test_cu', 'credit_un
       const svc = await SemanticService.create(pool, tenant, type);
       try {
         for (const def of stockReports(type)) {
-          const { canvas } = await runReport(def, {}, svc, { canViewSql: false, analyses: combineAnalyses(alcoAnalyses(new AlcoService(pool, type)), profitAnalyses(new ProfitabilityService(pool, type)), camelsAnalyses({ pool, institutionType: type, semantic: async () => svc }), baselAnalyses({ pool, institutionType: type }), boardAnalyses(svc, pool, type), branchAnalyses(new BranchScorecardService(pool), new GoalsService(pool), type === 'bank' ? 'customers' : 'members'), lendingAnalyses(new LendingProductionService(pool), new GoalsService(pool)), type === 'bank' ? concentrationAnalyses(new ConcentrationService(pool)) : null) }, { runId: 'R-stocktest', mode: 'read', status: 'stock', version: 1 });
+          const { canvas } = await runReport(def, {}, svc, { canViewSql: false, analyses: combineAnalyses(alcoAnalyses(new AlcoService(pool, type)), profitAnalyses(new ProfitabilityService(pool, type)), camelsAnalyses({ pool, institutionType: type, semantic: async () => svc }), baselAnalyses({ pool, institutionType: type }), boardAnalyses(svc, pool, type), branchAnalyses(new BranchScorecardService(pool), new GoalsService(pool), type === 'bank' ? 'customers' : 'members'), lendingAnalyses(new LendingProductionService(pool), new GoalsService(pool)), type === 'bank' ? concentrationAnalyses(new ConcentrationService(pool)) : null, type === 'bank' ? bsaAnalyses(new BsaService(pool)) : null) }, { runId: 'R-stocktest', mode: 'read', status: 'stock', version: 1 });
           const broken = canvas.data.widgets.filter((w) => w.view.type === 'notice').map((w) => `${def.name} / ${w.title}: ${w.view.type === 'notice' ? w.view.data.message : ''}`);
           expect(broken).toEqual([]);
         }
