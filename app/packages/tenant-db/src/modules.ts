@@ -82,6 +82,13 @@ export const MODULES_DDL = [
   `CREATE TABLE cr_form (form VARCHAR(12) PRIMARY KEY, edition VARCHAR(120) NOT NULL, filed_in VARCHAR(80) NOT NULL, quarter VARCHAR(12) NOT NULL, due_date DATE NOT NULL, preparer VARCHAR(80) NOT NULL)`,
   `CREATE TABLE cr_check (name VARCHAR(100) PRIMARY KEY, status VARCHAR(8) NOT NULL, detail VARCHAR(220) NOT NULL, severity VARCHAR(8) NOT NULL, edit_code VARCHAR(12) NULL, codes VARCHAR(240) NULL)`,
   `CREATE TABLE cr_explanation (code VARCHAR(12) NOT NULL, quarter_end DATE NOT NULL, explanation VARCHAR(400) NULL, status VARCHAR(10) NOT NULL, written_by VARCHAR(80) NULL, PRIMARY KEY (code, quarter_end))`,
+  // The institution's own prepared figures, uploaded to check DI's against (DI's "CU Amount").
+  `CREATE TABLE cr_prepared (code VARCHAR(12) NOT NULL, quarter_end DATE NOT NULL, amount DECIMAL(18,2) NULL, PRIMARY KEY (code, quarter_end))`,
+  `CREATE TABLE cr_prepared_upload (quarter_end DATE PRIMARY KEY, file_name VARCHAR(120) NOT NULL, uploaded_by VARCHAR(80) NOT NULL, uploaded_at DATETIME NOT NULL, line_count INT NOT NULL)`,
+  // Documented manual adjustments: a separate row each, never an edit of DI's figure. Carried into the totals above.
+  `CREATE TABLE cr_adjustment (adjustment_id INT AUTO_INCREMENT PRIMARY KEY, code VARCHAR(12) NOT NULL, quarter_end DATE NOT NULL, amount DECIMAL(18,2) NOT NULL, reason VARCHAR(30) NOT NULL, note VARCHAR(300) NOT NULL, made_by VARCHAR(80) NOT NULL, made_at DATETIME NOT NULL, approval_id VARCHAR(40) NULL UNIQUE, KEY ix_cr_adj (quarter_end, code))`,
+  // How a difference from the prepared figures was settled: DI correct, prepared figures correct (with an adjustment), or explained.
+  `CREATE TABLE cr_resolution (code VARCHAR(12) NOT NULL, quarter_end DATE NOT NULL, resolution VARCHAR(20) NOT NULL, reason VARCHAR(300) NOT NULL, decided_by VARCHAR(80) NOT NULL, decided_at DATETIME NOT NULL, approval_id VARCHAR(40) NULL, PRIMARY KEY (code, quarter_end))`,
   // The general ledger accounts the 5300 maps from. An account with no line is what fails the check.
   `CREATE TABLE cr_gl_account (gl_number VARCHAR(8) PRIMARY KEY, name VARCHAR(80) NOT NULL, balance DECIMAL(16,2) NOT NULL, prior_balance DECIMAL(16,2) NOT NULL, line_code VARCHAR(12) NULL, opened DATE NOT NULL, last_posted DATE NOT NULL, likely_line VARCHAR(80) NULL, note VARCHAR(160) NULL)`,
   `CREATE TABLE col_outreach (loan_id INT PRIMARY KEY, status VARCHAR(12) NOT NULL, queued_by VARCHAR(80) NOT NULL, approval_id VARCHAR(40) NOT NULL)`,
@@ -92,7 +99,7 @@ export const MODULES_DDL = [
   `CREATE TABLE seg_interaction (interaction_id INT AUTO_INCREMENT PRIMARY KEY, company_id INT NOT NULL, at DATE NOT NULL, kind VARCHAR(20) NOT NULL, note VARCHAR(300) NOT NULL, by_name VARCHAR(80) NOT NULL, approval_id VARCHAR(40) NULL UNIQUE)`,
 ];
 
-export const MODULES_WRITE_TABLES = ['cpm_issue', 'cpm_issue_history', 'onb_task', 'esp_datalog', 'esp_datalog_history', 'iam_user', 'col_outreach', 'cmp_audience', 'seg_company', 'seg_interaction'];
+export const MODULES_WRITE_TABLES = ['cpm_issue', 'cpm_issue_history', 'onb_task', 'esp_datalog', 'esp_datalog_history', 'iam_user', 'col_outreach', 'cmp_audience', 'seg_company', 'seg_interaction', 'cr_explanation', 'cr_prepared', 'cr_prepared_upload', 'cr_adjustment', 'cr_resolution'];
 
 export const ISSUE_CATEGORIES = ['Fees', 'Overdraft', 'Card dispute', 'Loan servicing', 'Account access', 'Service'];
 export const REGULATORS = ['OCC', 'CFPB', 'FDIC', 'NCUA'];

@@ -531,7 +531,7 @@ export function createAppViews(deps: ViewDeps) {
           ],
         };
       }
-      const [lines, ready, capital, moved] = await Promise.all([cr.lines(), cr.readiness(), cr.capital(), cr.variance(25)]);
+      const [lines, ready, capital, moved, rec, adjustments] = await Promise.all([cr.lines(), cr.readiness(), cr.capital(), cr.variance(25), cr.reconcile(), cr.adjustments()]);
       const q = ready.quarter;
       const due = new Date(`${q.dueDate}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
       const v = (code: string) => lines.find((l) => l.code === code);
@@ -544,8 +544,9 @@ export function createAppViews(deps: ViewDeps) {
       return {
         title: `5300 Call Report · ${q.label}`,
         downloads: [
-          { label: 'Download data file (CSV)', href: '/v1/callreport/files/data', detail: 'Each account code and its value, in dollars, for CUOnline or your Call Report software.' },
-          { label: 'Download review workbook (Excel)', href: '/v1/callreport/files/review', detail: 'Every schedule with the prior quarter, the edits and the explanations, for sign-off.' },
+          { label: 'Download data file (CSV)', href: '/v1/callreport/files/data', detail: 'Each account code and its value after manual adjustments, in dollars, for CUOnline or your Call Report software.' },
+          { label: 'Download XML file', href: '/v1/callreport/files/xml', detail: 'The same items with the form, period, status and manual adjustments, in DI’s XML layout, to map to your import.' },
+          { label: 'Download review workbook (Excel)', href: '/v1/callreport/files/review', detail: 'Every schedule with the prior quarter, the edits, the explanations, the manual adjustments and the check against your prepared figures, for sign-off.' },
         ],
         lede: `NCUA Form 5300, ${q.edition}, for the quarter ending ${new Date(`${q.current}T00:00:00Z`).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })}. Due ${due} in CUOnline. DI prepares and checks it; a person files it.`,
         take: {
@@ -556,6 +557,7 @@ export function createAppViews(deps: ViewDeps) {
           { label: 'Due in CUOnline', value: due },
           { label: 'Errors blocking filing', value: String(errors), tone: errors ? 'danger' : 'neutral' },
           { label: 'Explanations needed', value: String(needed.length), tone: needed.length ? 'warning' : 'neutral' },
+          ...(rec ? [{ label: 'Differences from your figures', value: String(rec.open.length), detail: `${rec.items.length} lines differ, ${rec.open.length} to settle`, tone: rec.open.length ? 'warning' : 'neutral', ask: 'Check our prepared figures against DI' } satisfies AppTile] : []),
           { label: 'Net worth ratio', value: `${capital.ratio.toFixed(2)}%`, detail: capital.classification },
           { label: 'Total assets', value: `$${((v('010')?.current ?? 0) / 1e9).toFixed(2)}B` },
         ],
@@ -564,6 +566,8 @@ export function createAppViews(deps: ViewDeps) {
           table('Edits', 'dq.status_report', [text('name', 'Edit'), text('severity', 'Type'), text('result', 'Result'), text('detail', 'Detail')], ready.checks.map((c) => ({ name: c.editCode ? `${c.editCode}: ${c.name}` : c.name, severity: c.severity, result: c.passed ? 'Passed' : 'Failed', detail: c.detail }))),
           // The accounts behind a failed mapping check sit right under it.
           ...(ready.uncategorized.length ? [table('Uncategorized GL accounts', 'callreport.gl_uncategorized', [text('gl', 'GL account'), text('name', 'Name'), { field: 'balance', headerName: 'Balance', type: 'currency' }, text('lastPosted', 'Last posted'), text('likely', 'Likely 5300 line'), text('note', 'Why it is open')], ready.uncategorized.map((g) => ({ gl: g.glNumber, name: g.name, balance: g.balance, lastPosted: g.lastPosted, likely: g.likelyLine ?? 'Not suggested', note: g.note ?? '' })))] : []),
+          ...(rec?.items.length ? [table(`Against your prepared 5300: ${rec.matched} of ${rec.compared} lines match`, 'callreport.reconcile', [text('code', 'Account'), text('name', 'Line'), { field: 'prepared', headerName: 'Prepared', type: 'currency' }, { field: 'di', headerName: 'DI', type: 'currency' }, { field: 'difference', headerName: 'Difference', type: 'currency' }, text('pct', '% difference'), text('settled', 'Settled')], rec.items.map((i) => ({ code: i.code, name: i.name, prepared: i.prepared, di: i.di, difference: i.difference, pct: i.pct === null ? '' : `${i.pct}%`, settled: i.resolution ? `${i.resolution.resolution}: ${i.resolution.reason}` : i.follows ? 'Follows from a line under it' : 'Open' })))] : []),
+          ...(adjustments.length ? [table('Manual adjustments', 'callreport.adjustments', [text('code', 'Account'), text('name', 'Line'), { field: 'amount', headerName: 'Amount', type: 'currency' }, text('reason', 'Reason'), text('note', 'Note'), text('by', 'By')], adjustments.map((a) => ({ code: a.code, name: a.name, amount: a.amount, reason: a.reason, note: a.note, by: a.by })))] : []),
           ...(moved.length ? [table(`Moved more than 25% since ${q.priorLabel}`, 'callreport.variance', [...cols, text('explanation', 'Explanation')], moved.map((l) => ({ ...rowsOf([l])[0]!, explanation: l.explanation ? (l.explanation.explanation ?? 'Needed') : '' })))] : []),
           table('Net worth (Schedule G)', 'callreport.capital', cols, rowsOf(filed(lines.filter((l) => l.schedule === 'G' || l.schedule === 'H')))),
           table('Statement of Financial Condition', 'callreport.sfc', cols, rowsOf(sched('SFC'))),

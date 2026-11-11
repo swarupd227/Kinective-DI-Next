@@ -19,6 +19,7 @@ import { generateMemberHistory } from './membership.ts';
 import { BENCHMARK_DDL, BUDGET_WRITE_TABLES, benchmarks, budgetSeed, capitalPlanSeed, ceclSeed, shareSeed } from './benchmarks.ts';
 import { reportSeed } from './reports.ts';
 import { CR_FILING, generateCallReport } from './callReport.ts';
+import { preparedFigures } from './callReportTree.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
 import { createSourceTables, seedCoreReplica } from './sources.ts';
@@ -167,6 +168,12 @@ async function main() {
       await insert(admin, 'cr_explanation', ['code', 'quarter_end', 'explanation', 'status', 'written_by'], cr.explanations);
       await insert(admin, 'cr_gl_account', ['gl_number', 'name', 'balance', 'prior_balance', 'line_code', 'opened', 'last_posted', 'likely_line', 'note'], cr.gl);
       await insert(admin, 'cr_form', ['form', 'edition', 'filed_in', 'quarter', 'due_date', 'preparer'], [['5300', CR_FILING.edition, 'CUOnline', CR_FILING.quarter, CR_FILING.dueDate, CR_FILING.preparer]]);
+      // The credit union's own prepared 5300, uploaded to check DI's against, and one difference already settled.
+      const shapes = (cr.lines as unknown[][]).map((l) => ({ code: l[0] as string, schedule: l[1] as string, section: l[3] as string, name: l[5] as string, kind: l[6] as string, formula: (l[7] as string | null) ?? null }));
+      const prepared = preparedFigures(shapes, cr.values as unknown[][]);
+      await insert(admin, 'cr_prepared', ['code', 'quarter_end', 'amount'], prepared.rows);
+      await insert(admin, 'cr_prepared_upload', ['quarter_end', 'file_name', 'uploaded_by', 'uploaded_at', 'line_count'], [[prepared.quarter, '5300_Q3_2026_prepared.xlsx', 'Priya Shah', '2026-10-21 16:40:00', prepared.rows.length]]);
+      await insert(admin, 'cr_resolution', ['code', 'quarter_end', 'resolution', 'reason', 'decided_by', 'decided_at', 'approval_id'], [['013', prepared.quarter, 'Explained', 'Share drafts presented September 30 cleared after DI’s build; the core matches on the October 1 build. No change.', 'Priya Shah', '2026-10-22 09:15:00', null]]);
       await insert(admin, 'seg_company', ['company_id', 'name', 'stage', 'members', 'new_members', 'loans', 'deposits', 'owner', 'sponsorship'], fx.companies);
       await insert(admin, 'seg_interaction', ['company_id', 'at', 'kind', 'note', 'by_name'], fx.interactions);
     }

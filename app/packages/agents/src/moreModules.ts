@@ -3,7 +3,7 @@
 // Each states its limits: the Call Report agent is read-only, the Admin agent can't change its own
 // user or impersonate anyone, and DI never contacts a borrower or changes a loan.
 import { z } from 'zod';
-import { CALL_REPORT_EDITION, CAPABILITIES, CLASSES, CoreError, SEG_STAGES, USER_CLASSES, type CallReportLine, type CallReportService, stampUtc, type ApiService, type CampaignService, type CollectionsService, type OperationsService, type SegService } from '@dinext/di-core';
+import { CALL_REPORT_EDITION, CR_ADJUST_REASONS, CR_RESOLUTIONS, type CrAdjustReason, type CrResolution, CAPABILITIES, CLASSES, CoreError, SEG_STAGES, USER_CLASSES, type CallReportLine, type CallReportService, stampUtc, type ApiService, type CampaignService, type CollectionsService, type OperationsService, type SegService } from '@dinext/di-core';
 import { money } from './pipelineAgent.ts';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
@@ -237,8 +237,8 @@ export function operationsModule(ops: OperationsService): ModuleSpec {
 export function callReportModule(cr: CallReportService): ModuleSpec {
   const noAccess = 'The 5300 Call Report is for credit unions with the module. A bank call report is scoped separately by Kinective.';
   const need = (ctx: ModuleContext) => guard(ctx, 'callreport', noAccess);
-  const READ_ONLY = 'I can’t submit or change mappings on the 5300. Filing in CUOnline stays a person’s action, and GL mappings are changed in the 5300 workspace by authorised staff. To take it there, download the data file from the Call Report page.';
-  const DOWNLOAD = 'Yes. On the **Call Report** page there are two downloads: the **data file** (CSV), each 5300 account code and its value in dollars, for CUOnline or your Call Report software; and the **review workbook** (Excel), every schedule with the prior quarter, the edits and the explanations, for sign-off. While edits are open the files are marked DRAFT. Filing in CUOnline stays with you.';
+  const READ_ONLY = 'I can’t submit the 5300 or change GL mappings. Filing in CUOnline stays a person’s action, and mappings are changed in the 5300 workspace by authorized staff. What I can do, each with your approval: record a manual adjustment to a line, settle a difference from your prepared figures, and write the explanation for a line that moved.';
+  const DOWNLOAD = 'Yes. On the **Call Report** page there are three downloads: the **data file** (CSV) and the **XML file**, each 5300 account code and its value after any manual adjustments, for your Call Report software or to map to CUOnline’s import; and the **review workbook** (Excel), every schedule with the prior quarter, the edits, the explanations, the manual adjustments and the check against your prepared figures, for sign-off. While edits are open the files are marked DRAFT. Filing in CUOnline stays with you.';
   const code = /\b(\d{3}[A-Z]?\d?|[A-Z]{2}\d{4}|\d{4}[A-Z])\b/;
   const SCHEDULES: [RegExp, string, string?][] = [
     [/balance sheet|financial condition|\bassets\b|liabilit/i, 'SFC'],
@@ -259,7 +259,7 @@ export function callReportModule(cr: CallReportService): ModuleSpec {
     id: 'callreport',
     prefix: 'cr',
     agent: 'Call Report',
-    request: /\b5300\b|\bcall report\b|\bready to file\b|\bschedule [A-I]\b|\bline \d{3}[A-Z]?\b|\b(how is|why did) \d{3}[A-Z]?\b|\buncategori[sz]ed gl\b|\bgl accounts? (are|is) (uncategori[sz]ed|unmapped)\b|\bnet worth ratio\b|\bwell capitali[sz]ed\b|\bcculr\b|\bpca\b/i,
+    request: /\b5300\b|\bcall report\b|\bprepared (?:5300|figures?|numbers)\b|\bmanual adjustments?\b|\b(?:di|di’s|di's|the prepared figure|our figure) is (?:correct|right) on\b|\badjust (?:line )?\d{3}[A-Z]?\d?\b|\bexplanation for (?:line )?\d{3}[A-Z]?\d?\b|\bready to file\b|\bschedule [A-I]\b|\bline \d{3}[A-Z]?\b|\b(how is|why did) \d{3}[A-Z]?\b|\buncategori[sz]ed gl\b|\bgl accounts? (are|is) (uncategori[sz]ed|unmapped)\b|\bnet worth ratio\b|\bwell capitali[sz]ed\b|\bcculr\b|\bpca\b/i,
     noAccess,
     sources: [{ kind: 'table', label: '5300 Call Report', ref: 'table:cr_line' }],
     prompt: ({ tenant, user, title }) => `You are the Call Report agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) prepares the quarterly NCUA Form 5300, ${CALL_REPORT_EDITION}. Lines are NCUA account codes (025B total loans and leases, 018 total shares and deposits, 041B loans 60+ days delinquent, 010 total assets, 997 net worth, 998 net worth ratio). NCUA edits are Errors, which block submission, and Warnings, which need an explanation in the comments.
@@ -271,10 +271,30 @@ export function callReportModule(cr: CallReportService): ModuleSpec {
 - "Show schedule A delinquency", "show the balance sheet", "show charge-offs": cr_schedule with the schedule (SFC, SIE, A, B, D, G) and, for Schedule A, a section word.
 - "What's our net worth ratio?", "are we well capitalized?", "are we on the CCULR?": cr_capital.
 - "Draft explanations for the lines that moved": cr_variance, then write one short draft per line from its figures in your message, saying a person adds them in the 5300 workspace.
-- You are read-only. If asked to submit, export for upload or change a mapping, say a person does that.`,
+- "Check our figures against DI", "where do we differ from our prepared 5300?": cr_reconcile.
+- "DI is correct on 013 because…", "the prepared figure is right on 370, adjust DI", "that's explained: …": cr_resolve (resolution DI correct, Prepared correct or Explained, with the person's reason).
+- "Adjust 003 by $412,600 for loans locked after the build": cr_adjust (amount, reason Timing, Participation, Mapping, Off-core loans, Correction or Other, and a note). "Show the manual adjustments": cr_adjustments.
+- "Use this explanation for 003: …": cr_explain_write.
+- Every change needs approval. You never submit the 5300 or change a GL mapping: say a person does that.`,
     plan: (text) => {
       const t = clean(text);
-      if (/\b(download|export|excel|csv|spreadsheet|workbook|upload file|send (it )?to cuonline|get it (in)?to cuonline)\b/i.test(t)) return { say: DOWNLOAD };
+      const lineCode = [...text.matchAll(new RegExp(code.source, 'g'))].map((m) => m[1]!).find((c) => c !== '5300');
+      const because = /\b(?:because|since|as|:)\s+(.{5,300})$/i.exec(text)?.[1]?.trim();
+      // Settling a difference from the prepared figures, adjusting a line, writing an explanation.
+      if (lineCode && /\b(?:di|di’s|di's)(?: figure)? is (?:correct|right)\b/i.test(t)) return { tool: 'cr_resolve', args: { code: lineCode, resolution: 'DI correct', reason: because ?? 'DI’s figure agrees with the source records.' } };
+      if (lineCode && /\b(?:prepared|our|cu|credit union’s|credit union's)(?: figure| amount| number)? is (?:correct|right)\b|\badjust di\b/i.test(t)) return { tool: 'cr_resolve', args: { code: lineCode, resolution: 'Prepared correct', reason: because ?? 'The prepared figure agrees with the source records.' } };
+      if (lineCode && /\b(?:that’s|that's|it’s|it's|is) explained\b|\bmark (?:it|\w+) (?:as )?explained\b/i.test(t)) return { tool: 'cr_resolve', args: { code: lineCode, resolution: 'Explained', reason: because ?? 'Explained by the preparer.' } };
+      const amt = /\bby\s+([+−-]?)\s*\$?\s*([\d,]+(?:\.\d+)?)\s*(k|m|million|thousand)?/i.exec(text);
+      if (lineCode && amt && /\badjust\b/i.test(t)) {
+        const n = Number(amt[2]!.replace(/,/g, '')) * (/^m|million/i.test(amt[3] ?? '') ? 1e6 : /^k|thousand/i.test(amt[3] ?? '') ? 1e3 : 1) * (amt[1] ? -1 : 1);
+        const reason = /\btiming|after the build|cleared|locked\b/i.test(t) ? 'Timing' : /\bparticipation/i.test(t) ? 'Participation' : /\bmapping|mapped\b/i.test(t) ? 'Mapping' : /\boff[- ]core\b/i.test(t) ? 'Off-core loans' : /\bcorrect/i.test(t) ? 'Correction' : 'Other';
+        return { tool: 'cr_adjust', args: { code: lineCode, amount: n, reason, note: (/\bfor\s+(.{5,300})$/i.exec(text)?.[1] ?? because ?? text).trim().slice(0, 300) } };
+      }
+      if (/\b(?:manual )?adjustments?\b/i.test(t) && !/\badjust \w/i.test(t)) return { tool: 'cr_adjustments', args: {} };
+      const explanation = /\b(?:use|write|add|record|save)\b[^.?!:]*\bexplanation\b[^:]*:\s*(.{10,400})$/i.exec(text);
+      if (lineCode && explanation) return { tool: 'cr_explain_write', args: { code: lineCode, explanation: explanation[1]!.trim() } };
+      if (/\b(reconcil\w*|compare|check)\b[^.?!]*\b(prepared|our own|our figures|our numbers|cu amount|workbook)\b|\bwhere (?:do|does) (?:we|di|it) differ\b|\bdifferences? (?:from|with|between)\b/i.test(t)) return { tool: 'cr_reconcile', args: {} };
+      if (/\b(download|export|excel|csv|xml|spreadsheet|workbook|upload file|send (it )?to cuonline|get it (in)?to cuonline)\b/i.test(t)) return { say: DOWNLOAD };
       if (/\b(can|could|are|will) (you|di)\b|\babilit|\bable to\b|\bdo you\b|\bis it possible\b/i.test(t) && /\b(create|prepare|produce|build|generate|make|fill out|fill in)\b/i.test(t)) return { tool: 'cr_overview', args: {} };
       if (/\b(submit|file it|upload|change|edit|remap|map)\b/i.test(t) && !/\bready\b|\bdue\b/i.test(t)) return { say: READ_ONLY };
       if (/\buncategori[sz]ed\b|\bunmapped\b|\bgl accounts?\b/i.test(t)) return { tool: 'cr_uncategorized', args: {} };
@@ -328,6 +348,112 @@ export function callReportModule(cr: CallReportService): ModuleSpec {
             suggestions: [...(gl.length ? ['Which GL accounts are uncategorized?'] : []), ...(r.warnings.length ? ['Which lines need an explanation?'] : []), 'What’s our net worth ratio?'],
           };
         },
+      },
+      {
+        name: 'cr_reconcile',
+        description: 'Check DI’s figures against the credit union’s own prepared 5300: every line that differs, how much, whether it starts there or follows from a line under it, and how each was settled (DI correct, prepared correct, explained).',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const x = await cr.reconcile();
+          if (!x) return { text: 'No prepared figures are on file for this quarter, so there’s nothing to check DI’s against yet. Once your own 5300 is loaded, I’ll compare every line.' };
+          const roots = x.items.filter((i) => !i.follows);
+          const settledText = (i: (typeof x.items)[number]) => (i.resolution ? `${i.resolution}: ${i.resolution.reason}` : i.follows ? 'Follows from a line above' : 'Open');
+          const head = `I compared **${x.compared} lines** with ${x.upload.file} (uploaded by ${x.upload.by} on ${x.upload.at}): **${x.matched} match**${x.items.length ? ` and **${x.items.length} differ**` : ''}.`;
+          const body = roots.length ? ` The differences start on ${roots.length} ${roots.length === 1 ? 'line' : 'lines'}: ${roots.map((i) => `**${i.code}** ${i.name} (prepared ${dollars(i.prepared)}, DI ${dollars(i.di)}, ${i.difference > 0 ? '+' : '−'}${dollars(Math.abs(i.difference))}${i.resolution ? `, settled as ${i.resolution.resolution}` : ''})`).join('; ')}. The rest follow in the totals above them.` : '';
+          const open = x.open.length ? ` **${x.open.length}** still ${x.open.length === 1 ? 'needs' : 'need'} settling: say which figure is right, for example “DI is correct on ${x.open[0]!.code} because…” or “The prepared figure is correct on ${x.open[0]!.code}, adjust DI”.` : x.items.length ? ' Every difference is settled.' : '';
+          return {
+            text: head + body + open,
+            blocks: [moduleTable(spec, 'DI against the prepared 5300', ctx.runId, 'callreport.reconcile', [{ field: 'code', headerName: 'Account', type: 'text' }, { field: 'name', headerName: 'Line', type: 'text' }, { field: 'prepared', headerName: 'Prepared', type: 'currency' }, { field: 'di', headerName: 'DI', type: 'currency' }, { field: 'difference', headerName: 'Difference', type: 'currency' }, { field: 'pct', headerName: '% difference', type: 'text' }, { field: 'status', headerName: 'Settled', type: 'text' }], x.items.map((i) => ({ code: i.code, name: i.name, prepared: i.prepared, di: i.di, difference: i.difference, pct: i.pct === null ? '' : `${i.pct}%`, status: settledText(i) })))],
+            suggestions: x.open.length ? [`The prepared figure is correct on ${x.open[0]!.code}, adjust DI`, `DI is correct on ${x.open[0]!.code}`] : ['Show the manual adjustments', 'Are we ready to file the 5300?'],
+          };
+        },
+      },
+      {
+        name: 'cr_resolve',
+        description: 'Settle a difference from the prepared figures on one line: DI correct, Prepared correct (records the adjustment that makes DI match, carried into the totals), or Explained. Needs a reason and approval.',
+        input: z.object({ code: z.string().min(3).max(12), resolution: z.enum(CR_RESOLUTIONS), reason: z.string().min(5).max(300) }).strict(),
+        run: async (a: { code: string; resolution: CrResolution; reason: string }, ctx) => {
+          need(ctx);
+          const x = await cr.reconcile();
+          const item = x?.items.find((i) => i.code.toLowerCase() === a.code.toLowerCase());
+          if (!item) throw new CoreError('INVALID', `${a.code} matches the prepared figures, so there’s nothing to settle.`);
+          if (item.follows) throw new CoreError('INVALID', `${item.code} only differs because of a line under it. Settle that line and ${item.code} follows.`);
+          const adjust = a.resolution === 'Prepared correct' ? item.difference : 0;
+          const preview = adjust ? await cr.previewAdjustment(item.code, adjust) : null;
+          return {
+            change: {
+              summary: `${item.code}: ${a.resolution}${adjust ? `, adjust DI by ${adjust > 0 ? '+' : '−'}${dollars(Math.abs(adjust))}` : ''}`,
+              changes: [
+                { label: `${item.code} ${item.name}`.slice(0, 80), before: `Prepared ${dollars(item.prepared)}, DI ${dollars(item.di)}`, after: a.resolution },
+                { label: 'Reason', before: '—', after: a.reason },
+                ...(preview ? preview.touched.map((t) => ({ label: `${t.line.code} ${t.line.name}`.slice(0, 80), before: dollars(t.line.current ?? 0), after: dollars((t.line.current ?? 0) + t.delta) })) : []),
+              ],
+              text: adjust ? `I’ve prepared settling **${item.code}** as *Prepared correct*. It records a manual adjustment of ${adjust > 0 ? '+' : '−'}${dollars(Math.abs(adjust))} with your reason, carried into ${preview!.touched.length - 1} ${preview!.touched.length === 2 ? 'total' : 'totals'} above it. DI’s own figure stays on file beside it.` : `I’ve prepared settling **${item.code}** as *${a.resolution}*, with your reason. No figure changes.`,
+              done: adjust ? `**${item.code}** is settled and DI now matches the prepared figure; the adjustment is on record.` : `**${item.code}** is settled as ${a.resolution}.`,
+              risk: adjust ? 'medium' : 'low',
+              apply: { code: item.code, resolution: a.resolution, reason: a.reason, adjustment: adjust },
+            },
+          };
+        },
+        apply: async (p: { code: string; resolution: CrResolution; reason: string; adjustment: number }, meta, ctx) => cr.resolve(p, { by: ctx.user.name, approvalId: meta.approvalId }),
+      },
+      {
+        name: 'cr_adjust',
+        description: 'Record a documented manual adjustment to one input line (amount, reason, note), carried into the totals above it. DI’s own figure is kept beside it. Needs approval.',
+        input: z.object({ code: z.string().min(3).max(12), amount: z.number().refine((n) => n !== 0, 'The adjustment can’t be zero'), reason: z.enum(CR_ADJUST_REASONS), note: z.string().min(5).max(300) }).strict(),
+        run: async (a: { code: string; amount: number; reason: CrAdjustReason; note: string }, ctx) => {
+          need(ctx);
+          const p = await cr.previewAdjustment(a.code, a.amount);
+          return {
+            change: {
+              summary: `Adjust ${p.line.code} by ${a.amount > 0 ? '+' : '−'}${dollars(Math.abs(a.amount))} (${a.reason})`,
+              changes: [...p.touched.map((t) => ({ label: `${t.line.code} ${t.line.name}`.slice(0, 80), before: dollars(t.line.current ?? 0), after: dollars((t.line.current ?? 0) + t.delta) })), { label: 'Reason', before: '—', after: `${a.reason}: ${a.note}` }],
+              text: `I’ve prepared a manual adjustment to **${p.line.code}** ${p.line.name}: ${a.amount > 0 ? '+' : '−'}${dollars(Math.abs(a.amount))}, carried into ${p.touched.length - 1} ${p.touched.length === 2 ? 'total' : 'totals'} above it. It’s kept as its own record with your reason; DI’s computed figure isn’t changed.`,
+              done: `The adjustment to **${p.line.code}** is recorded and the totals above it follow.`,
+              risk: 'medium',
+              apply: { code: p.line.code, amount: a.amount, reason: a.reason, note: a.note },
+            },
+          };
+        },
+        apply: async (p: { code: string; amount: number; reason: CrAdjustReason; note: string }, meta, ctx) => {
+          await cr.adjust(p, { by: ctx.user.name, approvalId: meta.approvalId });
+        },
+      },
+      {
+        name: 'cr_adjustments',
+        description: 'The manual adjustments recorded this quarter: line, amount, reason, note, who and when.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const adj = await cr.adjustments();
+          if (!adj.length) return { text: 'No manual adjustments are recorded this quarter: every figure is DI’s own.' };
+          return {
+            text: `**${adj.length} manual ${adj.length === 1 ? 'adjustment' : 'adjustments'}** this quarter, net ${dollars(adj.reduce((n, a) => n + a.amount, 0))}. Each is kept beside DI’s own figure and goes into the workpapers.`,
+            blocks: [moduleTable(spec, 'Manual adjustments', ctx.runId, 'callreport.adjustments', [{ field: 'code', headerName: 'Account', type: 'text' }, { field: 'name', headerName: 'Line', type: 'text' }, { field: 'amount', headerName: 'Amount', type: 'currency' }, { field: 'reason', headerName: 'Reason', type: 'text' }, { field: 'note', headerName: 'Note', type: 'text' }, { field: 'by', headerName: 'By', type: 'text' }, { field: 'at', headerName: 'When', type: 'text' }], adj.map((a) => ({ code: a.code, name: a.name, amount: a.amount, reason: a.reason, note: a.note, by: a.by, at: a.at })))],
+          };
+        },
+      },
+      {
+        name: 'cr_explain_write',
+        description: 'Write the explanation NCUA asks for on a line that moved, in the person’s words or from a draft they accepted. Needs approval.',
+        input: z.object({ code: z.string().min(3).max(12), explanation: z.string().min(10).max(400) }).strict(),
+        run: async (a: { code: string; explanation: string }, ctx) => {
+          need(ctx);
+          const l = await cr.line(a.code.toUpperCase());
+          const was = (await cr.explanations()).find((e) => e.code === l.code);
+          return {
+            change: {
+              summary: `Explanation for ${l.code}`,
+              changes: [{ label: `${l.code} ${l.name}`.slice(0, 80), before: was?.explanation ?? (was ? 'Needed' : '—'), after: a.explanation }],
+              text: `I’ve prepared the explanation for **${l.code}** ${l.name}. It goes into the comments filed with the 5300.`,
+              done: `The explanation for **${l.code}** is written.`,
+              risk: 'low',
+              apply: { code: l.code, explanation: a.explanation },
+            },
+          };
+        },
+        apply: async (p: { code: string; explanation: string }, _meta, ctx) => cr.explain(p.code, p.explanation, ctx.user.name),
       },
       {
         name: 'cr_uncategorized',

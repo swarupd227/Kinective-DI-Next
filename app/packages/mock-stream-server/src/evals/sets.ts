@@ -35,6 +35,8 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-CR-001', set: 'golden', persona: 'executive', q: 'Are we ready to file Q3?', agent: 'Call Report', contains: ['uncategorized GL accounts'], approval: 'none' },
   { id: 'GQ-CR-002', set: 'golden', persona: 'executive', q: 'How is 025B calculated?', agent: 'Call Report', contains: ['Vehicle Loans', 'It adds 8 lines'], notContains: ['Granted Year-to-Date'], approval: 'none' },
   { id: 'GQ-CR-003', set: 'golden', persona: 'executive', q: 'Which GL accounts are uncategorized?', agent: 'Call Report', contains: ['$18,400'], approval: 'none' },
+  { id: 'GQ-CR-004', set: 'golden', persona: 'analyst', q: 'Check our prepared figures against DI', agent: 'Call Report', contains: ['5300_Q3_2026_prepared.xlsx', '**370**'], approval: 'none' },
+  { id: 'GQ-CR-005', set: 'golden', persona: 'analyst', q: 'Adjust 003 by $412,600 for mortgage loans locked after the build', agent: 'Call Report', approval: 'medium' },
   { id: 'GQ-IRR-001', set: 'golden', persona: 'executive', q: 'What’s our interest rate risk?', agent: 'Interest Rate Risk', contains: ['+300 bp', 'NEV'], approval: 'none' },
   { id: 'GQ-IRR-002', set: 'golden', persona: 'executive', q: 'What happens to NII if rates rise 200 bp?', agent: 'Interest Rate Risk', contains: ['200 bp'], approval: 'none' },
   { id: 'GQ-DQ-001', set: 'golden', persona: 'executive', q: 'What are our roll rates?', agent: 'Delinquency', contains: ['30'], approval: 'none' },

@@ -50,6 +50,8 @@ describe.skipIf(!up)('more modules against the warehouse', () => {
     await admin.query('DELETE FROM col_outreach');
     await admin.query("DELETE FROM seg_interaction WHERE approval_id IS NOT NULL");
     await admin.query("UPDATE seg_company SET stage = 'Meeting Held' WHERE name = 'Acme HR'");
+    await admin.query('DELETE FROM cr_adjustment');
+    await admin.query('DELETE FROM cr_resolution WHERE approval_id IS NOT NULL');
     await pool.end();
     await admin.end();
   });
@@ -172,12 +174,55 @@ describe.skipIf(!up)('more modules against the warehouse', () => {
       expect(r.texts[0]).toContain('it has elected the CCULR, which needs a net worth ratio of 9% or more, so it qualifies');
     });
 
-    it('lists what moved, and stays read-only', async () => {
+    it('lists what moved, and never files', async () => {
       const { r } = await run(cr, turn('Show schedule A changes over 10% from last quarter', 'thr_r3'));
       expect(r.texts[0]).toContain('schedule A');
       const write = await run(cr, turn('Export the Q3 5300 for upload', 'thr_r4'));
       expect(write.r.texts[0]).toContain('Filing in CUOnline stays with you');
-      expect(cr.tools.every((t) => !t.apply)).toBe(true);
+      const submit = await run(cr, turn('Submit the 5300 to CUOnline', 'thr_r4b'));
+      expect(submit.r.texts[0]).toContain('I can’t submit the 5300');
+    });
+
+    it('checks DI against the prepared 5300, settles a difference with approval, and the totals follow', async () => {
+      const svc = new CallReportService(pool);
+      const { r } = await run(cr, turn('Check our prepared figures against DI', 'thr_r9'));
+      expect(r.texts[0]).toMatch(/I compared \*\*\d+ lines\*\* with 5300_Q3_2026_prepared\.xlsx/);
+      expect(r.texts[0]).toContain('**370**');
+      expect(validateBlock(r.blocks[0]!).ok).toBe(true);
+      const before = await svc.reconcile();
+      // Member shares was settled in the seed; 013's totals only follow it.
+      expect(before!.items.find((i) => i.code === '013')!.resolution!.resolution).toBe('Explained');
+      expect(before!.items.find((i) => i.code === '018')!.follows).toBe(true);
+      expect(before!.open.map((i) => i.code).sort()).toEqual(['003', '370']);
+
+      const loans = (await svc.lines()).find((l) => l.code === '025B')!.current!;
+      const { out } = await run(cr, turn('The prepared figure is correct on 370 because the participation sold on September 30', 'thr_r10'));
+      const card = out.approval!.card.data;
+      expect(card).toMatchObject({ riskTier: 'medium' });
+      expect(JSON.stringify(card.preview)).toContain('025B');
+      const record = out.approval!.record;
+      const decided = await approvals.decide(record.approvalId, { decision: 'approved', userId: 'user:1002', payloadHash: record.payloadHash });
+      await gateway.execute(decided, turn('', 'thr_r10'));
+      const after = await svc.reconcile();
+      expect(after!.items.map((i) => i.code)).not.toContain('370');
+      expect(after!.open.map((i) => i.code)).toEqual(['003']);
+      // The adjustment is its own record, carried into total loans; DI's computed figure stays beside it.
+      const l370 = (await svc.lines()).find((l) => l.code === '370')!;
+      expect(l370.adjusted).toBe(-1_250_000);
+      expect(l370.computed! + l370.adjusted).toBe(l370.current);
+      expect((await svc.lines()).find((l) => l.code === '025B')!.current).toBe(loans - 1_250_000);
+      expect((await svc.adjustments())[0]).toMatchObject({ code: '370', amount: -1_250_000, reason: 'Correction', by: 'Sam Taylor' });
+      const xml = await svc.xml('Harborview');
+      expect(xml).toMatch(/^<\?xml version="1\.0"/);
+      expect(xml).toContain('<Adjustment code="370" amount="-1250000"');
+      expect(xml).toContain(`<Item code="025B" schedule="SFC">${loans - 1_250_000}</Item>`);
+      // A total can't be adjusted directly.
+      await expect(svc.previewAdjustment('025B', 1000)).rejects.toThrow(/is a total/);
+    });
+
+    it('writes an explanation with approval', async () => {
+      const { out } = await run(cr, turn('Use this explanation for 003: Mortgage loans locked for sale in late September ahead of the October securitization.', 'thr_r11'));
+      expect(out.approval!.card.data).toMatchObject({ riskTier: 'low', summary: 'Explanation for 003' });
     });
 
     it('is closed to anyone without it, as for a bank', async () => {

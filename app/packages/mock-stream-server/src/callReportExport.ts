@@ -7,11 +7,14 @@
 //   reported. Its layout (Item, Value) is a common import format; the exact layout a given vendor's
 //   software or CDR upload expects should be confirmed before it is used for a real filing.
 // - The review workbook: a summary with the open edits, every schedule with the prior quarter, the
-//   change and the explanation, then the edits and the explanations.
+//   change and the explanation, then the edits, the explanations, the manual adjustments and the check
+//   against the institution's own prepared figures.
+// - The XML file: the same items after manual adjustments, in DI's own XML layout with the form, period,
+//   status and adjustments. Like the data file, map it to the filing system's import format before use.
 import ExcelJS from 'exceljs';
 import type { CallReportLine, CallReportService } from '@dinext/di-core';
 
-export type CallReportFileKind = 'data' | 'review';
+export type CallReportFileKind = 'data' | 'xml' | 'review';
 
 const safe = (s: string) => s.replace(/[^\w .()-]/g, '').replace(/\s+/g, ' ').trim();
 
@@ -32,6 +35,7 @@ export async function callReportFile(cr: CallReportService, tenant: string, kind
     const rows = lines.filter((l) => l.current !== null || l.text).map((l) => `${l.code},${esc(valueOf(l))}`);
     return { fileName: `${base} data.csv`, contentType: 'text/csv; charset=utf-8', body: Buffer.from(['Item,Value', ...rows].join('\r\n'), 'utf8') };
   }
+  if (kind === 'xml') return { fileName: `${base}.xml`, contentType: 'application/xml; charset=utf-8', body: Buffer.from(await cr.xml(tenant), 'utf8') };
 
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Kinective DI Next';
@@ -86,6 +90,20 @@ export async function callReportFile(cr: CallReportService, tenant: string, kind
   notes.columns = [{ header: 'Item', width: 12 }, { header: 'Status', width: 10 }, { header: 'Explanation', width: 90 }, { header: 'Written by', width: 20 }];
   notes.getRow(1).font = { bold: true };
   ready.explanations.forEach((e) => notes.addRow([e.code, e.status, e.explanation ?? '', e.by ?? '']));
+
+  // Documented manual adjustments, each beside DI's own figure, and the check against the prepared figures.
+  const [adj, rec] = await Promise.all([cr.adjustments(), cr.reconcile()]);
+  const adjSheet = wb.addWorksheet('Manual adjustments');
+  adjSheet.columns = [{ header: 'Item', width: 12 }, { header: 'Caption', width: 50 }, { header: 'Amount', width: 16 }, { header: 'Reason', width: 16 }, { header: 'Note', width: 70 }, { header: 'By', width: 20 }, { header: 'When', width: 18 }];
+  adjSheet.getRow(1).font = { bold: true };
+  adj.forEach((a) => adjSheet.addRow([a.code, a.name, a.amount, a.reason, a.note, a.by, a.at]));
+  if (rec) {
+    const recSheet = wb.addWorksheet('Check against prepared');
+    recSheet.columns = [{ header: 'Item', width: 12 }, { header: 'Caption', width: 50 }, { header: 'Prepared', width: 18 }, { header: 'DI', width: 18 }, { header: 'Difference', width: 16 }, { header: '% difference', width: 12 }, { header: 'Matches?', width: 10 }, { header: 'Settled', width: 16 }, { header: 'Reason', width: 70 }];
+    recSheet.getRow(1).font = { bold: true };
+    recSheet.addRow([`Compared ${rec.compared} lines with ${rec.upload.file}, uploaded by ${rec.upload.by} on ${rec.upload.at}: ${rec.matched} match.`]);
+    rec.items.forEach((i) => recSheet.addRow([i.code, i.name, i.prepared, i.di, i.difference, i.pct === null ? '' : `${i.pct}%`, 'No', i.resolution?.resolution ?? (i.follows ? 'Follows' : 'Open'), i.resolution?.reason ?? (i.follows ? 'Follows from a line under it' : '')]));
+  }
 
   const body = Buffer.from(await wb.xlsx.writeBuffer());
   return { fileName: `${base} review.xlsx`, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', body };

@@ -2,6 +2,7 @@
 // early warning (24.19), campaigns (24.20) and SEG (24.22). Every figure and rule lives here. An
 // access answer, a variance or a suppression count is never left to a model (AI-AGT-141, 201, 252).
 import type { Pool } from '@dinext/tenant-db';
+import { carryUp, crParents } from '@dinext/tenant-db';
 import { CoreError, memberNumber, type CoreContext } from './referrals.ts';
 
 const day = (v: unknown) => String(v instanceof Date ? v.toISOString() : v).slice(0, 10);
@@ -143,7 +144,17 @@ export interface CallReportLine {
   text: string | null;
   change: number | null;
   pct: number | null;
+  /** DI's own figure before manual adjustments, and the adjustment carried onto this line (0 when none). */
+  computed: number | null;
+  adjusted: number;
 }
+
+/** How a difference from the prepared figures was settled. "Prepared correct" records an adjustment. */
+export const CR_RESOLUTIONS = ['DI correct', 'Prepared correct', 'Explained'] as const;
+export type CrResolution = (typeof CR_RESOLUTIONS)[number];
+/** Why a manual adjustment was made (DI's Correction Reason). */
+export const CR_ADJUST_REASONS = ['Timing', 'Participation', 'Mapping', 'Off-core loans', 'Correction', 'Other'] as const;
+export type CrAdjustReason = (typeof CR_ADJUST_REASONS)[number];
 
 export interface CallReportCheck {
   name: string;
@@ -188,10 +199,15 @@ export class CallReportService {
     const values = await rows<Record<string, unknown>>(this.pool, 'SELECT code, quarter_end, amount, text_value FROM cr_value');
     const at = new Map(values.map((v) => [`${v.code as string}|${day(v.quarter_end)}`, v]));
     const num = (v: Record<string, unknown> | undefined) => (v?.amount === null || v?.amount === undefined ? null : Number(v.amount));
+    // Approved manual adjustments, carried up through the totals above each adjusted line.
+    const adj = await rows<{ code: string; total: number }>(this.pool, 'SELECT code, SUM(amount) AS total FROM cr_adjustment WHERE quarter_end = ? GROUP BY code', [current]).catch(() => []);
+    const carried = adj.length ? carryUp(this.shapes(lines), new Map(adj.map((a) => [a.code, Number(a.total)]))) : new Map<string, number>();
     return lines.map((l) => {
       const cur = at.get(`${l.code as string}|${current}`);
       const was = prior ? at.get(`${l.code as string}|${prior}`) : undefined;
-      const c = num(cur);
+      const computed = num(cur);
+      const adjusted = Math.round((carried.get(l.code as string) ?? 0) * 100) / 100;
+      const c = computed === null && !adjusted ? null : (computed ?? 0) + adjusted;
       const p = num(was);
       const change = c !== null && p !== null ? c - p : null;
       return {
@@ -209,8 +225,104 @@ export class CallReportService {
         text: (cur?.text_value as string | null) ?? null,
         change,
         pct: change !== null && p ? Math.round((change / Math.abs(p)) * 1000) / 10 : null,
+        computed,
+        adjusted,
       };
     });
+  }
+
+  private shapes(lines: Record<string, unknown>[]) {
+    return lines.map((l) => ({ code: l.code as string, schedule: l.schedule as string, section: l.section as string, kind: l.kind as string, name: l.name as string, formula: (l.formula as string | null) ?? null }));
+  }
+
+  /** The manual adjustments this quarter: each is its own row, with who made it and why. */
+  async adjustments() {
+    const { current } = await this.quarters();
+    const found = await rows<Record<string, unknown>>(this.pool, 'SELECT a.*, l.name FROM cr_adjustment a LEFT JOIN cr_line l ON l.code = a.code WHERE a.quarter_end = ? ORDER BY a.adjustment_id', [current]).catch(() => []);
+    return found.map((a) => ({ id: Number(a.adjustment_id), code: a.code as string, name: (a.name as string | null) ?? '', amount: Number(a.amount), reason: a.reason as CrAdjustReason, note: a.note as string, by: a.made_by as string, at: String(a.made_at instanceof Date ? a.made_at.toISOString() : a.made_at).slice(0, 16).replace('T', ' ') }));
+  }
+
+  /** What an adjustment would do: the line and every total it carries into, before and after. */
+  async previewAdjustment(code: string, amount: number) {
+    const all = await this.lines();
+    const l = all.find((x) => x.code.toLowerCase() === code.toLowerCase());
+    if (!l) throw new CoreError('NOT_FOUND', `There’s no line ${code} on this Call Report.`);
+    if (l.kind !== 'input') throw new CoreError('INVALID', `${l.code} is a total. Adjust the line underneath it that’s wrong; the totals follow.`);
+    const lineRows = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM cr_line');
+    const carried = carryUp(this.shapes(lineRows), new Map([[l.code, amount]]));
+    const touched = [...carried].map(([c, d]) => ({ line: all.find((x) => x.code === c)!, delta: d })).filter((t) => t.line);
+    return { line: l, touched };
+  }
+
+  async adjust(p: { code: string; amount: number; reason: CrAdjustReason; note: string }, meta: { by: string; approvalId: string }) {
+    const { current } = await this.quarters();
+    const [done] = await this.pool.query('SELECT adjustment_id FROM cr_adjustment WHERE approval_id = ?', [meta.approvalId]);
+    if ((done as unknown[]).length) return { replayed: true };
+    await this.pool.query('INSERT INTO cr_adjustment (code, quarter_end, amount, reason, note, made_by, made_at, approval_id) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)', [p.code, current, p.amount, p.reason, p.note.slice(0, 300), meta.by, meta.approvalId]);
+    return { replayed: false };
+  }
+
+  /**
+   * DI's figures against the institution's own prepared ones (DI's "CU Amount" check): every line that
+   * differs by a dollar or more, whether the difference starts on that line or only follows from a line
+   * under it, and how each was settled.
+   */
+  async reconcile() {
+    const { current } = await this.quarters();
+    const upload = (await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM cr_prepared_upload WHERE quarter_end = ?', [current]).catch(() => []))[0];
+    if (!upload) return null;
+    const prepared = new Map((await rows<{ code: string; amount: unknown }>(this.pool, 'SELECT code, amount FROM cr_prepared WHERE quarter_end = ?', [current])).map((r) => [r.code, r.amount === null ? null : Number(r.amount)]));
+    const settled = new Map((await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM cr_resolution WHERE quarter_end = ?', [current]).catch(() => [])).map((r) => [r.code as string, { resolution: r.resolution as CrResolution, reason: r.reason as string, by: r.decided_by as string }]));
+    const all = await this.lines();
+    const diffs = all
+      .filter((l) => prepared.has(l.code) && l.code !== '998' && !/ratio/i.test(l.name))
+      .map((l) => ({ line: l, prepared: prepared.get(l.code)!, di: l.current ?? 0 }))
+      .filter((d) => d.prepared !== null && Math.abs(d.prepared - d.di) >= 1)
+      .map((d) => ({ ...d, difference: Math.round((d.prepared! - d.di) * 100) / 100 }));
+    // A difference that only follows from a line under it is settled there.
+    const lineRows = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM cr_line');
+    const fromInputs = carryUp(this.shapes(lineRows), new Map(diffs.filter((d) => d.line.kind === 'input').map((d) => [d.line.code, d.difference])), crParents(this.shapes(lineRows)));
+    const items = diffs.map((d) => {
+      const follows = d.line.kind !== 'input' && Math.abs((fromInputs.get(d.line.code) ?? 0) - d.difference) < 1;
+      return { code: d.line.code, name: d.line.name, schedule: d.line.schedule, kind: d.line.kind, prepared: d.prepared!, di: d.di, difference: d.difference, pct: d.di ? Math.round((d.difference / Math.abs(d.di)) * 10000) / 100 : null, follows, resolution: settled.get(d.line.code) ?? null };
+    });
+    const compared = all.filter((l) => prepared.has(l.code)).length;
+    return { quarter: current, upload: { file: upload.file_name as string, by: upload.uploaded_by as string, at: String(upload.uploaded_at instanceof Date ? upload.uploaded_at.toISOString() : upload.uploaded_at).slice(0, 10), lines: Number(upload.line_count) }, compared, matched: compared - items.length, items, open: items.filter((i) => !i.follows && !i.resolution) };
+  }
+
+  /** Settle a difference. "Prepared correct" also records the adjustment that makes DI match. */
+  async resolve(p: { code: string; resolution: CrResolution; reason: string; adjustment?: number }, meta: { by: string; approvalId: string }) {
+    const { current } = await this.quarters();
+    await this.pool.query('INSERT INTO cr_resolution (code, quarter_end, resolution, reason, decided_by, decided_at, approval_id) VALUES (?, ?, ?, ?, ?, NOW(), ?) ON DUPLICATE KEY UPDATE resolution = VALUES(resolution), reason = VALUES(reason), decided_by = VALUES(decided_by), decided_at = VALUES(decided_at), approval_id = VALUES(approval_id)', [p.code, current, p.resolution, p.reason.slice(0, 300), meta.by, meta.approvalId]);
+    if (p.resolution === 'Prepared correct' && p.adjustment) await this.adjust({ code: p.code, amount: p.adjustment, reason: 'Correction', note: p.reason }, { by: meta.by, approvalId: `${meta.approvalId}.adj` });
+  }
+
+  /** Write or replace the explanation NCUA asks for on a large change. */
+  async explain(code: string, text: string, by: string) {
+    const { current } = await this.quarters();
+    await this.pool.query("INSERT INTO cr_explanation (code, quarter_end, explanation, status, written_by) VALUES (?, ?, ?, 'Written', ?) ON DUPLICATE KEY UPDATE explanation = VALUES(explanation), status = 'Written', written_by = VALUES(written_by)", [code, current, text.slice(0, 400), by]);
+  }
+
+  /**
+   * The quarter as XML: each account code and its value after adjustments, with the form, period and
+   * whether edits are still open. DI's own layout, for Call Report software or to map to the filing
+   * system's import format; it isn't NCUA's or the FFIEC's published schema.
+   */
+  async xml(institution: string) {
+    const [f, q, lines, r, adj] = await Promise.all([this.form(), this.quarters(), this.lines(), this.readiness(), this.adjustments()]);
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const items = lines.filter((l) => l.current !== null || l.text).map((l) => `    <Item code="${esc(l.code)}" schedule="${esc(l.schedule)}">${l.text !== null ? esc(l.text) : String(l.current)}</Item>`);
+    return [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      `<CallReport form="${esc(f.form)}" edition="${esc(f.edition)}" periodEnd="${q.current}" institution="${esc(institution)}" status="${r.ready ? 'Final' : 'Draft'}" generatedBy="Kinective DI">`,
+      `  <Edits errors="${r.errors.length}" warnings="${r.warnings.length}"/>`,
+      `  <Adjustments count="${adj.length}">${adj.map((a) => `\n    <Adjustment code="${esc(a.code)}" amount="${a.amount}" reason="${esc(a.reason)}" by="${esc(a.by)}">${esc(a.note)}</Adjustment>`).join('')}${adj.length ? '\n  ' : ''}</Adjustments>`,
+      '  <Items>',
+      ...items,
+      '  </Items>',
+      '</CallReport>',
+      '',
+    ].join('\n');
   }
 
   /** One line, with what makes it up: its GL accounts, or for a total the lines its formula names. */
