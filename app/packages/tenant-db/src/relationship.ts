@@ -69,6 +69,9 @@ export const RELATIONSHIP_DDL = [
      branch_id INT NOT NULL,
      loan_category VARCHAR(40) NOT NULL,
      is_duplicate TINYINT NOT NULL,
+     credit_score SMALLINT NULL,
+     expected_close DATE NULL,
+     funded_date DATE NULL,
      KEY ix_app_party (party_id),
      KEY ix_app_owner (owner_employee_id),
      KEY ix_app_branch (branch_id, status_code)

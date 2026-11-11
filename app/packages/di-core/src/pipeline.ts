@@ -1,7 +1,7 @@
 // Loan Application Pipeline (spec 17.5, 24.18). Views, summaries, stall detection and the status map
 // are decided here, never by a client or an agent. Days in status run to the last LOS load, because
 // the feed is nightly. Without Application Details access, answers are counts and dollars only.
-import type { Pool } from '@dinext/tenant-db';
+import { LAP_PULL_THROUGH, type Pool } from '@dinext/tenant-db';
 import { CoreError, memberNumber, type CoreContext } from './referrals.ts';
 
 export const PIPELINE_VIEWS = ['mine', 'location', 'team', 'institution'] as const;
@@ -40,7 +40,19 @@ export interface PipelineApplication {
   branch: string;
   /** What it's waiting on, when the LOS records it. Only open applications have one. */
   hold: { label: string; waitingOn: string; nextStep: string; days: number } | null;
+  /** The applicant's credit score, the expected closing date, and when it funded. */
+  creditScore: number | null;
+  expectedClose: string | null;
+  funded: string | null;
 }
+
+/** Credit tiers, as DI segments applications by FICO. */
+export const CREDIT_TIERS = [
+  { tier: 'A', label: 'A (740+)', min: 740 },
+  { tier: 'B', label: 'B (680 to 739)', min: 680 },
+  { tier: 'C', label: 'C (620 to 679)', min: 620 },
+  { tier: 'D', label: 'D (below 620)', min: 0 },
+] as const;
 
 export interface PipelineCell {
   count: number;
@@ -115,7 +127,7 @@ const day = (v: unknown) => String(v).slice(0, 10);
 const between = (from: string, to: string) => Math.max(0, Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000));
 const has = (text: string, part: string) => text.toLowerCase().includes(part.toLowerCase());
 
-const APP_SQL = `SELECT a.application_id, a.party_id, a.product, a.amount, a.status_code, a.status_since, a.applied_date, a.decided_date, a.owner_employee_id,
+const APP_SQL = `SELECT a.application_id, a.party_id, a.product, a.amount, a.status_code, a.status_since, a.applied_date, a.decided_date, a.owner_employee_id, a.credit_score, a.expected_close, a.funded_date,
     p.first_name, p.last_name, b.name AS branch, e.display_name AS owner_name, s.label, s.reporting_group, s.in_progress,
     hr.label AS hold_label, hr.waiting_on, hr.next_step, ah.since_date AS hold_since
   FROM cdm_loan_application a JOIN cdm_party p ON p.party_id = a.party_id JOIN cdm_location b ON b.int_id = a.branch_id
@@ -214,6 +226,9 @@ export class PipelineService {
       owner: r.owner_employee_id && r.owner_name ? { employeeId: r.owner_employee_id as number, name: r.owner_name as string } : null,
       branch: r.branch as string,
       hold: open && r.hold_label ? { label: r.hold_label as string, waitingOn: r.waiting_on as string, nextStep: r.next_step as string, days: between(day(r.hold_since), asOf) } : null,
+      creditScore: r.credit_score === null || r.credit_score === undefined ? null : Number(r.credit_score),
+      expectedClose: r.expected_close ? day(r.expected_close) : null,
+      funded: r.funded_date ? day(r.funded_date) : null,
     };
   }
 
@@ -258,6 +273,42 @@ export class PipelineService {
       }),
       open: { count: open.length, dollars: open.reduce((s, a) => s + a.amount, 0) },
       stalled: { count: stalled.length, dollars: stalled.reduce((s, a) => s + a.amount, 0), oldestDays: Math.max(0, ...stalled.map((a) => a.daysInStatus)) },
+    };
+  }
+
+  /**
+   * Projected closings: open applications and approvals not yet funded, by expected closing date, each
+   * weighted by how often its stage goes on to close. Next 30, 60 and 90 days, by product.
+   */
+  async forecast(view: PipelineView, who: PipelineWho, ctx: CoreContext) {
+    const { asOf } = await this.freshness();
+    const { apps } = await this.rows(view, who, ctx, asOf, ['a.funded_date IS NULL', 'a.expected_close IS NOT NULL', "a.status_code NOT IN ('DENIED_DM', 'WITHDRAWN')"]);
+    const add = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+    const windows = [30, 60, 90].map((days) => {
+      const inWindow = apps.filter((a) => a.expectedClose! <= add(asOf, days));
+      const weight = (a: PipelineApplication) => LAP_PULL_THROUGH[a.statusCode] ?? 0.5;
+      return { days, count: inWindow.length, dollars: inWindow.reduce((s, a) => s + a.amount, 0), expectedCount: Math.round(inWindow.reduce((s, a) => s + weight(a), 0) * 10) / 10, expectedDollars: Math.round(inWindow.reduce((s, a) => s + a.amount * weight(a), 0)) };
+    });
+    const products = [...new Set(apps.map((a) => a.product))].map((product) => {
+      const mine = apps.filter((a) => a.product === product && a.expectedClose! <= add(asOf, 90));
+      return { product, count: mine.length, expectedDollars: Math.round(mine.reduce((s, a) => s + a.amount * (LAP_PULL_THROUGH[a.statusCode] ?? 0.5), 0)) };
+    }).filter((p) => p.count).sort((a, b) => b.expectedDollars - a.expectedDollars);
+    return { asOf, windows, products, scheduled: apps.filter((a) => !a.open).sort((a, b) => a.expectedClose!.localeCompare(b.expectedClose!)) };
+  }
+
+  /** Applications by credit tier over the last 120 days: how many, dollars, and how often each tier is approved. */
+  async creditTiers(view: PipelineView, who: PipelineWho, ctx: CoreContext) {
+    const { asOf } = await this.freshness();
+    const { apps } = await this.rows(view, who, ctx, asOf, ['a.credit_score IS NOT NULL', 'a.applied_date >= ? - INTERVAL 120 DAY'], [asOf]);
+    const tierOf = (s: number) => CREDIT_TIERS.find((t) => s >= t.min)!;
+    return {
+      asOf,
+      tiers: CREDIT_TIERS.map((t) => {
+        const mine = apps.filter((a) => tierOf(a.creditScore!).tier === t.tier);
+        const decided = mine.filter((a) => !a.open && a.statusCode !== 'WITHDRAWN');
+        const approved = decided.filter((a) => a.statusCode !== 'DENIED_DM');
+        return { tier: t.tier, label: t.label, count: mine.length, dollars: mine.reduce((s, a) => s + a.amount, 0), open: mine.filter((a) => a.open).length, approvalPct: decided.length ? Math.round((approved.length / decided.length) * 1000) / 10 : null };
+      }),
     };
   }
 

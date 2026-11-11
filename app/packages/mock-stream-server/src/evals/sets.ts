@@ -191,6 +191,8 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-LG-001', set: 'golden', persona: 'executive', q: 'Find members who have an auto loan or HELOC at another lender, or the equity and credit to qualify for one, and prepare a measured outreach campaign with a control group.', agent: 'Loan Growth', approval: 'medium' },
   { id: 'GQ-LG-002', set: 'golden', persona: 'executive', q: 'Who has an auto loan with another lender?', agent: 'Loan Growth', contains: ['pay an auto loan to another lender'], approval: 'none' },
   { id: 'GQ-LG-003', set: 'golden', persona: 'executive', q: 'How did the July auto refinance campaign do?', agent: 'Loan Growth', contains: ['control group'], approval: 'none' },
+  { id: 'GQ-LAPF-001', set: 'golden', persona: 'branch', q: 'What will close in the next 30 days?', agent: 'Pipeline Forecast', contains: ['should close in the next 30 days'], approval: 'none' },
+  { id: 'GQ-LAPF-002', set: 'golden', persona: 'executive', q: 'Show applications by credit tier', agent: 'Pipeline Forecast', contains: ['tier A'], approval: 'none' },
   { id: 'GQ-REF-R01', set: 'golden', persona: 'executive', q: 'Show referral conversion by type', agent: 'Referral Reports', contains: ['In the last 12 months'], approval: 'none' },
   { id: 'GQ-REF-R02', set: 'golden', persona: 'branch', q: 'Who makes the most referrals?', agent: 'Referral Reports', contains: ['referrals**'], approval: 'none' },
   { id: 'GQ-REF-R03', set: 'golden', persona: 'executive', q: 'Which referrals have gone stale?', agent: 'Referral Reports', approval: 'medium' },

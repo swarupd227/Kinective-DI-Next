@@ -12,7 +12,7 @@ export { TABLES_DDL, TABLES_WRITE_TABLES, seedTables } from './tables.ts';
 export { GROWTH_DDL, GROWTH_WRITE_TABLES, PROSPECT_DISPOSITIONS, PROSPECT_STAGES, branchPlace, seedGrowth } from './growth.ts';
 export { GOVERNANCE_APPEND_TABLES, GOVERNANCE_DDL, generateGovernance } from './governance.ts';
 export { GOALS_DDL, GOALS_WRITE_TABLES, GI_GOALS, GI_INCENTIVES, GI_TIERS, GI_PERIOD, GI_PRIOR, generateGoals } from './goals.ts';
-export { PIPELINE_DDL, PIPELINE_WRITE_TABLES, LAP_HOLDS, LAP_STATUSES, generatePipeline, markDuplicates } from './pipeline.ts';
+export { PIPELINE_DDL, PIPELINE_WRITE_TABLES, LAP_CYCLE_DAYS, LAP_PULL_THROUGH, LAP_HOLDS, LAP_STATUSES, generatePipeline, markDuplicates } from './pipeline.ts';
 export { WORKFLOW_DDL, WORKFLOW_WRITE_TABLES, REFERRAL_TYPES, workflowSeed, referralSeed, type ReferralType, type FormField, type RouteRule } from './workflow.ts';
 // Email notifications: the simulated outbox and each person's preferences.
 export { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';

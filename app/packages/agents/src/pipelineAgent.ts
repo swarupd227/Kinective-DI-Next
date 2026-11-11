@@ -115,7 +115,7 @@ function totalsTable(f: PipelineFound, runId: string): Block {
 
 export function summaryBlocks(s: PipelineSummary, runId: string): Block[] {
   const operations = 'lap.summary.get';
-  const columns = [{ field: 'product', headerName: 'Product', type: 'text' as const }, ...s.groups.map((g) => ({ field: g, headerName: g, type: 'count' as const })), { field: 'count', headerName: 'Total', type: 'count' as const }, { field: 'dollars', headerName: 'Dollars', type: 'currency' as const }, { field: 'avgDays', headerName: 'Avg days', type: 'days' as const }];
+  const columns = [{ field: 'product', headerName: 'Product', type: 'text' as const }, ...s.groups.flatMap((g, i) => [{ field: g, headerName: g, type: 'count' as const }, { field: `g${i}_dollars`, headerName: `${g} $`, type: 'currency' as const }, { field: `g${i}_days`, headerName: `${g} days`, type: 'days' as const }]), { field: 'count', headerName: 'Total', type: 'count' as const }, { field: 'dollars', headerName: 'Dollars', type: 'currency' as const }, { field: 'avgDays', headerName: 'Avg days', type: 'days' as const }];
   return [
     {
       id: newBlockId('lap'),
@@ -151,7 +151,7 @@ export function summaryBlocks(s: PipelineSummary, runId: string): Block[] {
       title: 'Pipeline by product',
       provenance: provenance(runId, operations),
       freshness: freshness(s),
-      data: { columns, rows: s.products.map((p) => ({ product: p.product, ...Object.fromEntries(s.groups.map((g) => [g, p.cells[g]?.count ?? 0])), count: p.total.count, dollars: p.total.dollars, avgDays: p.total.avgDays })), rowCount: s.products.length },
+      data: { columns, rows: s.products.map((p) => ({ product: p.product, ...Object.fromEntries(s.groups.flatMap((g, i) => [[g, p.cells[g]?.count ?? 0], [`g${i}_dollars`, p.cells[g]?.dollars ?? 0], [`g${i}_days`, p.cells[g]?.avgDays ?? 0]])), count: p.total.count, dollars: p.total.dollars, avgDays: p.total.avgDays })), rowCount: s.products.length },
     },
   ];
 }

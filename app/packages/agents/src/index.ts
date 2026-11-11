@@ -68,3 +68,4 @@ export { PREDICTIVE_REQUEST, bandIn, predictiveModule, predictiveQuestion, produ
 export { GL_REQUEST, dayIn, glModule, glPlan, monthIn } from './gl.ts';
 export { INTERACTION_REQUEST, followUpIn, interactionModule, interactionPlan } from './interactions.ts';
 export { REFERRAL_REPORT_REQUEST, referralReportModule, referralReportPlan } from './referralReport.ts';
+export { PIPELINE_FORECAST_REQUEST, pipelineForecastModule } from './pipelineForecast.ts';

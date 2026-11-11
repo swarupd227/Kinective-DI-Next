@@ -88,7 +88,12 @@ export const LAP_HOLDS = [
   ['COUNTER_REPLY', 'The applicant hasn’t answered the counter offer', 'the applicant', 'Follow up with the applicant on the offer.', 'COUNTER', null],
 ] as const;
 
-export const LAP_APPLICATION_COLUMNS = ['application_id', 'party_id', 'product', 'amount', 'status_group', 'status_detail', 'applied_date', 'decided_date', 'status_code', 'status_since', 'owner_employee_id', 'branch_id', 'loan_category', 'is_duplicate'];
+export const LAP_APPLICATION_COLUMNS = ['application_id', 'party_id', 'product', 'amount', 'status_group', 'status_detail', 'applied_date', 'decided_date', 'status_code', 'status_since', 'owner_employee_id', 'branch_id', 'loan_category', 'is_duplicate', 'credit_score', 'expected_close', 'funded_date'];
+
+/** Typical days from application to closing, by loan category [Assumption: demo]. */
+export const LAP_CYCLE_DAYS: Record<string, number> = { Auto: 6, Personal: 5, 'Credit Card': 4, Consumer: 6, Mortgage: 38, HELOC: 28, Business: 30, 'Commercial Real Estate': 45, 'Commercial & Industrial': 30 };
+/** How often an application at each stage goes on to close [Assumption: demo], for projected closings. */
+export const LAP_PULL_THROUGH: Record<string, number> = { RECEIVED: 0.45, DOCUMENTS: 0.55, UNDERWRITING: 0.7, COUNTER: 0.6, APPROVED: 0.92, AUTO_APPROVED: 0.92 };
 
 const OPEN_PER_BRANCH = 24;
 const DECIDED_PER_BRANCH = 30;
@@ -224,8 +229,30 @@ export function generatePipeline(t: GeneratedTenant, applications: unknown[][]) 
     if (a.code !== 'DENIED_DM') decided[4] = (decided[4] as number) + 1;
   }
 
+  // Credit score, expected closing and funding, keyed on the application so no other figure moves. Some
+  // recent approvals haven't closed yet: their closing is scheduled.
+  const today = ymd(new Date(asOf));
+  const extra = (a: App) => {
+    const u = unit(a.id, 501);
+    const score = Math.round(a.code === 'DENIED_DM' ? 560 + u * 120 : a.group === 'Approved' ? 660 + u * 160 : 600 + u * 200);
+    const cycle = LAP_CYCLE_DAYS[a.category] ?? 12;
+    if (a.group === 'Pending') {
+      const close = after(a.applied, Math.round(cycle * (1 + unit(a.id, 502) * 0.4)));
+      return [score, close > today ? close : after(today, 1 + Math.floor(unit(a.id, 503) * 5)), null];
+    }
+    if (a.group === 'Approved' && a.decided) {
+      const recent = a.decided >= after(today, -14) && unit(a.id, 504) < 0.5;
+      if (recent) {
+        a.detail = 'Approved, closing scheduled';
+        return [score, after(today, 2 + Math.floor(unit(a.id, 505) * 12)), null];
+      }
+      const funded = after(a.decided, 1 + Math.floor(unit(a.id, 506) * 7));
+      return [score, funded, funded > today ? today : funded];
+    }
+    return [score, null, null];
+  };
   return {
-    applications: apps.map((a) => [a.id, a.party, a.product, a.amount, a.group, a.detail, a.applied, a.decided, a.code, a.since, a.owner, a.branch, a.category, a.duplicate ? 1 : 0]),
+    applications: apps.map((a) => { const x = extra(a); return [a.id, a.party, a.product, a.amount, a.group, a.detail, a.applied, a.decided, a.code, a.since, a.owner, a.branch, a.category, a.duplicate ? 1 : 0, ...x]; }),
     history,
     holds,
     months: [...months.values()],
