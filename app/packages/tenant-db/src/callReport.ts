@@ -26,7 +26,7 @@ const UNMAPPED_GL: [string, string, number, string, string, string, string][] = 
 ];
 
 /** Our loan categories on the 5300's loan types: [category, share of it, count code, amount code, delinquency row, charge-off, recovery]. */
-const LOAN_TYPES: [string, number, string, string, string, string, string][] = [
+export const LOAN_TYPES: [string, number, string, string, string, string, string][] = [
   ['Credit Card', 1, '993', '396', 'Unsecured Credit Card Loans', '680', '681'],
   ['Personal', 1, '994', '397', 'All Other Unsecured Loans/Lines of Credit', 'CH0007', 'CH0008'],
   ['Auto', 0.38, '958', '385', 'New Vehicle Loans', '550C1', '551C1'],

@@ -2,7 +2,7 @@
 // early warning (24.19), campaigns (24.20) and SEG (24.22). Every figure and rule lives here. An
 // access answer, a variance or a suppression count is never left to a model (AI-AGT-141, 201, 252).
 import type { Pool } from '@dinext/tenant-db';
-import { carryUp, crParents } from '@dinext/tenant-db';
+import { carryUp, crParents, CR_LOAN_TYPES } from '@dinext/tenant-db';
 import { CoreError, memberNumber, type CoreContext } from './referrals.ts';
 
 const day = (v: unknown) => String(v instanceof Date ? v.toISOString() : v).slice(0, 10);
@@ -384,6 +384,112 @@ export class CallReportService {
   }
 
   /** GL accounts with no 5300 line: what the "GL accounts categorized" check counts. */
+  /**
+   * The loan or deposit trial balance (DI's 5300 trial balance tabs): each product category's balance
+   * and count from the core, the 5300 lines it feeds, what those lines say this quarter, and the gap.
+   */
+  async trialBalance(kind: 'loan' | 'deposit') {
+    const all = await this.lines();
+    const amt = (code: string) => all.find((l) => l.code === code)?.current ?? 0;
+    if (kind === 'deposit') {
+      const cats = await rows<{ c: string; n: number; bal: unknown }>(this.pool, 'SELECT deposit_category AS c, COUNT(*) AS n, SUM(balance) AS bal FROM cdm_deposit_account WHERE close_date IS NULL GROUP BY deposit_category ORDER BY bal DESC');
+      const core = cats.reduce((s, r) => s + Number(r.bal), 0);
+      return { kind, rows: cats.map((r) => ({ category: r.c, accounts: Number(r.n), balance: Math.round(Number(r.bal)), lines: '013 Member Shares of All Types' })), core: Math.round(core), reported: amt('013'), difference: Math.round(amt('013') - core) };
+    }
+    const cats = await rows<{ c: string; n: number; bal: unknown }>(this.pool, 'SELECT loan_category AS c, COUNT(*) AS n, SUM(balance) AS bal FROM cdm_loan WHERE close_date IS NULL AND charge_off_date IS NULL AND balance > 0 GROUP BY loan_category ORDER BY bal DESC');
+    const out = cats.map((r) => {
+      const maps = CR_LOAN_TYPES.filter((t) => t[0] === r.c);
+      const reported = maps.reduce((s, t) => s + amt(t[3]), 0);
+      return { category: r.c, accounts: Number(r.n), balance: Math.round(Number(r.bal)), lines: maps.map((t) => `${t[3]} ${t[4]}`).join('; ') || 'Not on a 5300 loan line', reported: Math.round(reported), difference: Math.round(reported - Number(r.bal)) };
+    });
+    return { kind, rows: out, core: out.reduce((s, r) => s + r.balance, 0), reported: out.reduce((s, r) => s + r.reported, 0), difference: out.reduce((s, r) => s + r.difference, 0) };
+  }
+
+  /** A GL account and where it can go: the line named, which must be an input line. */
+  async glMapPreview(glNumber: string, code: string) {
+    const [g] = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM cr_gl_account WHERE gl_number = ?', [glNumber]).catch(() => []);
+    if (!g) throw new CoreError('NOT_FOUND', `There’s no GL account ${glNumber} in the 5300 mapping.`);
+    const p = await this.previewAdjustment(code, Number(g.balance));
+    return { gl: { glNumber: g.gl_number as string, name: g.name as string, balance: Number(g.balance), from: (g.line_code as string | null) ?? null }, ...p };
+  }
+
+  /** Maps a GL account to a line, and carries its balance into that line (and out of the old one) as a Mapping adjustment. */
+  async mapGl(p: { glNumber: string; code: string; from: string | null; balance: number }, meta: { by: string; approvalId: string }) {
+    await this.pool.query('UPDATE cr_gl_account SET line_code = ? WHERE gl_number = ?', [p.code, p.glNumber]);
+    await this.adjust({ code: p.code, amount: p.balance, reason: 'Mapping', note: `GL ${p.glNumber} mapped to ${p.code}.` }, { by: meta.by, approvalId: `${meta.approvalId}:to`.slice(0, 40) });
+    if (p.from) await this.adjust({ code: p.from, amount: -p.balance, reason: 'Mapping', note: `GL ${p.glNumber} moved from ${p.from} to ${p.code}.` }, { by: meta.by, approvalId: `${meta.approvalId}:from`.slice(0, 40) });
+  }
+
+  /** A loan and the 5300 lines its category can sit on (Auto and Business split across two). */
+  async loanForOverride(loanId: number) {
+    const [l] = await rows<{ loan_id: number; loan_category: string; balance: unknown; first_name: string; last_name: string }>(this.pool, 'SELECT l.loan_id, l.loan_category, l.balance, p.first_name, p.last_name FROM cdm_loan l JOIN cdm_party p ON p.party_id = l.party_id WHERE l.loan_id = ? AND l.close_date IS NULL AND l.charge_off_date IS NULL', [loanId]);
+    if (!l) throw new CoreError('NOT_FOUND', `Loan ${loanId} isn’t an open loan on this 5300.`);
+    const [o] = await rows<{ to_code: string }>(this.pool, 'SELECT to_code FROM cr_loan_override WHERE loan_id = ?', [loanId]).catch(() => []);
+    const lines = CR_LOAN_TYPES.filter((t) => t[0] === l.loan_category).map((t) => ({ code: t[3], name: t[4] }));
+    return { loanId: l.loan_id, borrower: `${l.first_name} ${l.last_name}`, category: l.loan_category, balance: Number(l.balance), lines, overriddenTo: o?.to_code ?? null };
+  }
+
+  /** The 5300 loan amount lines, for choosing where a loan belongs. */
+  loanLines() {
+    return [...new Map(CR_LOAN_TYPES.map((t) => [t[3], { code: t[3], name: t[4] }])).values()];
+  }
+
+  /** Records a per-loan category override and moves its balance between the two lines as a pair of Mapping adjustments. */
+  async overrideLoan(p: { loanId: number; from: string; to: string; amount: number; reason: string }, meta: { by: string; approvalId: string }) {
+    const { current } = await this.quarters();
+    await this.pool.query('INSERT INTO cr_loan_override (loan_id, quarter_end, from_code, to_code, amount, reason, decided_by, decided_at, approval_id) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?) ON DUPLICATE KEY UPDATE to_code = VALUES(to_code), reason = VALUES(reason), decided_by = VALUES(decided_by), decided_at = NOW(), approval_id = VALUES(approval_id)', [p.loanId, current, p.from, p.to, p.amount, p.reason.slice(0, 300), meta.by, meta.approvalId]);
+    await this.adjust({ code: p.from, amount: -p.amount, reason: 'Mapping', note: `Loan ${p.loanId} reported on ${p.to} instead: ${p.reason}`.slice(0, 300) }, { by: meta.by, approvalId: `${meta.approvalId}:from`.slice(0, 40) });
+    await this.adjust({ code: p.to, amount: p.amount, reason: 'Mapping', note: `Loan ${p.loanId} moved from ${p.from}: ${p.reason}`.slice(0, 300) }, { by: meta.by, approvalId: `${meta.approvalId}:to`.slice(0, 40) });
+  }
+
+  /**
+   * An uploaded charge-off and recovery file against DI's lines: each row's loan sets its category and
+   * so its 5300 charge-off or recovery line; totals by line beside what DI reports, and the gap.
+   */
+  async chargeoffCheck(list: { loanId?: number; category?: string; kind: 'Charge-off' | 'Recovery'; amount: number; posted?: string }[]) {
+    const all = await this.lines();
+    const problems: { row: number; problem: string }[] = [];
+    const placed: { loanId: number | null; category: string; kind: string; amount: number; posted: string | null; code: string }[] = [];
+    for (const [i, r] of list.entries()) {
+      let category = r.category;
+      if (r.loanId) {
+        const [l] = await rows<{ loan_category: string }>(this.pool, 'SELECT loan_category FROM cdm_loan WHERE loan_id = ?', [r.loanId]);
+        if (!l) {
+          problems.push({ row: i + 2, problem: `Loan ${r.loanId} isn’t in the core.` });
+          continue;
+        }
+        category = l.loan_category;
+      }
+      const maps = CR_LOAN_TYPES.filter((t) => t[0].toLowerCase() === (category ?? '').toLowerCase()).sort((a, b) => b[1] - a[1]);
+      if (!maps.length) {
+        problems.push({ row: i + 2, problem: `“${category ?? 'blank'}” isn’t a loan category on the 5300.` });
+        continue;
+      }
+      const t = maps[0]!;
+      placed.push({ loanId: r.loanId ?? null, category: t[0], kind: r.kind, amount: r.amount, posted: r.posted ?? null, code: r.kind === 'Recovery' ? t[6] : t[5] });
+    }
+    const codes = [...new Set(placed.map((p) => p.code))];
+    const byLine = codes.map((code) => {
+      const file = placed.filter((p) => p.code === code).reduce((s, p) => s + p.amount, 0);
+      const line = all.find((l) => l.code === code);
+      const di = line?.current ?? 0;
+      return { code, name: line?.name ?? code, file: Math.round(file * 100) / 100, di, difference: Math.round((file - di) * 100) / 100 };
+    });
+    return { placed, problems, byLine };
+  }
+
+  /** Keeps the uploaded rows and adjusts each line that differs to the file's total. */
+  async applyChargeoffs(p: { file: string; placed: { loanId: number | null; category: string; kind: string; amount: number; posted: string | null; code: string }[]; byLine: { code: string; difference: number }[] }, meta: { by: string; approvalId: string }) {
+    const { current } = await this.quarters();
+    const [done] = await this.pool.query('SELECT 1 FROM cr_chargeoff_upload WHERE approval_id = ? LIMIT 1', [meta.approvalId]);
+    if (!(done as unknown[]).length && p.placed.length) {
+      await this.pool.query('INSERT INTO cr_chargeoff_upload (quarter_end, file_name, loan_id, category, kind, amount, posted, line_code, uploaded_by, approval_id) VALUES ?', [p.placed.map((r) => [current, p.file.slice(0, 120), r.loanId, r.category, r.kind, r.amount, r.posted, r.code, meta.by, meta.approvalId])]);
+    }
+    for (const [i, l] of p.byLine.filter((x) => Math.abs(x.difference) >= 0.01).entries()) {
+      await this.adjust({ code: l.code, amount: l.difference, reason: 'Correction', note: `From the charge-off and recovery upload ${p.file}.`.slice(0, 300) }, { by: meta.by, approvalId: `${meta.approvalId}:${i}`.slice(0, 40) });
+    }
+  }
+
   async uncategorized(): Promise<UncategorizedGl[]> {
     // A tenant seeded before the table existed has no accounts to show, not an error.
     const found = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM cr_gl_account WHERE line_code IS NULL ORDER BY balance DESC').catch(() => []);
@@ -671,6 +777,78 @@ export class SegService {
 
   async companies() {
     return (await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM seg_company ORDER BY new_members DESC')).map(this.toCompany);
+  }
+
+  /** One company by the words of its name, or a refusal naming the choices. */
+  async companyNamed(name: string) {
+    const words = name.toLowerCase().split(/\s+/).filter(Boolean);
+    const hits = (await this.companies()).filter((c) => words.every((w) => c.name.toLowerCase().includes(w)));
+    if (hits.length !== 1) throw new CoreError('NOT_FOUND', hits.length ? `More than one company matches “${name}”: ${hits.slice(0, 4).map((h) => h.name).join(', ')}.` : `There’s no company called “${name}”.`);
+    return hits[0]!;
+  }
+
+  /** The SEG list with filters: stage, BD manager, branch, active, size and name words. */
+  async list(f: { stage?: string; bdManager?: string; branch?: string; active?: boolean; minEmployees?: number; search?: string }) {
+    const where: string[] = ['1 = 1'];
+    const params: unknown[] = [];
+    if (f.stage) where.push('c.stage = ?'), params.push(f.stage);
+    if (f.bdManager) where.push('LOWER(x.bd_manager) LIKE ?'), params.push(`%${f.bdManager.toLowerCase()}%`);
+    if (f.branch) where.push('LOWER(x.branch) = ?'), params.push(f.branch.toLowerCase());
+    if (f.active !== undefined) where.push('COALESCE(x.active, 1) = ?'), params.push(f.active ? 1 : 0);
+    if (f.minEmployees) where.push('x.employees >= ?'), params.push(f.minEmployees);
+    if (f.search) where.push('LOWER(c.name) LIKE ?'), params.push(`%${f.search.toLowerCase()}%`);
+    const found = await rows<Record<string, unknown>>(this.pool, `SELECT c.*, x.bd_manager, x.branch, x.active, x.employees FROM seg_company c LEFT JOIN seg_contact x ON x.company_id = c.company_id WHERE ${where.join(' AND ')} ORDER BY c.new_members DESC`, params).catch(() => []);
+    return found.map((r) => ({ ...this.toCompany(r), bdManager: (r.bd_manager as string | null) ?? null, branch: (r.branch as string | null) ?? null, active: r.active === null || r.active === undefined ? true : Number(r.active) === 1, employees: r.employees === null || r.employees === undefined ? null : Number(r.employees) }));
+  }
+
+  async notes(companyId: number) {
+    return (await rows<Record<string, unknown>>(this.pool, 'SELECT at, by_name, text FROM seg_note WHERE company_id = ? ORDER BY at DESC, note_id DESC', [companyId]).catch(() => [])).map((n) => ({ at: day(n.at), by: n.by_name as string, text: n.text as string }));
+  }
+
+  async addNote(companyId: number, text: string, meta: { by: string; approvalId: string; today: string }) {
+    await this.pool.query('INSERT INTO seg_note (company_id, at, by_name, text, approval_id) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE note_id = note_id', [companyId, meta.today, meta.by, text.slice(0, 400), meta.approvalId]);
+  }
+
+  /** Sponsorships, donations and in-kind support: one company's, or every company's, newest first, with totals by year. */
+  async sponsorships(companyId?: number) {
+    const list = await rows<Record<string, unknown>>(this.pool, `SELECT s.*, c.name FROM seg_sponsorship s JOIN seg_company c ON c.company_id = s.company_id${companyId ? ' WHERE s.company_id = ?' : ''} ORDER BY s.given_on DESC`, companyId ? [companyId] : []).catch(() => []);
+    const items = list.map((s) => ({ company: s.name as string, givenOn: day(s.given_on), kind: s.kind as string, amount: Number(s.amount), description: s.description as string, approvedBy: s.approved_by as string }));
+    const years = [...new Set(items.map((i) => i.givenOn.slice(0, 4)))].sort().reverse().map((y) => ({ year: y, amount: items.filter((i) => i.givenOn.startsWith(y)).reduce((s, i) => s + i.amount, 0), count: items.filter((i) => i.givenOn.startsWith(y)).length }));
+    return { items, years, total: items.reduce((s, i) => s + i.amount, 0) };
+  }
+
+  async addSponsorship(p: { companyId: number; givenOn: string; kind: string; amount: number; description: string }, meta: { by: string; approvalId: string }) {
+    await this.pool.query('INSERT INTO seg_sponsorship (company_id, given_on, kind, amount, description, approved_by, approval_id) VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE sponsorship_id = sponsorship_id', [p.companyId, p.givenOn, p.kind, p.amount, p.description.slice(0, 160), meta.by, meta.approvalId]);
+  }
+
+  /** Members who say they work at the company (from what they shared about their employment): how many, and what they hold. */
+  async relationships(company: string) {
+    const people = await rows<{ party_id: number; first_name: string; last_name: string; occupation: string | null; deposits: unknown; loans: unknown }>(
+      this.pool,
+      `SELECT p.party_id, p.first_name, p.last_name, f.occupation,
+              (SELECT COALESCE(SUM(balance), 0) FROM cdm_deposit_account d WHERE d.party_id = p.party_id AND d.close_date IS NULL) AS deposits,
+              (SELECT COALESCE(SUM(balance), 0) FROM cdm_loan l WHERE l.party_id = p.party_id AND l.close_date IS NULL AND l.charge_off_date IS NULL) AS loans
+         FROM cdm_party_profile f JOIN cdm_party p ON p.party_id = f.party_id WHERE LOWER(f.employer) = ? ORDER BY deposits DESC`,
+      [company.toLowerCase()],
+    ).catch(() => []);
+    return { count: people.length, deposits: people.reduce((s, x) => s + Number(x.deposits), 0), loans: people.reduce((s, x) => s + Number(x.loans), 0), people: people.slice(0, 25).map((x) => ({ name: `${x.first_name} ${x.last_name}`, last4: memberNumber(x.party_id).slice(-4), occupation: x.occupation ?? '—', deposits: Math.round(Number(x.deposits)), loans: Math.round(Number(x.loans)) })) };
+  }
+
+  /** Adds a company at the first stage, with its contact, once per approval. */
+  async createCompany(p: { name: string; contact: string; title: string; phone: string; email: string; branch: string; bdManager: string; employees: number }, meta: { approvalId: string }) {
+    const [dup] = await rows<{ company_id: number }>(this.pool, 'SELECT company_id FROM seg_company WHERE LOWER(name) = ?', [p.name.toLowerCase()]);
+    if (dup) return dup.company_id;
+    const [[m]] = (await this.pool.query('SELECT COALESCE(MAX(company_id), 0) + 1 AS id FROM seg_company')) as unknown as [{ id: number }[]];
+    const id = Number(m?.id ?? 1);
+    await this.pool.query("INSERT INTO seg_company (company_id, name, stage, members, new_members, loans, deposits, owner, sponsorship) VALUES (?, ?, 'Identification', 0, 0, 0, 0, ?, NULL)", [id, p.name.slice(0, 80), p.bdManager]);
+    await this.pool.query('INSERT INTO seg_contact (company_id, contact_name, title, phone, email, branch, bd_manager, active, employees, next_follow_up, follow_up_note) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, NULL, NULL)', [id, p.contact, p.title, p.phone.replace(/\D/g, '').slice(0, 20), p.email, p.branch, p.bdManager, p.employees]);
+    await this.pool.query("INSERT INTO seg_interaction (company_id, at, kind, note, by_name, approval_id) VALUES (?, CURDATE(), 'Note', 'Added to SEG Management.', ?, ?)", [id, p.bdManager, meta.approvalId]);
+    return id;
+  }
+
+  /** Retires a company or brings it back. Nothing is deleted: its history stays. */
+  async setActive(companyId: number, active: boolean) {
+    await this.pool.query('UPDATE seg_contact SET active = ?, next_follow_up = IF(?, next_follow_up, NULL) WHERE company_id = ?', [active ? 1 : 0, active ? 1 : 0, companyId]);
   }
 
   async company(name: string) {

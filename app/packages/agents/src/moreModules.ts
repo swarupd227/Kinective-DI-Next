@@ -3,7 +3,7 @@
 // Each states its limits: the Call Report agent is read-only, the Admin agent can't change its own
 // user or impersonate anyone, and DI never contacts a borrower or changes a loan.
 import { z } from 'zod';
-import { CALL_REPORT_EDITION, CR_ADJUST_REASONS, CR_RESOLUTIONS, type CrAdjustReason, type CrResolution, CAPABILITIES, CLASSES, CoreError, SEG_STAGES, USER_CLASSES, type CallReportLine, type CallReportService, stampUtc, type ApiService, type CampaignService, type CollectionsService, type OperationsService, type SegService } from '@dinext/di-core';
+import { CALL_REPORT_EDITION, CR_ADJUST_REASONS, CR_RESOLUTIONS, type CrAdjustReason, type CrResolution, CAPABILITIES, CLASSES, CoreError, SEG_STAGES, USER_CLASSES, type CallReportLine, type CallReportService, stampUtc, csvCells, type FileStore, type ApiService, type CampaignService, type CollectionsService, type OperationsService, type SegService } from '@dinext/di-core';
 import { money } from './pipelineAgent.ts';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
@@ -234,10 +234,10 @@ export function operationsModule(ops: OperationsService): ModuleSpec {
 
 // ---- 5300 Call Report -------------------------------------------------------------------------
 
-export function callReportModule(cr: CallReportService): ModuleSpec {
+export function callReportModule(cr: CallReportService, files: FileStore | null = null): ModuleSpec {
   const noAccess = 'The 5300 Call Report is for credit unions with the module. A bank call report is scoped separately by Kinective.';
   const need = (ctx: ModuleContext) => guard(ctx, 'callreport', noAccess);
-  const READ_ONLY = 'I can’t submit the 5300 or change GL mappings. Filing in CUOnline stays a person’s action, and mappings are changed in the 5300 workspace by authorized staff. What I can do, each with your approval: record a manual adjustment to a line, settle a difference from your prepared figures, and write the explanation for a line that moved.';
+  const READ_ONLY = 'I can’t submit the 5300: filing in CUOnline stays a person’s action. With your approval I can map an uncategorized GL account to a line, move a loan to another 5300 category, load a charge-off and recovery file, record a manual adjustment, settle a difference from your prepared figures, and write the explanation for a line.';
   const DOWNLOAD = 'Yes. On the **Call Report** page there are three downloads: the **data file** (CSV) and the **XML file**, each 5300 account code and its value after any manual adjustments, for your Call Report software or to map to CUOnline’s import; and the **review workbook** (Excel), every schedule with the prior quarter, the edits, the explanations, the manual adjustments and the check against your prepared figures, for sign-off. While edits are open the files are marked DRAFT. Filing in CUOnline stays with you.';
   const code = /\b(\d{3}[A-Z]?\d?|[A-Z]{2}\d{4}|\d{4}[A-Z])\b/;
   const SCHEDULES: [RegExp, string, string?][] = [
@@ -259,7 +259,7 @@ export function callReportModule(cr: CallReportService): ModuleSpec {
     id: 'callreport',
     prefix: 'cr',
     agent: 'Call Report',
-    request: /\b5300\b|\bcall report\b|\bprepared (?:5300|figures?|numbers)\b|\bmanual adjustments?\b|\b(?:di|di’s|di's|the prepared figure|our figure) is (?:correct|right) on\b|\badjust (?:line )?\d{3}[A-Z]?\d?\b|\bexplanation for (?:line )?\d{3}[A-Z]?\d?\b|\bready to file\b|\bschedule [A-I]\b|\bline \d{3}[A-Z]?\b|\b(how is|why did) \d{3}[A-Z]?\b|\buncategori[sz]ed gl\b|\bgl accounts? (are|is) (uncategori[sz]ed|unmapped)\b|\bnet worth ratio\b|\bwell capitali[sz]ed\b|\bcculr\b|\bpca\b/i,
+    request: /\b5300\b|\bcall report\b|\btrial balance\b|\bcharge-?offs? and recover(?:y|ies) (?:upload|file)\b|\bmap (?:gl )?\d{4} to\b|\bprepared (?:5300|figures?|numbers)\b|\bmanual adjustments?\b|\b(?:di|di’s|di's|the prepared figure|our figure) is (?:correct|right) on\b|\badjust (?:line )?\d{3}[A-Z]?\d?\b|\bexplanation for (?:line )?\d{3}[A-Z]?\d?\b|\bready to file\b|\bschedule [A-I]\b|\bline \d{3}[A-Z]?\b|\b(how is|why did) \d{3}[A-Z]?\b|\buncategori[sz]ed gl\b|\bgl accounts? (are|is) (uncategori[sz]ed|unmapped)\b|\bnet worth ratio\b|\bwell capitali[sz]ed\b|\bcculr\b|\bpca\b/i,
     noAccess,
     sources: [{ kind: 'table', label: '5300 Call Report', ref: 'table:cr_line' }],
     prompt: ({ tenant, user, title }) => `You are the Call Report agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) prepares the quarterly NCUA Form 5300, ${CALL_REPORT_EDITION}. Lines are NCUA account codes (025B total loans and leases, 018 total shares and deposits, 041B loans 60+ days delinquent, 010 total assets, 997 net worth, 998 net worth ratio). NCUA edits are Errors, which block submission, and Warnings, which need an explanation in the comments.
@@ -275,7 +275,11 @@ export function callReportModule(cr: CallReportService): ModuleSpec {
 - "DI is correct on 013 because…", "the prepared figure is right on 370, adjust DI", "that's explained: …": cr_resolve (resolution DI correct, Prepared correct or Explained, with the person's reason).
 - "Adjust 003 by $412,600 for loans locked after the build": cr_adjust (amount, reason Timing, Participation, Mapping, Off-core loans, Correction or Other, and a note). "Show the manual adjustments": cr_adjustments.
 - "Use this explanation for 003: …": cr_explain_write.
-- Every change needs approval. You never submit the 5300 or change a GL mapping: say a person does that.`,
+- "Show the loan trial balance", "deposit trial balance": cr_trial_balance (kind loan or deposit), each category's core balance against the 5300 lines it feeds.
+- "Map GL 1795 to line AS0013": cr_gl_map (gl, code), which also carries its balance into the line.
+- "Loan 12345 belongs on 370, not 385: it's a used vehicle": cr_loan_override (loan_id, to, reason).
+- "Load the charge-off file", "check our charge-offs and recoveries upload": cr_chargeoff_upload (file uploaded on the Files page).
+- Every change needs approval. You never submit the 5300: say a person does that.`,
     plan: (text) => {
       const t = clean(text);
       const lineCode = [...text.matchAll(new RegExp(code.source, 'g'))].map((m) => m[1]!).find((c) => c !== '5300');
@@ -294,9 +298,15 @@ export function callReportModule(cr: CallReportService): ModuleSpec {
       const explanation = /\b(?:use|write|add|record|save)\b[^.?!:]*\bexplanation\b[^:]*:\s*(.{10,400})$/i.exec(text);
       if (lineCode && explanation) return { tool: 'cr_explain_write', args: { code: lineCode, explanation: explanation[1]!.trim() } };
       if (/\b(reconcil\w*|compare|check)\b[^.?!]*\b(prepared|our own|our figures|our numbers|cu amount|workbook)\b|\bwhere (?:do|does) (?:we|di|it) differ\b|\bdifferences? (?:from|with|between)\b/i.test(t)) return { tool: 'cr_reconcile', args: {} };
+      if (/\btrial balance\b/i.test(t)) return { tool: 'cr_trial_balance', args: { kind: /\bdeposit|share/i.test(t) ? 'deposit' : 'loan' } };
+      const glm = /\bmap\s+(?:gl\s+(?:account\s+)?)?(\d{4})\b[^.?!]*?\bto\s+(?:line\s+)?([A-Z0-9]{3,8})\b/i.exec(text);
+      if (glm) return { tool: 'cr_gl_map', args: { gl: glm[1]!, code: glm[2]!.toUpperCase() } };
+      const lo = /\bloan\s+#?(\d{3,})\b[^.?!]*?\b(?:belongs|goes|is|should be|report(?:ed)?)\s+(?:on|under|in|to|as)\s+(?:line\s+)?([A-Z0-9]{3,8})\b/i.exec(text);
+      if (lo) return { tool: 'cr_loan_override', args: { loan_id: Number(lo[1]), to: lo[2]!.toUpperCase(), reason: (because ?? 'Reported on the line that fits the loan.').slice(0, 300) } };
+      if (/\bcharge-?offs?\b[^.?!]*\b(?:upload|file|csv|load)\b|\b(?:upload|file|csv|load)\b[^.?!]*\b(?:charge-?offs?|recoveries)\b/i.test(t)) return { tool: 'cr_chargeoff_upload', args: { file: /\b([\w.-]+\.csv)\b/i.exec(text)?.[1] ?? '' } };
       if (/\b(download|export|excel|csv|xml|spreadsheet|workbook|upload file|send (it )?to cuonline|get it (in)?to cuonline)\b/i.test(t)) return { say: DOWNLOAD };
       if (/\b(can|could|are|will) (you|di)\b|\babilit|\bable to\b|\bdo you\b|\bis it possible\b/i.test(t) && /\b(create|prepare|produce|build|generate|make|fill out|fill in)\b/i.test(t)) return { tool: 'cr_overview', args: {} };
-      if (/\b(submit|file it|upload|change|edit|remap|map)\b/i.test(t) && !/\bready\b|\bdue\b/i.test(t)) return { say: READ_ONLY };
+      if (/\b(submit|file it)\b/i.test(t) && !/\bready\b|\bdue\b/i.test(t)) return { say: READ_ONLY };
       if (/\buncategori[sz]ed\b|\bunmapped\b|\bgl accounts?\b/i.test(t)) return { tool: 'cr_uncategorized', args: {} };
       if (/net worth|capital|\bpca\b|cculr|leverage/i.test(t)) return { tool: 'cr_capital', args: {} };
       if (/\bready\b|\bdue\b|\bblock|\bfiling\b/i.test(t)) return { tool: 'cr_readiness', args: {} };
@@ -308,6 +318,110 @@ export function callReportModule(cr: CallReportService): ModuleSpec {
       return { tool: 'cr_readiness', args: {} };
     },
     tools: [
+      {
+        name: 'cr_trial_balance',
+        description: 'The loan or deposit trial balance: each product category’s balance and account count from the core, the 5300 lines it feeds, what they report this quarter, and the difference.',
+        input: z.object({ kind: z.enum(['loan', 'deposit']).default('loan') }).strict(),
+        run: async (a: { kind?: 'loan' | 'deposit' }, ctx) => {
+          need(ctx);
+          const tb = await cr.trialBalance(a.kind ?? 'loan');
+          const isLoan = tb.kind === 'loan';
+          return {
+            text: `The ${tb.kind} trial balance: the core holds **${dollars(tb.core)}**, the 5300 reports **${dollars(tb.reported)}**${Math.abs(tb.difference) >= 1 ? `, **${dollars(Math.abs(tb.difference))} ${tb.difference > 0 ? 'more' : 'less'}** on the 5300` : ', and they agree'}.${isLoan ? ' Loans split across two lines (Auto, Business) are compared as a pair.' : ' Every share account rolls into line 013.'}`,
+            blocks: [moduleTable(spec, `${isLoan ? 'Loan' : 'Deposit'} trial balance`, ctx.runId, 'cr.trial_balance', [{ field: 'category', headerName: 'Category', type: 'text' }, { field: 'accounts', headerName: 'Accounts', type: 'count' }, { field: 'balance', headerName: 'Core balance', type: 'currency' }, { field: 'lines', headerName: '5300 lines', type: 'text' }, ...(isLoan ? [{ field: 'reported', headerName: 'On the 5300', type: 'currency' as const }, { field: 'difference', headerName: 'Difference', type: 'currency' as const }] : [])], tb.rows as unknown as Record<string, string | number>[])],
+          };
+        },
+      },
+      {
+        name: 'cr_gl_map',
+        description: 'Map a GL account to a 5300 input line (an uncategorized one, or remap one). Its balance moves into that line, and out of the old one, as a Mapping adjustment. Needs approval.',
+        input: z.object({ gl: z.string().regex(/^\d{4}$/), code: z.string().min(3).max(12) }).strict(),
+        run: async (a: { gl: string; code: string }, ctx) => {
+          need(ctx);
+          const x = await cr.glMapPreview(a.gl, a.code);
+          if (x.gl.from === x.line.code) return { text: `GL ${x.gl.glNumber} already maps to ${x.line.code}.` };
+          return {
+            change: {
+              summary: `Map GL ${x.gl.glNumber} to ${x.line.code}`,
+              changes: [{ label: `GL ${x.gl.glNumber} ${x.gl.name}`.slice(0, 80), before: x.gl.from ?? 'Uncategorized', after: `${x.line.code} ${x.line.name}`.slice(0, 80) }, ...x.touched.slice(0, 8).map((t) => ({ label: `${t.line.code} ${t.line.name}`.slice(0, 80), before: dollars(t.line.current ?? 0), after: dollars((t.line.current ?? 0) + t.delta) }))],
+              text: `I’ve prepared mapping **GL ${x.gl.glNumber}** (${x.gl.name}, ${dollars(x.gl.balance)}) to **${x.line.code}** ${x.line.name}. Its balance carries into the line and the totals above it as a Mapping adjustment.`,
+              done: `GL ${x.gl.glNumber} now maps to ${x.line.code}.`,
+              risk: 'medium',
+              apply: { glNumber: x.gl.glNumber, code: x.line.code, from: x.gl.from, balance: x.gl.balance },
+            },
+          };
+        },
+        apply: async (p: { glNumber: string; code: string; from: string | null; balance: number }, meta, ctx) => {
+          await cr.mapGl(p, { by: ctx.user.name, approvalId: meta.approvalId });
+        },
+      },
+      {
+        name: 'cr_loan_override',
+        description: 'Report one loan on a different 5300 loan line than its category puts it on (for example a used vehicle loan on 370 rather than 385), with the reason. Its balance moves between the two lines as a pair of Mapping adjustments. Needs approval.',
+        input: z.object({ loan_id: z.number().int().positive(), to: z.string().min(3).max(12), from: z.string().max(12).optional(), reason: z.string().min(5).max(300) }).strict(),
+        run: async (a: { loan_id: number; to: string; from?: string; reason: string }, ctx) => {
+          need(ctx);
+          const l = await cr.loanForOverride(a.loan_id);
+          const to = cr.loanLines().find((x) => x.code.toLowerCase() === a.to.toLowerCase());
+          if (!to) return { text: `${a.to} isn’t a 5300 loan amount line. They are: ${cr.loanLines().map((x) => `${x.code} ${x.name}`).join('; ')}.` };
+          const from = l.overriddenTo ?? a.from ?? (l.lines.length === 1 ? l.lines[0]!.code : undefined);
+          if (!from) return { text: `Loan ${l.loanId} is ${l.category}, which the 5300 splits across ${l.lines.map((x) => `${x.code} ${x.name}`).join(' and ')}. Which line is it reported on now?` };
+          if (from === to.code) return { text: `Loan ${l.loanId} is already reported on ${to.code}.` };
+          return {
+            change: {
+              summary: `Report loan ${l.loanId} on ${to.code} instead of ${from}`,
+              changes: [
+                { label: `Loan ${l.loanId}, ${l.borrower}`.slice(0, 80), before: `${from} (${l.category})`, after: `${to.code} ${to.name}`.slice(0, 80) },
+                { label: `${from}`, before: '—', after: `−${dollars(l.balance)}` },
+                { label: `${to.code}`, before: '—', after: `+${dollars(l.balance)}` },
+              ],
+              text: `I’ve prepared reporting **loan ${l.loanId}** (${l.borrower}, ${dollars(l.balance)}) on **${to.code}** ${to.name} instead of ${from}: ${a.reason}`,
+              done: `Loan ${l.loanId} is now reported on ${to.code}.`,
+              risk: 'medium',
+              apply: { loanId: l.loanId, from, to: to.code, amount: l.balance, reason: a.reason },
+            },
+          };
+        },
+        apply: async (p: { loanId: number; from: string; to: string; amount: number; reason: string }, meta, ctx) => {
+          await cr.overrideLoan(p, { by: ctx.user.name, approvalId: meta.approvalId });
+        },
+      },
+      {
+        name: 'cr_chargeoff_upload',
+        description: 'Check an uploaded charge-off and recovery file (CSV with loan number or category, type Charge-off or Recovery, amount, date) against DI’s 5300 charge-off and recovery lines, line by line; on approval keep the rows and adjust each line that differs to the file.',
+        input: z.object({ file: z.string().max(120) }).strict(),
+        run: async (a: { file: string }, ctx) => {
+          need(ctx);
+          if (!files) return { text: 'Uploads aren’t set up for this institution.' };
+          const staged = await files.stagedContent(ctx.user.id, a.file || undefined);
+          if (!/\.csv$/i.test(staged.name)) return { text: `${staged.name} isn’t a CSV. Save it with columns for the loan number (or category), type (Charge-off or Recovery), amount and date.` };
+          const lines = staged.body.toString('utf8').replace(/^\uFEFF/, '').split(/\r?\n/).filter((l) => l.trim());
+          const head = csvCells(lines[0] ?? '').map((h) => h.toLowerCase());
+          const col = (re: RegExp) => head.findIndex((h) => re.test(h));
+          const [cLoan, cCat, cType, cAmt, cDate] = [col(/loan/), col(/categor|product/), col(/type|kind/), col(/amount/), col(/date|posted/)];
+          if (cAmt < 0 || (cLoan < 0 && cCat < 0)) return { text: 'The header needs an amount column and a loan number or category column.' };
+          const parsed = lines.slice(1, 2001).map((l) => csvCells(l)).map((c) => ({ ...(cLoan >= 0 && c[cLoan] ? { loanId: Number(String(c[cLoan]).replace(/\D/g, '')) } : {}), ...(cCat >= 0 && c[cCat] ? { category: c[cCat] } : {}), kind: (cType >= 0 && /recover/i.test(c[cType] ?? '') ? 'Recovery' : 'Charge-off') as 'Charge-off' | 'Recovery', amount: Math.abs(Number(String(c[cAmt] ?? '0').replace(/[$,]/g, ''))) || 0, ...(cDate >= 0 && /^\d{4}-\d{2}-\d{2}$/.test(c[cDate] ?? '') ? { posted: c[cDate] } : {}) }));
+          const x = await cr.chargeoffCheck(parsed);
+          const table = moduleTable(spec, `${staged.name} against the 5300`, ctx.runId, 'cr.chargeoffs', [{ field: 'code', headerName: 'Account', type: 'text' }, { field: 'name', headerName: 'Line', type: 'text' }, { field: 'file', headerName: 'File', type: 'currency' }, { field: 'di', headerName: 'DI', type: 'currency' }, { field: 'difference', headerName: 'Difference', type: 'currency' }], x.byLine);
+          const problems = x.problems.length ? [moduleTable(spec, 'Rows that won’t load', ctx.runId, 'cr.chargeoffs.problems', [{ field: 'row', headerName: 'Row', type: 'text' }, { field: 'problem', headerName: 'Why', type: 'text' }], x.problems.map((p) => ({ row: String(p.row), problem: p.problem })))] : [];
+          const differ = x.byLine.filter((l) => Math.abs(l.difference) >= 0.01);
+          if (!differ.length) return { text: `**${staged.name}** agrees with DI on every charge-off and recovery line it touches.`, blocks: [table, ...problems] };
+          return {
+            change: {
+              summary: `Load ${staged.name} and adjust ${differ.length} 5300 ${differ.length === 1 ? 'line' : 'lines'}`,
+              changes: differ.slice(0, 12).map((l) => ({ label: `${l.code} ${l.name}`.slice(0, 80), before: dollars(l.di), after: dollars(l.file) })),
+              text: `**${staged.name}** has ${x.placed.length} rows; **${differ.length}** of its lines differ from DI (listed below). Approving keeps the file and adjusts each of those lines to the file’s total, as a Correction.`,
+              done: `Loaded ${staged.name}; ${differ.length} 5300 ${differ.length === 1 ? 'line' : 'lines'} adjusted to match it.`,
+              risk: 'medium',
+              apply: { file: staged.name, placed: x.placed, byLine: x.byLine },
+            },
+            blocks: [table, ...problems],
+          };
+        },
+        apply: async (p: Parameters<CallReportService['applyChargeoffs']>[0], meta, ctx) => {
+          await cr.applyChargeoffs(p, { by: ctx.user.name, approvalId: meta.approvalId });
+        },
+      },
       {
         name: 'cr_overview',
         description: 'What DI does with the 5300: it prepares every schedule from the warehouse and GL and runs the NCUA edits; a person files. With the quarter’s state and the schedules it covers.',
@@ -888,7 +1002,7 @@ export function segModule(seg: SegService, today: () => string): ModuleSpec {
     id: 'seg',
     prefix: 'seg',
     agent: 'SEG Development',
-    request: /\bSEGs?\b|\bsponsor(?:ship|ing)?\b|\blunch-and-learn\b|\bprospect stage\b|\b[Bb][Dd] score ?card\b|\bbusiness development (?:score ?card|goals?|activity)\b|\bemployer groups?\b/,
+    request: /\bSEGs?\b|\bsponsor(?:ship|ing)?s?\b|\bdonations?\b|\b[Ww]ho (?:at|from) [A-Z][\w&'-]*(?: [A-Z][\w&'-]*){0,3} banks? with us\b|\blunch-and-learn\b|\bprospect stage\b|\b[Bb][Dd] score ?card\b|\bbusiness development (?:score ?card|goals?|activity)\b|\bemployer groups?\b/,
     noAccess,
     sources: [{ kind: 'table', label: 'SEG Management', ref: 'table:seg_company' }],
     prompt: ({ tenant, user, title }) => `You are the SEG/Business Development agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) develops select employee groups.
@@ -898,7 +1012,12 @@ export function segModule(seg: SegService, today: () => string): ModuleSpec {
 - "Log a SEG call with Acme HR ...": seg_interaction_prepare.
 - "Move Acme HR to Proposal": seg_stage_prepare. Stages from Submit Letter for Board Approval onward need a note.
 - "Which SEG follow-ups are due?": seg_follow_ups. "Schedule a follow-up with Acme HR on November 20: ...": seg_follow_up_set.
-- "Show the BD scorecard": seg_bd_scorecard, each business development manager's activity and results this month against goals.`,
+- "Show the BD scorecard": seg_bd_scorecard, each business development manager's activity and results this month against goals.
+- "Show SEGs in Proposal for Ana Ruiz", "inactive SEGs", "SEGs at Westport with 200+ employees": seg_list with filters.
+- "Notes on Acme HR": seg_notes. "Add a note to Acme HR: …": seg_note_add.
+- "Sponsorships and donations", "what have we given Riverside Schools?": seg_sponsorships. "Record a $1,500 picnic sponsorship for Acme HR": seg_sponsorship_add.
+- "Who at Riverside Health banks with us?": seg_relationships, members who say they work there.
+- "Add a new SEG: …": seg_company_add. "Retire Valley Courier Service", "reactivate it": seg_company_active. Nothing is deleted.`,
     plan: (text) => {
       const t = clean(text);
       const name = company.exec(t)?.[1]?.trim();
@@ -914,9 +1033,149 @@ export function segModule(seg: SegService, today: () => string): ModuleSpec {
         return iso ? { tool: 'seg_follow_up_set', args: { company: name.replace(/\s+on$/i, '').trim(), date: iso < today() ? `${Number(iso.slice(0, 4)) + 1}${iso.slice(4)}` : iso, note: /[:—]\s*(.+)$/.exec(t)?.[1] ?? 'Follow up' } } : { say: 'What date should the follow-up be?' };
       }
       if (/\bfollow[- ]?ups?\b/i.test(t)) return { tool: 'seg_follow_ups', args: {} };
+      const noteText = /\bnote (?:to|for|on) (?:the )?((?:[A-Z][\w&'-]*\s?){1,4}?)\s*[:—]\s*(.+)$/.exec(text);
+      if (/\badd\b[^.?!:]*\bnote\b/i.test(t) && noteText) return { tool: 'seg_note_add', args: { company: noteText[1]!.trim(), note: noteText[2]!.trim() } };
+      if (/\bnotes?\b/i.test(t) && name) return { tool: 'seg_notes', args: { company: name } };
+      const gift = /\$\s?([\d,]+)/.exec(t);
+      if (/\b(?:record|log|add)\b[^.?!]*\b(?:sponsorship|donation|in-kind)\b/i.test(t) && gift && name) return { tool: 'seg_sponsorship_add', args: { company: name, amount: Number(gift[1]!.replace(/,/g, '')), kind: /\bdonation\b/i.test(t) ? 'Donation' : /\bin-kind\b/i.test(t) ? 'In-kind' : 'Sponsorship', description: (/[:—]\s*(.+)$/.exec(t)?.[1] ?? /\b(?:sponsorship|donation) (?:of|for) (.+?) (?:for|to|at) /i.exec(t)?.[1] ?? 'Sponsorship').slice(0, 160) } };
+      if (/\b(?:sponsorships?|donations?|in-kind|what have we given)\b/i.test(t)) return { tool: 'seg_sponsorships', args: name ? { company: name } : {} };
+      if (/\bwho (?:at|from)\b[^.?!]*\bbanks? with us\b|\bmembers? (?:at|from|who work)\b|\brelationships?\b/i.test(t)) {
+        const at = /\b(?:at|from|for)\s+((?:[A-Z][\w&'-]*\s?){1,4})/.exec(text)?.[1]?.trim();
+        if (at) return { tool: 'seg_relationships', args: { company: at.replace(/\s+banks?$/i, '') } };
+      }
+      if (/\b(?:retire|deactivate|inactivate|archive|remove|delete)\b/i.test(t)) {
+        const which = /\b(?:[Rr]etire|[Dd]eactivate|[Ii]nactivate|[Aa]rchive|[Rr]emove|[Dd]elete)\s+((?:[A-Z][\w&'-]*\s?){1,4})/.exec(text)?.[1]?.trim();
+        if (which) return { tool: 'seg_company_active', args: { company: which, active: false } };
+      }
+      if (/\b(?:reactivate|restore)\b/i.test(t)) {
+        const which = /\b(?:[Rr]eactivate|[Rr]estore)\s+((?:[A-Z][\w&'-]*\s?){1,4})/.exec(text)?.[1]?.trim();
+        if (which) return { tool: 'seg_company_active', args: { company: which, active: true } };
+      }
+      if (/\b(?:list|show|which)\b[^.?!]*\bSEGs?\b|\binactive SEGs?\b/i.test(text) && (stage || /\binactive\b|\bemployees\b|\bfor [A-Z]|\bat [A-Z]/.test(text))) return { tool: 'seg_list', args: { ...(stage ? { stage } : {}), ...(/\binactive\b/i.test(t) ? { active: false } : {}), ...(/\b(\d+)\+? employees\b/.exec(t) ? { min_employees: Number(/\b(\d+)\+? employees\b/.exec(t)![1]) } : {}) } };
       return { tool: 'seg_performance', args: {} };
     },
     tools: [
+      {
+        name: 'seg_list',
+        description: 'The SEG list with filters: stage, business development manager, branch, active or retired, minimum employees, and words in the name.',
+        input: z.object({ stage: z.string().max(60).optional(), bd_manager: z.string().max(80).optional(), branch: z.string().max(40).optional(), active: z.boolean().optional(), min_employees: z.number().int().min(0).optional(), search: z.string().max(60).optional() }).strict(),
+        run: async (a: { stage?: string; bd_manager?: string; branch?: string; active?: boolean; min_employees?: number; search?: string }, ctx) => {
+          need(ctx);
+          const list = await seg.list({ stage: a.stage, bdManager: a.bd_manager, branch: a.branch, active: a.active, minEmployees: a.min_employees, search: a.search });
+          const desc = [a.stage, a.bd_manager && `for ${a.bd_manager}`, a.branch && `at ${a.branch}`, a.active === false ? 'retired' : a.active ? 'active' : null, a.min_employees && `${a.min_employees}+ employees`, a.search && `named “${a.search}”`].filter(Boolean).join(', ');
+          if (!list.length) return { text: `No SEGs match${desc ? ` (${desc})` : ''}.` };
+          return {
+            text: `**${list.length} SEGs**${desc ? ` (${desc})` : ''}, ${list.reduce((s, c) => s + c.members, 0).toLocaleString('en-US')} members among them.`,
+            blocks: [moduleTable(spec, 'SEGs', ctx.runId, 'seg.list', [{ field: 'name', headerName: 'Company', type: 'text' }, { field: 'stage', headerName: 'Stage', type: 'text' }, { field: 'bd', headerName: 'BD manager', type: 'text' }, { field: 'branch', headerName: 'Branch', type: 'text' }, { field: 'employees', headerName: 'Employees', type: 'count' }, { field: 'members', headerName: 'Members', type: 'count' }, { field: 'deposits', headerName: 'Deposits', type: 'currency' }, { field: 'active', headerName: 'Active', type: 'text' }], list.map((c) => ({ name: c.name, stage: c.stage, bd: c.bdManager ?? c.owner ?? '—', branch: c.branch ?? '—', employees: c.employees ?? 0, members: c.members, deposits: Math.round(c.deposits), active: c.active ? 'Yes' : 'Retired' })))],
+          };
+        },
+      },
+      {
+        name: 'seg_notes',
+        description: 'The notes kept on one SEG, newest first.',
+        input: z.object({ company: z.string().min(2).max(80) }).strict(),
+        run: async (a: { company: string }, ctx) => {
+          need(ctx);
+          const c = await seg.companyNamed(a.company);
+          const n = await seg.notes(c.companyId);
+          if (!n.length) return { text: `There are no notes on ${c.name} yet.` };
+          return { text: `${n.length} ${n.length === 1 ? 'note' : 'notes'} on **${c.name}**; the latest, ${n[0]!.at}: “${n[0]!.text}”`, blocks: [moduleTable(spec, `${c.name}: notes`, ctx.runId, 'seg.notes', [{ field: 'at', headerName: 'Date', type: 'date' }, { field: 'by', headerName: 'By', type: 'text' }, { field: 'text', headerName: 'Note', type: 'text' }], n)] };
+        },
+      },
+      {
+        name: 'seg_note_add',
+        description: 'Add a note to a SEG. Needs approval.',
+        input: z.object({ company: z.string().min(2).max(80), note: z.string().min(3).max(400) }).strict(),
+        run: async (a: { company: string; note: string }, ctx) => {
+          need(ctx);
+          const c = await seg.companyNamed(a.company);
+          return { change: { summary: `Add a note to ${c.name}`, changes: [{ label: c.name, before: '—', after: a.note.slice(0, 120) }], text: `I’ve prepared adding this note to **${c.name}**.`, done: `Noted on ${c.name}.`, risk: 'low', apply: { companyId: c.companyId, note: a.note } } };
+        },
+        apply: async (p: { companyId: number; note: string }, meta, ctx) => {
+          await seg.addNote(p.companyId, p.note, { by: ctx.user.name, approvalId: meta.approvalId, today: today() });
+        },
+      },
+      {
+        name: 'seg_sponsorships',
+        description: 'The sponsorships, donations and in-kind support given to SEGs: one company’s or all, newest first, with totals by year.',
+        input: z.object({ company: z.string().max(80).optional() }).strict(),
+        run: async (a: { company?: string }, ctx) => {
+          need(ctx);
+          const c = a.company ? await seg.companyNamed(a.company) : null;
+          const x = await seg.sponsorships(c?.companyId);
+          if (!x.items.length) return { text: c ? `Nothing has been given to ${c.name}.` : 'No sponsorships or donations are on record.' };
+          const y = x.years[0]!;
+          return {
+            text: `${c ? `**${c.name}**: ` : ''}**${money(x.total)}** given in ${x.items.length} ${x.items.length === 1 ? 'entry' : 'entries'}; ${money(y.amount)} of it in ${y.year}.`,
+            blocks: [moduleTable(spec, c ? `${c.name}: sponsorships and donations` : 'Sponsorships and donations', ctx.runId, 'seg.sponsorships', [{ field: 'givenOn', headerName: 'Date', type: 'date' }, ...(c ? [] : [{ field: 'company', headerName: 'Company', type: 'text' as const }]), { field: 'kind', headerName: 'Kind', type: 'text' }, { field: 'description', headerName: 'For', type: 'text' }, { field: 'amount', headerName: 'Amount', type: 'currency' }, { field: 'approvedBy', headerName: 'Approved by', type: 'text' }], x.items.slice(0, 200))],
+          };
+        },
+      },
+      {
+        name: 'seg_sponsorship_add',
+        description: 'Record a sponsorship, donation or in-kind support given to a SEG. Needs approval.',
+        input: z.object({ company: z.string().min(2).max(80), amount: z.number().positive().max(1_000_000), kind: z.enum(['Sponsorship', 'Donation', 'In-kind']), description: z.string().min(3).max(160), given_on: z.string().regex(/^20\d\d-\d\d-\d\d$/).optional() }).strict(),
+        run: async (a: { company: string; amount: number; kind: string; description: string; given_on?: string }, ctx) => {
+          need(ctx);
+          const c = await seg.companyNamed(a.company);
+          return { change: { summary: `Record a ${money(a.amount)} ${a.kind.toLowerCase()} for ${c.name}`, changes: [{ label: c.name, before: '—', after: `${a.kind}, ${money(a.amount)}: ${a.description}`.slice(0, 120) }], text: `I’ve prepared recording a **${money(a.amount)} ${a.kind.toLowerCase()}** for **${c.name}** (${a.description}).`, done: `Recorded the ${a.kind.toLowerCase()} for ${c.name}.`, risk: 'medium', apply: { companyId: c.companyId, givenOn: a.given_on ?? today(), kind: a.kind, amount: a.amount, description: a.description } } };
+        },
+        apply: async (p: { companyId: number; givenOn: string; kind: string; amount: number; description: string }, meta, ctx) => {
+          await seg.addSponsorship(p, { by: ctx.user.name, approvalId: meta.approvalId });
+        },
+      },
+      {
+        name: 'seg_relationships',
+        description: 'Members who say they work at a company (from their employment details): how many, their deposits and loans, and the largest relationships.',
+        input: z.object({ company: z.string().min(2).max(80) }).strict(),
+        run: async (a: { company: string }, ctx) => {
+          need(ctx);
+          const c = await seg.companyNamed(a.company).catch(() => null);
+          const name = c?.name ?? a.company;
+          const r = await seg.relationships(name);
+          if (!r.count) return { text: `No members have said they work at ${name}.` };
+          return {
+            text: `**${r.count} members** say they work at **${name}**, with **${money(r.deposits)}** in deposits and **${money(r.loans)}** in loans.`,
+            blocks: [moduleTable(spec, `Members at ${name}`, ctx.runId, 'seg.relationships', [{ field: 'name', headerName: 'Member', type: 'text' }, { field: 'occupation', headerName: 'Occupation', type: 'text' }, { field: 'deposits', headerName: 'Deposits', type: 'currency' }, { field: 'loans', headerName: 'Loans', type: 'currency' }], r.people)],
+          };
+        },
+      },
+      {
+        name: 'seg_company_add',
+        description: 'Add a company to SEG Management at the Identification stage, with its contact (name, title, phone, email), branch, business development manager and employee count. Needs approval.',
+        input: z.object({ name: z.string().min(2).max(80), contact: z.string().min(3).max(80), title: z.string().max(80).default('HR Director'), phone: z.string().max(30).default(''), email: z.string().max(120).default(''), branch: z.string().min(2).max(40), bd_manager: z.string().min(3).max(80), employees: z.number().int().min(0).default(0) }).strict(),
+        run: async (a: { name: string; contact: string; title?: string; phone?: string; email?: string; branch: string; bd_manager: string; employees?: number }, ctx) => {
+          need(ctx);
+          const exists = (await seg.companies()).find((c) => c.name.toLowerCase() === a.name.toLowerCase());
+          if (exists) return { text: `${exists.name} is already in SEG Management, at ${exists.stage}.` };
+          return {
+            change: {
+              summary: `Add ${a.name} as a SEG`,
+              changes: [{ label: 'Company', before: '—', after: `${a.name}, Identification` }, { label: 'Contact', before: '—', after: `${a.contact}, ${a.title ?? 'HR Director'}` }, { label: 'Owner', before: '—', after: `${a.bd_manager}, ${a.branch}` }],
+              text: `I’ve prepared adding **${a.name}** at the Identification stage, with ${a.bd_manager} as business development manager.`,
+              done: `Added ${a.name} to SEG Management.`,
+              risk: 'low',
+              apply: { name: a.name, contact: a.contact, title: a.title ?? 'HR Director', phone: a.phone ?? '', email: a.email ?? '', branch: a.branch, bdManager: a.bd_manager, employees: a.employees ?? 0 },
+            },
+          };
+        },
+        apply: async (p: Parameters<SegService['createCompany']>[0], meta) => {
+          await seg.createCompany(p, { approvalId: meta.approvalId });
+        },
+      },
+      {
+        name: 'seg_company_active',
+        description: 'Retire a SEG (it stays on record with its history, and its follow-up is cleared) or bring it back. Nothing is deleted. Needs approval.',
+        input: z.object({ company: z.string().min(2).max(80), active: z.boolean() }).strict(),
+        run: async (a: { company: string; active: boolean }, ctx) => {
+          need(ctx);
+          const c = await seg.companyNamed(a.company);
+          return { change: { summary: `${a.active ? 'Reactivate' : 'Retire'} ${c.name}`, changes: [{ label: c.name, before: a.active ? 'Retired' : 'Active', after: a.active ? 'Active' : 'Retired' }], text: `I’ve prepared ${a.active ? 'reactivating' : 'retiring'} **${c.name}**. ${a.active ? '' : 'Its history stays; nothing is deleted.'}`, done: `${c.name} is ${a.active ? 'active again' : 'retired'}.`, risk: 'low', apply: { companyId: c.companyId, active: a.active } } };
+        },
+        apply: async (p: { companyId: number; active: boolean }) => {
+          await seg.setActive(p.companyId, p.active);
+        },
+      },
       {
         name: 'seg_follow_ups',
         description: 'SEG follow-ups due in the next 14 days or past due, soonest first, with the contact and the business development manager.',

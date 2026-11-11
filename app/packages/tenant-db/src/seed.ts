@@ -26,6 +26,7 @@ import { CAMPAIGN_HISTORY_DDL, attribution, earlierCampaigns } from './campaignH
 import { SEG_DETAIL_DDL, SEG_DETAIL_WRITE_TABLES, generateSegDetail } from './segDetail.ts';
 import { MEMBER360_EXTRA_DDL, MEMBER360_EXTRA_WRITE_TABLES, generateMember360Extra } from './member360Extra.ts';
 import { ONB_DESK_DDL, ONB_DESK_UPDATES, ONB_DESK_WRITE_TABLES, generateOnboardingDesk } from './onboardingDesk.ts';
+import { CR_EXTRA_DDL, CR_EXTRA_WRITE_TABLES } from './cr5300Extra.ts';
 import { ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
@@ -189,6 +190,8 @@ async function main() {
     await insert(admin, 'iam_user', ['user_id', 'name', 'user_class', 'branch', 'status'], [...fx.classes.map((c) => [...c, 'Active']), ...(t.employees as [number, string, string, number][]).filter((e) => e[0] > 6).map((e) => [`emp:${e[0]}`, e[1], e[2] === 'Loan officer' ? 'Lender' : e[2] === 'Branch manager' ? 'Manager' : 'MSR', String(t.locations[e[3] - 1]![1]), 'Active']), ['emp:2', 'Tom Walsh', 'Lender', 'Westport', 'Active']]);
     // SEG detail tables exist for every tenant (granted below); only a credit union fills them.
     for (const ddl of SEG_DETAIL_DDL) await admin.query(ddl);
+    // 5300 per-loan overrides and charge-off uploads exist for every tenant; a bank's are simply empty.
+    for (const ddl of CR_EXTRA_DDL) await admin.query(ddl);
     if (profile.institutionType === 'bank') {
       // A bank files the FFIEC 051 Call Report: the same tables, keyed by MDRM item code.
       const ff = generateFfiecCallReport(t);
@@ -221,6 +224,8 @@ async function main() {
       await insert(admin, 'seg_event', ['company_id', 'held', 'kind', 'attendees', 'new_members', 'new_checking', 'new_loan_dollars', 'referrals', 'by_name'], segDetail.events);
       await insert(admin, 'seg_interaction', ['company_id', 'at', 'kind', 'note', 'by_name'], segDetail.interactions);
       await insert(admin, 'seg_bd_goal', ['metric', 'label', 'monthly_target', 'unit', 'sort_order'], segDetail.goals);
+      await insert(admin, 'seg_note', ['company_id', 'at', 'by_name', 'text'], segDetail.notes);
+      await insert(admin, 'seg_sponsorship', ['company_id', 'given_on', 'kind', 'amount', 'description', 'approved_by'], segDetail.sponsorships);
     }
     {
       // The general ledger behind the Call Report: statements, budget by cost center, journal entries.
@@ -271,7 +276,7 @@ async function main() {
     // The application account reads tenant data only (spec 26.2: read-only on customer tables), and
     // writes only the workflow store, through approved DI Core operations.
     await admin.query(`GRANT SELECT ON \`${profile.schema}\`.* TO 'dinext'@'%'`);
-    for (const table of [...WORKFLOW_WRITE_TABLES, ...PIPELINE_WRITE_TABLES, ...GOALS_WRITE_TABLES, ...MODULES_WRITE_TABLES, ...GROWTH_WRITE_TABLES, ...TASKS_WRITE_TABLES, ...WORKFLOW_DEF_WRITE_TABLES, ...WORKSPACE_WRITE_TABLES, ...CALENDAR_SERIES_WRITE_TABLES, ...TABLES_WRITE_TABLES, ...BUDGET_WRITE_TABLES, ...LOAN_GROWTH_WRITE_TABLES, ...SEG_DETAIL_WRITE_TABLES, ...MEMBER360_EXTRA_WRITE_TABLES, ...ONB_DESK_WRITE_TABLES, ...ONB_JOURNEY_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
+    for (const table of [...WORKFLOW_WRITE_TABLES, ...PIPELINE_WRITE_TABLES, ...GOALS_WRITE_TABLES, ...MODULES_WRITE_TABLES, ...GROWTH_WRITE_TABLES, ...TASKS_WRITE_TABLES, ...WORKFLOW_DEF_WRITE_TABLES, ...WORKSPACE_WRITE_TABLES, ...CALENDAR_SERIES_WRITE_TABLES, ...TABLES_WRITE_TABLES, ...BUDGET_WRITE_TABLES, ...LOAN_GROWTH_WRITE_TABLES, ...SEG_DETAIL_WRITE_TABLES, ...MEMBER360_EXTRA_WRITE_TABLES, ...ONB_DESK_WRITE_TABLES, ...CR_EXTRA_WRITE_TABLES, ...ONB_JOURNEY_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     // Add-only: a run record or a rating can't be changed once written (AI-GRD-090).
     for (const table of GOVERNANCE_APPEND_TABLES) await admin.query(`GRANT INSERT ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     // Direct core connections: DI's store for every tenant, and a Symitar-style replica for the credit union.

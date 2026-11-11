@@ -34,3 +34,5 @@ export { ML_DDL, ML_WRITE_TABLES, SNAPSHOT_COLUMNS, generateSnapshots, snapshotM
 export { MEMBER360_EXTRA_DDL, MEMBER360_EXTRA_WRITE_TABLES, WARNING_CODES, generateMember360Extra } from './member360Extra.ts';
 export { ONB_CONDITIONS, ONB_DESK_DDL, ONB_DESK_UPDATES, ONB_DESK_WRITE_TABLES, generateOnboardingDesk } from './onboardingDesk.ts';
 export { TOUCHES } from './modules.ts';
+export { CR_EXTRA_DDL, CR_EXTRA_WRITE_TABLES } from './cr5300Extra.ts';
+export { LOAN_TYPES as CR_LOAN_TYPES } from './callReport.ts';
