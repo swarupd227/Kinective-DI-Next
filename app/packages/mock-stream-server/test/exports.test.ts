@@ -46,6 +46,19 @@ describe('report exports', () => {
     expect(f.body.length).toBeGreaterThan(2000);
   });
 
+  it('writes a Word document with the read and each section as a table', async () => {
+    const f = await renderExport(canvas, 'docx', meta);
+    expect(f.fileName).toMatch(/\.docx$/);
+    expect(f.contentType).toBe('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    const body = f.body as Buffer;
+    // A zip whose parts are stored, so the document XML reads straight out of it.
+    expect(body.subarray(0, 2).toString('latin1')).toBe('PK');
+    const text = body.toString('utf8');
+    for (const part of ['[Content_Types].xml', 'word/document.xml', 'word/styles.xml', 'word/footer1.xml']) expect(text).toContain(part);
+    expect(text).toContain('<w:tbl>');
+    expect(text).toContain(canvas.data.name.replace(/&/g, '&amp;'));
+  });
+
   it('carries DI’s read into Excel and CSV, once per read', async () => {
     const csv = (await renderExport(canvas, 'csv', meta)).body.toString('utf8');
     expect(csv).toContain('DI’s read');

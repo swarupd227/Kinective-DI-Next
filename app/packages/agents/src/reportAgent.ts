@@ -260,8 +260,8 @@ const DAY_NAMES: Record<string, string> = { monday: 'MON', tuesday: 'TUE', wedne
 export type ReportIntent =
   | { intent: 'schedule_list' }
   | { intent: 'cancel'; words: string }
-  | { intent: 'export'; format: 'xlsx' | 'csv' | 'pdf' }
-  | { intent: 'schedule'; frequency: 'daily' | 'weekly' | 'monthly'; day?: string; recipients: string[]; sendIfEmpty: boolean; format: 'xlsx' | 'csv' | 'pdf'; words: string }
+  | { intent: 'export'; format: 'xlsx' | 'csv' | 'pdf' | 'docx' }
+  | { intent: 'schedule'; frequency: 'daily' | 'weekly' | 'monthly'; day?: string; recipients: string[]; sendIfEmpty: boolean; format: 'xlsx' | 'csv' | 'pdf' | 'docx'; words: string }
   | { intent: 'save'; folder: string }
   | { intent: 'build'; name: string; periodType: 'month' | 'quarter'; items: string[] }
   | { intent: 'edit'; edit: 'chart'; target: string; chart: 'donut' | 'bar' | 'line' | 'stacked_bar' }
@@ -295,7 +295,7 @@ export function parseReportRequest(text: string, hasDraft: boolean): ReportInten
   }
   if (/^(delete|bin)\b|^move .* to the recycle bin/.test(lower) && (/\b(report|scorecard|pack|summary)\b/.test(lower) || /^(delete|bin) (it|this)$/.test(lower))) return { intent: 'delete' };
   if (/\b(stop|cancel)\b/.test(lower)) return { intent: 'cancel', words: lower.replace(/\b(stop|cancel|the|my|schedule|email|emails|sending|report|weekly|monthly|daily)\b/g, ' ').trim() };
-  if (/\bexport\b|\bdownload\b/.test(lower)) return { intent: 'export', format: /\bcsv\b/.test(lower) ? 'csv' : /\bpdf\b/.test(lower) ? 'pdf' : 'xlsx' };
+  if (/\bexport\b|\bdownload\b/.test(lower)) return { intent: 'export', format: /\bcsv\b/.test(lower) ? 'csv' : /\bpdf\b/.test(lower) ? 'pdf' : /\b(?:word|docx|\.docx)\b/.test(lower) ? 'docx' : 'xlsx' };
   if (/\bschedul|\bevery (day|week|month|monday|tuesday|wednesday|thursday|friday)|\b(daily|weekly|monthly)\b.*\bto\b|send (it|this|me)\b/.test(lower)) {
     const day = Object.entries(DAY_NAMES).find(([d]) => lower.includes(d))?.[1];
     const bd = /\b(first|second|third|fourth|fifth|1st|2nd|3rd|4th|5th) business day/.exec(lower)?.[1];

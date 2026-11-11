@@ -2,10 +2,11 @@
 // Excel: a summary sheet of DI's read and the headline figures, then one sheet per table or chart,
 // numbers stored as numbers with formats. CSV: the same sections one after another. PDF: a
 // print-ready pack for a board or an examiner, with DI's read, each section's table or chart, its
-// source and data date, and a confidentiality footer on every page.
+// source and data date, and a confidentiality footer on every page. Word: the same, as editable text and tables.
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 import type { ReportCanvasBlock } from '@dinext/block-schemas';
+import { renderDocx, type DocPart } from './docx.ts';
 
 type Cell = string | number | null;
 interface Section {
@@ -45,8 +46,9 @@ function sections(canvas: ReportCanvasBlock): { summary: Cell[][]; reads: [strin
 
 const safeName = (s: string) => s.replace(/[^A-Za-z0-9 _-]+/g, '').trim().slice(0, 60) || 'report';
 
-export async function renderExport(canvas: ReportCanvasBlock, format: 'xlsx' | 'csv' | 'pdf', meta: { tenant: string; user: string }) {
+export async function renderExport(canvas: ReportCanvasBlock, format: 'xlsx' | 'csv' | 'pdf' | 'docx', meta: { tenant: string; user: string }) {
   const { summary, reads, sections: parts } = sections(canvas);
+  const parts0 = parts;
   const scope = canvas.subtitle ?? canvas.data.periodLabel;
   // The build time in the institution's own time zone, as it was recorded.
   const asOf = canvas.freshness.asOf ? canvas.freshness.asOf.slice(0, 16).replace('T', ' ') : '';
@@ -54,6 +56,18 @@ export async function renderExport(canvas: ReportCanvasBlock, format: 'xlsx' | '
   const base = `${safeName(canvas.data.name)} ${safeName(canvas.data.periodLabel)}`;
 
   if (format === 'pdf') return { fileName: `${base}.pdf`, contentType: 'application/pdf', body: await renderPdf(canvas, { ...meta, scope, asOf }) };
+  if (format === 'docx') {
+    // Word: the same read and sections as the PDF, as editable text and tables, to work into a memo.
+    const typeOf = (s: Section, i: number) => s.columns[i]?.type;
+    const parts: DocPart[] = [
+      { kind: 'title', text: plain(canvas.data.name) },
+      { kind: 'note', text: `${meta.tenant} · ${plain(scope)} · Nightly build ${canvas.freshness.buildId ?? ''} (${asOf}). Exported by ${meta.user}; limited to their access.` },
+      ...(reads.length ? [{ kind: 'heading' as const, text: 'DI’s read' }, ...reads.map(([t, r]) => ({ kind: 'para' as const, text: t === 'DI’s read' ? r : `${t}: ${r}` }))] : []),
+      ...(summary.length ? [{ kind: 'heading' as const, text: 'Summary' }, { kind: 'table' as const, header: ['Measure', 'Value', 'Change'], rows: summary.map((r) => [String(r[0] ?? ''), fmt(r[1] ?? null, typeof r[2] === 'string' ? r[2] : undefined), String(r[3] ?? '')]), numeric: [false, true, false] }] : []),
+      ...parts0.flatMap((s): DocPart[] => [{ kind: 'heading', text: s.title }, ...(s.take ? [{ kind: 'note' as const, text: s.take }] : []), { kind: 'table', header: s.columns.map((c) => c.header), rows: s.rows.map((r) => r.map((v, i) => (typeof v === 'string' ? plain(v) : fmt(v, typeOf(s, i))))), numeric: s.columns.map((c) => c.type !== undefined && c.type !== 'text') }]),
+    ];
+    return { fileName: `${base}.docx`, contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', body: renderDocx(parts, { title: plain(canvas.data.name), footer: `Confidential. ${meta.tenant}, ${plain(canvas.data.name)}, ${plain(scope)}.` }) };
+  }
 
   if (format === 'csv') {
     const esc = (v: Cell) => (v === null ? '' : typeof v === 'number' ? String(v) : /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);

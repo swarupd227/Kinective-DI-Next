@@ -403,7 +403,7 @@ export function checkWidget(w: Pick<ReportWidget, 'metrics' | 'by' | 'kind' | 't
 // ---- schedules (spec 8.8, 18.9) ----------------------------------------------------------------
 
 const DAYS: Record<string, string> = { MON: 'Monday', TUE: 'Tuesday', WED: 'Wednesday', THU: 'Thursday', FRI: 'Friday' };
-const FORMAT_LABEL = { xlsx: 'Excel', csv: 'CSV', pdf: 'PDF' } as const;
+const FORMAT_LABEL = { xlsx: 'Excel', csv: 'CSV', pdf: 'PDF', docx: 'Word' } as const;
 
 export const describeSchedule = (s: Pick<ScheduleDraft, 'frequency' | 'dayRule'>) =>
   s.frequency === 'daily' ? 'Every business day' : s.frequency === 'weekly' ? `Every ${DAYS[s.dayRule] ?? 'Monday'}` : `Monthly, business day ${s.dayRule.replace('BD', '')}`;
@@ -481,7 +481,7 @@ export const REPORT_TOOLS = [
     name: 'report_schedule_create',
     operation: 'report.schedule.create',
     description: 'Schedule the report on screen (or template_id) to run after the nightly build and be delivered. Recipients are "me", delivery group names or email addresses. Returns approval_required.',
-    input: z.object({ template_id: tpl.optional(), frequency: z.enum(['daily', 'weekly', 'monthly']), day: z.string().regex(/^(MON|TUE|WED|THU|FRI|BD[1-5])$/).optional().describe('MON..FRI for weekly; BD1..BD5 (business day) for monthly'), format: z.enum(['xlsx', 'csv', 'pdf']).default('xlsx'), recipients: z.array(z.string().min(2).max(120)).min(1).max(10), send_if_empty: z.boolean().default(false) }).strict(),
+    input: z.object({ template_id: tpl.optional(), frequency: z.enum(['daily', 'weekly', 'monthly']), day: z.string().regex(/^(MON|TUE|WED|THU|FRI|BD[1-5])$/).optional().describe('MON..FRI for weekly; BD1..BD5 (business day) for monthly'), format: z.enum(['xlsx', 'csv', 'pdf', 'docx']).default('xlsx'), recipients: z.array(z.string().min(2).max(120)).min(1).max(10), send_if_empty: z.boolean().default(false) }).strict(),
     sideEffect: 'write',
     riskTier: 'medium',
     requiredApp: 'reports',
@@ -492,7 +492,7 @@ export const REPORT_TOOLS = [
   { name: 'report_schedule_list', operation: 'report.schedule.list', description: 'The user’s active report schedules, with the last result of each.', input: z.object({}).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 20, agents: [] },
   { name: 'report_schedule_cancel', operation: 'report.schedule.cancel', description: 'Stop one of the user’s schedules. Returns approval_required.', input: z.object({ schedule_id: z.number().int().positive() }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 1, agents: [] },
   { name: 'report_share', operation: 'report.share', description: 'Send the report on screen once, with a covering note, to delivery groups or "me". Returns approval_required with the note shown in full; nothing is sent until the user approves.', input: z.object({ recipients: z.array(z.string().min(2).max(120)).min(1).max(6), subject: z.string().min(3).max(200), body: z.string().min(10).max(3000) }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: [] },
-  { name: 'report_export', operation: 'report.export', description: 'Export the report on screen, as run, to Excel, CSV or PDF (print-ready, for a board or examiner pack). Exports are logged and need approval.', input: z.object({ format: z.enum(['xlsx', 'csv', 'pdf']) }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: [] },
+  { name: 'report_export', operation: 'report.export', description: 'Export the report on screen, as run, to Excel, CSV, PDF (print-ready, for a board or examiner pack) or Word (to edit into a memo). Exports are logged and need approval.', input: z.object({ format: z.enum(['xlsx', 'csv', 'pdf', 'docx']) }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: [] },
   { name: 'report_pin', operation: 'report.pin', description: 'Put a saved report (the one on screen, or template_id) on Home: for "me", or published to everyone in a user class (Executive, Manager, Analyst, Administrator). Each person sees it with their own data access. Returns approval_required.', input: z.object({ template_id: tpl.optional(), audience: z.string().min(2).max(40).default('me').describe('"me" or a user class name') }).strict(), sideEffect: 'write', riskTier: 'low', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: [] },
   { name: 'report_unpin', operation: 'report.unpin', description: 'Take a report (the one on screen, or template_id) off Home: the pins this user made, for themselves or for a class. Returns approval_required.', input: z.object({ template_id: tpl.optional() }).strict(), sideEffect: 'write', riskTier: 'low', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 1, agents: [] },
   { name: 'report_delete', operation: 'report.delete', description: 'Move one of the user’s own saved reports (the one on screen, or template_id) to the Recycle Bin. It leaves every Home and folder and can be restored. Stock reports can’t be deleted. Returns approval_required.', input: z.object({ template_id: tpl.optional() }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 1, agents: [] },
@@ -539,7 +539,7 @@ export interface SavePayload {
 }
 export type CancelPayload = { scheduleId: number; templateName: string };
 export type SharePayload = ShareDraft & { templateName: string };
-export type ExportPayload = { templateId: string; format: 'xlsx' | 'csv' | 'pdf'; controls: Record<string, string> };
+export type ExportPayload = { templateId: string; format: 'xlsx' | 'csv' | 'pdf' | 'docx'; controls: Record<string, string> };
 export type PinPayload = PinDraft & { templateName: string };
 export type UnpinPayload = { templateId: string; templateName: string; pinIds: string[]; audiences: string[] };
 export type BinPayload = { templateId: string; templateName: string; folder: string };
@@ -553,7 +553,7 @@ export type ReportExecuted =
   | { operation: 'report.schedule.create'; schedule: ScheduleRow & { replayed: boolean } }
   | { operation: 'report.schedule.cancel'; schedule: ScheduleRow }
   | { operation: 'report.share'; shareId: string; recipientCount: number; templateName: string }
-  | { operation: 'report.export'; exportId: string; format: 'xlsx' | 'csv' | 'pdf'; templateName: string }
+  | { operation: 'report.export'; exportId: string; format: 'xlsx' | 'csv' | 'pdf' | 'docx'; templateName: string }
   | { operation: 'report.pin'; pinId: string; templateId: string; templateName: string; audience: string }
   | { operation: 'report.unpin'; removed: number; templateName: string }
   | { operation: 'report.delete'; templateId: string; templateName: string }
@@ -896,7 +896,7 @@ export class ReportGateway {
           const none = needCurrent();
           if (none) return none;
           const t = await store.get(current!.templateId, ctx.user.id, viewer);
-          const payload: ExportPayload = { templateId: t.templateId, format: a.format as 'xlsx' | 'csv' | 'pdf', controls: current!.controls as Record<string, string> };
+          const payload: ExportPayload = { templateId: t.templateId, format: a.format as 'xlsx' | 'csv' | 'pdf' | 'docx', controls: current!.controls as Record<string, string> };
           const { approval, superseded } = await approve(payload, tierOf());
           const period = resolveControls(t.definition, current!.controls, semantic, ctx).periodLabel;
           const c = card(

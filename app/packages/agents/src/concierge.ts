@@ -997,7 +997,7 @@ export class Concierge {
           } else if (x.operation === 'report.restore') await sink.text(`Restored **${x.templateName}** to ${x.folder}. [Open it](/reports/${x.templateId}).`, REPORT_AGENT, source);
           else if (x.operation === 'report.settings.update') await sink.text(`Changed the settings of **${x.templateName}**: ${x.changes.map((ch) => `${ch.label.toLowerCase()} is now ${ch.after.charAt(0).toLowerCase()}${ch.after.slice(1)}`).join('; ')}.${x.turnedOff ? ' Others no longer see it, and its schedules skip it until you turn it back on.' : ''} [See its settings](/reports/${x.templateId}?view=settings).`, REPORT_AGENT, source);
           else if (x.operation === 'report.schedule.cancel') await sink.text(`Stopped schedule #${x.schedule.scheduleId} for **${x.schedule.templateName}**. Nothing more will be sent.`, REPORT_AGENT, source);
-          else await sink.text(`Your ${x.format === 'xlsx' ? 'Excel' : x.format === 'pdf' ? 'PDF' : 'CSV'} export of **${x.templateName}** is ready: [Download it](/v1/exports/${x.exportId}). The download is logged.`, REPORT_AGENT, source);
+          else await sink.text(`Your ${x.format === 'xlsx' ? 'Excel' : x.format === 'pdf' ? 'PDF' : x.format === 'docx' ? 'Word' : 'CSV'} export of **${x.templateName}** is ready: [Download it](/v1/exports/${x.exportId}). The download is logged.`, REPORT_AGENT, source);
           sink.done?.(null);
         } catch (err) {
           void this.deps.audit.event({ eventType: 'ai.action.failed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, error: err instanceof Error ? err.message : String(err) });
