@@ -299,15 +299,15 @@ export class AttritionModelService {
   /** Members by band at each scored month-end, and how many in each band left by the next month-end. */
   async history(modelId: number, purviewBranches?: string[]) {
     const scope = purviewBranches ? ' AND b.name IN (?)' : '';
-    const list = await rows<{ month_end: string; band: string; members: number; avg: number; left_next: number }>(
+    const list = await rows<{ month_end: string; band: string; members: number; avg: number; avg_month: number; left_next: number }>(
       this.pool,
-      `SELECT s.month_end, s.band, COUNT(*) AS members, AVG(s.probability_90d) AS avg,
+      `SELECT s.month_end, s.band, COUNT(*) AS members, AVG(s.probability_90d) AS avg, AVG(s.probability) AS avg_month,
               SUM(EXISTS(SELECT 1 FROM cdm_membership_exit e WHERE e.party_id = s.party_id AND e.close_date > s.month_end AND e.close_date <= LAST_DAY(DATE_ADD(s.month_end, INTERVAL 1 MONTH)))) AS left_next
          FROM ml_score s JOIN hist_member_snapshot h ON h.party_id = s.party_id AND h.month_end = s.month_end JOIN cdm_location b ON b.int_id = h.branch_id
         WHERE s.model_id = ?${scope} GROUP BY s.month_end, s.band ORDER BY s.month_end, FIELD(s.band, 'High', 'Medium', 'Low')`,
       [modelId, ...(purviewBranches ? [purviewBranches.length ? purviewBranches : ['']] : [])],
     );
-    return list.map((r) => ({ month: String(r.month_end).slice(0, 10), band: r.band, members: Number(r.members), avg90: Number(r.avg), leftNext: Number(r.left_next) }));
+    return list.map((r) => ({ month: String(r.month_end).slice(0, 10), band: r.band, members: Number(r.members), avg90: Number(r.avg), avgMonth: Number(r.avg_month), leftNext: Number(r.left_next) }));
   }
 
   /** One member's latest model score and reasons, beside the rule score, with their last six months. */

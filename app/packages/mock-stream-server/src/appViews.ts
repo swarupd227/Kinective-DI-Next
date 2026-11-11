@@ -714,7 +714,7 @@ export function createAppViews(deps: ViewDeps) {
       const lastMonth = mdlHist.at(-1)?.month;
       const modelBlocks = mdl
         ? [
-            table(`Trained attrition model v${mdl.version}: each band, and who left by the next month-end`, 'model.history', [text('month', 'Month-end'), text('band', 'Band'), { field: 'members', headerName: deps.person === 'member' ? 'Members' : 'Customers', type: 'count' }, text('expected', 'Expected to leave in 90 days'), text('left', 'Left by next month-end')], mdlHist.map((h) => ({ month: modelMonthLabel(h.month), band: h.band, members: h.members, expected: p1(h.avg90 * 100), left: h.month === lastMonth ? 'Not yet known' : `${h.leftNext.toLocaleString('en-US')} (${p1(h.members ? (h.leftNext / h.members) * 100 : 0)})` }))),
+            table(`Trained attrition model v${mdl.version}: each band, and who left by the next month-end`, 'model.history', [text('month', 'Month-end'), text('band', 'Band'), { field: 'members', headerName: deps.person === 'member' ? 'Members' : 'Customers', type: 'count' }, text('expected', 'Expected to leave by next month-end'), text('left', 'Left by next month-end'), text('expected90', 'Expected to leave in 90 days')], mdlHist.map((h) => ({ month: modelMonthLabel(h.month), band: h.band, members: h.members, expected: p1(h.avgMonth * 100), expected90: p1(h.avg90 * 100), left: h.month === lastMonth ? 'Not yet known' : `${h.leftNext.toLocaleString('en-US')} (${p1(h.members ? (h.leftNext / h.members) * 100 : 0)})` }))),
           ]
         : [];
       // DI's Products to Suggest and Successful Suggestions: the model across the book, and whether it was right.

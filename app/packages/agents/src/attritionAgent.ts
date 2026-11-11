@@ -41,8 +41,8 @@ export function attritionModule(svc: AttritionModelService): ModuleSpec {
     noAccess,
     sources: [
       { kind: 'table', label: 'Model registry', ref: 'table:ml_model' },
-      { kind: 'table', label: 'Member scores', ref: 'table:ml_score' },
-      { kind: 'table', label: 'Member month-end snapshots', ref: 'table:hist_member_snapshot' },
+      { kind: 'table', label: 'Model scores', ref: 'table:ml_score' },
+      { kind: 'table', label: 'Month-end snapshots', ref: 'table:hist_member_snapshot' },
     ],
     prompt: ({ tenant, user, title }) => `You are the Predictive Models agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) works with the attrition model DI trains on its own member history.
 
@@ -120,7 +120,7 @@ export function attritionModule(svc: AttritionModelService): ModuleSpec {
           const lo = rate('Low');
           return {
             text: `Over ${done.length} months, **${pct(hi.rate, 1)}** of members in the High band left by the next month-end, against ${pct(lo.rate, 2)} in the Low band: ${lo.rate ? `${(hi.rate / lo.rate).toFixed(0)} times as many` : 'far more'}. ${n(hi.left)} of the ${n(hi.members)} High-band member-months left; the rest stayed, which is why DI calls it a chance and suggests a call, not a write-off. The latest month, ${modelMonthLabel(months.at(-1) ?? '')}, has no outcome yet.`,
-            blocks: [moduleTable(spec, 'Bands and what happened next', ctx.runId, 'model.history', [text('month', 'Month-end'), text('band', 'Band'), { field: 'members', headerName: 'Members', type: 'count' }, text('expected', 'Expected to leave in 90 days'), text('left', 'Left by next month-end')], hist.map((h) => ({ month: modelMonthLabel(h.month), band: h.band, members: h.members, expected: pct(h.avg90, 1), left: h.month === months.at(-1) ? 'Not yet known' : `${n(h.leftNext)} (${pct(h.members ? h.leftNext / h.members : 0, 1)})` })))],
+            blocks: [moduleTable(spec, 'Bands and what happened next', ctx.runId, 'model.history', [text('month', 'Month-end'), text('band', 'Band'), { field: 'members', headerName: 'Members', type: 'count' }, text('expected', 'Expected to leave by next month-end'), text('left', 'Left by next month-end'), text('expected90', 'Expected to leave in 90 days')], hist.map((h) => ({ month: modelMonthLabel(h.month), band: h.band, members: h.members, expected: pct(h.avgMonth, 1), expected90: pct(h.avg90, 1), left: h.month === months.at(-1) ? 'Not yet known' : `${n(h.leftNext)} (${pct(h.members ? h.leftNext / h.members : 0, 1)})` })))],
             suggestions: ['Is the attrition model drifting?'],
           };
         },
