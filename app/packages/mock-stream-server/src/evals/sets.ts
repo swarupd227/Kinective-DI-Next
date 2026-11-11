@@ -195,6 +195,8 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-LG-001', set: 'golden', persona: 'executive', q: 'Find members who have an auto loan or HELOC at another lender, or the equity and credit to qualify for one, and prepare a measured outreach campaign with a control group.', agent: 'Loan Growth', approval: 'medium' },
   { id: 'GQ-LG-002', set: 'golden', persona: 'executive', q: 'Who has an auto loan with another lender?', agent: 'Loan Growth', contains: ['pay an auto loan to another lender'], approval: 'none' },
   { id: 'GQ-LG-003', set: 'golden', persona: 'executive', q: 'How did the July auto refinance campaign do?', agent: 'Loan Growth', contains: ['control group'], approval: 'none' },
+  { id: 'GQ-CMPH-001', set: 'golden', persona: 'executive', q: 'How has campaign ROI changed by quarter?', agent: 'Campaigns', contains: ['quarters'], approval: 'none' },
+  { id: 'GQ-CMPH-002', set: 'golden', persona: 'analyst', q: 'Show sales by marketing source', agent: 'Campaigns', contains: ['with no campaign'], approval: 'none' },
   { id: 'GQ-SALES-001', set: 'golden', persona: 'executive', q: 'Show the loan score card', agent: 'Sales Scorecards', contains: ['year-to-date minimum'], approval: 'none' },
   { id: 'GQ-SALES-002', set: 'golden', persona: 'branch', q: 'How are the sales contests going?', agent: 'Sales Scorecards', contains: ['Prize'], approval: 'none' },
   { id: 'GQ-SALES-003', set: 'golden', persona: 'executive', q: 'Show the scorecards by region', agent: 'Sales Scorecards', contains: ['leads at'], approval: 'none' },

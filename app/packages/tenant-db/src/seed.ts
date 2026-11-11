@@ -22,6 +22,7 @@ import { CR_FILING, generateCallReport } from './callReport.ts';
 import { preparedFigures } from './callReportTree.ts';
 import { GL_DDL, generateGl } from './gl.ts';
 import { SALES_GOALS_DDL, generateSalesGoals } from './salesGoals.ts';
+import { CAMPAIGN_HISTORY_DDL, attribution, earlierCampaigns } from './campaignHistory.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
 import { createSourceTables, seedCoreReplica } from './sources.ts';
@@ -198,7 +199,11 @@ async function main() {
       await insert(admin, 'gl_budget', ['month_end', 'gl_number', 'cost_center', 'amount'], gl.budget);
       await insert(admin, 'gl_journal', ['je_id', 'posted', 'company_id', 'gl_number', 'cost_center', 'debit', 'credit', 'description', 'source', 'ticket', 'offset_gl', 'posted_by'], gl.journal);
     }
-    await insert(admin, 'cmp_campaign', ['campaign_id', 'name', 'channel', 'product', 'sent', 'applications', 'loan_dollars', 'control_size', 'control_responders', 'cost', 'deposit_dollars', 'launched'], fx.campaigns);
+    // The current campaigns and a year of earlier ones, and the accounts each one is credited with.
+    const allCampaigns = [...(fx.campaigns as unknown[][]), ...earlierCampaigns(fx.campaigns.length + 1)];
+    await insert(admin, 'cmp_campaign', ['campaign_id', 'name', 'channel', 'product', 'sent', 'applications', 'loan_dollars', 'control_size', 'control_responders', 'cost', 'deposit_dollars', 'launched'], allCampaigns);
+    for (const ddl of CAMPAIGN_HISTORY_DDL) await admin.query(ddl);
+    await insert(admin, 'cmp_attribution', ['campaign_id', 'party_id', 'account_kind', 'account_id', 'product', 'opened', 'amount'], attribution(t, allCampaigns));
     for (const ddl of WORKFLOW_DDL) await admin.query(ddl);
     for (const ddl of GOVERNANCE_DDL) await admin.query(ddl);
     for (const ddl of GROWTH_DDL) await admin.query(ddl);

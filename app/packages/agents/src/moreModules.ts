@@ -614,7 +614,7 @@ export function campaignModule(cmp: CampaignService, api: ApiService | null = nu
     id: 'campaigns',
     prefix: 'cmp',
     agent: 'Campaigns',
-    request: /\bcampaigns?\b|\baudiences?\b|\bmarketing (roi|return|spend)\b|\bcampaign lift\b|\b(?:send|push)\b[^.?!]*\bto (?:the )?(?:relay|marketing platform)\b|\bopen and click\b|\bclick rates?\b|\bhow did the email\b/i,
+    request: /\bcampaigns?\b|\baudiences?\b|\bmarketing (roi|return|spend|sources?)\b|\bsales by (?:marketing )?source\b|\b(?:roi|return on spend) (?:history|by quarter|over time)\b|\bcampaign lift\b|\b(?:send|push)\b[^.?!]*\bto (?:the )?(?:relay|marketing platform)\b|\bopen and click\b|\bclick rates?\b|\bhow did the email\b/i,
     noAccess,
     sources: [{ kind: 'table', label: 'Campaign Success', ref: 'table:cmp_campaign' }],
     prompt: ({ tenant, user, title }) => `You are the Campaign agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) reviews campaigns and builds audiences.
@@ -624,6 +624,7 @@ export function campaignModule(cmp: CampaignService, api: ApiService | null = nu
 - "Build an audience of members with no auto loan": cmp_audience_prepare. Suppression is applied by the platform and its counts are shown.
 - "Send the audience of members with no auto loan to Relay", "push it to the marketing platform": cmp_audience_send. It is high risk: contact details leave DI.
 - "Pull back the campaign results": cmp_platform_pull. "How did the email do?", "open and click rates": cmp_platform_results.
+- "How has campaign ROI changed?", "ROI by quarter": cmp_roi_history. "What did campaigns bring in by product and channel?": cmp_product_channel. "Sales by marketing source", "what came from campaigns this month?": cmp_sources. "Campaign timeline", "when did responses come in?": cmp_timeline.
 - Exporting an audience as a file isn't available; sending goes through the connected marketing platform.`,
     plan: (text) => {
       const t = clean(text);
@@ -633,10 +634,77 @@ export function campaignModule(cmp: CampaignService, api: ApiService | null = nu
       if (/\bpull\b[^.?!]*\bresults?\b|\bpull (?:them |it )?back\b|\brefresh\b[^.?!]*\bresults?\b/i.test(t)) return { tool: 'cmp_platform_pull', args: {} };
       if (/\bopen(?:ed|s| rate)?\b|\bclick|\bdeliver|\bunsubscrib|\bplatform results\b|\bon relay\b|\bhow did\b[^.?!]*\b(?:email|send)\b/i.test(t)) return { tool: 'cmp_platform_results', args: {} };
       if (/\baudience\b/i.test(t)) return no ? { tool: 'cmp_audience_prepare', args: { without_category: (no[1] ?? no[2])! } } : { say: 'Which loan should the audience not already have?' };
+      if (/\btimeline\b|\bwhen did (?:the )?responses\b|\bweek by week\b/i.test(t)) return { tool: 'cmp_timeline', args: {} };
+      if (/\b(?:sales|accounts?|openings?) by (?:marketing )?source\b|\bmarketing sources?\b|\bcame from (?:a )?campaigns?\b|\bdaily\b/i.test(t)) return { tool: 'cmp_sources', args: {} };
+      if (/\bby product\b[^.?!]*\bchannel\b|\bby channel\b[^.?!]*\bproduct\b|\bproduct and channel\b|\bbrought in\b/i.test(t)) return { tool: 'cmp_product_channel', args: {} };
+      if (/\b(?:roi|return)\b[^.?!]*\b(?:history|by quarter|quarter by quarter|over time|trend|changed)\b|\bby quarter\b/i.test(t)) return { tool: 'cmp_roi_history', args: {} };
       if (/\blift\b|\broi\b|\breturn\b|\bincremental\b|\bpa(id|y) (for|off)\b|\bworth it\b|\bprofitab|\bcost per\b|\bspend\b|\bcontrol group\b/i.test(t)) return { tool: 'cmp_roi', args: {} };
       return { tool: 'cmp_results', args: {} };
     },
     tools: [
+      {
+        name: 'cmp_roi_history',
+        description: 'Return on spend by quarter launched and channel: campaigns, spend, value caused and return, oldest quarter first.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const h = await cmp.history();
+          const pct = (n: number | null) => (n === null ? '—' : `${Math.round(n)}%`);
+          const best = [...h.byChannel].filter((c) => c.roiPct !== null).sort((a, b) => b.roiPct! - a.roiPct!)[0];
+          const last = h.quarters.at(-1)!;
+          return {
+            text: `Over ${h.quarters.length} quarters, from ${h.quarters[0]!.quarter} to ${last.quarter}: **${best?.channel}** returned the most on its spend, ${pct(best?.roiPct ?? null)}. ${last.quarter} returned ${pct(last.total.roiPct)} on ${dollars(last.total.cost)} of spend.`,
+            blocks: [
+              moduleTable(spec, 'Return on spend by quarter and channel', ctx.runId, 'campaign.roi.history', [{ field: 'quarter', headerName: 'Quarter launched', type: 'text' }, ...h.channels.map((ch, i) => ({ field: `c${i}`, headerName: ch, type: 'text' as const })), { field: 'cost', headerName: 'Spend', type: 'currency' }, { field: 'value', headerName: 'Value caused', type: 'currency' }, { field: 'roi', headerName: 'Return', type: 'text' }], h.quarters.map((q) => ({ quarter: q.quarter, ...Object.fromEntries(h.channels.map((ch, i) => [`c${i}`, q.byChannel[ch]!.campaigns ? pct(q.byChannel[ch]!.roiPct) : ''])), cost: q.total.cost, value: q.total.value, roi: pct(q.total.roiPct) }))),
+              moduleTable(spec, 'By channel, all quarters', ctx.runId, 'campaign.roi.history', [{ field: 'channel', headerName: 'Channel', type: 'text' }, { field: 'campaigns', headerName: 'Campaigns', type: 'count' }, { field: 'cost', headerName: 'Spend', type: 'currency' }, { field: 'value', headerName: 'Value caused', type: 'currency' }, { field: 'roi', headerName: 'Return', type: 'text' }], h.byChannel.map((c) => ({ channel: c.channel, campaigns: c.campaigns, cost: c.cost, value: c.value, roi: pct(c.roiPct) }))),
+            ],
+          };
+        },
+      },
+      {
+        name: 'cmp_product_channel',
+        description: 'What campaigns brought in, from the accounts credited to them: by product and channel, accounts, dollars and lifetime value.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const rows = await cmp.productByChannel();
+          const top = rows[0]!;
+          return {
+            text: `Campaigns are credited with **${rows.reduce((s, r) => s + r.accounts, 0).toLocaleString('en-US')} accounts** (opened within 60 days of a campaign for that product), worth about ${dollars(rows.reduce((s, r) => s + r.value, 0))} over their life. The most valuable mix is ${top.product} by ${top.channel.toLowerCase()}, ${dollars(top.value)}.`,
+            blocks: [moduleTable(spec, 'Brought in by product and channel', ctx.runId, 'campaign.product_channel', [{ field: 'product', headerName: 'Product', type: 'text' }, { field: 'channel', headerName: 'Channel', type: 'text' }, { field: 'accounts', headerName: 'Accounts', type: 'count' }, { field: 'dollars', headerName: 'Dollars', type: 'currency' }, { field: 'value', headerName: 'Lifetime value', type: 'currency' }], rows)],
+          };
+        },
+      },
+      {
+        name: 'cmp_sources',
+        description: 'Accounts opened each day for the last 30 days by marketing source: each campaign channel, or no campaign.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const s = await cmp.sources(30);
+          const total = s.days.reduce((n, d) => n + d.total, 0);
+          const none = s.days.reduce((n, d) => n + d.none, 0);
+          const byCh = s.channels.map((ch) => ({ ch, n: s.days.reduce((n, d) => n + (d.byChannel[ch] ?? 0), 0) })).sort((a, b) => b.n - a.n);
+          return {
+            text: `From ${s.from} to ${s.to}, **${total.toLocaleString('en-US')} accounts** were opened: ${(total - none).toLocaleString('en-US')} credited to campaigns (${byCh.filter((c) => c.n).map((c) => `${c.ch.toLowerCase()} ${c.n}`).join(', ') || 'none'}) and ${none.toLocaleString('en-US')} with no campaign.`,
+            blocks: [moduleTable(spec, 'Sales by marketing source, each day', ctx.runId, 'campaign.sources', [{ field: 'day', headerName: 'Day', type: 'text' }, ...s.channels.map((ch, i) => ({ field: `c${i}`, headerName: ch, type: 'count' as const })), { field: 'none', headerName: 'No campaign', type: 'count' }, { field: 'total', headerName: 'Total', type: 'count' }], s.days.map((d) => ({ day: d.day, ...Object.fromEntries(s.channels.map((ch, i) => [`c${i}`, d.byChannel[ch] ?? 0])), none: d.none, total: d.total })))],
+          };
+        },
+      },
+      {
+        name: 'cmp_timeline',
+        description: 'Each campaign’s window, from launch to 60 days after, and the accounts credited to it week by week.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const t = await cmp.timeline();
+          const recent = t.slice(-8);
+          return {
+            text: `The last ${recent.length} campaigns’ windows and when responses came in. Most responses land in the first two to three weeks; ${recent.at(-1)!.name} peaked in week ${recent.at(-1)!.peakWeek}.`,
+            blocks: [moduleTable(spec, 'Campaign timeline', ctx.runId, 'campaign.timeline', [{ field: 'name', headerName: 'Campaign', type: 'text' }, { field: 'channel', headerName: 'Channel', type: 'text' }, { field: 'launched', headerName: 'Launched', type: 'text' }, { field: 'ends', headerName: 'Window ends', type: 'text' }, ...Array.from({ length: 9 }, (_, w) => ({ field: `w${w}`, headerName: `Week ${w + 1}`, type: 'count' as const })), { field: 'accounts', headerName: 'Accounts', type: 'count' }], recent.map((c) => ({ name: c.name, channel: c.channel, launched: c.launched, ends: c.ends, ...Object.fromEntries(c.weeks.map((n, w) => [`w${w}`, n])), accounts: c.accounts })))],
+          };
+        },
+      },
       {
         name: 'cmp_roi',
         description: 'Each campaign’s lift over its held-back control group, the incremental responses and dollars it caused, its cost, and the return on that cost from the lifetime contribution of what it caused.',

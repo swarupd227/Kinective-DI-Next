@@ -498,6 +498,74 @@ export class CampaignService {
     });
   }
 
+  /** Return on spend by quarter launched and channel: spend, value caused and return, oldest quarter first. */
+  async history() {
+    const all = (await this.results()).filter((c) => c.launched && c.value !== null);
+    const quarter = (d: string) => `Q${Math.ceil(Number(d.slice(5, 7)) / 3)} ${d.slice(0, 4)}`;
+    const key = (d: string) => `${d.slice(0, 4)}-${Math.ceil(Number(d.slice(5, 7)) / 3)}`;
+    const quarters = [...new Set(all.map((c) => key(c.launched!)))].sort();
+    const channels = [...new Set(all.map((c) => c.channel))].sort();
+    const cell = (list: typeof all) => {
+      const cost = list.reduce((s, c) => s + c.cost, 0);
+      const value = list.reduce((s, c) => s + (c.value ?? 0), 0);
+      return { campaigns: list.length, cost: Math.round(cost), value: Math.round(value), roiPct: cost ? Math.round(((value - cost) / cost) * 1000) / 10 : null };
+    };
+    return {
+      channels,
+      quarters: quarters.map((q) => {
+        const inQ = all.filter((c) => key(c.launched!) === q);
+        return { quarter: quarter(inQ[0]!.launched!), total: cell(inQ), byChannel: Object.fromEntries(channels.map((ch) => [ch, cell(inQ.filter((c) => c.channel === ch))])) };
+      }),
+      byChannel: channels.map((ch) => ({ channel: ch, ...cell(all.filter((c) => c.channel === ch)) })),
+    };
+  }
+
+  /** What campaigns brought in, from the accounts credited to them: by product and channel, count, dollars and lifetime value. */
+  async productByChannel() {
+    const found = await rows<{ product: string; channel: string; n: number; dollars: unknown }>(this.pool, 'SELECT a.product, c.channel, COUNT(*) AS n, SUM(a.amount) AS dollars FROM cmp_attribution a JOIN cmp_campaign c ON c.campaign_id = a.campaign_id GROUP BY a.product, c.channel').catch(() => []);
+    if (!found.length) throw new CoreError('NOT_FOUND', 'Accounts aren’t credited to campaigns here yet.');
+    return found.map((r) => {
+      const [margin, years] = CAMPAIGN_VALUE[r.product] ?? [0.02, 2, 0];
+      const dollars = Number(r.dollars);
+      return { product: r.product, channel: r.channel, accounts: Number(r.n), dollars: Math.round(dollars), value: Math.round(dollars * margin * years) };
+    }).sort((a, b) => b.value - a.value);
+  }
+
+  /** Accounts opened each day for the last days, by marketing source: each campaign channel, or no campaign. */
+  async sources(days = 30) {
+    const [b] = await rows<{ d: unknown }>(this.pool, "SELECT as_of_date AS d FROM meta_build WHERE state = 'completed' ORDER BY as_of_date DESC LIMIT 1");
+    const to = String(b!.d instanceof Date ? (b!.d as Date).toISOString() : b!.d).slice(0, 10);
+    const from = new Date(Date.parse(`${to}T00:00:00Z`) - (days - 1) * 86_400_000).toISOString().slice(0, 10);
+    const opened = await rows<{ d: unknown; n: number }>(this.pool, 'SELECT open_date AS d, COUNT(*) AS n FROM (SELECT open_date FROM cdm_loan WHERE open_date BETWEEN ? AND ? UNION ALL SELECT open_date FROM cdm_deposit_account WHERE open_date BETWEEN ? AND ?) x GROUP BY open_date', [from, to, from, to]);
+    const credited = await rows<{ d: unknown; channel: string; n: number }>(this.pool, 'SELECT a.opened AS d, c.channel, COUNT(*) AS n FROM cmp_attribution a JOIN cmp_campaign c ON c.campaign_id = a.campaign_id WHERE a.opened BETWEEN ? AND ? GROUP BY a.opened, c.channel', [from, to]).catch(() => []);
+    const d10 = (v: unknown) => String(v instanceof Date ? v.toISOString() : v).slice(0, 10);
+    const channels = [...new Set(credited.map((r) => r.channel))].sort();
+    const daysList = Array.from({ length: days }, (_, i) => new Date(Date.parse(`${from}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10));
+    return {
+      from,
+      to,
+      channels,
+      days: daysList.map((day) => {
+        const total = Number(opened.find((o) => d10(o.d) === day)?.n ?? 0);
+        const by = Object.fromEntries(channels.map((ch) => [ch, Number(credited.find((c) => d10(c.d) === day && c.channel === ch)?.n ?? 0)]));
+        const fromCampaigns = Object.values(by).reduce((s, n) => s + n, 0);
+        return { day, total, byChannel: by, none: Math.max(0, total - fromCampaigns) };
+      }),
+    };
+  }
+
+  /** Each campaign's window (launch to 60 days after) and the accounts credited to it, week by week. */
+  async timeline() {
+    const list = await rows<Record<string, unknown>>(this.pool, 'SELECT campaign_id, name, channel, product, launched FROM cmp_campaign WHERE launched IS NOT NULL ORDER BY launched');
+    const credited = await rows<{ campaign_id: number; week: number; n: number }>(this.pool, 'SELECT a.campaign_id, FLOOR(DATEDIFF(a.opened, c.launched) / 7) AS week, COUNT(*) AS n FROM cmp_attribution a JOIN cmp_campaign c ON c.campaign_id = a.campaign_id GROUP BY a.campaign_id, week').catch(() => []);
+    const d10 = (v: unknown) => String(v instanceof Date ? v.toISOString() : v).slice(0, 10);
+    return list.map((c) => {
+      const launched = d10(c.launched);
+      const weeks = Array.from({ length: 9 }, (_, w) => Number(credited.find((x) => x.campaign_id === c.campaign_id && Number(x.week) === w)?.n ?? 0));
+      return { name: c.name as string, channel: c.channel as string, product: c.product as string, launched, ends: new Date(Date.parse(`${launched}T00:00:00Z`) + 60 * 86_400_000).toISOString().slice(0, 10), accounts: weeks.reduce((s, n) => s + n, 0), weeks, peakWeek: weeks.indexOf(Math.max(...weeks)) + 1 };
+    });
+  }
+
   /** Members without a product, after suppression. The rule, not a model, decides who's removed. */
   async audience(category: string, ctx: CoreContext) {
     const known = await rows<{ c: string }>(this.pool, 'SELECT DISTINCT loan_category AS c FROM cdm_loan');

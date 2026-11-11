@@ -638,6 +638,7 @@ export function createAppViews(deps: ViewDeps) {
     async campaigns() {
       const cmp = new CampaignService(pool);
       const list = await cmp.results();
+      const history = await cmp.history().catch(() => null);
       const platform = await new ApiService(pool, { secretKey: secretKeyFrom(), allowedHosts: apiHosts() }).platformResults().catch(() => ({ metrics: [], pushes: [] }));
       const pct1 = (v: number) => `${v.toFixed(1)}%`;
       const platformBlocks = platform.metrics.length
@@ -664,6 +665,7 @@ export function createAppViews(deps: ViewDeps) {
         blocks: [
           bar('Return on spend by campaign', 'campaign.roi', byRoi.map((c) => [c.name, Math.round(c.roiPct ?? 0)]), 'percent', 'Return'),
           table('Lift and return', 'campaign.roi', [text('name', 'Campaign'), text('channel', 'Channel'), text('launched', 'Launched'), text('rate', 'Responded'), text('control', 'Control'), text('lift', 'Lift (pts)'), { field: 'caused', headerName: 'Caused', type: 'count' }, { field: 'cost', headerName: 'Cost', type: 'currency' }, { field: 'value', headerName: 'Value caused', type: 'currency' }, text('roi', 'Return')], byRoi.map((c) => ({ name: c.name, channel: c.channel, launched: c.launched ?? '', rate: `${c.responseRatePct.toFixed(2)}%`, control: `${c.controlRatePct!.toFixed(2)}%`, lift: c.liftPts!.toFixed(2), caused: c.incremental ?? 0, cost: Math.round(c.cost), value: Math.round(c.value ?? 0), roi: pctOf(c.roiPct) }))),
+          ...(history ? [table('Return on spend by quarter launched', 'campaign.roi.history', [text('quarter', 'Quarter'), { field: 'campaigns', headerName: 'Campaigns', type: 'count' }, { field: 'cost', headerName: 'Spend', type: 'currency' }, { field: 'value', headerName: 'Value caused', type: 'currency' }, text('roi', 'Return')], history.quarters.map((q) => ({ quarter: q.quarter, campaigns: q.total.campaigns, cost: q.total.cost, value: q.total.value, roi: pctOf(q.total.roiPct) })))] : []),
           ...platformBlocks,
           table('Campaigns', 'campaign.results', [text('name', 'Campaign'), text('channel', 'Channel'), text('product', 'Product'), { field: 'sent', headerName: 'Sent', type: 'count' }, { field: 'applications', headerName: 'Applications', type: 'count' }, text('response', 'Response'), { field: 'dollars', headerName: 'Loan dollars', type: 'currency' }, { field: 'deposits', headerName: 'Deposits raised', type: 'currency' }], list.map((c) => ({ name: c.name, channel: c.channel, product: c.product, sent: c.sent, applications: c.applications, response: `${Math.round((c.applications / c.sent) * 1000) / 10}%`, dollars: c.dollars, deposits: c.depositDollars }))),
         ],
