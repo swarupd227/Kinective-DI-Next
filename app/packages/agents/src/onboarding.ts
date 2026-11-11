@@ -1,8 +1,9 @@
-// Onboarding agent (spec 24.21): today's calls with talking points, what's overdue, and working a
-// person's own touch points. Member letters and emails stay in the scheduled process, so this agent
+// Onboarding agent (spec 24.21): today's calls with talking points, what's overdue, working a person's
+// own touch points with the interview checklist, each new member's journey (what the scheduled process
+// sent and whether it was opened) and the 90-day funnel by branch. Member letters and emails stay in the scheduled process, so this agent
 // never sends one.
 import { z } from 'zod';
-import { CoreError, type OnboardingService, type TouchPoint } from '@dinext/di-core';
+import { CoreError, checklistFrom, type OnbChecklist, type OnboardingService, type TouchPoint } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 const need = (ctx: ModuleContext) => {
@@ -29,7 +30,7 @@ export function onboardingModule(onboarding: OnboardingService): ModuleSpec {
     id: 'onboarding',
     prefix: 'onb',
     agent: 'Onboarding',
-    request: /\bonboarding\b|\btouch ?points?\b|\bnew members?\b.*\b(direct deposit|calls?)\b|\bwelcome calls?\b/i,
+    request: /\bonboarding\b|\btouch ?points?\b|\bnew members?\b.*\b(direct deposit|calls?)\b|\bwelcome (?:calls?|emails?|letters?|kit|messages?)\b|\bfirst 90 days\b/i,
     noAccess: 'Onboarding isn’t part of your DI access.',
     sources: [{ kind: 'table', label: 'Onboarding tasks', ref: 'table:onb_task' }],
     prompt: ({ tenant, user, title }) => `You are the Onboarding agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) works new members' touch points.
@@ -38,6 +39,8 @@ export function onboardingModule(onboarding: OnboardingService): ModuleSpec {
 - "Which new members haven't set up direct deposit after 30 days?": onb_no_direct_deposit.
 - "Mark the Jackson 14-day call done; she set up direct deposit": onb_task_done with their words as note.
 - onb_task_snooze and onb_task_reassign change a task.
+- "Show the onboarding messages for Suzanne Jackson", "her journey": onb_journey, what the scheduled process sent and whether it was opened.
+- "Show the onboarding funnel", "early attrition in the first 90 days": onb_funnel.
 - You never send a letter or email to a member: those stay in the scheduled process. Say so.`,
     today: async (ctx) => {
       const f = await onboarding.list({ employeeId: reach(ctx), overdueOnly: true }, ctx);
@@ -53,9 +56,46 @@ export function onboardingModule(onboarding: OnboardingService): ModuleSpec {
       if (/\bsnooze\b/i.test(t)) return member ? { tool: 'onb_task_snooze', args: { member, days: Number(/\b(\d+) days?\b/i.exec(t)?.[1] ?? 2) } } : { say: 'Whose touch point should I snooze?' };
       const to = /\bto ((?:[A-Z][\w.'-]*\s?){1,3})/.exec(t)?.[1]?.trim();
       if (/\b(reassign|move)\b/i.test(t)) return member && to ? { tool: 'onb_task_reassign', args: { member, to } } : { say: 'Whose touch point should move, and to whom?' };
+      if (/\bfunnel\b|\bfirst 90 days\b|\bearly (?:attrition|churn|closures?)\b|\bproduct adoption\b/i.test(t)) return { tool: 'onb_funnel', args: {} };
+      const journeyOf = /\b(?:journey|messages?|emails?|letters?)\b[^.?!]*\b(?:for|to|with)\s+((?:[A-Z][\w'-]*\s?){1,3})/.exec(t)?.[1]?.trim();
+      if (journeyOf && !/\bsend\b/i.test(t)) return { tool: 'onb_journey', args: { member: journeyOf } };
       return { tool: 'onb_tasks_list', args: { overdue_only: /\boverdue\b|\blate\b|\bmissed\b/i.test(t) } };
     },
     tools: [
+      {
+        name: 'onb_journey',
+        description: 'One new member’s journey: the messages the scheduled process sent (welcome email, letter, secure message, reminders, survey) and whether each was opened, the touch points, and the checklist recorded with each.',
+        input: z.object({ member: z.string().min(2).max(80) }).strict(),
+        run: async (a: { member: string }, ctx) => {
+          need(ctx);
+          const j = await onboarding.journey(a.member, ctx);
+          const opened = j.messages.filter((m) => m.opened).length;
+          const trackable = j.messages.filter((m) => m.opened !== null).length;
+          return {
+            text: `**${j.name}** joined ${j.joined}. The scheduled process has sent **${j.messages.length} messages**${trackable ? `, ${opened} of ${trackable} opened` : ''}; ${j.touches.filter((t) => t.status === 'Done').length} of ${j.touches.length} touch points are done. DI shows these; the scheduled process sends them.`,
+            blocks: [
+              moduleTable(spec, `Messages sent to ${j.name}`, ctx.runId, 'onboarding.journey.messages', [{ field: 'day', headerName: 'Day', type: 'number' }, { field: 'step', headerName: 'Message', type: 'text' }, { field: 'channel', headerName: 'Channel', type: 'text' }, { field: 'sent', headerName: 'Sent', type: 'text' }, { field: 'opened', headerName: 'Opened', type: 'text' }], j.messages.map((m) => ({ day: m.day, step: m.step, channel: m.channel, sent: m.sent, opened: m.opened === null ? 'Not tracked' : m.opened ? (m.clicked ? 'Opened, clicked' : 'Opened') : 'Not opened' }))),
+              moduleTable(spec, `${j.name}’s touch points`, ctx.runId, 'onboarding.journey.touches', [{ field: 'touch', headerName: 'Touch point', type: 'text' }, { field: 'due', headerName: 'Due', type: 'text' }, { field: 'status', headerName: 'Status', type: 'text' }, { field: 'checklist', headerName: 'Checklist', type: 'text' }, { field: 'note', headerName: 'Note', type: 'text' }], j.touches.map((t) => ({ touch: t.touch, due: t.due, status: t.doneOn ? `Done ${t.doneOn}` : t.status, checklist: t.checklist ? [t.checklist.debitCard && 'card', t.checklist.onlineBanking && 'online', t.checklist.mobileApp && 'mobile', t.checklist.estatements && 'e-statements', t.checklist.billPay && 'bill pay', t.checklist.directDeposit && 'direct deposit', t.checklist.perksReviewed && 'perks', t.checklist.loansDiscussed, t.checklist.referralMade && 'referral'].filter(Boolean).join(', ') : '', note: t.note ?? '' }))),
+            ],
+          };
+        },
+      },
+      {
+        name: 'onb_funnel',
+        description: 'The first 90 days by branch, for members who joined in the last 90: welcome call made, digital banking, direct deposit, debit card activated, two or more products, and closed early; and how many journey messages were opened.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const f = await onboarding.funnel(ctx);
+          if (!f.branches.length) return { text: 'No one has joined in the last 90 days.' };
+          const total = f.branches.reduce((s, b) => s + b.members, 0);
+          const weakest = [...f.branches].sort((a, b) => a.directDepositPct - b.directDepositPct)[0]!;
+          return {
+            text: `**${total} new members** joined in the last 90 days. ${weakest.branch} has the lowest direct deposit take-up, ${weakest.directDepositPct}%. ${f.branches.reduce((s, b) => s + b.closedEarly, 0)} closed within 90 days of joining. ${f.openRatePct}% of journey messages were opened.`,
+            blocks: [moduleTable(spec, 'First 90 days, by branch', ctx.runId, 'onboarding.funnel', [{ field: 'branch', headerName: 'Branch', type: 'text' }, { field: 'members', headerName: 'New members', type: 'count' }, { field: 'welcomed', headerName: 'Welcome call', type: 'text' }, { field: 'digital', headerName: 'Digital banking', type: 'text' }, { field: 'dd', headerName: 'Direct deposit', type: 'text' }, { field: 'card', headerName: 'Debit card active', type: 'text' }, { field: 'two', headerName: '2+ products', type: 'text' }, { field: 'early', headerName: 'Closed early', type: 'count' }], f.branches.map((b) => ({ branch: b.branch, members: b.members, welcomed: `${b.welcomedPct}%`, digital: `${b.digitalPct}%`, dd: `${b.directDepositPct}%`, card: `${b.debitCardPct}%`, two: `${b.twoProductsPct}%`, early: b.closedEarly })))],
+          };
+        },
+      },
       {
         name: 'onb_tasks_list',
         description: 'Open touch points due now or within a week, longest overdue first, with a talking point for each. Covers the user’s own, or their branch if they lead one.',
@@ -87,9 +127,12 @@ export function onboardingModule(onboarding: OnboardingService): ModuleSpec {
         run: async (a: { member: string; note?: string }, ctx) => {
           need(ctx);
           const t = await onboarding.next(a.member, ctx);
-          return { change: { summary: `Mark ${t.member}’s ${t.touch.toLowerCase()} done`, changes: [{ label: `${t.member}, ${t.touch}`, before: t.state, after: 'Done' }, ...(a.note ? [{ label: 'Note', before: '—', after: a.note }] : [])], text: `I’ve prepared **${t.member}**’s ${t.touch.toLowerCase()} as done.`, done: `Marked **${t.member}**’s ${t.touch.toLowerCase()} done.`, risk: 'low', apply: { taskId: t.taskId, note: a.note ?? null } } };
+          // The interview checklist, from the person's own words: what was set up, discussed and referred.
+          const list = checklistFrom(a.note);
+          const ticked = list ? [list.debitCard && 'debit card activated', list.onlineBanking && 'online banking', list.mobileApp && 'mobile app', list.estatements && 'e-statements', list.billPay && 'bill pay', list.directDeposit && 'direct deposit', list.perksReviewed && 'perks reviewed', list.loansDiscussed && `discussed ${list.loansDiscussed}`, list.referralMade && 'referral made'].filter(Boolean).join(', ') : '';
+          return { change: { summary: `Mark ${t.member}’s ${t.touch.toLowerCase()} done`, changes: [{ label: `${t.member}, ${t.touch}`, before: t.state, after: 'Done' }, ...(a.note ? [{ label: 'Note', before: '—', after: a.note }] : []), ...(ticked ? [{ label: 'Checklist', before: '—', after: ticked }] : [])], text: `I’ve prepared **${t.member}**’s ${t.touch.toLowerCase()} as done${ticked ? `, with the checklist: ${ticked}` : ''}.`, done: `Marked **${t.member}**’s ${t.touch.toLowerCase()} done.`, risk: 'low', apply: { taskId: t.taskId, note: a.note ?? null, checklist: list } } };
         },
-        apply: async (p: { taskId: number; note: string | null }) => onboarding.complete(p.taskId, p.note),
+        apply: async (p: { taskId: number; note: string | null; checklist?: OnbChecklist | null }, _meta, ctx) => onboarding.complete(p.taskId, p.note, p.checklist ?? null, ctx.user.name),
       },
       {
         name: 'onb_task_snooze',

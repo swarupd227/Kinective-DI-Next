@@ -24,6 +24,7 @@ import { GL_DDL, generateGl } from './gl.ts';
 import { SALES_GOALS_DDL, generateSalesGoals } from './salesGoals.ts';
 import { CAMPAIGN_HISTORY_DDL, attribution, earlierCampaigns } from './campaignHistory.ts';
 import { SEG_DETAIL_DDL, SEG_DETAIL_WRITE_TABLES, generateSegDetail } from './segDetail.ts';
+import { ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
 import { createSourceTables, seedCoreReplica } from './sources.ts';
@@ -153,6 +154,11 @@ async function main() {
     await insert(admin, 'cpm_issue', ['issue_id', 'party_id', 'kind', 'source', 'category', 'summary', 'status', 'owner_employee_id', 'branch_id', 'opened', 'respond_by', 'resolve_by', 'closed', 'resolution', 'root_cause'], mods.issues);
     await insert(admin, 'cpm_issue_history', ['issue_id', 'at', 'actor', 'action', 'note'], mods.history);
     await insert(admin, 'onb_task', ['task_id', 'party_id', 'touch', 'day_offset', 'due', 'status', 'assignee_employee_id', 'branch_id', 'done_on', 'note'], mods.tasks);
+    // The onboarding journey: messages the scheduled process sent and opened, and touch-point checklists.
+    for (const ddl of ONB_JOURNEY_DDL) await admin.query(ddl);
+    const journey = generateOnboardingJourney(t, mods.tasks as unknown[][], rm.digital as unknown[][]);
+    await insert(admin, 'onb_message', ['party_id', 'step', 'channel', 'day_offset', 'sent_on', 'opened', 'clicked'], journey.messages);
+    await insert(admin, 'onb_checklist', ['task_id', 'debit_card_activated', 'online_banking', 'mobile_app', 'estatements', 'bill_pay', 'direct_deposit', 'perks_reviewed', 'loans_discussed', 'referral_made', 'recorded_by', 'recorded_on'], journey.checklists);
     await insert(admin, 'esp_datalog_type', ['type_id', 'label', 'financial', 'requires_approval'], DATALOG_TYPES.map((x) => [...x]));
     await insert(admin, 'esp_datalog', ['log_id', 'type_id', 'title', 'amount', 'branch_id', 'status', 'created_by', 'created_name', 'created_on'], mods.logs);
     await insert(admin, 'esp_datalog_history', ['log_id', 'at', 'actor', 'from_status', 'to_status', 'note'], mods.logHistory);
@@ -244,7 +250,7 @@ async function main() {
     // The application account reads tenant data only (spec 26.2: read-only on customer tables), and
     // writes only the workflow store, through approved DI Core operations.
     await admin.query(`GRANT SELECT ON \`${profile.schema}\`.* TO 'dinext'@'%'`);
-    for (const table of [...WORKFLOW_WRITE_TABLES, ...PIPELINE_WRITE_TABLES, ...GOALS_WRITE_TABLES, ...MODULES_WRITE_TABLES, ...GROWTH_WRITE_TABLES, ...TASKS_WRITE_TABLES, ...WORKFLOW_DEF_WRITE_TABLES, ...WORKSPACE_WRITE_TABLES, ...CALENDAR_SERIES_WRITE_TABLES, ...TABLES_WRITE_TABLES, ...BUDGET_WRITE_TABLES, ...LOAN_GROWTH_WRITE_TABLES, ...SEG_DETAIL_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
+    for (const table of [...WORKFLOW_WRITE_TABLES, ...PIPELINE_WRITE_TABLES, ...GOALS_WRITE_TABLES, ...MODULES_WRITE_TABLES, ...GROWTH_WRITE_TABLES, ...TASKS_WRITE_TABLES, ...WORKFLOW_DEF_WRITE_TABLES, ...WORKSPACE_WRITE_TABLES, ...CALENDAR_SERIES_WRITE_TABLES, ...TABLES_WRITE_TABLES, ...BUDGET_WRITE_TABLES, ...LOAN_GROWTH_WRITE_TABLES, ...SEG_DETAIL_WRITE_TABLES, ...ONB_JOURNEY_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     // Add-only: a run record or a rating can't be changed once written (AI-GRD-090).
     for (const table of GOVERNANCE_APPEND_TABLES) await admin.query(`GRANT INSERT ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     // Direct core connections: DI's store for every tenant, and a Symitar-style replica for the credit union.

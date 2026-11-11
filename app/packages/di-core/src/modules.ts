@@ -143,6 +143,38 @@ export class IssueService {
 /** 7 days past due is missed, before that late [Assumption CA-38]. */
 const MISSED_AFTER = 7;
 
+/** The onboarding interview checklist, as DI's New Member Onboarding form records it. */
+export interface OnbChecklist {
+  debitCard: boolean;
+  onlineBanking: boolean;
+  mobileApp: boolean;
+  estatements: boolean;
+  billPay: boolean;
+  directDeposit: boolean;
+  perksReviewed: boolean;
+  loansDiscussed: string | null;
+  referralMade: boolean;
+}
+
+/** The checklist a note describes ("card activated, set up e-statements, discussed an auto loan"), or null if it names none. */
+export function checklistFrom(note: string | null | undefined): OnbChecklist | null {
+  if (!note) return null;
+  const t = note.toLowerCase();
+  const loan = /\b(?:discussed|talked about|interested in|asked about|wants?)\b[^.;]*?\b(auto loan|car loan|heloc|home equity|personal loan|line of credit|credit card|mortgage|signature loan|rv loan)\b/.exec(t)?.[1] ?? null;
+  const c: OnbChecklist = {
+    debitCard: /\b(?:debit )?card (?:is )?activ/.test(t) || /\bactivated (?:the |her |his |their )?(?:debit )?card\b/.test(t),
+    onlineBanking: /\bonline banking\b|\benrolled online\b/.test(t),
+    mobileApp: /\bmobile\b|\bthe app\b/.test(t),
+    estatements: /\be-?statements?\b/.test(t),
+    billPay: /\bbill ?pay\b|\be-?pay\b/.test(t),
+    directDeposit: /\bdirect deposit\b(?![^.;]*\b(?:not|isn'?t|hasn'?t|no)\b)/.test(t) && !/\bno direct deposit\b|\bwithout direct deposit\b/.test(t),
+    perksReviewed: /\bperks\b|\brewards\b|\bbenefits reviewed\b/.test(t),
+    loansDiscussed: loan,
+    referralMade: /\breferr(?:ed|al)\b/.test(t),
+  };
+  return Object.values(c).some((v) => v === true || (typeof v === 'string' && v)) ? c : null;
+}
+
 export interface TouchPoint {
   taskId: number;
   member: string;
@@ -198,8 +230,80 @@ export class OnboardingService {
     return this.toTouch(r, asOf);
   }
 
-  async complete(taskId: number, note: string | null) {
-    await this.pool.query("UPDATE onb_task SET status = 'Done', done_on = ?, note = ? WHERE task_id = ? AND status = 'Open'", [await buildDate(this.pool), note, taskId]);
+  async complete(taskId: number, note: string | null, checklist?: OnbChecklist | null, by?: string) {
+    const on = await buildDate(this.pool);
+    await this.pool.query("UPDATE onb_task SET status = 'Done', done_on = ?, note = ? WHERE task_id = ? AND status = 'Open'", [on, note, taskId]);
+    if (checklist) {
+      const v = (b: boolean) => (b ? 1 : 0);
+      await this.pool.query(
+        'INSERT INTO onb_checklist (task_id, debit_card_activated, online_banking, mobile_app, estatements, bill_pay, direct_deposit, perks_reviewed, loans_discussed, referral_made, recorded_by, recorded_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE task_id = task_id',
+        [taskId, v(checklist.debitCard), v(checklist.onlineBanking), v(checklist.mobileApp), v(checklist.estatements), v(checklist.billPay), v(checklist.directDeposit), v(checklist.perksReviewed), checklist.loansDiscussed, v(checklist.referralMade), by ?? 'Staff', on],
+      );
+    }
+  }
+
+  /** One new member's journey: the messages the scheduled process sent (and opened), the touch points, and each checklist. */
+  async journey(member: string, ctx: CoreContext) {
+    const scope = inScope(ctx);
+    const words = member.trim().split(/\s+/);
+    const [people] = await this.pool.query(`SELECT DISTINCT p.party_id, p.first_name, p.last_name, p.join_date FROM onb_task t JOIN cdm_party p ON p.party_id = t.party_id JOIN cdm_location b ON b.int_id = t.branch_id WHERE p.last_name = ? AND (? = '' OR p.first_name = ?)${scope.sql} LIMIT 2`, [words.at(-1), words.length > 1 ? words[0] : '', words[0], ...scope.params]);
+    const list = people as { party_id: number; first_name: string; last_name: string; join_date: unknown }[];
+    if (!list.length) throw new CoreError('NOT_FOUND', `${member} isn’t a new member you can see.`);
+    if (list.length > 1) throw new CoreError('INVALID', `More than one new member is called ${member}. Add their first name.`);
+    const p = list[0]!;
+    const [msgs] = await this.pool.query('SELECT step, channel, day_offset, sent_on, opened, clicked FROM onb_message WHERE party_id = ? ORDER BY day_offset', [p.party_id]).catch(() => [[]]);
+    const [touches] = await this.pool.query('SELECT t.task_id, t.touch, t.due, t.status, t.done_on, t.note, c.* FROM onb_task t LEFT JOIN onb_checklist c ON c.task_id = t.task_id WHERE t.party_id = ? ORDER BY t.day_offset', [p.party_id]).catch(() => [[]]);
+    const d = (v: unknown) => String(v instanceof Date ? v.toISOString() : v).slice(0, 10);
+    return {
+      name: `${p.first_name} ${p.last_name}`,
+      joined: d(p.join_date),
+      messages: (msgs as Record<string, unknown>[]).map((m) => ({ step: m.step as string, channel: m.channel as string, day: Number(m.day_offset), sent: d(m.sent_on), opened: m.opened === null ? null : m.opened === 1, clicked: m.clicked === 1 })),
+      touches: (touches as Record<string, unknown>[]).map((t) => ({
+        touch: t.touch as string,
+        due: d(t.due),
+        status: t.status as string,
+        doneOn: t.done_on ? d(t.done_on) : null,
+        note: (t.note as string | null) ?? null,
+        checklist: t.recorded_by ? { debitCard: t.debit_card_activated === 1, onlineBanking: t.online_banking === 1, mobileApp: t.mobile_app === 1, estatements: t.estatements === 1, billPay: t.bill_pay === 1, directDeposit: t.direct_deposit === 1, perksReviewed: t.perks_reviewed === 1, loansDiscussed: (t.loans_discussed as string | null) ?? null, referralMade: t.referral_made === 1 } : null,
+      })),
+    };
+  }
+
+  /**
+   * The first 90 days by branch, for members who joined in the last 90: welcome call made, digital banking,
+   * direct deposit, debit card activated, two or more products, and closed early. Messages opened, overall.
+   */
+  async funnel(ctx: CoreContext) {
+    const asOf = await buildDate(this.pool);
+    const scope = inScope(ctx);
+    const [rows] = await this.pool.query(
+      `SELECT b.name AS branch, p.party_id,
+              MAX(CASE WHEN t.touch = 'Welcome call' AND t.status = 'Done' THEN 1 ELSE 0 END) AS welcomed,
+              MAX(CASE WHEN u.online_banking_since IS NOT NULL OR u.mobile_since IS NOT NULL THEN 1 ELSE 0 END) AS digital,
+              MAX(CASE WHEN u.direct_deposit_status = 'active' THEN 1 ELSE 0 END) AS dd,
+              MAX(CASE WHEN k.activated IS NOT NULL THEN 1 ELSE 0 END) AS card
+         FROM onb_task t JOIN cdm_party p ON p.party_id = t.party_id JOIN cdm_location b ON b.int_id = t.branch_id
+         LEFT JOIN cdm_digital_usage u ON u.party_id = p.party_id LEFT JOIN cdm_card k ON k.party_id = p.party_id AND k.kind = 'Debit'
+        WHERE p.join_date >= DATE_SUB(?, INTERVAL 90 DAY)${scope.sql} GROUP BY b.name, p.party_id`,
+      [asOf, ...scope.params],
+    );
+    const people = rows as { branch: string; party_id: number; welcomed: number; digital: number; dd: number; card: number }[];
+    const ids = people.map((r) => r.party_id);
+    const products = new Map<number, number>();
+    if (ids.length) {
+      const [prod] = await this.pool.query('SELECT party_id, COUNT(DISTINCT cat) AS n FROM (SELECT party_id, deposit_category AS cat FROM cdm_deposit_account WHERE close_date IS NULL AND party_id IN (?) UNION ALL SELECT party_id, loan_category FROM cdm_loan WHERE close_date IS NULL AND party_id IN (?)) x GROUP BY party_id', [ids, ids]);
+      for (const r of prod as { party_id: number; n: number }[]) products.set(r.party_id, Number(r.n));
+    }
+    const [early] = await this.pool.query(`SELECT b.name AS branch, COUNT(*) AS n FROM cdm_membership_exit x JOIN cdm_location b ON b.int_id = x.branch_id WHERE x.close_date >= DATE_SUB(?, INTERVAL 90 DAY) AND DATEDIFF(x.close_date, x.join_date) <= 90${scope.sql} GROUP BY b.name`, [asOf, ...scope.params]);
+    const [opened] = await this.pool.query("SELECT SUM(opened = 1) AS o, SUM(opened IS NOT NULL) AS n FROM onb_message WHERE sent_on >= DATE_SUB(?, INTERVAL 90 DAY)", [asOf]).catch(() => [[{ o: 0, n: 0 }]]);
+    const pct = (a: number, b: number) => (b ? Math.round((a / b) * 1000) / 10 : 0);
+    const branches = [...new Set(people.map((r) => r.branch))].sort().map((branch) => {
+      const mine = people.filter((r) => r.branch === branch);
+      const n = mine.length;
+      return { branch, members: n, welcomedPct: pct(mine.filter((r) => r.welcomed).length, n), digitalPct: pct(mine.filter((r) => r.digital).length, n), directDepositPct: pct(mine.filter((r) => r.dd).length, n), debitCardPct: pct(mine.filter((r) => r.card).length, n), twoProductsPct: pct(mine.filter((r) => (products.get(r.party_id) ?? 0) >= 2).length, n), closedEarly: Number((early as { branch: string; n: number }[]).find((e) => e.branch === branch)?.n ?? 0) };
+    });
+    const o = (opened as { o: unknown; n: unknown }[])[0]!;
+    return { asOf, branches, openRatePct: pct(Number(o.o ?? 0), Number(o.n ?? 0)) };
   }
 
   async snooze(taskId: number, days: number) {

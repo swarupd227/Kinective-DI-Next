@@ -71,3 +71,4 @@ export { CD_INTERVALS, CD_RENEWAL, PortfolioService } from './portfolio.ts';
 export { FUNDING_POLICY, FUNDING_RATES, FundingChoiceService, FundingModel, type FundingCheck, type FundingCheckId, type FundingFigures, type FundingLevers } from './fundingChoice.ts';
 export { AcquisitionModel, AcquisitionService, COST_SAVES, EARNBACK_MAX_YEARS, TARGET_PROFILE, type DealCheck, type DealCheckId, type DealFigures, type DealLevers } from './acquisition.ts';
 export { BudgetStressModel, BudgetStressService, type BudgetCheck, type BudgetCheckId, type BudgetFigures, type BudgetLevers } from './budgetStress.ts';
+export { checklistFrom, type OnbChecklist } from './modules.ts';

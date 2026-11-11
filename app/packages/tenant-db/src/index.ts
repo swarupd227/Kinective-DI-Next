@@ -29,3 +29,4 @@ export { REFERRAL_EXPIRE_DAYS, REFERRAL_PRODUCT, referralHistory } from './workf
 export { CHANNEL_ORDER, SALES_GOALS_DDL, generateSalesGoals, loanChannel } from './salesGoals.ts';
 export { ATTRIBUTION_DAYS, CAMPAIGN_CATEGORIES, CAMPAIGN_HISTORY_DDL } from './campaignHistory.ts';
 export { BD_GOALS, SEG_DETAIL_DDL, SEG_DETAIL_WRITE_TABLES, generateSegDetail } from './segDetail.ts';
+export { ONB_JOURNEY, ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
