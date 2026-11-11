@@ -25,7 +25,7 @@ const text = (field: string, headerName: string) => ({ field, headerName, type: 
 const signed = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}%`;
 const p1 = (v: number) => `${v.toFixed(1)}%`;
 const p2 = (v: number) => `${v.toFixed(2)}%`;
-const m = (v: number) => `$${(v / 1e6).toFixed(2)}M`;
+const m = (v: number) => `$${(v / 1e6).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}M`;
 const n0 = (v: number) => Math.round(v).toLocaleString('en-US');
 
 /** A measure's value as people say it. */
@@ -71,7 +71,7 @@ const pnlSources: ModuleSpec['sources'] = [
   { kind: 'table', label: 'Shares and deposits, for funds transfer pricing', ref: 'table:cdm_deposit_account' },
 ];
 const pnlWho = { agent: 'Branch Performance', sources: pnlSources };
-const mm = (v: number) => `$${(v / 1e6).toFixed(2)}M`;
+const mm = (v: number) => `$${(v / 1e6).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}M`;
 
 type Kind = 'targets' | 'delinquency' | 'digital' | 'productivity' | 'complaints' | 'balancing' | 'lobby' | 'risk' | 'audit' | 'people' | 'pnl';
 
@@ -425,7 +425,7 @@ export function branchKpiModule(svc: BranchKpiService): ModuleSpec {
             text: `${said} Interest and credit cost are on today’s balances with DI’s standard funds transfer pricing; head office’s ${mm(x.overheadPool)} of operating expenses is shared by balances (Lending’s by loans).`,
             blocks: [block],
             sources: pnlSources,
-            suggestions: [one ? `How is ${one.branch} doing against the CEO’s targets?` : 'Which branches are hitting the CEO’s targets?', 'Show staff productivity for my branch', 'Which products are most profitable?'],
+            suggestions: [one ? `How is ${one.branch} doing against the CEO’s targets?` : 'Which branches are hitting the CEO’s targets?', 'Show staff productivity for my branch', 'Show audit exceptions and surprise cash counts'],
           };
         },
       },

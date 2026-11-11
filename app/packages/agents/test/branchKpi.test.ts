@@ -210,6 +210,10 @@ describe.skipIf(!opsUp)('branch operations on the credit union', () => {
       expect(pnl.text).toMatch(/\*\*Westport (made|loses) \$[\d.]+M in the 12 months to/);
       expect(pnl.text).not.toMatch(/Eastgate|Downtown/);
       expect(pnl.blocks[0]!.provenance.sources[0]!.ref).toBe('table:gl_balance_month');
+      // Millions over a thousand keep their comma, and the follow-ups stay with this agent.
+      expect(JSON.stringify(pnl.blocks)).not.toMatch(/\$\d{4,}\.\d\dM/);
+      expect(JSON.stringify(pnl.blocks)).toMatch(/\$1,\d{3}\.\d\dM/);
+      for (const q of (pnl as unknown as { suggestions: string[] }).suggestions) expect(BRANCH_KPI_REQUEST.test(q), q).toBe(true);
     } finally {
       await pool.end();
     }
