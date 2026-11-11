@@ -81,7 +81,8 @@ export interface DecisionCase<L, F> {
   /** The deterministic planner's plan of work, a few sentences. */
   planText: string;
   specialists: Specialist[];
-  options: (findings: Finding[]) => Promise<DecisionOption<L>[]> | DecisionOption<L>[];
+  /** The plans to compare. `input.text` is the request, for a case that reads a size or a name from it. */
+  options: (findings: Finding[], input: { text: string }) => Promise<DecisionOption<L>[]> | DecisionOption<L>[];
   evaluate: (levers: L) => F;
   /** The critic's challenges to one plan: its breaches and thin limits, worded by code. */
   critique: (option: DecisionOption<L>, figures: F) => Challenge[];
@@ -89,6 +90,8 @@ export interface DecisionCase<L, F> {
   stands: (option: DecisionOption<L>, challenge: Challenge) => string | null;
   /** The fix for a challenge, recomputed by code, and what the planner says about it. Null when nothing fixes it. */
   revise: (option: DecisionOption<L>, challenge: Challenge) => { levers: L; text: string } | null;
+  /** Why nothing within an option's levers fixes a challenge, said once for the option. */
+  stuck?: (option: DecisionOption<L>, challenge: Challenge) => string;
   /** Revisions within a round go in this order of checks, so a later one sees the earlier ones. */
   order: string[];
   recommend: (results: Evaluated<L, F>[], replies: Reply[]) => { key: string; why: string };
@@ -205,7 +208,7 @@ export async function runDecision<L, F>(spec: ModuleSpec, c: DecisionCase<L, F>,
   // ---- three plans, computed ------------------------------------------------------------------
   step('options', 'running');
   await beat();
-  let options = await c.options(found);
+  let options = await c.options(found, { text: input.text });
   const results = () => options.map((option) => ({ option, figures: c.evaluate(option.levers) }));
   corpus.push(...found.flatMap((f) => [f.current, f.limit, f.headroom, f.breachIf]), ...c.corpus(results(), found));
   step('options', 'done', options.map((o) => o.name).join(', '));
@@ -213,13 +216,15 @@ export async function runDecision<L, F>(spec: ModuleSpec, c: DecisionCase<L, F>,
   // ---- critic and planner, at most two rounds -----------------------------------------------------
   const replies: Reply[] = [];
   const stood = new Set<string>();
+  // Challenges nothing could fix are not raised again unless they get worse.
+  const stuck = new Map<string, Challenge['severity']>();
   for (let round = 1; round <= MAX_ROUNDS; round++) {
     step(`critic_${round}`, 'running');
     await beat();
     const current = results();
     corpus.push(...c.corpus(current, found));
     // Challenges the planner already answered by standing are not raised again unless they turned into breaches.
-    const raised = current.flatMap((r) => c.critique(r.option, r.figures)).filter((ch) => ch.severity === 'breach' || !stood.has(`${ch.option}:${ch.check}`));
+    const raised = current.flatMap((r) => c.critique(r.option, r.figures)).filter((ch) => (ch.severity === 'breach' || !stood.has(`${ch.option}:${ch.check}`)) && stuck.get(`${ch.option}:${ch.check}`) !== ch.severity);
     if (!raised.length) {
       step(`critic_${round}`, 'done', round > 1 ? 'No new challenges: the revisions hold' : 'No challenges');
       step(`revise_${round}`, 'skipped');
@@ -245,15 +250,20 @@ export async function runDecision<L, F>(spec: ModuleSpec, c: DecisionCase<L, F>,
     step(`revise_${round}`, 'running');
     await beat();
     const answered = await ask(
-      `You are the planner. For each challenge from the chief risk officer, revise the plan (code then recomputes it with the standard fix for that limit) or say why it stands. A breach must be revised. A plan built to return capital may stand on a thin limit if the board should see where the edge is.`,
+      `You are the planner. For each challenge from the chief risk officer, revise the plan or say why it stands. A breach is always revised; a plan built to return capital may stand on a thin limit if the board should see where the edge is. Code applies the revision and states its figures right after your reason, so give only the reason, in one sentence addressed to the board: why this change, or why the plan stays as it is. Don't restate the challenge, and don't mention rules, the data, reasons on file or standard fixes.`,
       `<data>\n${c.facts(current)}\n\nChallenges:\n${challenges.map((ch) => `- ${ch.option} / ${ch.check} (${ch.severity}): ${ch.text}`).join('\n')}\n\nWhere a plan may stand, the reason on file:\n${challenges.map((ch) => `- ${ch.option} / ${ch.check}: ${c.stands(options.find((o) => o.key === ch.option)!, ch) ?? 'must be revised'}`).join('\n')}\n</data>`,
       ReplySchema,
     );
     const byOrder = [...challenges].sort((a, b) => c.order.indexOf(a.check) - c.order.indexOf(b.check));
     const lines: string[] = [];
+    const saidStuck = new Set<string>();
     for (const ch of byOrder) {
       const idx = options.findIndex((o) => o.key === ch.option);
       const option = options[idx]!;
+      // An earlier change in this round may already have settled it.
+      if (!c.critique(option, c.evaluate(option.levers)).some((x) => x.check === ch.check)) continue;
+      // An option ruled out this round needs no answer on its other limits.
+      if (saidStuck.has(ch.option)) continue;
       const model = answered?.replies.find((x) => x.option === ch.option && x.check === ch.check);
       const standing = c.stands(option, ch);
       // A breach is always revised; a thin limit stands only where the case allows it, whatever the model says.
@@ -267,8 +277,13 @@ export async function runDecision<L, F>(spec: ModuleSpec, c: DecisionCase<L, F>,
       }
       const fix = c.revise(option, ch);
       if (!fix) {
-        replies.push({ option: ch.option, check: ch.check, action: 'stands', text: 'Nothing within this plan’s levers fixes it.', round });
-        lines.push(`- *${option.name}*: nothing within this plan’s levers fixes ${c.nouns?.[ch.check] ?? ch.check}; it stays with the challenge.`);
+        stuck.set(`${ch.option}:${ch.check}`, ch.severity);
+        // Said once for the option: the rest of its stuck challenges have the same answer.
+        if (saidStuck.has(ch.option)) continue;
+        saidStuck.add(ch.option);
+        const text = c.stuck?.(option, ch) ?? `Nothing within this plan’s levers fixes ${c.nouns?.[ch.check] ?? ch.check}; it stays with the challenge.`;
+        replies.push({ option: ch.option, check: ch.check, action: 'stands', text, round });
+        lines.push(`- *${option.name}*: ${text}`);
         continue;
       }
       options = options.map((o, i) => (i === idx ? { ...o, levers: fix.levers } : o));

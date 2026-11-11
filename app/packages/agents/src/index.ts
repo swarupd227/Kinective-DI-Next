@@ -73,3 +73,7 @@ export { CAPITAL_ACTIONS_AGENT, CAPITAL_ACTIONS_REQUEST, SECURITIES_SALE_AGENT, 
 export { CRITIC, MAX_ROUNDS, PLANNER, runDecision, type Challenge, type DecisionCase, type DecisionDeps, type DecisionOption, type Evaluated, type Finding, type Reply, type Specialist } from './decision.ts';
 export { SALES_SCORECARD_REQUEST, salesScorecardModule, salesScorecardPlan } from './salesScorecard.ts';
 export { PORTFOLIO_REQUEST, PORTFOLIO_SECTIONS, portfolioAnalyses, portfolioModule, portfolioQuestion } from './portfolioReports.ts';
+export { FUNDING_CHOICE_AGENT, FUNDING_CHOICE_REQUEST, fundingCase, fundingChoiceModule, fundingMemo } from './fundingDecision.ts';
+export { CRE_RESPONSE_AGENT, CRE_RESPONSE_REQUEST, OFFICE_SUBLIMIT, creCase, creMemo, creResponseModule } from './creDecision.ts';
+export { ACQUISITION_AGENT, ACQUISITION_REQUEST, acquisitionCase, acquisitionMemo, acquisitionModule, targetSizeFrom } from './acquisitionDecision.ts';
+export { BUDGET_STRESS_AGENT, BUDGET_STRESS_REQUEST, budgetCase, budgetMemo, budgetStressModule } from './budgetDecision.ts';

@@ -17,39 +17,39 @@ const NO_ACCESS = 'Capital action planning isn’t part of your DI access. It is
 const MODULE = 'capactions';
 const BOARD_FOLDER = 'Board Packs';
 
-const mm = (n: number) => `${n < 0 ? '−' : ''}$${(Math.abs(n) / 1e6).toFixed(1)}M`;
-const mm2 = (n: number) => `${n < 0 ? '−' : ''}$${(Math.abs(n) / 1e6).toFixed(2)}M`;
-const p2 = (n: number) => `${n.toFixed(2)}%`;
-const p1 = (n: number) => `${n.toFixed(1)}%`;
-const neg = (n: number) => `${n < 0 ? '−' : ''}${Math.abs(n).toFixed(1)}%`;
-const usd = (n: number) => `$${n.toFixed(2)}`;
-const signed = (n: number) => `${n < 0 ? '−' : '+'}${Math.abs(n).toFixed(1)}%`;
+export const mm = (n: number) => `${n < 0 ? '−' : ''}$${(Math.abs(n) / 1e6).toFixed(1)}M`;
+export const mm2 = (n: number) => `${n < 0 ? '−' : ''}$${(Math.abs(n) / 1e6).toFixed(2)}M`;
+export const p2 = (n: number) => `${n.toFixed(2)}%`;
+export const p1 = (n: number) => `${n.toFixed(1)}%`;
+export const neg = (n: number) => `${n < 0 ? '−' : ''}${Math.abs(n).toFixed(1)}%`;
+export const usd = (n: number) => `$${n.toFixed(2)}`;
+export const signed = (n: number) => `${n < 0 ? '−' : '+'}${Math.abs(n).toFixed(1)}%`;
 const count = (n: number) => Math.round(n).toLocaleString('en-US');
-const up100k = (n: number) => Math.ceil(n / 1e5) * 1e5;
-const down1m = (n: number) => Math.floor(n / 1e6) * 1e6;
-const up5m = (n: number) => Math.min(Math.ceil(n / 5e6) * 5e6, n + 5e6);
+export const up100k = (n: number) => Math.ceil(n / 1e5) * 1e5;
+export const down1m = (n: number) => Math.floor(n / 1e6) * 1e6;
+export const up5m = (n: number) => Math.min(Math.ceil(n / 5e6) * 5e6, n + 5e6);
 
 type Option = DecisionOption<CapitalLevers>;
 type Result = Evaluated<CapitalLevers, PlanFigures>;
-const SOURCES: ModuleSpec['sources'] = [
+export const SOURCES: ModuleSpec['sources'] = [
   { kind: 'table', label: 'FFIEC 051 Call Report values', ref: 'table:cr_value' },
   { kind: 'table', label: 'Capital plan, as the CFO set it', ref: 'table:fin_capital_plan' },
   { kind: 'table', label: 'Loans and deposits', ref: 'table:cdm_loan' },
 ];
 
 /** The loan growth mix each plan draws on, share of its total. */
-const MIX: Record<'conservative' | 'balanced', Partial<Record<LoanKey, number>>> = {
+export const MIX: Record<'conservative' | 'balanced', Partial<Record<LoanKey, number>>> = {
   conservative: { mortgage: 0.4, ci: 0.4, multifamily: 0.1, consumer: 0.1 },
   balanced: { mortgage: 0.35, ci: 0.35, multifamily: 0.15, other_cre: 0.1, consumer: 0.05 },
 };
 /** Loan types as they read mid-sentence. */
-const NOUN: Record<LoanKey, string> = { office: 'office CRE', multifamily: 'multifamily', other_cre: 'other CRE', ci: 'C&I', mortgage: 'residential mortgage', consumer: 'consumer and auto' };
+export const NOUN: Record<LoanKey, string> = { office: 'office CRE', multifamily: 'multifamily', other_cre: 'other CRE', ci: 'C&I', mortgage: 'residential mortgage', consumer: 'consumer and auto' };
 /** Limits as they read mid-sentence. */
-const LIMIT_NOUN: Record<string, string> = { leverage: 'the leverage floor', cet1: 'the CET1 floor', eve200: 'EVE at +200 bp', eve400: 'EVE at +400 bp', liquidity: 'liquidity', office: 'office concentration', multifamily: 'multifamily concentration', cre: 'CRE concentration', allowance: 'the allowance' };
-const mixOf = (total: number, mix: Partial<Record<LoanKey, number>>) => Object.fromEntries(LOAN_KEYS.map((k) => [k, Math.round((total * (mix[k] ?? 0)) / 1e5) * 1e5])) as Record<LoanKey, number>;
+export const LIMIT_NOUN: Record<string, string> = { leverage: 'the leverage floor', cet1: 'the CET1 floor', eve200: 'EVE at +200 bp', eve400: 'EVE at +400 bp', liquidity: 'liquidity', office: 'office concentration', multifamily: 'multifamily concentration', cre: 'CRE concentration', allowance: 'the allowance' };
+export const mixOf = (total: number, mix: Partial<Record<LoanKey, number>>) => Object.fromEntries(LOAN_KEYS.map((k) => [k, Math.round((total * (mix[k] ?? 0)) / 1e5) * 1e5])) as Record<LoanKey, number>;
 
 /** How a check reads, for challenges and tables. */
-function describe(c: PlanCheck, f: PlanFigures, today: CapitalActionsModel['today']): string {
+export function describe(c: PlanCheck, f: PlanFigures, today: CapitalActionsModel['today']): string {
   const over = c.status === 'breach';
   switch (c.id) {
     case 'leverage':
@@ -76,7 +76,7 @@ function describe(c: PlanCheck, f: PlanFigures, today: CapitalActionsModel['toda
 }
 
 /** The specialists every capital decision can call on, each through its own service. */
-function capitalSpecialists(pool: Pool): Specialist[] {
+export function capitalSpecialists(pool: Pool): Specialist[] {
   const status = (s: string) => (s === 'Breach' || s === 'Over' ? 'breach' : s === 'Watch' ? 'watch' : 'pass') as Finding['status'];
   return [
     {

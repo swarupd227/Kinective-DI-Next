@@ -206,7 +206,9 @@ export class CapitalActionsModel {
     const levPct = (tier1 / assets) * 100;
 
     // Severe stress: today's decline plus the new loans' severe losses, less what the top-up already reserved.
-    const extraLoss = Math.max(0, types.reduce((s, g) => s + g.amount * (t.severeLoss[g.book] ?? 0), 0) - l.allowanceTopUp) * (1 - TAX);
+    // Shrinking a book takes its severe losses with it; growing one adds them. The top-up pre-funds what's left.
+    const severeNew = types.reduce((s, g) => s + g.amount * (t.severeLoss[g.book] ?? 0), 0);
+    const extraLoss = (severeNew > 0 ? Math.max(0, severeNew - l.allowanceTopUp) : severeNew - l.allowanceTopUp) * (1 - TAX);
     const levStress = cap.stress.levStress + (extraLoss / assets) * 100;
     const cet1Stress = cap.stress.cet1Stress + (extraLoss / rwa) * 100;
     const levFloor = Math.max(cap.settings.leverageTarget, (cap.cblr ? 8 : 4) + levStress);

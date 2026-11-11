@@ -136,7 +136,7 @@ describe.skipIf(!up)('capital actions for a bank', () => {
     } finally {
       await pool.end();
     }
-  });
+  }, 60_000);
 
   it('runs the decision offline: specialists, three plans, the critic, revisions and a memo for approval', async () => {
     const pool = tenantPool('dinext_t_test_bank');

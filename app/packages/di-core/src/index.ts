@@ -68,3 +68,6 @@ export { ReferralReportService, type RefFilters, type RefGroupBy, type RefRow } 
 export { CapitalActionsModel, CapitalActionsService, LOAN_KEYS, LOAN_TYPES, THIN_SHARE, type CapitalLevers, type CheckId, type CheckStatus, type LoanKey, type PlanCheck, type PlanFigures } from './capitalActions.ts';
 export { SalesScorecardService } from './salesScorecard.ts';
 export { CD_INTERVALS, CD_RENEWAL, PortfolioService } from './portfolio.ts';
+export { FUNDING_POLICY, FUNDING_RATES, FundingChoiceService, FundingModel, type FundingCheck, type FundingCheckId, type FundingFigures, type FundingLevers } from './fundingChoice.ts';
+export { AcquisitionModel, AcquisitionService, COST_SAVES, EARNBACK_MAX_YEARS, TARGET_PROFILE, type DealCheck, type DealCheckId, type DealFigures, type DealLevers } from './acquisition.ts';
+export { BudgetStressModel, BudgetStressService, type BudgetCheck, type BudgetCheckId, type BudgetFigures, type BudgetLevers } from './budgetStress.ts';
