@@ -42,6 +42,8 @@ export const RELATIONSHIP_DDL = [
      run_date DATE NOT NULL,
      KEY ix_sugg_party (party_id)
    )`,
+  // Debit cards on checking accounts and credit cards on card loans, with activation and closing dates.
+  `CREATE TABLE cdm_card (card_id INT PRIMARY KEY, party_id INT NOT NULL, kind VARCHAR(8) NOT NULL, last4 CHAR(4) NOT NULL, status VARCHAR(30) NOT NULL, opened DATE NOT NULL, activated DATE NULL, closed DATE NULL, account_id INT NOT NULL, KEY ix_card_party (party_id))`,
   // Each monthly run's suggestions and whether the product was opened afterward (within about 90 days).
   `CREATE TABLE cdm_suggestion_history (
      run_date DATE NOT NULL,
@@ -91,7 +93,7 @@ export const RELATIONSHIP_DDL = [
    )`,
 ];
 
-export const RELATIONSHIP_TABLES = ['cdm_party_contact', 'cdm_digital_usage', 'cdm_attrition_score', 'cdm_suggestion', 'cdm_suggestion_history', 'cdm_loan_application', 'cdm_interaction', 'cdm_account_activity'];
+export const RELATIONSHIP_TABLES = ['cdm_party_contact', 'cdm_digital_usage', 'cdm_attrition_score', 'cdm_suggestion', 'cdm_suggestion_history', 'cdm_card', 'cdm_loan_application', 'cdm_interaction', 'cdm_account_activity'];
 
 export const SCORE_MODELS = { attrition: 'attrition_v4', nextBest: 'next_best_product_v2', runDate: AS_OF };
 
@@ -111,6 +113,8 @@ export interface RelationshipRows {
   activity: unknown[][];
   /** Earlier suggestion runs: run_date, party_id, product, likelihood, opened_date (null when not taken up). */
   history: unknown[][];
+  /** card_id, party_id, kind, last4, status, opened, activated, closed, account_id */
+  cards: unknown[][];
 }
 
 /** Monthly next-best-product runs before the current one, oldest first. */
@@ -181,7 +185,7 @@ export function generateRelationship(t: GeneratedTenant): RelationshipRows {
   const certCat = t.profile.deposits.find((d) => d.maturing)?.category;
   const cardCat = loanCats.has('Credit Card') ? 'Credit Card' : null;
 
-  const out: RelationshipRows = { contacts: [], digital: [], attrition: [], suggestions: [], applications: [], interactions: [], activity: [], history: [] };
+  const out: RelationshipRows = { contacts: [], digital: [], attrition: [], suggestions: [], applications: [], interactions: [], activity: [], history: [], cards: [] };
   let suggestionId = 1;
   let applicationId = 1;
   let interactionId = 1;
@@ -287,6 +291,15 @@ export function generateRelationship(t: GeneratedTenant): RelationshipRows {
     };
     const savings = deps.filter((d) => d[3] === savingsCat || d[3] === 'Money Market').reduce((s, d) => s + (d[7] as number), 0);
     const madeFrom = out.suggestions.length;
+    // Cards: one per checking account (debit) and card loan (credit), closed with the account.
+    const cardAccounts = [...(depsBy.get(id) ?? []).filter((d) => d[3] === 'Checking').map((d) => ['Debit', d[0], d[4], d[5]]), ...(loansBy.get(id) ?? []).filter((l) => l[4] === 'Credit Card').map((l) => ['Credit', l[0], l[6], l[7]])] as [string, number, string, string | null][];
+    for (const [kind, acct, opened, closed] of cardAccounts) {
+      const u = unit(acct, kind === 'Debit' ? 901 : 902);
+      const recent = opened >= ymd(new Date(asOf.getTime() - 60 * DAY));
+      const activated = recent && u < 0.25 ? null : ymd(new Date(new Date(`${opened}T00:00:00Z`).getTime() + Math.round(2 + unit(acct, 903) * 10) * DAY));
+      const status = closed ? 'Closed' : !activated ? 'Issued, not activated' : u > 0.985 ? 'Reissued (reported lost)' : 'Active';
+      out.cards.push([out.cards.length + 1, id, kind, String(1000 + Math.floor(unit(acct, 904) * 9000)), status, opened, activated, closed, acct]);
+    }
     if (isMember) {
       if (!hasChecking) suggest('Checking', null, demo ? 8.5 : age < 30 ? 7.5 : 6, `No checking account; deposits are in ${[...cats].filter((c) => !loanCats.has(c)).join(' and ') || 'savings'} only`);
       if (cats.has('Mortgage') && loanCats.has('HELOC') && !cats.has('HELOC')) suggest('HELOC', 'heloc', 7, 'Has a first mortgage with us and no home equity line');

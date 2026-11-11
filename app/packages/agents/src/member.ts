@@ -153,6 +153,9 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
             { label: 'Segment', value: p.segment },
             { label: `${p.person === 'customer' ? 'Customer' : 'Member'} since`, value: longDate(p.joined) },
             { label: 'Preferred contact', value: p.contact.preferred },
+            { label: 'Born', value: `${longDate(p.identity.birthDate)} (age ${p.identity.age}, ${p.identity.generation})` },
+            { label: 'Credit score', value: p.creditScore ? `${p.creditScore.score}, from ${p.creditScore.from}, ${longDate(p.creditScore.asOf)}` : 'None on file' },
+            { label: 'Charged off', value: p.chargeOffs.count ? `${p.chargeOffs.count} ${p.chargeOffs.count === 1 ? 'loan' : 'loans'}: ${p.chargeOffs.items.map((x) => `${x.product}, ${longDate(x.chargedOff)}`).join('; ')}`.slice(0, 200) : 'None' },
           ],
         },
         {
@@ -192,6 +195,10 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
           declined: p.declined.slice(0, 10),
         },
         { kind: 'interactions', total: p.interactions.total, items: p.interactions.items.map((i) => ({ at: i.at, channel: i.channel, kind: i.kind, summary: i.summary, by: i.by })) },
+        { kind: 'cards', items: p.cards.slice(0, 12).map((k) => ({ kind: k.kind, suffix: k.last4, status: k.status, opened: k.opened, activated: k.activated, closed: k.closed, detail: k.kind === 'Debit' ? `On checking …${k.account}` : `Card account …${k.account}` })) },
+        p.transactions
+          ? { kind: 'transactions', total90d: p.transactions.total90d, items: p.transactions.items }
+          : { kind: 'transactions', total90d: 0, items: [], note: 'Transactions from the core aren’t loaded for this institution yet.' },
         // The source of rewards is not stated today [BK p11]; it comes from a configurable landing table (CA-29).
         { kind: 'rewards', status: 'not_configured', detail: 'Rewards are not set up for this institution yet.' },
         { kind: 'contact', preferred: p.contact.preferred, email: p.contact.email, phone: p.contact.phone },

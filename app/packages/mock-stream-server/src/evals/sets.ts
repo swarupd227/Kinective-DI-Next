@@ -191,6 +191,8 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-LG-001', set: 'golden', persona: 'executive', q: 'Find members who have an auto loan or HELOC at another lender, or the equity and credit to qualify for one, and prepare a measured outreach campaign with a control group.', agent: 'Loan Growth', approval: 'medium' },
   { id: 'GQ-LG-002', set: 'golden', persona: 'executive', q: 'Who has an auto loan with another lender?', agent: 'Loan Growth', contains: ['pay an auto loan to another lender'], approval: 'none' },
   { id: 'GQ-LG-003', set: 'golden', persona: 'executive', q: 'How did the July auto refinance campaign do?', agent: 'Loan Growth', contains: ['control group'], approval: 'none' },
+  { id: 'GQ-LOG-001', set: 'golden', persona: 'msr', q: 'Log a call with Suzanne Jackson: she asked about a HELOC for a kitchen remodel, follow up on Friday', agent: 'Interaction Log', approval: 'low' },
+  { id: 'GQ-LOG-002', set: 'golden', persona: 'branch', q: 'I just spoke with Suzanne Jackson in the branch about direct deposit', agent: 'Interaction Log', approval: 'low' },
   { id: 'GQ-GL-001', set: 'golden', persona: 'bank_cfo', q: 'Show the balance sheet', agent: 'General Ledger', contains: ['The balance sheet balances.'], approval: 'none' },
   { id: 'GQ-GL-002', set: 'golden', persona: 'analyst', q: 'Which departments are over budget this year?', agent: 'General Ledger', contains: ['Year to date'], approval: 'none' },
   { id: 'GQ-GL-003', set: 'golden', persona: 'executive', q: 'Show the journal entries for marketing in September', agent: 'General Ledger', contains: ['reconciles'], approval: 'none' },

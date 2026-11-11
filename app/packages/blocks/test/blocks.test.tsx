@@ -328,7 +328,11 @@ describe('member records (spec 8.24)', () => {
   it('the 360 has every dashboard section as keyboard tabs (FE-RM-001)', async () => {
     const { container } = renderBlock(<BlockRenderer block={member360Fixture} />);
     const tabs = await screen.findAllByRole('tab', {}, { timeout: 4000 });
-    expect(tabs.map((t) => t.textContent)).toEqual(['Overview', 'Accounts', 'Digital', 'Cross-sell & growth', 'Loan apps1', 'Engagement & retention', 'Opportunities2', 'Interactions4', 'Rewards', 'Contact', 'Household']);
+    expect(tabs.map((t) => t.textContent)).toEqual(['Overview', 'Accounts', 'Digital', 'Cross-sell & growth', 'Loan apps1', 'Engagement & retention', 'Opportunities2', 'Interactions4', 'Cards', 'Transactions', 'Rewards', 'Contact', 'Household']);
+    await userEvent.click(screen.getByRole('tab', { name: 'Cards' }));
+    expect(within(screen.getByRole('tabpanel')).getByText('Active')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: 'Transactions' }));
+    expect(within(screen.getByRole('tabpanel')).getByText(/aren’t loaded/)).toBeInTheDocument();
     tabs[0]!.focus();
     await userEvent.keyboard('{ArrowRight}');
     expect(screen.getByRole('tab', { name: 'Accounts' })).toHaveAttribute('aria-selected', 'true');

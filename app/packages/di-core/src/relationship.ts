@@ -113,6 +113,21 @@ export interface MemberProfile {
   interactions: { total: number; items: { at: string; channel: string; kind: string; summary: string; by: string | null }[] };
   contact: { email: string; phone: string; preferred: string };
   household: { name: string | null; branch: string | null; last4: string | null; inPurview: boolean }[];
+  /** Birth date, age and generation, from the member file. */
+  identity: { birthDate: string; age: number; generation: string };
+  /** The latest credit score on file, from the person's most recent loan. */
+  creditScore: { score: number; asOf: string; from: string } | null;
+  /** Loans charged off, with when and the amount lent. */
+  chargeOffs: { count: number; original: number; items: { product: string; chargedOff: string; original: number }[] };
+  cards: { kind: 'Debit' | 'Credit'; last4: string; status: string; opened: string; activated: string | null; closed: string | null; account: string }[];
+  /** Checking transactions in the last 90 days: how many, and the latest. Null where the core's transactions aren't loaded. */
+  transactions: { total90d: number; items: { date: string; description: string; amount: number; type: string; account: string }[] } | null;
+}
+
+/** The generation a birth year falls in (Pew Research Center's ranges). */
+export function generationOf(birthDate: string) {
+  const y = Number(birthDate.slice(0, 4));
+  return y >= 2013 ? 'Generation Alpha' : y >= 1997 ? 'Generation Z' : y >= 1981 ? 'Millennial' : y >= 1965 ? 'Generation X' : y >= 1946 ? 'Baby Boomer' : 'Silent Generation';
 }
 
 export interface Topic {
@@ -348,6 +363,7 @@ export class RelationshipService {
 
     type Base = {
       join_date: string;
+      birth_date: unknown;
       segment_code: string;
       is_member: number;
       household_id: number;
@@ -368,7 +384,7 @@ export class RelationshipService {
       last_login: string | null;
     };
     const [base] = await q<Base>(
-      `SELECT p.join_date, p.segment_code, p.is_member, p.household_id, c.email, c.phone, c.preferred_channel,
+      `SELECT p.join_date, p.birth_date, p.segment_code, p.is_member, p.household_id, c.email, c.phone, c.preferred_channel,
               s.score, s.factors, s.model_version, s.run_date,
               d.online_banking_since, d.mobile_since, d.mobile_deposit_since, d.estatements_since, d.bill_pay_since, d.direct_deposit_status, d.direct_deposit_changed, d.last_login
          FROM cdm_party p JOIN cdm_party_contact c ON c.party_id = p.party_id JOIN cdm_attrition_score s ON s.party_id = p.party_id JOIN cdm_digital_usage d ON d.party_id = p.party_id
@@ -412,7 +428,13 @@ export class RelationshipService {
       [base.household_id, partyId],
     );
     const staff = await this.staffNames();
-
+    const day10 = (v: unknown) => String(v instanceof Date ? v.toISOString() : v).slice(0, 10);
+    const [score] = await q<{ credit_score: number | null; loan_category: string; open_date: unknown }>('SELECT credit_score, loan_category, open_date FROM cdm_loan WHERE party_id = ? AND credit_score IS NOT NULL ORDER BY open_date DESC LIMIT 1', [partyId]);
+    const chargedOff = await q<{ loan_category: string; charge_off_date: unknown; original_amount: number }>('SELECT loan_category, charge_off_date, original_amount FROM cdm_loan WHERE party_id = ? AND charge_off_date IS NOT NULL ORDER BY charge_off_date DESC', [partyId]);
+    const cards = await q<{ kind: 'Debit' | 'Credit'; last4: string; status: string; opened: unknown; activated: unknown; closed: unknown; account_id: number }>('SELECT kind, last4, status, opened, activated, closed, account_id FROM cdm_card WHERE party_id = ? ORDER BY closed IS NOT NULL, opened DESC', [partyId]).catch(() => []);
+    // The core's checking transactions, where they're loaded; a table that isn't there means none are.
+    const txns = await q<{ post_date: unknown; description: string; amount: number; txn_type: string; account_id: number }>('SELECT post_date, description, amount, txn_type, account_id FROM cdm_transaction WHERE party_id = ? AND post_date > ? ORDER BY post_date DESC, txn_id DESC', [partyId, addDays(asOf, -90)]).catch(() => null);
+    const logged = await q<{ occurred_at: unknown; channel: string; kind: string; summary: string; logged_by: string }>('SELECT occurred_at, channel, kind, summary, logged_by FROM rm_interaction_log WHERE party_id = ? ORDER BY occurred_at DESC LIMIT 10', [partyId]).catch(() => []);
     const label = (c: string) => LOAN_LABEL[c] ?? c;
     const line = (kind: 'deposit' | 'loan', id: number, name: string, r: { balance: number; balance_30d: number; fees_30d: number; rate: number; open_date: string }, extra: Partial<AccountLine> = {}): AccountLine => ({
       kind,
@@ -465,10 +487,12 @@ export class RelationshipService {
     if (closed && closed.n > 0) alerts.push({ code: 'closed_accounts', label: `${closed.n} account${closed.n === 1 ? '' : 's'} closed in the last 90 days`, tone: 'info' });
     for (const l of loanLines.filter((a) => (a.daysPastDue ?? 0) >= 30)) alerts.push({ code: 'delinquent', label: `${l.name} …${l.suffix} is ${l.daysPastDue} days past due`, tone: 'danger' });
 
+    const stamp = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v).replace(' ', 'T')).slice(0, 19);
     const interactions = [
+      ...logged.map((i) => ({ at: stamp(i.occurred_at), channel: i.channel, kind: i.kind, summary: i.summary.slice(0, 200), by: i.logged_by })),
       ...declines.map((d) => ({ at: d.declined_at.replace(' ', 'T').slice(0, 19), channel: 'DI', kind: 'Offer declined', summary: `Declined the ${d.product} offer`, by: d.declined_by_name })),
       ...recent.map((i) => ({ at: i.occurred_at.replace(' ', 'T'), channel: i.channel, kind: i.kind, summary: i.summary, by: i.employee_id ? (staff.get(i.employee_id) ?? null) : null })),
-    ].slice(0, 10);
+    ].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 10);
 
     return {
       partyId,
@@ -500,14 +524,24 @@ export class RelationshipService {
         pending: apps.filter((a) => a.status_group === 'Pending').length,
         items: apps.map((a) => ({ product: a.product, amount: a.amount, status: a.status_group, detail: a.status_detail, applied: a.applied_date, decided: a.decided_date })),
       },
-      interactions: { total: (count?.n ?? 0) + declines.length, items: interactions },
+      interactions: { total: (count?.n ?? 0) + declines.length + logged.length, items: interactions },
       contact: { email: maskEmail(base.email), phone: `(•••) •••-${base.phone.slice(-4)}`, preferred: base.preferred_channel },
       // Household members outside the purview are counted, never named (spec 20.7).
       household: household.map((h) => {
         const inPurview = !ctx.purviewBranches || ctx.purviewBranches.includes(h.branch);
         return inPurview ? { name: `${h.first_name} ${h.last_name}`, branch: h.branch, last4: last4Of(h.party_id), inPurview } : { name: null, branch: null, last4: null, inPurview };
       }),
-    };
+      identity: (() => {
+        const birthDate = day10(base.birth_date);
+        const b = new Date(`${birthDate}T00:00:00Z`);
+        const a = new Date(`${asOf}T00:00:00Z`);
+        const age = a.getUTCFullYear() - b.getUTCFullYear() - (a.getUTCMonth() < b.getUTCMonth() || (a.getUTCMonth() === b.getUTCMonth() && a.getUTCDate() < b.getUTCDate()) ? 1 : 0);
+        return { birthDate, age, generation: generationOf(birthDate) };
+      })(),
+      creditScore: score?.credit_score ? { score: score.credit_score, asOf: day10(score.open_date), from: `the ${label(score.loan_category).toLowerCase()} application` } : null,
+      chargeOffs: { count: chargedOff.length, original: chargedOff.reduce((s, x) => s + Number(x.original_amount), 0), items: chargedOff.map((x) => ({ product: label(x.loan_category), chargedOff: day10(x.charge_off_date), original: Number(x.original_amount) })) },
+      cards: cards.map((k) => ({ kind: k.kind, last4: k.last4, status: k.status, opened: day10(k.opened), activated: k.activated ? day10(k.activated) : null, closed: k.closed ? day10(k.closed) : null, account: String(k.account_id % 10_000).padStart(4, '0') })),
+      transactions: txns === null ? null : { total90d: txns.length, items: txns.slice(0, 15).map((t) => ({ date: day10(t.post_date), description: t.description.slice(0, 80), amount: Number(t.amount), type: t.txn_type, account: `Checking …${String(t.account_id % 10_000).padStart(4, '0')}` })) },    };
   }
 
   /**

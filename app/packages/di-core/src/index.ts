@@ -62,3 +62,5 @@ export { StressService, SCENARIOS, type QuarterLine, type Scenario, type Scenari
 export { BaselService, BASEL_ASSUMPTIONS, BASEL_THRESHOLDS, CBLR_PCT, CONSERVATION_BUFFER, type RatioKey, type RatioLine, type RwaLine } from './basel.ts';
 export { BALANCE_BANDS, HIGH_LIKELIHOOD, LIKELIHOOD_BANDS, PredictiveService, type BalanceBand, type SuccessRow, type SuggestedPerson } from './predictive.ts';
 export { GlService, type GlCompare, type GlGroup, type GlScope, type GlStatementKind } from './gl.ts';
+export { InteractionService, LOG_CHANNELS, LOG_KINDS, type LogChannel, type LogKind } from './interactions.ts';
+export { generationOf } from './relationship.ts';

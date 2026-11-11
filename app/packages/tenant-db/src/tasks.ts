@@ -14,7 +14,23 @@ export const TASKS_DDL = [
      created_at DATE NOT NULL,
      done_note VARCHAR(300) NULL,
      approval_id VARCHAR(40) NULL UNIQUE,
+     party_id INT NULL,
      KEY ix_task_owner (owner_user_id, status)
+   )`,
+  // Calls, visits and messages logged in DI against a member or customer, with any follow-up task.
+  `CREATE TABLE rm_interaction_log (
+     log_id INT AUTO_INCREMENT PRIMARY KEY,
+     party_id INT NOT NULL,
+     occurred_at DATETIME NOT NULL,
+     channel VARCHAR(20) NOT NULL,
+     kind VARCHAR(30) NOT NULL,
+     summary VARCHAR(400) NOT NULL,
+     employee_id INT NULL,
+     logged_by VARCHAR(80) NOT NULL,
+     follow_up DATE NULL,
+     task_id INT NULL,
+     approval_id VARCHAR(40) NULL UNIQUE,
+     KEY ix_rm_log_party (party_id, occurred_at)
    )`,
   `CREATE TABLE tsk_time (
      entry_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -28,7 +44,7 @@ export const TASKS_DDL = [
    )`,
 ];
 
-export const TASKS_WRITE_TABLES = ['tsk_task', 'tsk_time'];
+export const TASKS_WRITE_TABLES = ['tsk_task', 'tsk_time', 'rm_interaction_log'];
 
 const PEOPLE: [string, string][] = [['user:9229', 'Dana Lee'], ['user:5120', 'Marcus Reed'], ['user:6101', 'Ana Ruiz'], ['user:6004', 'Sofia Ruiz'], ['user:4410', 'Priya Shah'], ['user:1002', 'Sam Taylor']];
 const TASKS: [number, string, string | null, string, string][] = [

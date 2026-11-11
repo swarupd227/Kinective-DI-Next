@@ -470,6 +470,8 @@ export const member360Fixture: Member360Block = {
         declined: [],
       },
       { kind: 'interactions', total: 4, items: [{ at: '2026-10-18T10:42:00', channel: 'Branch', kind: 'Branch visit', summary: 'Applied for an auto loan', by: 'Ana Ruiz' }] },
+      { kind: 'cards', items: [{ kind: 'Debit', suffix: '4521', status: 'Active', opened: '2024-03-01', activated: '2024-03-06', closed: null, detail: 'On checking …4521' }] },
+      { kind: 'transactions', total90d: 0, items: [], note: 'Transactions from the core aren’t loaded for this institution yet.' },
       { kind: 'rewards', status: 'not_configured', detail: 'Rewards are not set up for this institution.' },
       { kind: 'contact', preferred: 'Text', email: 's•••@example.com', phone: '(•••) •••-7919' },
       { kind: 'household', members: [{ name: null, branch: null, maskedNumber: null, inPurview: false }] },

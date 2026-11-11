@@ -22,6 +22,8 @@ const LABELS: Record<Kind, string> = {
   engagement: 'Engagement & retention',
   opportunities: 'Opportunities',
   interactions: 'Interactions',
+  cards: 'Cards',
+  transactions: 'Transactions',
   rewards: 'Rewards',
   contact: 'Contact',
   household: 'Household',
@@ -289,6 +291,73 @@ function Section({ s, m, run }: { s: Member360Section; m: MemberHeader; run: (a:
               </li>
             ))}
           </ol>
+        </>
+      );
+    case 'cards':
+      if (!s.items.length) return <p className={styles.empty}>No debit or credit cards.</p>;
+      return (
+        <table className={styles.table}>
+          <caption className={styles.caption}>Cards</caption>
+          <thead>
+            <tr>
+              <th scope="col">Card</th>
+              <th scope="col">Status</th>
+              <th scope="col">Opened</th>
+              <th scope="col">Activated</th>
+              <th scope="col">Closed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {s.items.map((c) => (
+              <tr key={`${c.kind}${c.suffix}`}>
+                <th scope="row">
+                  {c.kind} <span className={clsx(styles.muted, 'dn-num')}>…{c.suffix}</span>
+                  {c.detail && <span className={styles.rowDetail}>{c.detail}</span>}
+                </th>
+                <td>{c.status}</td>
+                <td>{dateOf(c.opened)}</td>
+                <td>{c.activated ? dateOf(c.activated) : 'Not activated'}</td>
+                <td>{c.closed ? dateOf(c.closed) : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      );
+    case 'transactions':
+      return (
+        <>
+          {s.note && <p className={styles.muted}>{s.note}</p>}
+          {s.items.length === 0 ? (
+            <p className={styles.empty}>No transactions in the last 90 days.</p>
+          ) : (
+            <table className={styles.table}>
+              <caption className={styles.caption}>
+                Latest {s.items.length} of {s.total90d} in the last 90 days
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Date</th>
+                  <th scope="col">Description</th>
+                  <th scope="col">Account</th>
+                  <th scope="col" className={styles.num}>
+                    Amount
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {s.items.map((t, i) => (
+                  <tr key={`${t.date}${i}`}>
+                    <td>{dateOf(t.date)}</td>
+                    <th scope="row">
+                      {t.description} <span className={styles.muted}>{t.type}</span>
+                    </th>
+                    <td>{t.account}</td>
+                    <td className={clsx(styles.num, 'dn-num', t.amount < 0 ? styles.down : styles.up)}>{formatValue(t.amount, 'currency', { decimals: 2, signed: true })}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </>
       );
     case 'rewards':

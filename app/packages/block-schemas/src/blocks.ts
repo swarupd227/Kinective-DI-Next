@@ -351,6 +351,17 @@ export const member360Section = z.discriminatedUnion('kind', [
     total: count,
     items: z.array(z.strictObject({ at: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/), channel: z.string().max(30), kind: z.string().max(40), summary: z.string().max(200), by: z.string().max(80).nullable() })).max(20),
   }),
+  z.strictObject({
+    kind: z.literal('cards'),
+    items: z.array(z.strictObject({ kind: z.enum(['Debit', 'Credit']), suffix: z.string().regex(/^\d{4}$/), status: z.string().max(30), opened: isoDate, activated: isoDate.nullable(), closed: isoDate.nullable(), detail: z.string().max(80).optional() })).max(12),
+  }),
+  z.strictObject({
+    kind: z.literal('transactions'),
+    /** Transactions in the last 90 days, of which the latest are listed. */
+    total90d: count,
+    items: z.array(z.strictObject({ date: isoDate, description: z.string().max(80), amount: z.number(), type: z.string().max(12), account: z.string().max(60) })).max(20),
+    note: z.string().max(200).optional(),
+  }),
   z.strictObject({ kind: z.literal('rewards'), status: z.enum(['not_configured', 'enrolled', 'not_enrolled']), detail: z.string().max(200).optional() }),
   z.strictObject({ kind: z.literal('contact'), preferred: z.string().max(30), email: z.string().max(120), phone: z.string().max(30) }),
   z.strictObject({
@@ -364,7 +375,7 @@ export const member360Data = z.strictObject({
   ...memberHeader,
   alerts: z.array(z.strictObject({ id: z.string().max(40), label: z.string().max(120), tone })).max(12),
   take: diTake.optional(),
-  sections: z.array(member360Section).min(1).max(12),
+  sections: z.array(member360Section).min(1).max(14),
 });
 
 // ---- union ------------------------------------------------------------------------------------

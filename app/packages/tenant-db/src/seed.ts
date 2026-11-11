@@ -78,6 +78,7 @@ async function main() {
     await insert(admin, 'hist_member_month', ['month_end', 'branch_id', 'age_band', 'member_count', 'with_checking', 'with_loan', 'with_direct_deposit', 'digital_active', 'product_count'], generateMemberHistory(t, rm.digital));
     await insert(admin, 'cdm_attrition_score', ['party_id', 'score', 'factors', 'model_version', 'run_date'], rm.attrition);
     await insert(admin, 'cdm_suggestion', ['suggestion_id', 'party_id', 'product', 'referral_type_id', 'likelihood', 'reason', 'model_version', 'run_date'], rm.suggestions);
+    await insert(admin, 'cdm_card', ['card_id', 'party_id', 'kind', 'last4', 'status', 'opened', 'activated', 'closed', 'account_id'], rm.cards);
     await insert(admin, 'cdm_suggestion_history', ['run_date', 'party_id', 'product', 'likelihood', 'opened_date'], rm.history);
     const lap = generatePipeline(t, rm.applications);
     await insert(admin, 'cdm_loan_application', LAP_APPLICATION_COLUMNS, lap.applications);
