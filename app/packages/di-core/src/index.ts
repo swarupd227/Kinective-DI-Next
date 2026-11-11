@@ -74,3 +74,4 @@ export { BudgetStressModel, BudgetStressService, type BudgetCheck, type BudgetCh
 export { checklistFrom, type OnbChecklist } from './modules.ts';
 export { AttritionModelService, ATTRITION_BANDS, ATTRITION_FEATURES, ATTRITION_FEATURE_LABELS, modelMonthLabel, type MemberSnapshot, type ModelRecord } from './attritionModel.ts';
 export { auc, capture, contributions, predict, train as trainGbm, type Gbm, type GbmParams } from './gbm.ts';
+export { MonteCarloService, SIM_PATHS, type SimPath } from './monteCarlo.ts';

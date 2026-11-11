@@ -145,6 +145,11 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-STR-001', set: 'golden', persona: 'bank_cfo', q: 'Run the stress test', agent: 'CAMELS and stress test', contains: ['severely adverse', 'times severe to reach the minimum'], approval: 'none' },
   { id: 'GQ-STR-002', set: 'golden', persona: 'executive', q: 'How much could we lose before we breach the minimum?', agent: 'CAMELS and stress test', contains: ['times the severely adverse'], approval: 'none' },
   { id: 'GQ-STR-003', set: 'golden', persona: 'bank_cfo', q: 'What if commercial property values fall 30%?', agent: 'CAMELS and stress test', contains: ['commercial real estate loans'], approval: 'none' },
+  // Monte Carlo: the range and the chances, beside the written scenarios.
+  { id: 'GQ-SIM-001', set: 'golden', persona: 'bank_cfo', q: 'What’s the chance capital falls below the minimum?', agent: 'Scenario Simulation', contains: ['simulated economies', 'worst 5%'], approval: 'none' },
+  { id: 'GQ-SIM-002', set: 'golden', persona: 'executive', q: 'What do the worst 5% of simulated paths have in common?', agent: 'Scenario Simulation', contains: ['severely adverse'], approval: 'none' },
+  { id: 'GQ-SIM-003', set: 'golden', persona: 'bank_cfo', q: 'What’s the chance we lose money next year?', agent: 'Scenario Simulation', contains: ['net loss over the next four quarters'], approval: 'none' },
+  { id: 'PM-SIM-001', set: 'permission', persona: 'msr', q: 'Run a Monte Carlo on capital', refused: true, notContains: ['simulated economies'], approval: 'none', ref: 'the stress test is for finance and executives' },
   { id: 'PM-CAM-001', set: 'permission', persona: 'branch', q: 'Run the stress test', refused: true, notContains: ['severely adverse'], approval: 'none', ref: 'the stress test is for finance and executives' },
   // Basel III capital: the risk-based ratios beside the CBLR, DI's estimate from the Call Report.
   { id: 'GQ-BAS-001', set: 'golden', persona: 'bank_cfo', q: 'What are our Basel III ratios?', agent: 'Basel III capital', contains: ['CET1 is', 'not a filed RC-R Part II'], approval: 'none' },
