@@ -30,6 +30,36 @@ const last4 = (partyId: number) => String(10_004_520 + partyId).slice(-4);
 export class PredictiveService {
   constructor(private readonly pool: Pool) {}
 
+  /**
+   * Why people are at risk of leaving, rolled up across them: each attrition factor, how many people in
+   * the High band (7 or more) and Medium band (5 to 6) it applies to, and the deposits they hold.
+   */
+  async rootCauses(ctx: CoreContext) {
+    const scope = ctx.purviewBranches ? ' AND b.name IN (?)' : '';
+    const list = await (this.pool.query(
+      `SELECT s.party_id, s.score, s.factors, COALESCE(d.dep, 0) AS deposits FROM cdm_attrition_score s JOIN cdm_party p ON p.party_id = s.party_id JOIN cdm_location b ON b.int_id = p.primary_branch_id
+         LEFT JOIN (SELECT party_id, SUM(balance) AS dep FROM cdm_deposit_account WHERE close_date IS NULL GROUP BY party_id) d ON d.party_id = s.party_id
+        WHERE s.score >= 5${scope}`,
+      ctx.purviewBranches ? [ctx.purviewBranches.length ? ctx.purviewBranches : ['']] : [],
+    ) as Promise<[{ party_id: number; score: number; factors: unknown; deposits: unknown }[], unknown]>).then((r) => r[0]);
+    const agg = new Map<string, { high: number; medium: number; deposits: number }>();
+    let high = 0;
+    for (const r of list) {
+      const isHigh = Number(r.score) >= 7;
+      if (isHigh) high++;
+      const factors = ((typeof r.factors === 'string' ? JSON.parse(r.factors) : r.factors) as { label: string; weight?: number }[]) ?? [];
+      for (const f of factors) {
+        const label = f.label.replace(/\s+(?:on|since|in) [A-Z][a-z]{2} \d{1,2}, \d{4}$/, '').replace(/\d+%/, 'X%');
+        const a = agg.get(label) ?? agg.set(label, { high: 0, medium: 0, deposits: 0 }).get(label)!;
+        if (isHigh) a.high++;
+        else a.medium++;
+        a.deposits += Number(r.deposits);
+      }
+    }
+    const rows = [...agg.entries()].map(([factor, a]) => ({ factor, high: a.high, medium: a.medium, people: a.high + a.medium, deposits: Math.round(a.deposits), highSharePct: high ? Math.round((a.high / high) * 1000) / 10 : 0 })).sort((a, b) => b.high - a.high || b.people - a.people);
+    return { highBand: high, mediumBand: list.length - high, rows };
+  }
+
   private scope(ctx: CoreContext) {
     return ctx.purviewBranches ? { sql: ' AND b.name IN (?)', params: [ctx.purviewBranches.length ? ctx.purviewBranches : ['']] } : { sql: '', params: [] as unknown[] };
   }

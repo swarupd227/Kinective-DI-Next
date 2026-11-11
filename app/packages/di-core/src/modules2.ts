@@ -554,6 +554,56 @@ export class CampaignService {
     };
   }
 
+  /** A campaign by name, or the latest launched when none is named. */
+  async campaignNamed(name?: string) {
+    const list = await rows<{ campaign_id: number; name: string; channel: string; product: string; launched: unknown }>(this.pool, 'SELECT campaign_id, name, channel, product, launched FROM cmp_campaign WHERE launched IS NOT NULL ORDER BY launched DESC');
+    if (!list.length) throw new CoreError('NOT_FOUND', 'No campaigns have launched.');
+    if (!name?.trim()) return list[0]!;
+    const words = name.toLowerCase().split(/\s+/).filter((w) => w.length > 2 && !['campaign', 'the'].includes(w));
+    const hit = list.find((c) => c.name.toLowerCase() === name.toLowerCase()) ?? list.find((c) => words.length > 0 && words.every((w) => c.name.toLowerCase().includes(w)));
+    if (!hit) throw new CoreError('NOT_FOUND', `There’s no campaign called “${name}”. Recent ones: ${list.slice(0, 5).map((c) => c.name).join(', ')}.`);
+    return hit;
+  }
+
+  /** The accounts credited to a campaign, each with who opened it, where and for how much (account-level attribution). */
+  async accounts(campaignId: number, ctx: CoreContext) {
+    const scope = ctx.purviewBranches ? ' AND b.name IN (?)' : '';
+    const list = await rows<{ party_id: number; first_name: string; last_name: string; branch: string; product: string; account_kind: string; account_id: number; opened: unknown; amount: unknown }>(
+      this.pool,
+      `SELECT a.party_id, p.first_name, p.last_name, b.name AS branch, a.product, a.account_kind, a.account_id, a.opened, a.amount
+         FROM cmp_attribution a JOIN cdm_party p ON p.party_id = a.party_id JOIN cdm_location b ON b.int_id = p.primary_branch_id
+        WHERE a.campaign_id = ?${scope} ORDER BY a.opened, a.account_id`,
+      [campaignId, ...(ctx.purviewBranches ? [ctx.purviewBranches.length ? ctx.purviewBranches : ['']] : [])],
+    );
+    const d10 = (v: unknown) => String(v instanceof Date ? v.toISOString() : v).slice(0, 10);
+    return list.map((r) => ({ name: `${r.first_name} ${r.last_name}`, last4: memberNumber(r.party_id).slice(-4), branch: r.branch, product: r.product, account: `${r.account_kind === 'loan' ? 'Loan' : 'Account'} …${String(r.account_id % 10_000).padStart(4, '0')}`, opened: d10(r.opened), amount: Math.round(Number(r.amount)) }));
+  }
+
+  /**
+   * What campaigns brought in, split by age band, branch, segment or month opened, for one campaign or
+   * all of them in a period: accounts, people and dollars.
+   */
+  async breakdown(by: 'age' | 'branch' | 'segment' | 'month', f: { campaignId?: number; from?: string; to?: string }, ctx: CoreContext) {
+    const key = by === 'age'
+      ? "CASE WHEN TIMESTAMPDIFF(YEAR, p.birth_date, a.opened) < 25 THEN 'Under 25' WHEN TIMESTAMPDIFF(YEAR, p.birth_date, a.opened) < 35 THEN '25 to 34' WHEN TIMESTAMPDIFF(YEAR, p.birth_date, a.opened) < 45 THEN '35 to 44' WHEN TIMESTAMPDIFF(YEAR, p.birth_date, a.opened) < 55 THEN '45 to 54' WHEN TIMESTAMPDIFF(YEAR, p.birth_date, a.opened) < 65 THEN '55 to 64' ELSE '65 and over' END"
+      : by === 'branch' ? 'b.name' : by === 'segment' ? 'p.segment_code' : "DATE_FORMAT(a.opened, '%Y-%m')";
+    const where: string[] = ['1 = 1'];
+    const params: unknown[] = [];
+    if (f.campaignId) where.push('a.campaign_id = ?'), params.push(f.campaignId);
+    if (f.from) where.push('a.opened >= ?'), params.push(f.from);
+    if (f.to) where.push('a.opened <= ?'), params.push(f.to);
+    if (ctx.purviewBranches) where.push('b.name IN (?)'), params.push(ctx.purviewBranches.length ? ctx.purviewBranches : ['']);
+    const list = await rows<{ k: string; accounts: number; people: number; dollars: unknown }>(
+      this.pool,
+      `SELECT ${key} AS k, COUNT(*) AS accounts, COUNT(DISTINCT a.party_id) AS people, SUM(a.amount) AS dollars
+         FROM cmp_attribution a JOIN cdm_party p ON p.party_id = a.party_id JOIN cdm_location b ON b.int_id = p.primary_branch_id
+        WHERE ${where.join(' AND ')} GROUP BY k ORDER BY k`,
+      params,
+    );
+    const total = list.reduce((s, r) => s + Number(r.dollars), 0);
+    return list.map((r) => ({ group: String(r.k), accounts: Number(r.accounts), people: Number(r.people), dollars: Math.round(Number(r.dollars)), sharePct: total ? Math.round((Number(r.dollars) / total) * 1000) / 10 : 0 }));
+  }
+
   /** Each campaign's window (launch to 60 days after) and the accounts credited to it, week by week. */
   async timeline() {
     const list = await rows<Record<string, unknown>>(this.pool, 'SELECT campaign_id, name, channel, product, launched FROM cmp_campaign WHERE launched IS NOT NULL ORDER BY launched');

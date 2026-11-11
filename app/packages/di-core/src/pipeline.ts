@@ -296,6 +296,68 @@ export class PipelineService {
     return { asOf, windows, products, scheduled: apps.filter((a) => !a.open).sort((a, b) => a.expectedClose!.localeCompare(b.expectedClose!)) };
   }
 
+  /**
+   * Application quality over the last 120 days, by loan officer, product or branch: how many came in,
+   * the share decided, approved, denied and withdrawn, days to a decision, the share of open ones on
+   * hold and the share incomplete (waiting on the applicant). DI's application KPIs as rates.
+   */
+  async quality(view: PipelineView, who: PipelineWho, ctx: CoreContext, by: 'officer' | 'product' | 'branch' = 'officer') {
+    const { asOf } = await this.freshness();
+    const from = new Date(Date.parse(`${asOf}T00:00:00Z`) - 120 * 86_400_000).toISOString().slice(0, 10);
+    const { apps } = await this.rows(view, who, ctx, asOf, ['a.applied_date >= ?'], [from]);
+    const [dups] = await this.pool.query('SELECT COUNT(*) AS n FROM cdm_loan_application WHERE is_duplicate = 1 AND applied_date >= ?', [from]);
+    const pct = (a: number, b: number) => (b ? Math.round((a / b) * 1000) / 10 : null);
+    const days = (a: PipelineApplication) => Math.round((Date.parse(`${a.decided}T00:00:00Z`) - Date.parse(`${a.applied}T00:00:00Z`)) / 86_400_000);
+    const sum = (name: string, list: PipelineApplication[]) => {
+      const decided = list.filter((a) => a.decided);
+      const open = list.filter((a) => a.open);
+      const onHold = open.filter((a) => a.hold);
+      const dd = decided.map(days).filter((n) => n >= 0);
+      return {
+        name,
+        applications: list.length,
+        dollars: Math.round(list.reduce((s, a) => s + a.amount, 0)),
+        decidedPct: pct(decided.length, list.length),
+        approvedPct: pct(decided.filter((a) => a.group === 'Approved').length, decided.length),
+        deniedPct: pct(decided.filter((a) => a.group === 'Denied' && a.statusCode !== 'WITHDRAWN').length, decided.length),
+        withdrawnPct: pct(list.filter((a) => a.statusCode === 'WITHDRAWN').length, list.length),
+        daysToDecision: dd.length ? Math.round((dd.reduce((s, n) => s + n, 0) / dd.length) * 10) / 10 : null,
+        onHoldPct: pct(onHold.length, open.length),
+        incompletePct: pct(onHold.filter((a) => /applicant|member|customer/i.test(a.hold!.waitingOn)).length, open.length),
+        stalledPct: pct(open.filter((a) => a.stalled).length, open.length),
+      };
+    };
+    const key = (a: PipelineApplication) => (by === 'officer' ? (a.owner?.name ?? 'Unassigned') : by === 'product' ? a.product : a.branch);
+    const groups = [...new Set(apps.map(key))].sort();
+    const holdReasons = [...new Set(apps.filter((a) => a.open && a.hold).map((a) => a.hold!.label))].map((label) => ({ label, count: apps.filter((a) => a.open && a.hold?.label === label).length })).sort((a, b) => b.count - a.count);
+    return { asOf, from, by, rows: groups.map((g) => sum(g, apps.filter((a) => key(a) === g))), total: sum('All applications', apps), holdReasons, duplicates: Number((dups as { n: number }[])[0]?.n ?? 0) };
+  }
+
+  /**
+   * Booked loan dollars as a hierarchy, institution to direct or indirect, region, branch and loan officer
+   * (DI's Hierarchy Viewer): the next level down from wherever the path points, for loans opened from a date.
+   */
+  async hierarchy(path: { channel?: 'Direct' | 'Indirect'; region?: string; branch?: string }, ctx: CoreContext, from?: string) {
+    const { asOf } = await this.freshness();
+    const start = from ?? `${asOf.slice(0, 4)}-01-01`;
+    const where: string[] = ['l.open_date >= ?', 'l.open_date <= ?'];
+    const params: unknown[] = [start, asOf];
+    if (path.channel) where.push('l.is_indirect = ?'), params.push(path.channel === 'Indirect' ? 1 : 0);
+    if (path.region) where.push('b.region = ?'), params.push(path.region);
+    if (path.branch) where.push('b.name = ?'), params.push(path.branch);
+    if (ctx.purviewBranches) where.push('b.name IN (?)'), params.push(ctx.purviewBranches.length ? ctx.purviewBranches : ['']);
+    const level = !path.channel ? 'channel' : !path.region ? 'region' : !path.branch ? 'branch' : 'officer';
+    const key = level === 'channel' ? "CASE WHEN l.is_indirect = 1 THEN 'Indirect' ELSE 'Direct' END" : level === 'region' ? 'b.region' : level === 'branch' ? 'b.name' : "COALESCE(e.display_name, 'No officer recorded')";
+    const [rows] = await this.pool.query(
+      `SELECT ${key} AS k, COUNT(*) AS n, SUM(l.original_amount) AS dollars FROM cdm_loan l JOIN cdm_location b ON b.int_id = l.branch_id LEFT JOIN cdm_employee e ON e.employee_id = l.officer_id
+        WHERE ${where.join(' AND ')} GROUP BY k ORDER BY dollars DESC`,
+      params,
+    );
+    const list = (rows as { k: string; n: number; dollars: unknown }[]).map((r) => ({ name: String(r.k), loans: Number(r.n), dollars: Math.round(Number(r.dollars)) }));
+    const total = list.reduce((s, r) => s + r.dollars, 0);
+    return { asOf, from: start, level, path, total, rows: list.map((r) => ({ ...r, sharePct: total ? Math.round((r.dollars / total) * 1000) / 10 : 0 })) };
+  }
+
   /** Applications by credit tier over the last 120 days: how many, dollars, and how often each tier is approved. */
   async creditTiers(view: PipelineView, who: PipelineWho, ctx: CoreContext) {
     const { asOf } = await this.freshness();

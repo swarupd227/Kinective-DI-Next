@@ -69,6 +69,41 @@ export class ProfitabilityService {
     return { loans, deposits };
   }
 
+  /**
+   * Profitability per member: each account's contribution by the same FTP, credit, servicing and fee
+   * assumptions, summed by the person who owns it. Annualized on today's balances.
+   */
+  async members(branches?: string[]) {
+    const where = branches?.length ? ` AND loc.name IN (${branches.map(() => '?').join(', ')})` : '';
+    const loans = await rows<{ party_id: number; category: string; balance: number; rate: number; term: number | null; score: number | null; rating: number | null }>(
+      this.pool,
+      `SELECT l.party_id, l.loan_category AS category, l.balance, l.rate, l.term_months AS term, l.credit_score AS score, l.risk_rating AS rating FROM cdm_loan l JOIN cdm_location loc ON loc.int_id = l.branch_id WHERE l.close_date IS NULL AND l.charge_off_date IS NULL AND l.balance > 0${where}`,
+      branches ?? [],
+    );
+    const deposits = await rows<{ party_id: number; category: string; balance: number; rate: number }>(this.pool, `SELECT d.party_id, d.deposit_category AS category, d.balance, d.rate FROM cdm_deposit_account d JOIN cdm_location loc ON loc.int_id = d.branch_id WHERE d.close_date IS NULL${where}`, branches ?? []);
+    const by = new Map<number, { contribution: number; loans: number; deposits: number; accounts: number }>();
+    const at = (id: number) => by.get(id) ?? by.set(id, { contribution: 0, loans: 0, deposits: 0, accounts: 0 }).get(id)!;
+    for (const l of loans) {
+      const bal = Number(l.balance);
+      const [cost, fees] = LOAN_COST[l.category] ?? [200, 30];
+      const c = (bal * Number(l.rate)) / 100 - (bal * ftpFor(l.term === null ? null : Number(l.term))) / 100 - (bal * (LOSS_RATE[l.category] ?? 0.5) * BAND_FACTOR(l.score === null ? null : Number(l.score), l.rating === null ? null : Number(l.rating))) / 100 - cost + fees;
+      const m = at(l.party_id);
+      m.contribution += c;
+      m.loans += bal;
+      m.accounts++;
+    }
+    for (const d of deposits) {
+      const bal = Number(d.balance);
+      const [cost, fees] = DEPOSIT_COST[d.category] ?? [60, 5];
+      const c = -(bal * Number(d.rate)) / 100 + (bal * (DEPOSIT_FTP[d.category] ?? 3.5)) / 100 - cost + fees;
+      const m = at(d.party_id);
+      m.contribution += c;
+      m.deposits += bal;
+      m.accounts++;
+    }
+    return [...by.entries()].map(([partyId, m]) => ({ partyId, contribution: Math.round(m.contribution), loans: Math.round(m.loans), deposits: Math.round(m.deposits), accounts: m.accounts }));
+  }
+
   /** Contribution before overhead, by product, then by branch: annualized on today's balances. */
   async analysis(branches?: string[]) {
     const { loans, deposits } = await this.book(branches);

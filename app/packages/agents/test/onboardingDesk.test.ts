@@ -43,7 +43,7 @@ describe.skipIf(!up)('onboarding records, rules and adding people', () => {
       await tool('onb_rule_run').apply!(out.change.apply as never, { approvalId: 'a' } as never, ctx as never);
       await tool('onb_rule_run').apply!(out.change.apply as never, { approvalId: 'a' } as never, ctx as never);
       const [[made]] = (await pool.query('SELECT COUNT(*) AS n FROM onb_task WHERE rule_id = ?', [rule.ruleId])) as unknown as [{ n: number }[]];
-      expect(Number(made.n)).toBe(caught.length);
+      expect(Number(made?.n)).toBe(caught.length);
       expect(await desk.matches(rule, {})).toHaveLength(0);
 
       const create = (await tool('onb_rule_create').run({ name: '', group: 'Test', condition: 'no_estatements', after_day: 20, touch: '', touch_type: 'Email', priority: 'Low' } as never, ctx)) as { change: { apply: unknown } };

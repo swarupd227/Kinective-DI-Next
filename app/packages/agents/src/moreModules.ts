@@ -624,7 +624,7 @@ export function campaignModule(cmp: CampaignService, api: ApiService | null = nu
 - "Build an audience of members with no auto loan": cmp_audience_prepare. Suppression is applied by the platform and its counts are shown.
 - "Send the audience of members with no auto loan to Relay", "push it to the marketing platform": cmp_audience_send. It is high risk: contact details leave DI.
 - "Pull back the campaign results": cmp_platform_pull. "How did the email do?", "open and click rates": cmp_platform_results.
-- "How has campaign ROI changed?", "ROI by quarter": cmp_roi_history. "What did campaigns bring in by product and channel?": cmp_product_channel. "Sales by marketing source", "what came from campaigns this month?": cmp_sources. "Campaign timeline", "when did responses come in?": cmp_timeline.
+- "How has campaign ROI changed?", "ROI by quarter": cmp_roi_history. "What did campaigns bring in by product and channel?": cmp_product_channel. "Sales by marketing source", "what came from campaigns this month?": cmp_sources. "Campaign timeline", "when did responses come in?": cmp_timeline. "Which accounts came from the summer auto campaign?": cmp_accounts. "Campaign results by age", "by branch", "by month", for one campaign or a period: cmp_breakdown.
 - Exporting an audience as a file isn't available; sending goes through the connected marketing platform.`,
     plan: (text) => {
       const t = clean(text);
@@ -635,6 +635,10 @@ export function campaignModule(cmp: CampaignService, api: ApiService | null = nu
       if (/\bopen(?:ed|s| rate)?\b|\bclick|\bdeliver|\bunsubscrib|\bplatform results\b|\bon relay\b|\bhow did\b[^.?!]*\b(?:email|send)\b/i.test(t)) return { tool: 'cmp_platform_results', args: {} };
       if (/\baudience\b/i.test(t)) return no ? { tool: 'cmp_audience_prepare', args: { without_category: (no[1] ?? no[2])! } } : { say: 'Which loan should the audience not already have?' };
       if (/\btimeline\b|\bwhen did (?:the )?responses\b|\bweek by week\b/i.test(t)) return { tool: 'cmp_timeline', args: {} };
+      const campaignName = /\b(?:show|for|of)\s+(?:the\s+)?([A-Z][\w’'& -]+?)\s+(?:campaign\s+)?(?:results|accounts)\b/.exec(t)?.[1];
+      const by = /\bby (?:age|age band|generation)\b/i.test(t) ? 'age' : /\bby branch\b/i.test(t) ? 'branch' : /\bby segment\b/i.test(t) ? 'segment' : /\bby month\b|\bmonthly\b/i.test(t) ? 'month' : null;
+      if (by && /\bcampaigns?\b|\bresults\b/i.test(t)) return { tool: 'cmp_breakdown', args: { by, ...(campaignName ? { campaign: campaignName } : {}) } };
+      if (/\baccounts?\b[^.?!]*\b(?:credited|attributed|from|opened)\b|\bwho (?:responded|opened)\b|\battribut/i.test(t)) return { tool: 'cmp_accounts', args: campaignName ? { campaign: campaignName } : {} };
       if (/\b(?:sales|accounts?|openings?) by (?:marketing )?source\b|\bmarketing sources?\b|\bcame from (?:a )?campaigns?\b|\bdaily\b/i.test(t)) return { tool: 'cmp_sources', args: {} };
       if (/\bby product\b[^.?!]*\bchannel\b|\bby channel\b[^.?!]*\bproduct\b|\bproduct and channel\b|\bbrought in\b/i.test(t)) return { tool: 'cmp_product_channel', args: {} };
       if (/\b(?:roi|return)\b[^.?!]*\b(?:history|by quarter|quarter by quarter|over time|trend|changed)\b|\bby quarter\b/i.test(t)) return { tool: 'cmp_roi_history', args: {} };
@@ -702,6 +706,41 @@ export function campaignModule(cmp: CampaignService, api: ApiService | null = nu
           return {
             text: `The last ${recent.length} campaigns’ windows and when responses came in. Most responses land in the first two to three weeks; ${recent.at(-1)!.name} peaked in week ${recent.at(-1)!.peakWeek}.`,
             blocks: [moduleTable(spec, 'Campaign timeline', ctx.runId, 'campaign.timeline', [{ field: 'name', headerName: 'Campaign', type: 'text' }, { field: 'channel', headerName: 'Channel', type: 'text' }, { field: 'launched', headerName: 'Launched', type: 'text' }, { field: 'ends', headerName: 'Window ends', type: 'text' }, ...Array.from({ length: 9 }, (_, w) => ({ field: `w${w}`, headerName: `Week ${w + 1}`, type: 'count' as const })), { field: 'accounts', headerName: 'Accounts', type: 'count' }], recent.map((c) => ({ name: c.name, channel: c.channel, launched: c.launched, ends: c.ends, ...Object.fromEntries(c.weeks.map((n, w) => [`w${w}`, n])), accounts: c.accounts })))],
+          };
+        },
+      },
+      {
+        name: 'cmp_accounts',
+        description: 'The accounts credited to one campaign (the latest if none is named): who opened what, where, when and for how much.',
+        input: z.object({ campaign: z.string().max(80).optional() }).strict(),
+        run: async (a: { campaign?: string }, ctx) => {
+          need(ctx);
+          const c = await cmp.campaignNamed(a.campaign);
+          const list = await cmp.accounts(c.campaign_id, ctx);
+          if (!list.length) return { text: `No accounts are credited to **${c.name}** among those you can see.` };
+          const dollars = list.reduce((s, x) => s + x.amount, 0);
+          return {
+            text: `**${list.length} accounts** are credited to **${c.name}** (${c.channel.toLowerCase()}, ${c.product}), **${money(dollars)}** in all.`,
+            blocks: [moduleTable(spec, `${c.name}: accounts credited`, ctx.runId, 'campaign.accounts', [{ field: 'name', headerName: 'Member', type: 'text' }, { field: 'branch', headerName: 'Branch', type: 'text' }, { field: 'product', headerName: 'Product', type: 'text' }, { field: 'account', headerName: 'Account', type: 'text' }, { field: 'opened', headerName: 'Opened', type: 'date' }, { field: 'amount', headerName: 'Amount', type: 'currency' }], list.slice(0, 500))],
+            suggestions: [`Show ${c.name} results by age`, `Show ${c.name} results by branch`],
+          };
+        },
+      },
+      {
+        name: 'cmp_breakdown',
+        description: 'What campaigns brought in by age band, branch, segment or month opened: accounts, people, dollars and share. Filter to one campaign, or to a period (from, to).',
+        input: z.object({ by: z.enum(['age', 'branch', 'segment', 'month']), campaign: z.string().max(80).optional(), from: z.string().regex(/^20\d\d-\d\d-\d\d$/).optional(), to: z.string().regex(/^20\d\d-\d\d-\d\d$/).optional() }).strict(),
+        run: async (a: { by: 'age' | 'branch' | 'segment' | 'month'; campaign?: string; from?: string; to?: string }, ctx) => {
+          need(ctx);
+          const c = a.campaign ? await cmp.campaignNamed(a.campaign) : null;
+          const list = await cmp.breakdown(a.by, { campaignId: c?.campaign_id, from: a.from, to: a.to }, ctx);
+          if (!list.length) return { text: 'No campaign accounts match that.' };
+          const top = [...list].sort((x, y) => y.dollars - x.dollars)[0]!;
+          const label = { age: 'Age band', branch: 'Branch', segment: 'Segment', month: 'Month opened' }[a.by];
+          const scope = `${c ? c.name : 'All campaigns'}${a.from || a.to ? `, ${a.from ?? 'start'} to ${a.to ?? 'now'}` : ''}`;
+          return {
+            text: `${scope}: **${top.group}** brought in the most, **${money(top.dollars)}** (${top.sharePct}%) from ${top.accounts} accounts.`,
+            blocks: [moduleTable(spec, `${scope}, by ${label.toLowerCase()}`, ctx.runId, 'campaign.breakdown', [{ field: 'group', headerName: label, type: 'text' }, { field: 'accounts', headerName: 'Accounts', type: 'count' }, { field: 'people', headerName: 'People', type: 'count' }, { field: 'dollars', headerName: 'Dollars', type: 'currency' }, { field: 'share', headerName: 'Share', type: 'text' }], list.map((r) => ({ ...r, share: `${r.sharePct}%` })))],
           };
         },
       },

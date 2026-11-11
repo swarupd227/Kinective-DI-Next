@@ -3,11 +3,12 @@
 // open a mortgage"), and whether earlier suggestions were taken up ("Successful Suggestions"). One
 // member's suggestions stay with Relationship Manager.
 import { z } from 'zod';
-import { BALANCE_BANDS, CoreError, HIGH_LIKELIHOOD, PredictiveService, type BalanceBand } from '@dinext/di-core';
+import { BALANCE_BANDS, CoreError, HIGH_LIKELIHOOD, PredictiveService, type BalanceBand, type ProfitabilityService } from '@dinext/di-core';
+import type { Pool } from '@dinext/tenant-db';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 export const PREDICTIVE_REQUEST =
-  /\bproducts? to suggest\b|\bsuccessful suggestions?\b|\bsuggestions? (?:that |which )?(?:worked|converted|were (?:taken up|accepted|opened)|paid off|led to)\b|\b(?:were|are) (?:our |the )?suggestions? (?:taken up|working|converting)\b|\b(?:take|took)-?up (?:of|on) (?:our |the )?suggestions?\b|\b(?:how (?:accurate|good|well)|does) (?:is |are )?(?:the |our )?(?:next[- ]best[- ]product|suggestion|propensity) (?:model|scores?)\b|\bnext[- ]best[- ]products? (?:across|for (?:the|our) (?:book|members|customers)|by (?:balance|product)|report|rollup)\b|\b(?:members|customers|accounts|who)(?: with [^.?!]{0,30})? (?:are )?(?:most )?likely to (?:open|buy|take|get)\b|\bpropensity (?:scores?|list|report)\b|\bconversion (?:rate )?(?:of|on|for) (?:our |the )?suggestions?\b/i;
+  /\bproducts? to suggest\b|\bsuccessful suggestions?\b|\bsuggestions? (?:that |which )?(?:worked|converted|were (?:taken up|accepted|opened)|paid off|led to)\b|\b(?:were|are) (?:our |the )?suggestions? (?:taken up|working|converting)\b|\b(?:take|took)-?up (?:of|on) (?:our |the )?suggestions?\b|\b(?:how (?:accurate|good|well)|does) (?:is |are )?(?:the |our )?(?:next[- ]best[- ]product|suggestion|propensity) (?:model|scores?)\b|\bnext[- ]best[- ]products? (?:across|for (?:the|our) (?:book|members|customers)|by (?:balance|product)|report|rollup)\b|\b(?:members|customers|accounts|who)(?: with [^.?!]{0,30})? (?:are )?(?:most )?likely to (?:open|buy|take|get)\b|\bpropensity (?:scores?|list|report)\b|\bconversion (?:rate )?(?:of|on|for) (?:our |the )?suggestions?\b|\b(?:member|customer|most|least) profitab(?:le|ility)\b|\bprofitability (?:per|by) (?:member|customer)\b|\bunprofitable (?:members|customers)\b|\broot causes?\b|\bwhy (?:are )?(?:people|members|customers) (?:leaving|at risk)\b|\b(?:attrition|leaving) (?:reasons|drivers|causes)\b/i;
 
 const NO_ACCESS = 'Predictive Analytics isn’t part of your DI access.';
 const text = (field: string, headerName: string) => ({ field, headerName, type: 'text' as const });
@@ -46,7 +47,7 @@ export function predictiveQuestion(t: string): PredictiveQuestion {
   return 'suggest';
 }
 
-export function predictiveModule(svc: PredictiveService, person: 'member' | 'customer' = 'member'): ModuleSpec {
+export function predictiveModule(svc: PredictiveService, person: 'member' | 'customer' = 'member', profit?: { svc: ProfitabilityService; pool: Pool } | null): ModuleSpec {
   const need = (ctx: ModuleContext) => {
     if (!ctx.modules.includes('predictive')) throw new CoreError('NO_ACCESS', NO_ACCESS);
   };
@@ -66,8 +67,12 @@ export function predictiveModule(svc: PredictiveService, person: 'member' | 'cus
 
 - pred_suggest: high-scoring suggestions by product and deposit balance band.
 - pred_people (product, optional band): the people behind one count, highest score first.
-- pred_success: suggestions from earlier monthly runs and how many were opened within about 90 days, by product, by run and by score.`,
+- pred_success: suggestions from earlier monthly runs and how many were opened within about 90 days, by product, by run and by score.
+- pred_profit (show deciles, top or bottom): profitability per ${person}, yearly contribution before overhead from every account they own.
+- pred_root_causes: why ${person}s are at risk of leaving, each attrition reason rolled up across the High and Medium bands.`,
     plan: (t) => {
+      if (/\broot causes?\b|\bwhy (?:are )?(?:people|members|customers) (?:leaving|at risk)\b|\b(?:attrition|leaving) (?:reasons|drivers|causes)\b/i.test(t)) return { tool: 'pred_root_causes', args: {} };
+      if (profit && /\bprofitab|\bunprofitable\b/i.test(t)) return { tool: 'pred_profit', args: { show: /\bleast|unprofitable|lose money|losing\b/i.test(t) ? 'bottom' : /\bmost\b|\btop\b/i.test(t) ? 'top' : 'deciles' } };
       const q = predictiveQuestion(t);
       if (q === 'success') return { tool: 'pred_success', args: {} };
       if (q === 'people') {
@@ -77,6 +82,51 @@ export function predictiveModule(svc: PredictiveService, person: 'member' | 'cus
       return { tool: 'pred_suggest', args: {} };
     },
     tools: [
+      ...(profit
+        ? [
+            {
+              name: 'pred_profit',
+              description: `Profitability per ${person}: each one's yearly contribution before overhead (interest, funding, expected loss, servicing and fees on every account they own), shown as the most and least profitable and as deciles, with the share of ${person}s who lose money.`,
+              input: z.object({ show: z.enum(['top', 'bottom', 'deciles']).default('deciles') }).strict(),
+              run: async (a: { show: 'top' | 'bottom' | 'deciles' }, ctx: ModuleContext) => {
+                need(ctx);
+                const all = (await profit.svc.members(ctx.purviewBranches ?? undefined)).sort((x, y) => y.contribution - x.contribution);
+                if (!all.length) return { text: `No ${person}s with balances in your branches.` };
+                const total = all.reduce((s, m) => s + m.contribution, 0);
+                const losers = all.filter((m) => m.contribution < 0);
+                const top10 = all.slice(0, Math.ceil(all.length / 10)).reduce((s, m) => s + m.contribution, 0);
+                const lead = `Across **${count(all.length)} ${person}s**, yearly contribution before overhead is **${usd(total)}**. The top 10% bring **${p1((top10 / total) * 100)}** of it; **${count(losers.length)}** (${p1((losers.length / all.length) * 100)}) lose money, ${usd(-losers.reduce((s, m) => s + m.contribution, 0))} a year in all.`;
+                if (a.show === 'deciles') {
+                  const size = Math.ceil(all.length / 10);
+                  const deciles = Array.from({ length: 10 }, (_, i) => all.slice(i * size, (i + 1) * size)).filter((d) => d.length).map((d, i) => ({ decile: `${i * 10 + 1} to ${Math.min(100, (i + 1) * 10)}%`, people: d.length, contribution: d.reduce((s, m) => s + m.contribution, 0), average: Math.round(d.reduce((s, m) => s + m.contribution, 0) / d.length), deposits: d.reduce((s, m) => s + m.deposits, 0), loans: d.reduce((s, m) => s + m.loans, 0) }));
+                  return { text: lead, blocks: [moduleTable(spec, `Contribution by ${person} decile, most profitable first`, ctx.runId, 'predictive.profit.deciles', [text('decile', 'Decile'), { field: 'people', headerName: 'People', type: 'count' }, { field: 'contribution', headerName: 'Contribution a year', type: 'currency' }, { field: 'average', headerName: 'Average', type: 'currency' }, { field: 'deposits', headerName: 'Deposits', type: 'currency' }, { field: 'loans', headerName: 'Loans', type: 'currency' }], deciles)], suggestions: [`Who are our least profitable ${person}s?`, `Who are our most profitable ${person}s?`] };
+                }
+                const pick = (a.show === 'top' ? all.slice(0, 50) : all.slice(-50).reverse());
+                const [names] = (await profit.pool.query('SELECT p.party_id, p.first_name, p.last_name, b.name AS branch, p.segment_code FROM cdm_party p JOIN cdm_location b ON b.int_id = p.primary_branch_id WHERE p.party_id IN (?)', [pick.map((m) => m.partyId)])) as unknown as [{ party_id: number; first_name: string; last_name: string; branch: string; segment_code: string }[]];
+                const nameOf = new Map(names.map((n) => [n.party_id, n]));
+                return {
+                  text: lead,
+                  blocks: [moduleTable(spec, a.show === 'top' ? `Most profitable ${person}s` : `Least profitable ${person}s`, ctx.runId, 'predictive.profit.members', [text('name', person === 'member' ? 'Member' : 'Customer'), text('branch', 'Branch'), text('segment', 'Segment'), { field: 'contribution', headerName: 'Contribution a year', type: 'currency' }, { field: 'deposits', headerName: 'Deposits', type: 'currency' }, { field: 'loans', headerName: 'Loans', type: 'currency' }, { field: 'accounts', headerName: 'Accounts', type: 'count' }], pick.map((m) => ({ name: nameOf.get(m.partyId) ? `${nameOf.get(m.partyId)!.first_name} ${nameOf.get(m.partyId)!.last_name}` : `#${m.partyId}`, branch: nameOf.get(m.partyId)?.branch ?? '', segment: nameOf.get(m.partyId)?.segment_code ?? '', contribution: m.contribution, deposits: m.deposits, loans: m.loans, accounts: m.accounts })))],
+                };
+              },
+            },
+          ]
+        : []),
+      {
+        name: 'pred_root_causes',
+        description: `Why ${person}s are at risk of leaving, rolled up across them: each attrition factor, how many in the High band (7+) and Medium band (5 to 6) it applies to, the share of the High band it explains, and the deposits they hold.`,
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx: ModuleContext) => {
+          need(ctx);
+          const x = await svc.rootCauses(ctx);
+          if (!x.rows.length) return { text: `No ${person}s you can see score 5 or more for attrition.` };
+          const top = x.rows[0]!;
+          return {
+            text: `**${count(x.highBand)} ${person}s** are in the High band and ${count(x.mediumBand)} in the Medium band. The most common reason in the High band is **${top.factor.toLowerCase()}**, for ${p1(top.highSharePct)} of them${x.rows[1] ? `, then ${x.rows[1].factor.toLowerCase()} (${p1(x.rows[1].highSharePct)})` : ''}.`,
+            blocks: [moduleTable(spec, 'Reasons for attrition risk, across people', ctx.runId, 'predictive.root_causes', [text('factor', 'Reason'), { field: 'high', headerName: 'High band', type: 'count' }, { field: 'medium', headerName: 'Medium band', type: 'count' }, text('share', 'Share of High band'), { field: 'deposits', headerName: 'Deposits held', type: 'currency' }], x.rows.map((r) => ({ ...r, share: p1(r.highSharePct) })))],
+          };
+        },
+      },
       {
         name: 'pred_suggest',
         description: 'Products to suggest: how many high-scoring next-best-product suggestions there are for each product, split by the person’s deposit balance band.',
