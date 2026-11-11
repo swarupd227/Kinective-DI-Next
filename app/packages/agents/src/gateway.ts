@@ -173,7 +173,7 @@ export const RELATIONSHIP_TOOLS = [
   {
     name: 'relationship_profile_get',
     operation: 'relationship.profile.get',
-    description: 'Open a member’s 360 profile: accounts, digital use, scores, opportunities, loan applications, interactions and household. Opening it shows the record to the user and logs the access.',
+    description: 'Open a member’s 360 profile: accounts, cards, recent transactions, credit score, charge-offs, digital use, scores, opportunities, loan applications, interactions and household. Opening it shows the record to the user and logs the access.',
     input: ProfileInput,
     sideEffect: 'read',
     riskTier: 'none',
@@ -420,6 +420,10 @@ function profileForModel(p: MemberProfile, ref: string) {
     loan_applications_365d: p.applications.items.map((a) => ({ product: a.product, amount: a.amount, status: a.status, detail: a.detail, applied: a.applied })),
     recent_interactions: p.interactions.items.slice(0, 5).map((i) => ({ date: i.at.slice(0, 10), channel: i.channel, summary: i.summary })),
     household_size: p.household.length + 1,
+    credit_score: p.creditScore ? { score: p.creditScore.score, as_of: p.creditScore.asOf, from: p.creditScore.from } : null,
+    charged_off: p.chargeOffs.items.map((c) => ({ product: c.product, charged_off: c.chargedOff, original: round(c.original) })),
+    cards: p.cards.slice(0, 8).map((k) => ({ kind: k.kind, ends: k.last4, status: k.status, opened: k.opened, activated: k.activated, closed: k.closed })),
+    transactions_90d: p.transactions ? { count: p.transactions.total90d, latest: p.transactions.items.slice(0, 10).map((t) => ({ date: t.date, description: t.description, amount: round(t.amount), type: t.type, account: t.account })) } : 'not loaded from the core for this institution',
   };
 }
 

@@ -50,7 +50,7 @@ export function sourcesModule(sources: SourceService | null, today: () => string
     prefix: 'src',
     agent: 'Data Sources',
     request:
-      /\bconnection details #?\d+|\b(?:connect|hook up|link|test)\b[^.?!]*\b(?:core|replica|symitar|dna|keystone|premier|database)\b|\b(?:pull|sync)\b[^.?!]*\b(?:core|replica|symitar|connection|source)\b|\b(?:core|replica|symitar) (?:connections?|syncs?|pulls?)\b|\blast pull\b|\brows? that differ\b|\breconcil\w*\b|\b(?:use|stop using|switch)\b[^.?!]*\b(?:replica|symitar)\b|\bdirect (?:core |database )?connections?\b/i,
+      /\bconnection details #?\d+|\b(?:connect|hook up|link|test)\b[^.?!]*\b(?:core|replica|symitar|dna|keystone|premier|database)\b|\b(?:pull|sync)\b[^.?!]*\b(?:core|replica|symitar|connection|source)\b|\b(?:core|replica|symitar) (?:connections?|syncs?|pulls?)\b|\blast pull\b|\brows? that differ\b|(?<![^.?!]*\b(?:5300|call report|gl|general ledger|ledger|prepared|filed)\b[^.?!]*)\breconcil\w*\b(?![^.?!]*\b(?:5300|call report|gl|general ledger|ledger|prepared|filed|referrals?|accounts? opened)\b)|\b(?:use|stop using|switch)\b[^.?!]*\b(?:replica|symitar)\b|\bdirect (?:core |database )?connections?\b/i,
     noAccess,
     sources: [
       { kind: 'table', label: 'Core connections', ref: 'table:src_connection' },

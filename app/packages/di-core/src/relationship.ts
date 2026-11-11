@@ -432,8 +432,10 @@ export class RelationshipService {
     const [score] = await q<{ credit_score: number | null; loan_category: string; open_date: unknown }>('SELECT credit_score, loan_category, open_date FROM cdm_loan WHERE party_id = ? AND credit_score IS NOT NULL ORDER BY open_date DESC LIMIT 1', [partyId]);
     const chargedOff = await q<{ loan_category: string; charge_off_date: unknown; original_amount: number }>('SELECT loan_category, charge_off_date, original_amount FROM cdm_loan WHERE party_id = ? AND charge_off_date IS NOT NULL ORDER BY charge_off_date DESC', [partyId]);
     const cards = await q<{ kind: 'Debit' | 'Credit'; last4: string; status: string; opened: unknown; activated: unknown; closed: unknown; account_id: number }>('SELECT kind, last4, status, opened, activated, closed, account_id FROM cdm_card WHERE party_id = ? ORDER BY closed IS NOT NULL, opened DESC', [partyId]).catch(() => []);
-    // The core's checking transactions, where they're loaded; a table that isn't there means none are.
-    const txns = await q<{ post_date: unknown; description: string; amount: number; txn_type: string; account_id: number }>('SELECT post_date, description, amount, txn_type, account_id FROM cdm_transaction WHERE party_id = ? AND post_date > ? ORDER BY post_date DESC, txn_id DESC', [partyId, addDays(asOf, -90)]).catch(() => null);
+    // The core's checking transactions, where they're loaded; a table that isn't there, or is empty for the
+    // whole institution, means none are.
+    const loaded = (await q<{ one: number }>('SELECT 1 AS one FROM cdm_transaction LIMIT 1', []).catch(() => [])).length > 0;
+    const txns = loaded ? await q<{ post_date: unknown; description: string; amount: number; txn_type: string; account_id: number }>('SELECT post_date, description, amount, txn_type, account_id FROM cdm_transaction WHERE party_id = ? AND post_date > ? ORDER BY post_date DESC, txn_id DESC', [partyId, addDays(asOf, -90)]).catch(() => null) : null;
     const logged = await q<{ occurred_at: unknown; channel: string; kind: string; summary: string; logged_by: string }>('SELECT occurred_at, channel, kind, summary, logged_by FROM rm_interaction_log WHERE party_id = ? ORDER BY occurred_at DESC LIMIT 10', [partyId]).catch(() => []);
     const label = (c: string) => LOAN_LABEL[c] ?? c;
     const line = (kind: 'deposit' | 'loan', id: number, name: string, r: { balance: number; balance_30d: number; fees_30d: number; rate: number; open_date: string }, extra: Partial<AccountLine> = {}): AccountLine => ({

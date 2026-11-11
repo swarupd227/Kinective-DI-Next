@@ -9,7 +9,7 @@ import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.
 import type { ReportAnalyses } from './report.ts';
 
 export const PORTFOLIO_REQUEST =
-  /\b(?:member|customer) growth\b|\bnew (?:and|vs\.?|versus) closed (?:members|customers)\b|\b(?:members|customers) (?:joined|added|lost) (?:this|month|quarter|year)|\baverage (?:member|customer) age\b|\b(?:cd|certificate)s? (?:maturity|maturities|maturing) (?:forecast|schedule|by term|by interval)\b|\bmaturing (?:cds?|certificates)\b[^.?!]*\b(?:forecast|by term|by interval)|\b(?:cd|certificate) (?:maturity )?forecast\b|\bdeposit (?:growth|portfolio)\b|\bdeposits? by product\b|\bdelinquency by (?:product|loan type|sub-?product)\b|\bdelinquency buckets?\b[^.?!]*\b(?:product|history|over time)\b/i;
+  /\b(?:member|customer) growth\b|\bnew (?:and|vs\.?|versus) closed (?:members|customers)\b|\b(?:members|customers) (?:joined|added|lost) (?:this|month|quarter|year)|\baverage (?:member|customer) age\b|\b(?:cd|certificate)s? (?:maturity|maturities|maturing) (?:forecast|schedule|by term|by interval)\b|\bmaturing (?:cds?|certificates)\b[^.?!]*\b(?:forecast|by term|by interval)|\b(?:cd|certificate) (?:maturity )?forecast\b|\b(?:how much|what share|what percent(?:age)?)\b[^.?!]*\b(?:will|would|to) renew\b|\b(?:cd|certificate) renewals? (?:forecast|projection)\b|\brenewal (?:forecast|projection)\b|\bdeposit (?:growth|portfolio)\b|\bdeposits? by product\b|\bdelinquency by (?:product|loan type|sub-?product)\b|\bdelinquency buckets?\b[^.?!]*\b(?:product|history|over time)\b/i;
 
 const text = (field: string, headerName: string) => ({ field, headerName, type: 'text' as const });
 const cnt = (field: string, headerName: string) => ({ field, headerName, type: 'count' as const });

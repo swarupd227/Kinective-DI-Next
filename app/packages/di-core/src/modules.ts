@@ -284,8 +284,9 @@ export class OnboardingService {
               MAX(CASE WHEN k.activated IS NOT NULL THEN 1 ELSE 0 END) AS card
          FROM onb_task t JOIN cdm_party p ON p.party_id = t.party_id JOIN cdm_location b ON b.int_id = t.branch_id
          LEFT JOIN cdm_digital_usage u ON u.party_id = p.party_id LEFT JOIN cdm_card k ON k.party_id = p.party_id AND k.kind = 'Debit'
-        WHERE p.join_date >= DATE_SUB(?, INTERVAL 90 DAY)${scope.sql} GROUP BY b.name, p.party_id`,
-      [asOf, ...scope.params],
+        WHERE 1 = 1${scope.sql} GROUP BY b.name, p.party_id
+       HAVING MIN(DATE_SUB(t.due, INTERVAL t.day_offset DAY)) >= DATE_SUB(?, INTERVAL 90 DAY)`,
+      [...scope.params, asOf],
     );
     const people = rows as { branch: string; party_id: number; welcomed: number; digital: number; dd: number; card: number }[];
     const ids = people.map((r) => r.party_id);
