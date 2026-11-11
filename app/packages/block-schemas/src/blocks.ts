@@ -376,6 +376,14 @@ export const member360Section = z.discriminatedUnion('kind', [
     kind: z.literal('workflows'),
     items: z.array(z.strictObject({ kind: z.enum(['Referral', 'Task', 'Onboarding']), title: z.string().max(160), status: z.string().max(30), owner: z.string().max(80).nullable(), due: isoDate.nullable(), opened: isoDate })).max(30),
   }),
+  /** Employment, leisure, and life events and goals the person shared. */
+  z.strictObject({
+    kind: z.literal('about'),
+    employment: z.array(labelValue).max(6),
+    interests: z.array(z.string().max(40)).max(10),
+    lifeEvents: z.array(z.strictObject({ event: z.string().max(60), date: isoDate })).max(10),
+    goals: z.array(z.string().max(60)).max(8),
+  }),
   /** The core's comments and warning codes on the person or their accounts. */
   z.strictObject({
     kind: z.literal('notes'),
@@ -393,7 +401,7 @@ export const member360Data = z.strictObject({
   ...memberHeader,
   alerts: z.array(z.strictObject({ id: z.string().max(40), label: z.string().max(120), tone })).max(12),
   take: diTake.optional(),
-  sections: z.array(member360Section).min(1).max(16),
+  sections: z.array(member360Section).min(1).max(17),
 });
 
 // ---- union ------------------------------------------------------------------------------------

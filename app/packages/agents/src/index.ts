@@ -80,3 +80,4 @@ export { BUDGET_STRESS_AGENT, BUDGET_STRESS_REQUEST, budgetCase, budgetMemo, bud
 export { MODEL_REQUEST, attritionModule, modelSummary } from './attritionAgent.ts';
 export { REFERRAL_DESK_REQUEST, referralDeskModule, referralDeskPlan } from './referralDesk.ts';
 export { SIMULATION_REQUEST, simulationModule } from './simulationAgent.ts';
+export { onboardingDeskPlan, onboardingDeskTools, ruleFrom } from './onboardingDesk.ts';

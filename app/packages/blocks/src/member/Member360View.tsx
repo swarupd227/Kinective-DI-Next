@@ -23,6 +23,7 @@ const LABELS: Record<Kind, string> = {
   opportunities: 'Opportunities',
   interactions: 'Interactions',
   workflows: 'Workflows',
+  about: 'Employment & life',
   notes: 'Notes & warnings',
   cards: 'Cards',
   transactions: 'Transactions',
@@ -396,6 +397,20 @@ function Section({ s, m, run }: { s: Member360Section; m: MemberHeader; run: (a:
               </tbody>
             </table>
           )}
+        </>
+      );
+    case 'about':
+      if (!s.employment.length && !s.interests.length && !s.lifeEvents.length && !s.goals.length) return <p className={styles.empty}>Nothing shared about work, leisure or life events.</p>;
+      return (
+        <>
+          {s.employment.length > 0 && <Facts facts={s.employment} />}
+          <Facts
+            facts={[
+              { label: 'Leisure', value: s.interests.length ? s.interests.join(', ') : '—' },
+              { label: 'Life events', value: s.lifeEvents.length ? s.lifeEvents.map((e) => `${e.event} (${dateOf(e.date)})`).join('; ') : '—' },
+              { label: 'Goals', value: s.goals.length ? s.goals.join(', ') : '—' },
+            ]}
+          />
         </>
       );
     case 'workflows':

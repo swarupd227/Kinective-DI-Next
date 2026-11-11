@@ -76,3 +76,4 @@ export { AttritionModelService, ATTRITION_BANDS, ATTRITION_FEATURES, ATTRITION_F
 export { auc, capture, contributions, predict, train as trainGbm, type Gbm, type GbmParams } from './gbm.ts';
 export { ReferralDeskService, csvCells, parseReferralCsv, type BulkReady, type BulkRow, type ProspectReferral } from './referralDesk.ts';
 export { MonteCarloService, SIM_PATHS, type SimPath } from './monteCarlo.ts';
+export { OnboardingDeskService, RULE_CONDITIONS, TOUCH_TYPES, type OnbRule, type RuleMatch } from './onboardingDesk.ts';

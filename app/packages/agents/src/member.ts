@@ -171,9 +171,9 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
             { label: 'Preferred contact', value: p.contact.preferred },
             { label: 'Born', value: `${longDate(p.identity.birthDate)} (age ${p.identity.age}, ${p.identity.generation})` },
             { label: 'Credit score', value: p.creditScore ? `${p.creditScore.score}, from ${p.creditScore.from}, ${longDate(p.creditScore.asOf)}` : 'None on file' },
-            { label: 'Latest survey', value: survey ? `${survey.score} of 10, ${survey.kind.toLowerCase()}, ${longDate(survey.date)}${survey.comment ? `: “${survey.comment}”` : ''}`.slice(0, 200) : 'None answered' },
+            { label: 'Latest survey', value: survey ? `${survey.score} of 10, ${survey.kind.toLowerCase()}, ${longDate(survey.date)}${survey.comment ? `: “${survey.comment}”` : ''}`.slice(0, 120) : 'None answered' },
             { label: 'Identity last verified', value: p.lastVerification ? `${longDate(p.lastVerification.at.slice(0, 10))}, ${p.lastVerification.channel.toLowerCase()}, ${p.lastVerification.result.toLowerCase()} (${p.lastVerification.by})` : 'Not verified in DI' },
-            { label: 'Charged off', value: p.chargeOffs.count ? `${p.chargeOffs.count} ${p.chargeOffs.count === 1 ? 'loan' : 'loans'}: ${p.chargeOffs.items.map((x) => `${x.product}, ${longDate(x.chargedOff)}`).join('; ')}`.slice(0, 200) : 'None' },
+            { label: 'Charged off', value: p.chargeOffs.count ? `${p.chargeOffs.count} ${p.chargeOffs.count === 1 ? 'loan' : 'loans'}: ${p.chargeOffs.items.map((x) => `${x.product}, ${longDate(x.chargedOff)}`).join('; ')}`.slice(0, 120) : 'None' },
           ],
         },
         {
@@ -214,6 +214,20 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
           declined: p.declined.slice(0, 10),
         },
         { kind: 'workflows', items: p.workflows.slice(0, 30) },
+        {
+          kind: 'about',
+          employment: p.about
+            ? [
+                { label: 'Employer', value: p.about.employer ?? '—' },
+                ...(p.about.occupation ? [{ label: 'Occupation', value: p.about.occupation }] : []),
+                ...(p.about.yearsEmployed !== null ? [{ label: 'Years there', value: String(p.about.yearsEmployed) }] : []),
+                ...(p.about.incomeBand ? [{ label: 'Income', value: p.about.incomeBand }] : []),
+              ]
+            : [],
+          interests: p.about?.interests.slice(0, 10) ?? [],
+          lifeEvents: p.about?.lifeEvents.slice(0, 10) ?? [],
+          goals: p.about?.goals.slice(0, 8) ?? [],
+        },
         { kind: 'interactions', total: p.interactions.total, items: p.interactions.items.map((i) => ({ at: i.at, channel: i.channel, kind: i.kind, summary: i.summary, by: i.by })) },
         { kind: 'cards', items: p.cards.slice(0, 12).map((k) => ({ kind: k.kind, suffix: k.last4, status: k.status, opened: k.opened, activated: k.activated, closed: k.closed, detail: k.kind === 'Debit' ? `On checking …${k.account}` : `Card account …${k.account}` })) },
         p.transactions

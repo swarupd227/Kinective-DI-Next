@@ -3,7 +3,8 @@
 // sent and whether it was opened) and the 90-day funnel by branch. Member letters and emails stay in the scheduled process, so this agent
 // never sends one.
 import { z } from 'zod';
-import { CoreError, checklistFrom, type OnbChecklist, type OnboardingService, type TouchPoint } from '@dinext/di-core';
+import { CoreError, checklistFrom, type FileStore, type OnbChecklist, type OnboardingDeskService, type OnboardingService, type TouchPoint } from '@dinext/di-core';
+import { onboardingDeskPlan, onboardingDeskTools } from './onboardingDesk.ts';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 const need = (ctx: ModuleContext) => {
@@ -21,7 +22,7 @@ export function talkingPoint(t: Pick<TouchPoint, 'touch' | 'directDeposit'>) {
 
 const nameOf = (text: string) => /\b(?:mark|complete|finish|snooze|reassign|move)\s+(?:the\s+)?((?:[A-Z][\w'-]*\s?){1,3}?)(?:[’']s)?\s+(?:\d+-day\s+|welcome\s+|touch\s+|task|call|onboarding)/i.exec(text)?.[1]?.trim();
 
-export function onboardingModule(onboarding: OnboardingService): ModuleSpec {
+export function onboardingModule(onboarding: OnboardingService, desk?: OnboardingDeskService, files?: FileStore | null): ModuleSpec {
   const list = (ctx: ModuleContext, title: string, items: TouchPoint[], asOf: string) =>
     moduleTable(spec, title, ctx.runId, 'onboarding.task.list', [{ field: 'member', headerName: 'Member', type: 'text' }, { field: 'touch', headerName: 'Touch point', type: 'text' }, { field: 'due', headerName: 'Due', type: 'date' }, { field: 'state', headerName: 'State', type: 'text' }, { field: 'assignee', headerName: 'With', type: 'text' }, { field: 'point', headerName: 'Talking point', type: 'text' }], items.slice(0, 25).map((t) => ({ member: `${t.member} (…${t.last4})`, touch: t.touch, due: t.due, state: t.state, assignee: t.assignee ?? 'Branch queue', point: talkingPoint(t) })), asOf);
   const reach = (ctx: ModuleContext) => (ctx.leads || ctx.employeeId === undefined ? undefined : ctx.employeeId);
@@ -30,7 +31,7 @@ export function onboardingModule(onboarding: OnboardingService): ModuleSpec {
     id: 'onboarding',
     prefix: 'onb',
     agent: 'Onboarding',
-    request: /\bonboarding\b|\btouch ?points?\b|\bnew members?\b.*\b(direct deposit|calls?)\b|\bwelcome (?:calls?|emails?|letters?|kit|messages?)\b|\bfirst 90 days\b/i,
+    request: /\bonboarding\b|\btouch ?points?\b|\bnew members?\b.*\b(direct deposit|calls?)\b|\bwelcome (?:calls?|emails?|letters?|kit|messages?)\b|\bfirst 90 days\b|\bfollow-?up rules?\b/i,
     noAccess: 'Onboarding isn’t part of your DI access.',
     sources: [{ kind: 'table', label: 'Onboarding tasks', ref: 'table:onb_task' }],
     prompt: ({ tenant, user, title }) => `You are the Onboarding agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) works new members' touch points.
@@ -41,6 +42,9 @@ export function onboardingModule(onboarding: OnboardingService): ModuleSpec {
 - onb_task_snooze and onb_task_reassign change a task.
 - "Show the onboarding messages for Suzanne Jackson", "her journey": onb_journey, what the scheduled process sent and whether it was opened.
 - "Show the onboarding funnel", "early attrition in the first 90 days": onb_funnel.
+- "Show everyone in onboarding with touch type, priority and whether they're subscribed": onb_records.
+- Follow-up rules: onb_rules lists them by group; onb_rule_create makes one ("after day 21 with no direct deposit, call them, high priority"); onb_rule_copy reuses one; onb_rule_switch turns one on or off; onb_rule_run creates its tasks for who it catches today.
+- "Add Suzanne Jackson to onboarding": onb_add. A list of new members uploaded on the Files page: onb_add_bulk.
 - You never send a letter or email to a member: those stay in the scheduled process. Say so.`,
     today: async (ctx) => {
       const f = await onboarding.list({ employeeId: reach(ctx), overdueOnly: true }, ctx);
@@ -50,6 +54,8 @@ export function onboardingModule(onboarding: OnboardingService): ModuleSpec {
     plan: (text) => {
       const t = text.trim().replace(/[.!?]+$/, '');
       if (/\b(send|email|mail)\b.*\b(letter|email|member|welcome)\b/i.test(t)) return { say: NO_LETTERS };
+      const extra = desk ? onboardingDeskPlan(t) : null;
+      if (extra) return extra;
       if (/\bdirect deposit\b/i.test(t) && !/\b(mark|done)\b/i.test(t)) return { tool: 'onb_no_direct_deposit', args: {} };
       const member = nameOf(t);
       if (/\b(mark|complete|finish)\b.*\b(done|complete)\b|^complete\b/i.test(t)) return member ? { tool: 'onb_task_done', args: { member, ...(/;\s*(.+)$/.exec(t)?.[1] ? { note: /;\s*(.+)$/.exec(t)![1] } : {}) } } : { say: 'Whose touch point is it?' };
@@ -62,6 +68,7 @@ export function onboardingModule(onboarding: OnboardingService): ModuleSpec {
       return { tool: 'onb_tasks_list', args: { overdue_only: /\boverdue\b|\blate\b|\bmissed\b/i.test(t) } };
     },
     tools: [
+      ...(desk ? onboardingDeskTools(desk, files ?? null, () => spec, need) : []),
       {
         name: 'onb_journey',
         description: 'One new member’s journey: the messages the scheduled process sent (welcome email, letter, secure message, reminders, survey) and whether each was opened, the touch points, and the checklist recorded with each.',
