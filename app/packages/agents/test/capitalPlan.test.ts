@@ -72,6 +72,8 @@ describe.skipIf(!up)('a bank’s capital plan', () => {
         const { block, take } = await an.run(key, 'R-cap');
         expect(blockSchema.safeParse(block).success, key).toBe(true);
         if (take) expect(take.headline.length, key).toBeLessThanOrEqual(300);
+        // Every buyback size the report shows, including the room after dividends, is within the floor.
+        if (key === 'cap.buyback') expect((block as unknown as { data: { rows: { ok: string }[] } }).data.rows.map((r) => r.ok).every((ok) => ok === 'Yes'), key).toBe(true);
       }
     } finally {
       await pool.end();

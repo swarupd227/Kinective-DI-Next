@@ -25,6 +25,9 @@ for (const [schema, tenant, type] of [['dinext_t_test_cu', 'test_cu', 'credit_un
           const { canvas } = await runReport(def, {}, svc, { canViewSql: false, analyses: combineAnalyses(alcoAnalyses(new AlcoService(pool, type)), profitAnalyses(new ProfitabilityService(pool, type)), camelsAnalyses({ pool, institutionType: type, semantic: async () => svc }), baselAnalyses({ pool, institutionType: type }), boardAnalyses(svc, pool, type), branchAnalyses(new BranchScorecardService(pool), new GoalsService(pool), type === 'bank' ? 'customers' : 'members'), lendingAnalyses(new LendingProductionService(pool), new GoalsService(pool)), type === 'bank' ? concentrationAnalyses(new ConcentrationService(pool)) : null, type === 'bank' ? bsaAnalyses(new BsaService(pool)) : null, type === 'bank' ? opRiskAnalyses(new OpRiskService(pool)) : null, type === 'bank' ? capitalPlanAnalyses(new CapitalPlanService(pool)) : null) }, { runId: 'R-stocktest', mode: 'read', status: 'stock', version: 1 });
           const broken = canvas.data.widgets.filter((w) => w.view.type === 'notice').map((w) => `${def.name} / ${w.title}: ${w.view.type === 'notice' ? w.view.data.message : ''}`);
           expect(broken).toEqual([]);
+          // The whole report must pass the block schema, or the page shows "failed validation".
+          const v = validateBlock(canvas);
+          expect(v.ok ? [] : v.issues.map((i) => `${def.name}: ${i}`)).toEqual([]);
         }
       } finally {
         await pool.end();

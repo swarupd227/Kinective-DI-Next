@@ -361,7 +361,7 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
           {
             templateId: 'capital_plan_quarterly',
             name: 'Capital plan: dividend and buyback capacity',
-            description: 'How much capital the bank can return over the next four quarters without falling below the board’s floors (the internal CET1 and leverage targets, or the minimum plus the stress test’s decline), what dividends take, the room left for buybacks and what they do per share, and the dividend approval limit.',
+            description: 'How much capital the bank can return over four quarters without falling below the board’s floors (its target, or the minimum plus the stress decline), what dividends take, the room for buybacks and what they do per share, and the dividend limit.',
             folder: 'Board',
             settings: { ...settings('quarter', ['Executive', 'Finance']), addHierarchyControls: false },
             layoutVersion: 1,
