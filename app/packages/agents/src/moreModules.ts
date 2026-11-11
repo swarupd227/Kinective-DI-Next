@@ -3,7 +3,7 @@
 // Each states its limits: the Call Report agent is read-only, the Admin agent can't change its own
 // user or impersonate anyone, and DI never contacts a borrower or changes a loan.
 import { z } from 'zod';
-import { CALL_REPORT_EDITION, CR_ADJUST_REASONS, CR_RESOLUTIONS, type CrAdjustReason, type CrResolution, CAPABILITIES, CLASSES, CoreError, SEG_STAGES, USER_CLASSES, type CallReportLine, type CallReportService, stampUtc, csvCells, type FileStore, type ApiService, type CampaignService, type CollectionsService, type OperationsService, type SegService } from '@dinext/di-core';
+import { CALL_REPORT_EDITION, CR_ADJUST_REASONS, CR_RESOLUTIONS, type CrAdjustReason, type CrResolution, CAPABILITIES, CLASSES, CoreError, SEG_STAGES, USER_CLASSES, type CallReportLine, type CallReportService, stampUtc, csvCells, type FileStore, type ApiService, type CampaignService, type CollectionsService, type WatchedLoan, type OperationsService, type SegService } from '@dinext/di-core';
 import { money } from './pipelineAgent.ts';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
@@ -663,6 +663,13 @@ export function callReportModule(cr: CallReportService, files: FileStore | null 
 // ---- collections early warning ----------------------------------------------------------------
 
 const TASK_CAP = 10;
+const DRAW_REQUEST = /\bdraw periods?\b|\bend(?:s|ing)? (?:of )?(?:their |the |its )?draws?\b|\bhelocs?\b[^.?!]*\b(?:draw|interest[- ]only|payment shock|reset)\b/i;
+const monthOf = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+/** A loan's signals in words, with the HELOC's end of draw spelled out. */
+const signalText = (l: WatchedLoan) =>
+  l.signals
+    .map((s) => (l.draw && s.startsWith('HELOC draw') ? (l.draw.balloon ? `HELOC draw ends ${monthOf(l.draw.ends)}, ${dollars(l.draw.paymentAfter)} then due` : `HELOC draw ends ${monthOf(l.draw.ends)}, payment ${dollars(l.draw.paymentNow)} to ${dollars(l.draw.paymentAfter)} a month`) : s))
+    .join(', ');
 
 export function collectionsModule(col: CollectionsService): ModuleSpec {
   const noAccess = 'Collections early warning isn’t part of your DI access.';
@@ -671,7 +678,7 @@ export function collectionsModule(col: CollectionsService): ModuleSpec {
     id: 'collections',
     prefix: 'col',
     agent: 'Collections Early Warning',
-    request: /\bearly[- ]warning\b|\bwatch ?list\b|\boutreach tasks?\b/i,
+    request: new RegExp(`\\bearly[- ]warning\\b|\\bwatch ?list\\b|\\boutreach tasks?\\b|${DRAW_REQUEST.source}`, 'i'),
     noAccess,
     sources: [{ kind: 'table', label: 'Loans and predictive scores', ref: 'table:cdm_loan' }],
     today: async (ctx) => {
@@ -681,25 +688,39 @@ export function collectionsModule(col: CollectionsService): ModuleSpec {
     },
     prompt: ({ tenant, user, title }) => `You are the Collections Early-Warning agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) watches loans that are current but showing stress.
 
-- "Show the early-warning list": col_watchlist.
+- "Show the early-warning list": col_watchlist. The list holds loans still current whose borrower shows stress (direct deposit stopped, falling balances, no recent login) and HELOCs whose ten-year draw period ends in the next 12 months.
+- "Which HELOCs are reaching the end of their draw?": col_watchlist with focus heloc_draw.
 - "Queue outreach tasks": col_outreach_prepare.
 - You never contact a borrower, change loan terms or take adverse action. You only queue tasks for the collections team.`,
     plan: (text) => {
       const t = clean(text);
       if (/\b(call|email|text|contact|waive|defer|modify)\b.*\b(borrowers?|members?|loans?)\b/i.test(t) && !/\btasks?\b/i.test(t)) return { say: 'I don’t contact borrowers or change loans. I can queue outreach tasks for the collections team.' };
       if (/\b(queue|create|prepare)\b.*\btasks?\b/i.test(t)) return { tool: 'col_outreach_prepare', args: {} };
-      return { tool: 'col_watchlist', args: {} };
+      return { tool: 'col_watchlist', args: DRAW_REQUEST.test(t) ? { focus: 'heloc_draw' } : {} };
     },
     tools: [
       {
         name: 'col_watchlist',
-        description: 'Loans that are current but whose borrower shows stress, with the signals and the data date.',
-        input: z.object({}).strict(),
-        run: async (_: unknown, ctx) => {
+        description: 'Loans that are current but whose borrower shows stress, and HELOCs whose draw period ends within 12 months, with the signals. focus heloc_draw lists only those HELOCs.',
+        input: z.object({ focus: z.enum(['heloc_draw']).optional() }).strict(),
+        run: async (args: { focus?: 'heloc_draw' }, ctx) => {
           need(ctx);
           const w = await col.watchlist(ctx);
-          if (!w.count) return { text: 'Nothing is on the early-warning list.' };
-          return { text: `**${w.count} ${w.count === 1 ? 'loan' : 'loans'}**, ${money(w.dollars)}, are current but showing stress. The main signals are ${w.signals.slice(0, 3).map((s) => `${s.label} (${s.count})`).join(', ')}.`, blocks: [moduleTable(spec, 'Early-warning list', ctx.runId, 'collections.watchlist.get', [{ field: 'member', headerName: 'Member', type: 'text' }, { field: 'loan', headerName: 'Loan', type: 'text' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'signals', headerName: 'Signals', type: 'text' }, { field: 'action', headerName: 'Suggested', type: 'text' }], w.items.slice(0, 25).map((l) => ({ member: `${l.name} (…${l.last4})`, loan: l.category, balance: l.balance, signals: l.signals.join(', '), action: l.queued ? 'Outreach queued' : 'Outreach call' })))], suggestions: w.items.some((l) => !l.queued) ? ['Queue outreach tasks for the early-warning list'] : [] };
+          const draws = w.items.filter((l) => l.draw);
+          const items = args.focus === 'heloc_draw' ? draws : w.items;
+          if (!items.length) return { text: args.focus === 'heloc_draw' ? 'No current HELOC reaches the end of its draw period in the next 12 months.' : 'Nothing is on the early-warning list.' };
+          // What the end of draw does to payments: interest only today, principal and interest after, or the whole line due.
+          const repaying = draws.filter((l) => !l.draw!.balloon);
+          const due = draws.filter((l) => l.draw!.balloon);
+          const sum = (ls: WatchedLoan[], f: (l: WatchedLoan) => number) => ls.reduce((n, l) => n + f(l), 0);
+          const drawLine = draws.length
+            ? `**${draws.length} ${draws.length === 1 ? 'HELOC reaches' : 'HELOCs reach'}** the end of the ten-year draw period in the next 12 months.${repaying.length ? ` For ${repaying.length === draws.length ? 'them' : `the ${repaying.length} that then repay`}, the payment goes from interest only, ${dollars(sum(repaying, (l) => l.draw!.paymentNow))} a month in all, to principal and interest, ${dollars(sum(repaying, (l) => l.draw!.paymentAfter))}.` : ''}${due.length ? ` ${due.length} ${due.length === 1 ? 'is a ten-year line' : 'are ten-year lines'} with ${dollars(sum(due, (l) => l.balance))} due in full when the draw ends.` : ''}`
+            : '';
+          const text =
+            args.focus === 'heloc_draw'
+              ? drawLine
+              : `**${w.count} ${w.count === 1 ? 'loan' : 'loans'}**, ${money(w.dollars)}, are current but showing stress. The main signals are ${w.signals.slice(0, 3).map((s) => `${s.label} (${s.count})`).join(', ')}.${drawLine ? ` ${drawLine}` : ''}`;
+          return { text, blocks: [moduleTable(spec, args.focus === 'heloc_draw' ? 'HELOCs reaching the end of their draw' : 'Early-warning list', ctx.runId, 'collections.watchlist.get', [{ field: 'member', headerName: 'Member', type: 'text' }, { field: 'loan', headerName: 'Loan', type: 'text' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'signals', headerName: 'Signals', type: 'text' }, { field: 'action', headerName: 'Suggested', type: 'text' }], items.slice(0, 25).map((l) => ({ member: `${l.name} (…${l.last4})`, loan: l.category, balance: l.balance, signals: signalText(l), action: l.queued ? 'Outreach queued' : l.draw ? 'Call before the draw ends' : 'Outreach call' })))], suggestions: items.some((l) => !l.queued) ? ['Queue outreach tasks for the early-warning list'] : [] };
         },
       },
       {
@@ -710,7 +731,7 @@ export function collectionsModule(col: CollectionsService): ModuleSpec {
           need(ctx);
           const open = (await col.watchlist(ctx)).items.filter((l) => !l.queued).slice(0, TASK_CAP);
           if (!open.length) throw new CoreError('NOT_FOUND', 'Every loan on the list already has outreach queued.');
-          return { change: { summary: `Queue ${open.length} outreach ${open.length === 1 ? 'task' : 'tasks'} for the collections team`, changes: open.slice(0, 8).map((l) => ({ label: `${l.name}, ${l.category}`, before: dollars(l.balance), after: l.signals.join(', ') })), text: `I’ve prepared outreach tasks for the top ${open.length}. DI contacts nobody, and no loan changes.`, done: `Queued ${open.length} outreach ${open.length === 1 ? 'task' : 'tasks'} for the collections team.`, risk: 'medium', apply: { loanIds: open.map((l) => l.loanId) } } };
+          return { change: { summary: `Queue ${open.length} outreach ${open.length === 1 ? 'task' : 'tasks'} for the collections team`, changes: open.slice(0, 8).map((l) => ({ label: `${l.name}, ${l.category}`, before: dollars(l.balance), after: signalText(l) })), text: `I’ve prepared outreach tasks for the top ${open.length}. DI contacts nobody, and no loan changes.`, done: `Queued ${open.length} outreach ${open.length === 1 ? 'task' : 'tasks'} for the collections team.`, risk: 'medium', apply: { loanIds: open.map((l) => l.loanId) } } };
         },
         apply: async (p: { loanIds: number[] }, meta, ctx) => col.queue(p.loanIds, { approvalId: meta.approvalId, actor: ctx.user.name }),
       },

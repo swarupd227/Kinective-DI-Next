@@ -65,6 +65,7 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-RPT-020', set: 'golden', persona: 'lender', q: 'Open the loan officer production report', agent: 'Report Builder', contains: ['Loan officer production'], approval: 'none' },
   { id: 'GQ-BI-012', set: 'golden', persona: 'executive', q: 'What is our efficiency ratio?', agent: 'Analytics Q&A', contains: ['%'], approval: 'none' },
   { id: 'GQ-COL-001', set: 'golden', persona: 'executive', q: 'Show the early-warning list', agent: 'Collections Early Warning', contains: ['showing stress'], approval: 'none' },
+  { id: 'GQ-COL-002', set: 'golden', persona: 'executive', q: 'Which HELOCs are reaching the end of their draw period?', agent: 'Collections Early Warning', contains: ['the end of the ten-year draw period in the next 12 months', 'HELOC draw ends'], approval: 'none' },
   { id: 'GQ-SEG-001', set: 'golden', persona: 'executive', q: 'Prepare me for my SEG meeting with Albany Medical', agent: 'SEG Development', contains: ['Board Approved'], approval: 'none' },
   { id: 'GQ-IND-001', set: 'golden', persona: 'executive', q: 'How did Smith Ford do this quarter compared with last?', agent: 'Indirect Lending', contains: ['Smith Ford', 'to date'], approval: 'none' },
   { id: 'GQ-IND-002', set: 'golden', persona: 'branch', q: 'Log a visit to Smith Ford: met the finance manager', agent: 'Indirect Lending', approval: 'low' },

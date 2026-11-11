@@ -250,6 +250,32 @@ describe.skipIf(!up)('more modules against the warehouse', () => {
       expect(no.out.approval).toBeUndefined();
       expect(no.r.texts[0]).toContain('don’t contact borrowers');
     });
+
+    it('flags HELOCs reaching the end of their draw, with the payment before and after', async () => {
+      const w = await new CollectionsService(pool).watchlist({ user: turn('x', 'thr_c5').user, purviewBranches: null } as never);
+      const draws = w.items.filter((l) => l.draw);
+      expect(draws.length).toBeGreaterThan(0);
+      for (const l of draws) {
+        expect(l.category).toBe('HELOC');
+        expect(l.signals).toContain('HELOC draw period ending');
+        // Interest only today; principal and interest after, or the whole line due.
+        expect(l.draw!.paymentNow).toBeGreaterThan(0);
+        expect(l.draw!.paymentNow).toBeLessThan(l.balance * 0.01);
+        expect(l.draw!.paymentAfter).toBeGreaterThan(l.draw!.paymentNow);
+        if (l.draw!.balloon) expect(l.draw!.paymentAfter).toBe(Math.round(l.balance));
+      }
+      // Asked on its own, only the HELOCs, each with its end of draw spelled out.
+      const { r } = await run(col, turn('Which HELOCs are reaching the end of their draw period?', 'thr_c6'));
+      expect(r.texts[0]).toMatch(/HELOCs? reach\*\* the end of the ten-year draw period in the next 12 months/);
+      const table = r.blocks[0]!;
+      expect(validateBlock(table).ok).toBe(true);
+      const rows = table.type === 'table' ? table.data.rows! : [];
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) expect(String(row.signals)).toMatch(/HELOC draw ends \w{3} \d{4}/);
+      // And on the full list too, whatever the borrower's attrition score.
+      const all = await run(col, turn('Show the early-warning list', 'thr_c7'));
+      expect(all.r.texts[0]).toMatch(/the end of the ten-year draw period/);
+    });
   });
 
   describe('campaigns', () => {

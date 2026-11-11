@@ -510,7 +510,15 @@ export interface WatchedLoan {
   score: number;
   signals: string[];
   queued: boolean;
+  /** A HELOC whose draw period ends soon: the day it ends and the monthly payment before and after. */
+  draw?: { ends: string; paymentNow: number; paymentAfter: number; balloon: boolean };
 }
+
+/** HELOCs draw for ten years, then repay over the rest of the term; a ten-year line is due in full. */
+export const HELOC_DRAW_MONTHS = 120;
+/** How far ahead an end of draw puts a current HELOC on the list. */
+export const HELOC_DRAW_HORIZON_MONTHS = 12;
+export const HELOC_DRAW_SIGNAL = 'HELOC draw period ending';
 
 const STRESS: Record<string, string> = { direct_deposit_stopped: 'direct deposit stopped', balance_drop: 'deposit balances falling', no_recent_login: 'no recent login' };
 
@@ -526,8 +534,35 @@ export class CollectionsService {
         const raw = typeof r.factors === 'string' ? JSON.parse(r.factors) : (r.factors ?? []);
         return { loanId: r.loan_id as number, partyId: r.party_id as number, name: `${String(r.first_name)} ${String(r.last_name)}`, last4: memberNumber(r.party_id as number).slice(-4), category: r.loan_category as string, balance: Number(r.balance), branch: r.branch as string, score: Number(r.score), signals: (raw as { code: string }[]).flatMap((f) => (STRESS[f.code] ? [STRESS[f.code]!] : [])), queued: r.queued !== null };
       })
-      .filter((l) => l.signals.length)
-      .sort((a, b) => b.score - a.score || b.balance - a.balance);
+      .filter((l) => l.signals.length);
+    // HELOCs reaching the end of their draw, whatever the borrower's score: the payment jumps from interest
+    // only to principal and interest, or the whole balance falls due.
+    const [b] = await rows<{ d: unknown }>(this.pool, "SELECT as_of_date AS d FROM meta_build WHERE state = 'completed' ORDER BY as_of_date DESC LIMIT 1");
+    const asOf = b?.d ? day(b.d) : new Date().toISOString().slice(0, 10);
+    const drawEnd = `DATE_ADD(l.open_date, INTERVAL ${HELOC_DRAW_MONTHS} MONTH)`;
+    const helocs = await rows<Record<string, unknown>>(
+      this.pool,
+      `SELECT l.loan_id, l.party_id, l.loan_category, l.balance, l.rate, l.term_months, ${drawEnd} AS draw_end, p.first_name, p.last_name, b.name AS branch, s.score, s.factors, o.loan_id AS queued FROM cdm_loan l JOIN cdm_party p ON p.party_id = l.party_id JOIN cdm_location b ON b.int_id = l.branch_id LEFT JOIN cdm_attrition_score s ON s.party_id = l.party_id LEFT JOIN col_outreach o ON o.loan_id = l.loan_id WHERE l.loan_category = 'HELOC' AND l.days_delinquent = 0 AND l.close_date IS NULL AND l.balance > 0 AND ${drawEnd} > ? AND ${drawEnd} <= DATE_ADD(?, INTERVAL ${HELOC_DRAW_HORIZON_MONTHS} MONTH)${scope}`,
+      [asOf, asOf, ...(ctx.purviewBranches ? [ctx.purviewBranches.length ? ctx.purviewBranches : ['']] : [])],
+    );
+    const byLoan = new Map(items.map((l) => [l.loanId, l]));
+    for (const r of helocs) {
+      const balance = Number(r.balance);
+      const rate = Number(r.rate) / 1200;
+      const left = Number(r.term_months ?? HELOC_DRAW_MONTHS) - HELOC_DRAW_MONTHS;
+      const draw = { ends: day(r.draw_end), paymentNow: Math.round(balance * rate), paymentAfter: Math.round(left > 0 ? (balance * rate) / (1 - Math.pow(1 + rate, -left)) : balance), balloon: left <= 0 };
+      const known = byLoan.get(r.loan_id as number);
+      if (known) {
+        known.signals.push(HELOC_DRAW_SIGNAL);
+        known.draw = draw;
+        continue;
+      }
+      const raw = typeof r.factors === 'string' ? JSON.parse(r.factors) : (r.factors ?? []);
+      const signals = [...(raw as { code: string }[]).flatMap((f) => (STRESS[f.code] ? [STRESS[f.code]!] : [])), HELOC_DRAW_SIGNAL];
+      items.push({ loanId: r.loan_id as number, partyId: r.party_id as number, name: `${String(r.first_name)} ${String(r.last_name)}`, last4: memberNumber(r.party_id as number).slice(-4), category: r.loan_category as string, balance, branch: r.branch as string, score: Number(r.score ?? 0), signals, queued: r.queued !== null, draw });
+    }
+    // Most signals first, then the borrower's score and the balance at stake.
+    items.sort((a, b) => b.signals.length - a.signals.length || b.score - a.score || b.balance - a.balance);
     const counts = new Map<string, number>();
     for (const l of items) for (const s of l.signals) counts.set(s, (counts.get(s) ?? 0) + 1);
     return { count: items.length, dollars: Math.round(items.reduce((n, l) => n + l.balance, 0)), signals: [...counts].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count), items };
