@@ -270,10 +270,15 @@ export async function runDecision<L, F>(spec: ModuleSpec, c: DecisionCase<L, F>,
       const model = answered?.replies.find((x) => x.option === ch.option && x.check === ch.check);
       const standing = c.stands(option, ch);
       // A breach is always revised; a thin limit stands only where the case allows it, whatever the model says.
-      const wantStand = ch.severity !== 'breach' && standing !== null && (model ? model.action === 'stands' : true);
+      let wantStand = ch.severity !== 'breach' && standing !== null && (model ? model.action === 'stands' : true);
+      // A revision that leaves the challenge where it was answers nothing: the plan stands on it instead.
+      if (!wantStand && ch.severity !== 'breach' && standing !== null) {
+        const tried = c.revise(option, ch);
+        if (!tried || c.critique({ ...option, levers: tried.levers }, c.evaluate(tried.levers)).some((x) => x.check === ch.check)) wantStand = true;
+      }
       if (wantStand) {
         stood.add(`${ch.option}:${ch.check}`);
-        const text = model ? check(model.reason, standing!) : standing!;
+        const text = model?.action === 'stands' ? check(model.reason, standing!) : standing!;
         replies.push({ option: ch.option, check: ch.check, action: 'stands', text, round });
         lines.push(`- *${option.name}* stands on ${c.nouns?.[ch.check] ?? ch.check}: ${text}`);
         continue;

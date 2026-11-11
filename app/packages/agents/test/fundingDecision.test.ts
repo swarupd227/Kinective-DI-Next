@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { blockSchema, type Block } from '@dinext/block-schemas';
 import { ApprovalStore, FundingChoiceService, IrrService } from '@dinext/di-core';
 import { tenantPool, warehouseAvailable } from '@dinext/tenant-db';
-import { CRE_RESPONSE_REQUEST, FUNDING_CHOICE_REQUEST, ModuleGateway, creResponseModule, fundingChoiceModule, type RunSink } from '../src/index.ts';
+import { CRE_RESPONSE_REQUEST, FUNDING_CHOICE_REQUEST, ModuleGateway, creResponseModule, fundingChoiceModule, type ModelClient, type RunSink } from '../src/index.ts';
 
 describe('funding requests', () => {
   it('are recognized', () => {
@@ -136,6 +136,24 @@ describe.skipIf(!up)('an acquisition the bank could afford', () => {
       expect((limits as Record<string, string>).stock).not.toMatch(/breach/);
       const preview = out.approval!.card.data.preview;
       expect(preview.kind === 'message' && preview.body).toMatch(/DI holds no data on a specific target/);
+
+      // A model that asks to revise every challenge: a revision that leaves a thin limit where it was is no answer,
+      // so the plan stands on the earn-back instead of shrinking the target for nothing, and lands where offline does.
+      const offline = blocks.find((b) => b.title === 'Three ways to pay for the acquisition')!;
+      const reviser: ModelClient = {
+        turn: async () => {
+          throw new Error('no turns');
+        },
+        structured: async (req) => {
+          if (!/For each challenge/.test(req.system)) throw new Error('not scripted');
+          const replies = [...req.user.matchAll(/^- (\w+) \/ (\w+) \(/gm)].map((x) => ({ option: x[1]!, check: x[2]!, action: 'revise', reason: 'Change it.' }));
+          return { value: { replies } as never, usage: { model: 'm', role: req.role, inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 } };
+        },
+      };
+      const liveBlocks: Block[] = [];
+      await spec.run!({ runId: 'run_a2', threadId: 'thr_a2', text: 'Could we afford to acquire a $500M bank?', user: { id: 'user:7001', name: 'Elena Ortiz', title: 'Chief Financial Officer' }, tenant: { name: 'Coastal Community Bank' }, modules: ['capactions'] }, { model: reviser, gateway: new ModuleGateway(new ApprovalStore(pool), [spec]) }, { ...sink, text: async () => {}, block: async (b) => void liveBlocks.push(b) });
+      const target = (b: Block | undefined) => (b && b.type === 'table' ? b.data.rows!.find((r) => r.item === 'Target’s assets')! : {}) as Record<string, string>;
+      expect(target(liveBlocks.find((b) => b.title === 'Three ways to pay for the acquisition')).stock).toBe(target(offline).stock);
     } finally {
       await pool.end();
     }
