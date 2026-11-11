@@ -41,6 +41,33 @@ export class InteractionService {
     return { logId: (r as { insertId: number }).insertId, taskId, replayed: false };
   }
 
+  /**
+   * Checks what a caller or visitor said against the file: birth date, the phone and email on file, and
+   * an active card's last four digits. Returns which matched, never the values on file, and any fraud
+   * alert that requires verifying in person.
+   */
+  async verifyChecks(partyId: number, a: { birthDate?: string; phoneLast4?: string; cardLast4?: string; email?: string }) {
+    const [rows] = await this.pool.query('SELECT p.birth_date, c.phone, c.email FROM cdm_party p JOIN cdm_party_contact c ON c.party_id = p.party_id WHERE p.party_id = ?', [partyId]);
+    const f = (rows as { birth_date: unknown; phone: string; email: string }[])[0];
+    if (!f) return { checks: [], fraudAlert: false };
+    const [cards] = await this.pool.query("SELECT last4 FROM cdm_card WHERE party_id = ? AND closed IS NULL AND status = 'Active'", [partyId]).catch(() => [[]]);
+    const [alerts] = await this.pool.query("SELECT 1 FROM cdm_account_comment WHERE party_id = ? AND kind = 'Warning' AND code = 'W07' AND active = 1 LIMIT 1", [partyId]).catch(() => [[]]);
+    const digits = (v: string) => v.replace(/\D/g, '');
+    const checks: { label: string; matched: boolean }[] = [];
+    if (a.birthDate) checks.push({ label: 'Birth date', matched: day(f.birth_date) === a.birthDate });
+    if (a.phoneLast4) checks.push({ label: 'Phone on file, last four', matched: digits(f.phone).slice(-4) === digits(a.phoneLast4).slice(-4) });
+    if (a.cardLast4) checks.push({ label: 'Active card, last four', matched: (cards as { last4: string }[]).some((c) => c.last4 === digits(a.cardLast4!).slice(-4)) });
+    if (a.email) checks.push({ label: 'Email on file', matched: f.email.trim().toLowerCase() === a.email.trim().toLowerCase() });
+    return { checks, fraudAlert: (alerts as unknown[]).length > 0 };
+  }
+
+  /** Records a verification once approved; replaying the same approval records nothing new. */
+  async recordVerification(p: { partyId: number; channel: string; result: 'Passed' | 'Failed'; checks: string }, meta: { approvalId: string; userName: string }) {
+    const [done] = await this.pool.query('SELECT verification_id FROM rm_verification WHERE approval_id = ?', [meta.approvalId]);
+    if ((done as unknown[]).length) return;
+    await this.pool.query('INSERT INTO rm_verification (party_id, verified_at, channel, result, checks, by_name, approval_id) VALUES (?, NOW(), ?, ?, ?, ?, ?)', [p.partyId, p.channel, p.result, p.checks.slice(0, 300), meta.userName, meta.approvalId]);
+  }
+
   /** What was logged in DI lately, within the purview, newest first. */
   async recent(ctx: CoreContext, by?: string, limit = 25) {
     const [rows] = await this.pool.query(

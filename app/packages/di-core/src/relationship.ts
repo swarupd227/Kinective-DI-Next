@@ -122,6 +122,18 @@ export interface MemberProfile {
   cards: { kind: 'Debit' | 'Credit'; last4: string; status: string; opened: string; activated: string | null; closed: string | null; account: string }[];
   /** Checking transactions in the last 90 days: how many, and the latest. Null where the core's transactions aren't loaded. */
   transactions: { total90d: number; items: { date: string; description: string; amount: number; type: string; account: string }[] } | null;
+  /** Digital use and fees over 90 days, and how many deposit accounts get e-statements. Null where not loaded. */
+  usage: { logins90d: number; mobileLogins90d: number; billPayments90d: number; mobileDeposits90d: number; fees90d: number; estatementAccounts: number; depositAccounts: number } | null;
+  /** Survey answers, latest first (0 to 10). */
+  surveys: { date: string; kind: string; score: number; comment: string | null }[];
+  /** The core's comments and warning codes on the person or their accounts. */
+  notes: { kind: 'Comment' | 'Warning'; code: string | null; text: string; account: string | null; created: string; by: string }[];
+  /** The rewards program: tier, points and the latest entries. Null when not enrolled; undefined where there's no program. */
+  rewards: { tier: string; points: number; enrolled: string; ledger: { date: string; description: string; points: number }[] } | null | undefined;
+  /** Open work about the person: referrals, tasks and onboarding touch points. */
+  workflows: { kind: 'Referral' | 'Task' | 'Onboarding'; title: string; status: string; owner: string | null; due: string | null; opened: string }[];
+  /** The latest identity verification recorded in DI. */
+  lastVerification: { at: string; channel: string; result: string; by: string } | null;
 }
 
 /** The generation a birth year falls in (Pew Research Center's ranges). */
@@ -437,6 +449,15 @@ export class RelationshipService {
     const loaded = (await q<{ one: number }>('SELECT 1 AS one FROM cdm_transaction LIMIT 1', []).catch(() => [])).length > 0;
     const txns = loaded ? await q<{ post_date: unknown; description: string; amount: number; txn_type: string; account_id: number }>('SELECT post_date, description, amount, txn_type, account_id FROM cdm_transaction WHERE party_id = ? AND post_date > ? ORDER BY post_date DESC, txn_id DESC', [partyId, addDays(asOf, -90)]).catch(() => null) : null;
     const logged = await q<{ occurred_at: unknown; channel: string; kind: string; summary: string; logged_by: string }>('SELECT occurred_at, channel, kind, summary, logged_by FROM rm_interaction_log WHERE party_id = ? ORDER BY occurred_at DESC LIMIT 10', [partyId]).catch(() => []);
+    const [usage] = await q<{ logins_90d: number; mobile_logins_90d: number; bill_payments_90d: number; mobile_deposits_90d: number; fees_90d: number }>('SELECT logins_90d, mobile_logins_90d, bill_payments_90d, mobile_deposits_90d, fees_90d FROM cdm_party_activity WHERE party_id = ?', [partyId]).catch(() => []);
+    const surveys = await q<{ survey_date: unknown; kind: string; score: number; comment: string | null }>('SELECT survey_date, kind, score, comment FROM cdm_survey WHERE party_id = ? ORDER BY survey_date DESC LIMIT 5', [partyId]).catch(() => []);
+    const notes = await q<{ kind: 'Comment' | 'Warning'; code: string | null; text: string; account_id: number | null; created: unknown; created_by: string }>('SELECT kind, code, text, account_id, created, created_by FROM cdm_account_comment WHERE party_id = ? AND active = 1 ORDER BY kind = \'Warning\' DESC, created DESC LIMIT 10', [partyId]).catch(() => []);
+    const programRows = await q<{ tier: string; points: number; enrolled_on: unknown }>('SELECT tier, points, enrolled_on FROM rwd_member WHERE party_id = ?', [partyId]).catch(() => null);
+    const ledger = programRows?.length ? await q<{ posted: unknown; description: string; points: number }>('SELECT posted, description, points FROM rwd_ledger WHERE party_id = ? ORDER BY posted DESC, entry_id DESC LIMIT 8', [partyId]) : [];
+    const openRefs = await q<{ label: string | null; type_id: string; stage: string; assignee: string | null; created_at: unknown }>("SELECT t.label, c.type_id, c.stage, e.display_name AS assignee, c.created_at FROM esp_com_items c LEFT JOIN mod_ref_types t ON t.type_id = c.type_id LEFT JOIN cdm_employee e ON e.employee_id = c.assignee_employee_id WHERE c.party_id = ? AND c.stage NOT IN ('Sold', 'Not Interested', 'Expired') ORDER BY c.created_at DESC LIMIT 10", [partyId]).catch(() => []);
+    const openTasks = await q<{ title: string; status: string; owner_name: string; due: unknown; created_at: unknown }>("SELECT title, status, owner_name, due, created_at FROM tsk_task WHERE party_id = ? AND status <> 'Done' ORDER BY due IS NULL, due LIMIT 10", [partyId]).catch(() => []);
+    const onbTasks = await q<{ touch: string; status: string; owner: string | null; due: unknown }>("SELECT t.touch, t.status, e.display_name AS owner, t.due FROM onb_task t LEFT JOIN cdm_employee e ON e.employee_id = t.assignee_employee_id WHERE t.party_id = ? AND t.status = 'Open' ORDER BY t.due LIMIT 6", [partyId]).catch(() => []);
+    const [verified] = await q<{ verified_at: unknown; channel: string; result: string; by_name: string }>('SELECT verified_at, channel, result, by_name FROM rm_verification WHERE party_id = ? ORDER BY verified_at DESC LIMIT 1', [partyId]).catch(() => []);
     const label = (c: string) => LOAN_LABEL[c] ?? c;
     const line = (kind: 'deposit' | 'loan', id: number, name: string, r: { balance: number; balance_30d: number; fees_30d: number; rate: number; open_date: string }, extra: Partial<AccountLine> = {}): AccountLine => ({
       kind,
@@ -543,7 +564,18 @@ export class RelationshipService {
       creditScore: score?.credit_score ? { score: score.credit_score, asOf: day10(score.open_date), from: `the ${label(score.loan_category).toLowerCase()} application` } : null,
       chargeOffs: { count: chargedOff.length, original: chargedOff.reduce((s, x) => s + Number(x.original_amount), 0), items: chargedOff.map((x) => ({ product: label(x.loan_category), chargedOff: day10(x.charge_off_date), original: Number(x.original_amount) })) },
       cards: cards.map((k) => ({ kind: k.kind, last4: k.last4, status: k.status, opened: day10(k.opened), activated: k.activated ? day10(k.activated) : null, closed: k.closed ? day10(k.closed) : null, account: String(k.account_id % 10_000).padStart(4, '0') })),
-      transactions: txns === null ? null : { total90d: txns.length, items: txns.slice(0, 15).map((t) => ({ date: day10(t.post_date), description: t.description.slice(0, 80), amount: Number(t.amount), type: t.txn_type, account: `Checking …${String(t.account_id % 10_000).padStart(4, '0')}` })) },    };
+      transactions: txns === null ? null : { total90d: txns.length, items: txns.slice(0, 15).map((t) => ({ date: day10(t.post_date), description: t.description.slice(0, 80), amount: Number(t.amount), type: t.txn_type, account: `Checking …${String(t.account_id % 10_000).padStart(4, '0')}` })) },
+      usage: usage ? { logins90d: Number(usage.logins_90d), mobileLogins90d: Number(usage.mobile_logins_90d), billPayments90d: Number(usage.bill_payments_90d), mobileDeposits90d: Number(usage.mobile_deposits_90d), fees90d: Number(usage.fees_90d), estatementAccounts: base.estatements_since ? deps.filter((d) => day10(d.open_date) <= day10(base.estatements_since)).length || deps.length : 0, depositAccounts: deps.length } : null,
+      surveys: surveys.map((x) => ({ date: day10(x.survey_date), kind: x.kind, score: Number(x.score), comment: x.comment })),
+      notes: notes.map((x) => ({ kind: x.kind, code: x.code, text: x.text, account: x.account_id === null ? null : (() => { const d = deps.find((a) => a.account_id === x.account_id); return d ? `${d.deposit_category} …${String(d.account_id % 10_000).padStart(4, '0')}` : `Account …${String(x.account_id % 10_000).padStart(4, '0')}`; })(), created: day10(x.created), by: x.created_by })),
+      rewards: programRows === null ? undefined : programRows.length ? { tier: programRows[0]!.tier, points: Number(programRows[0]!.points), enrolled: day10(programRows[0]!.enrolled_on), ledger: ledger.map((x) => ({ date: day10(x.posted), description: x.description, points: Number(x.points) })) } : null,
+      workflows: [
+        ...openRefs.map((r) => ({ kind: 'Referral' as const, title: `${r.label ?? r.type_id} referral`, status: r.stage, owner: r.assignee, due: null, opened: day10(r.created_at) })),
+        ...openTasks.map((t) => ({ kind: 'Task' as const, title: t.title, status: t.status, owner: t.owner_name, due: t.due ? day10(t.due) : null, opened: day10(t.created_at) })),
+        ...onbTasks.map((t) => ({ kind: 'Onboarding' as const, title: `Onboarding: ${t.touch}`, status: t.status, owner: t.owner, due: day10(t.due), opened: day10(t.due) })),
+      ],
+      lastVerification: verified ? { at: String(verified.verified_at instanceof Date ? verified.verified_at.toISOString() : verified.verified_at).slice(0, 16).replace(' ', 'T'), channel: verified.channel, result: verified.result, by: verified.by_name } : null,
+    };
   }
 
   /**

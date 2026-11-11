@@ -24,6 +24,7 @@ import { GL_DDL, generateGl } from './gl.ts';
 import { SALES_GOALS_DDL, generateSalesGoals } from './salesGoals.ts';
 import { CAMPAIGN_HISTORY_DDL, attribution, earlierCampaigns } from './campaignHistory.ts';
 import { SEG_DETAIL_DDL, SEG_DETAIL_WRITE_TABLES, generateSegDetail } from './segDetail.ts';
+import { MEMBER360_EXTRA_DDL, MEMBER360_EXTRA_WRITE_TABLES, generateMember360Extra } from './member360Extra.ts';
 import { ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
@@ -89,6 +90,14 @@ async function main() {
     await insert(admin, 'cdm_loan_application', LAP_APPLICATION_COLUMNS, lap.applications);
     await insert(admin, 'cdm_interaction', ['interaction_id', 'party_id', 'occurred_at', 'channel', 'kind', 'summary', 'employee_id'], rm.interactions);
     await insert(admin, 'cdm_account_activity', ['account_kind', 'account_id', 'balance_30d', 'fees_30d'], rm.activity);
+    // The rest of Member 360: 90-day activity and fees, surveys, account comments and warnings, rewards.
+    for (const ddl of MEMBER360_EXTRA_DDL) await admin.query(ddl);
+    const m360 = generateMember360Extra(t.parties as unknown[][], rm.digital as unknown[][], t.deposits as unknown[][], t.loans as unknown[][], rm.activity as unknown[][]);
+    await insert(admin, 'cdm_party_activity', ['party_id', 'logins_90d', 'mobile_logins_90d', 'bill_payments_90d', 'mobile_deposits_90d', 'fees_90d'], m360.partyActivity);
+    await insert(admin, 'cdm_survey', ['party_id', 'survey_date', 'kind', 'score', 'comment'], m360.surveys);
+    await insert(admin, 'cdm_account_comment', ['party_id', 'account_id', 'kind', 'code', 'text', 'created', 'created_by', 'active'], m360.comments);
+    await insert(admin, 'rwd_member', ['party_id', 'tier', 'points', 'enrolled_on'], m360.rewards);
+    await insert(admin, 'rwd_ledger', ['party_id', 'posted', 'description', 'points'], m360.ledger);
     // Predictive models: each member at each of the last 12 month-ends, and where models and scores are kept.
     for (const ddl of ML_DDL) await admin.query(ddl);
     await insert(admin, 'hist_member_snapshot', SNAPSHOT_COLUMNS, generateSnapshots(t, rm));
@@ -254,7 +263,7 @@ async function main() {
     // The application account reads tenant data only (spec 26.2: read-only on customer tables), and
     // writes only the workflow store, through approved DI Core operations.
     await admin.query(`GRANT SELECT ON \`${profile.schema}\`.* TO 'dinext'@'%'`);
-    for (const table of [...WORKFLOW_WRITE_TABLES, ...PIPELINE_WRITE_TABLES, ...GOALS_WRITE_TABLES, ...MODULES_WRITE_TABLES, ...GROWTH_WRITE_TABLES, ...TASKS_WRITE_TABLES, ...WORKFLOW_DEF_WRITE_TABLES, ...WORKSPACE_WRITE_TABLES, ...CALENDAR_SERIES_WRITE_TABLES, ...TABLES_WRITE_TABLES, ...BUDGET_WRITE_TABLES, ...LOAN_GROWTH_WRITE_TABLES, ...SEG_DETAIL_WRITE_TABLES, ...ONB_JOURNEY_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
+    for (const table of [...WORKFLOW_WRITE_TABLES, ...PIPELINE_WRITE_TABLES, ...GOALS_WRITE_TABLES, ...MODULES_WRITE_TABLES, ...GROWTH_WRITE_TABLES, ...TASKS_WRITE_TABLES, ...WORKFLOW_DEF_WRITE_TABLES, ...WORKSPACE_WRITE_TABLES, ...CALENDAR_SERIES_WRITE_TABLES, ...TABLES_WRITE_TABLES, ...BUDGET_WRITE_TABLES, ...LOAN_GROWTH_WRITE_TABLES, ...SEG_DETAIL_WRITE_TABLES, ...MEMBER360_EXTRA_WRITE_TABLES, ...ONB_JOURNEY_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     // Add-only: a run record or a rating can't be changed once written (AI-GRD-090).
     for (const table of GOVERNANCE_APPEND_TABLES) await admin.query(`GRANT INSERT ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     // Direct core connections: DI's store for every tenant, and a Symitar-style replica for the credit union.

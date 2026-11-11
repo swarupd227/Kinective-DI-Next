@@ -423,6 +423,12 @@ function profileForModel(p: MemberProfile, ref: string) {
     credit_score: p.creditScore ? { score: p.creditScore.score, as_of: p.creditScore.asOf, from: p.creditScore.from } : null,
     charged_off: p.chargeOffs.items.map((c) => ({ product: c.product, charged_off: c.chargedOff, original: round(c.original) })),
     cards: p.cards.slice(0, 8).map((k) => ({ kind: k.kind, ends: k.last4, status: k.status, opened: k.opened, activated: k.activated, closed: k.closed })),
+    usage_90d: p.usage ? { logins: p.usage.logins90d, mobile_logins: p.usage.mobileLogins90d, bill_payments: p.usage.billPayments90d, mobile_deposits: p.usage.mobileDeposits90d, fees: p.usage.fees90d, estatement_accounts: `${p.usage.estatementAccounts} of ${p.usage.depositAccounts}` } : null,
+    surveys: p.surveys.map((x) => ({ date: x.date, kind: x.kind, score: x.score, comment: x.comment })),
+    warnings_and_comments: p.notes.map((n) => ({ kind: n.kind, code: n.code, text: n.text, account: n.account })),
+    rewards: p.rewards === undefined ? 'no rewards program' : p.rewards === null ? 'not enrolled' : { tier: p.rewards.tier, points: p.rewards.points },
+    open_work: p.workflows.map((w) => ({ kind: w.kind, title: w.title, status: w.status, owner: w.owner, due: w.due })),
+    identity_last_verified: p.lastVerification,
     transactions_90d: p.transactions ? { count: p.transactions.total90d, latest: p.transactions.items.slice(0, 10).map((t) => ({ date: t.date, description: t.description, amount: round(t.amount), type: t.type, account: t.account })) } : 'not loaded from the core for this institution',
   };
 }

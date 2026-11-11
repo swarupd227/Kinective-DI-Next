@@ -22,6 +22,8 @@ const LABELS: Record<Kind, string> = {
   engagement: 'Engagement & retention',
   opportunities: 'Opportunities',
   interactions: 'Interactions',
+  workflows: 'Workflows',
+  notes: 'Notes & warnings',
   cards: 'Cards',
   transactions: 'Transactions',
   rewards: 'Rewards',
@@ -361,7 +363,96 @@ function Section({ s, m, run }: { s: Member360Section; m: MemberHeader; run: (a:
         </>
       );
     case 'rewards':
-      return <p className={styles.empty}>{s.detail ?? (s.status === 'not_enrolled' ? `This ${person} is not enrolled in rewards.` : 'Rewards are not set up.')}</p>;
+      if (s.status !== 'enrolled') return <p className={styles.empty}>{s.detail ?? (s.status === 'not_enrolled' ? `This ${person} is not enrolled in rewards.` : 'Rewards are not set up.')}</p>;
+      return (
+        <>
+          <Facts
+            facts={[
+              { label: 'Tier', value: s.tier ?? '—' },
+              { label: 'Points', value: (s.points ?? 0).toLocaleString('en-US') },
+              { label: 'Enrolled', value: s.enrolled ? dateOf(s.enrolled) : '—' },
+            ]}
+          />
+          {s.ledger && s.ledger.length > 0 && (
+            <table className={styles.table}>
+              <caption className={styles.caption}>Latest points</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Date</th>
+                  <th scope="col">What for</th>
+                  <th scope="col" className={styles.num}>
+                    Points
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {s.ledger.map((e, i) => (
+                  <tr key={`${e.date}${i}`}>
+                    <td>{dateOf(e.date)}</td>
+                    <th scope="row">{e.description}</th>
+                    <td className={clsx(styles.num, 'dn-num', e.points < 0 ? styles.down : styles.up)}>{e.points > 0 ? `+${e.points.toLocaleString('en-US')}` : e.points.toLocaleString('en-US')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      );
+    case 'workflows':
+      if (!s.items.length) return <p className={styles.empty}>No open referrals, tasks or onboarding touch points.</p>;
+      return (
+        <table className={styles.table}>
+          <caption className={styles.caption}>Open work about this {person}</caption>
+          <thead>
+            <tr>
+              <th scope="col">What</th>
+              <th scope="col">Kind</th>
+              <th scope="col">Status</th>
+              <th scope="col">Owner</th>
+              <th scope="col">Due</th>
+            </tr>
+          </thead>
+          <tbody>
+            {s.items.map((w, i) => (
+              <tr key={`${w.kind}${i}`}>
+                <th scope="row">{w.title}</th>
+                <td>{w.kind}</td>
+                <td>{w.status}</td>
+                <td>{w.owner ?? 'Unassigned'}</td>
+                <td>{w.due ? dateOf(w.due) : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      );
+    case 'notes':
+      if (!s.items.length) return <p className={styles.empty}>No comments or warning codes from the core.</p>;
+      return (
+        <table className={styles.table}>
+          <caption className={styles.caption}>Comments and warning codes, from the core</caption>
+          <thead>
+            <tr>
+              <th scope="col">Note</th>
+              <th scope="col">Account</th>
+              <th scope="col">Added</th>
+            </tr>
+          </thead>
+          <tbody>
+            {s.items.map((n, i) => (
+              <tr key={`${n.created}${i}`}>
+                <th scope="row">
+                  {n.kind === 'Warning' ? <strong className={styles.down}>{n.code ? `${n.code} ` : ''}Warning: </strong> : null}
+                  {n.text}
+                </th>
+                <td>{n.account ?? 'The whole relationship'}</td>
+                <td>
+                  {dateOf(n.created)} <span className={styles.muted}>{n.by}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      );
     case 'contact':
       return (
         <Facts

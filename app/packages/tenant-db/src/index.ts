@@ -31,3 +31,4 @@ export { ATTRIBUTION_DAYS, CAMPAIGN_CATEGORIES, CAMPAIGN_HISTORY_DDL } from './c
 export { BD_GOALS, SEG_DETAIL_DDL, SEG_DETAIL_WRITE_TABLES, generateSegDetail } from './segDetail.ts';
 export { ONB_JOURNEY, ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
 export { ML_DDL, ML_WRITE_TABLES, SNAPSHOT_COLUMNS, generateSnapshots, snapshotMonths } from './ml.ts';
+export { MEMBER360_EXTRA_DDL, MEMBER360_EXTRA_WRITE_TABLES, WARNING_CODES, generateMember360Extra } from './member360Extra.ts';

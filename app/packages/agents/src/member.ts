@@ -117,6 +117,19 @@ export function memberTake(p: MemberProfile, topics: Topic[]): DiTake {
 }
 
 /** The full record, in the Relationship Dashboard's section order [BK p11] (FE-RM-001). */
+/** What to say under a digital service: 90-day use where it's loaded, else when it started. */
+function digitalDetail(d: MemberProfile['digital'][number], u: MemberProfile['usage'], lastLogin: string | undefined): string | null {
+  if (u && d.enrolled) {
+    if (d.id === 'mobile') return `${u.mobileLogins90d} logins in 90 days${lastLogin ? `; ${lastLogin.toLowerCase()}` : ''}`;
+    if (d.id === 'online_banking') return `${u.logins90d} logins in 90 days`;
+    if (d.id === 'estatements') return `${u.estatementAccounts} of ${u.depositAccounts} deposit accounts`;
+    if (d.id === 'bill_pay') return `${u.billPayments90d} payments in 90 days`;
+    if (d.id === 'mobile_deposit') return `${u.mobileDeposits90d} deposits in 90 days`;
+  }
+  if (d.id === 'mobile' && lastLogin) return lastLogin;
+  return d.since ? `Since ${monthYear(d.since)}` : null;
+}
+
 export function member360(p: MemberProfile, runId?: string, take?: DiTake): Member360Block {
   const attrition = scores(p)[0]!;
   const change = depositChange(p);
@@ -126,7 +139,10 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
   const alerts = [
     ...p.alerts.map((a) => ({ id: a.code, label: a.label, tone: a.tone })),
     ...pending.map((a, i) => ({ id: `app_pending_${i + 1}`, label: `${a.product} application pending`, tone: 'info' as const })),
-  ];
+    ...p.notes.filter((n) => n.kind === 'Warning').map((n, i) => ({ id: `warn_${i + 1}`, label: `${n.code ?? 'Warning'}: ${n.text}`.slice(0, 120), tone: 'danger' as const })),
+  ].slice(0, 12);
+  const survey = p.surveys[0];
+  const u = p.usage;
   return {
     id: newBlockId('m36'),
     type: 'member_360',
@@ -155,6 +171,8 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
             { label: 'Preferred contact', value: p.contact.preferred },
             { label: 'Born', value: `${longDate(p.identity.birthDate)} (age ${p.identity.age}, ${p.identity.generation})` },
             { label: 'Credit score', value: p.creditScore ? `${p.creditScore.score}, from ${p.creditScore.from}, ${longDate(p.creditScore.asOf)}` : 'None on file' },
+            { label: 'Latest survey', value: survey ? `${survey.score} of 10, ${survey.kind.toLowerCase()}, ${longDate(survey.date)}${survey.comment ? `: “${survey.comment}”` : ''}`.slice(0, 200) : 'None answered' },
+            { label: 'Identity last verified', value: p.lastVerification ? `${longDate(p.lastVerification.at.slice(0, 10))}, ${p.lastVerification.channel.toLowerCase()}, ${p.lastVerification.result.toLowerCase()} (${p.lastVerification.by})` : 'Not verified in DI' },
             { label: 'Charged off', value: p.chargeOffs.count ? `${p.chargeOffs.count} ${p.chargeOffs.count === 1 ? 'loan' : 'loans'}: ${p.chargeOffs.items.map((x) => `${x.product}, ${longDate(x.chargedOff)}`).join('; ')}`.slice(0, 200) : 'None' },
           ],
         },
@@ -166,7 +184,7 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
         {
           kind: 'digital',
           services: [
-            ...p.digital.map((d) => ({ id: d.id, label: d.label, enrolled: d.enrolled, ...(d.id === 'mobile' && lastLogin ? { detail: lastLogin } : d.since ? { detail: `Since ${monthYear(d.since)}` } : {}) })),
+            ...p.digital.map((d) => ({ id: d.id, label: d.label, enrolled: d.enrolled, ...(digitalDetail(d, u, lastLogin) ? { detail: digitalDetail(d, u, lastLogin)! } : {}) })),
             { id: 'direct_deposit', label: 'Direct deposit', enrolled: dd.status === 'active', ...(dd.status === 'stopped' && dd.changed ? { detail: `Stopped ${longDate(dd.changed)}` } : dd.status === 'active' && dd.changed ? { detail: `Since ${monthYear(dd.changed)}` } : {}) },
           ],
         },
@@ -185,6 +203,7 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
           facts: [
             { label: 'Direct deposit', value: dd.status === 'active' ? 'Active' : dd.status === 'stopped' ? `Stopped${dd.changed ? ` ${longDate(dd.changed)}` : ''}` : 'Not set up' },
             { label: 'Last digital login', value: p.lastLogin ? longDate(p.lastLogin) : 'Never' },
+            ...(u ? [{ label: 'Logins, 90 days', value: `${u.logins90d} (${u.mobileLogins90d} on mobile)` }, { label: 'Fees, 90 days', value: `$${u.fees90d.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` }] : []),
             { label: 'Model', value: `${p.attrition.model}, run ${longDate(p.attrition.runDate)}` },
           ],
         },
@@ -194,13 +213,19 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
           items: p.opportunities.slice(0, 10).map((o) => ({ suggestionId: o.suggestionId, product: o.product, likelihood: o.likelihood, reason: o.reason, referralTypeId: o.referralTypeId })),
           declined: p.declined.slice(0, 10),
         },
+        { kind: 'workflows', items: p.workflows.slice(0, 30) },
         { kind: 'interactions', total: p.interactions.total, items: p.interactions.items.map((i) => ({ at: i.at, channel: i.channel, kind: i.kind, summary: i.summary, by: i.by })) },
         { kind: 'cards', items: p.cards.slice(0, 12).map((k) => ({ kind: k.kind, suffix: k.last4, status: k.status, opened: k.opened, activated: k.activated, closed: k.closed, detail: k.kind === 'Debit' ? `On checking …${k.account}` : `Card account …${k.account}` })) },
         p.transactions
           ? { kind: 'transactions', total90d: p.transactions.total90d, items: p.transactions.items }
           : { kind: 'transactions', total90d: 0, items: [], note: 'Transactions from the core aren’t loaded for this institution yet.' },
-        // The source of rewards is not stated today [BK p11]; it comes from a configurable landing table (CA-29).
-        { kind: 'rewards', status: 'not_configured', detail: 'Rewards are not set up for this institution yet.' },
+        { kind: 'notes', items: p.notes.slice(0, 12) },
+        // Rewards come from the program's landing tables (CA-29); an institution without them shows it isn't set up.
+        p.rewards === undefined
+          ? { kind: 'rewards', status: 'not_configured', detail: 'Rewards are not set up for this institution yet.' }
+          : p.rewards === null
+            ? { kind: 'rewards', status: 'not_enrolled' }
+            : { kind: 'rewards', status: 'enrolled', tier: p.rewards.tier, points: p.rewards.points, enrolled: p.rewards.enrolled, ledger: p.rewards.ledger.slice(0, 12) },
         { kind: 'contact', preferred: p.contact.preferred, email: p.contact.email, phone: p.contact.phone },
         { kind: 'household', members: p.household.map((h) => ({ name: h.name, branch: h.branch, maskedNumber: h.last4 ? `…${h.last4}` : null, inPurview: h.inPurview })) },
       ],

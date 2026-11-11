@@ -362,7 +362,25 @@ export const member360Section = z.discriminatedUnion('kind', [
     items: z.array(z.strictObject({ date: isoDate, description: z.string().max(80), amount: z.number(), type: z.string().max(12), account: z.string().max(60) })).max(20),
     note: z.string().max(200).optional(),
   }),
-  z.strictObject({ kind: z.literal('rewards'), status: z.enum(['not_configured', 'enrolled', 'not_enrolled']), detail: z.string().max(200).optional() }),
+  z.strictObject({
+    kind: z.literal('rewards'),
+    status: z.enum(['not_configured', 'enrolled', 'not_enrolled']),
+    detail: z.string().max(200).optional(),
+    tier: z.string().max(20).optional(),
+    points: z.number().int().optional(),
+    enrolled: isoDate.optional(),
+    ledger: z.array(z.strictObject({ date: isoDate, description: z.string().max(80), points: z.number().int() })).max(12).optional(),
+  }),
+  /** Open referrals, tasks and onboarding touch points about the person. */
+  z.strictObject({
+    kind: z.literal('workflows'),
+    items: z.array(z.strictObject({ kind: z.enum(['Referral', 'Task', 'Onboarding']), title: z.string().max(160), status: z.string().max(30), owner: z.string().max(80).nullable(), due: isoDate.nullable(), opened: isoDate })).max(30),
+  }),
+  /** The core's comments and warning codes on the person or their accounts. */
+  z.strictObject({
+    kind: z.literal('notes'),
+    items: z.array(z.strictObject({ kind: z.enum(['Comment', 'Warning']), code: z.string().max(10).nullable(), text: z.string().max(200), account: z.string().max(60).nullable(), created: isoDate, by: z.string().max(80) })).max(12),
+  }),
   z.strictObject({ kind: z.literal('contact'), preferred: z.string().max(30), email: z.string().max(120), phone: z.string().max(30) }),
   z.strictObject({
     kind: z.literal('household'),
@@ -375,7 +393,7 @@ export const member360Data = z.strictObject({
   ...memberHeader,
   alerts: z.array(z.strictObject({ id: z.string().max(40), label: z.string().max(120), tone })).max(12),
   take: diTake.optional(),
-  sections: z.array(member360Section).min(1).max(14),
+  sections: z.array(member360Section).min(1).max(16),
 });
 
 // ---- union ------------------------------------------------------------------------------------
