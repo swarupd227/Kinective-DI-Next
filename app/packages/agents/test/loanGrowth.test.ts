@@ -4,9 +4,18 @@
 import { describe, expect, it } from 'vitest';
 import { LoanGrowthService, type CampaignService } from '@dinext/di-core';
 import { tenantPool, warehouseAvailable } from '@dinext/tenant-db';
-import { LOAN_GROWTH_REQUEST, campaignModule, lgQuestion, lgSegments, loanGrowthModule } from '../src/index.ts';
+import { LOAN_GROWTH_REQUEST, campaignModule, lenderName, lgQuestion, lgSegments, loanGrowthModule } from '../src/index.ts';
 
 const USE_CASE = 'Find members who have an auto loan or HELOC at another lender, or the equity and credit to qualify for one, and prepare a measured outreach campaign with a control group.';
+
+describe('lender names', () => {
+  it('read as written, keeping only real acronyms in capitals', () => {
+    expect(lenderName('CAPITAL ONE AUTO FINANCE')).toBe('Capital One Auto Finance');
+    expect(lenderName('SANTANDER CONSUMER USA')).toBe('Santander Consumer USA');
+    expect(lenderName('GM FINANCIAL')).toBe('GM Financial');
+    expect(lenderName('BANK OF AMERICA')).toBe('Bank of America');
+  });
+});
 
 describe('loan growth questions', () => {
   const spec = loanGrowthModule({} as LoanGrowthService);

@@ -50,7 +50,7 @@ export { CAPITAL_PLAN_REQUEST, CAPITAL_PLAN_SECTIONS, amountFrom, capitalPlanAna
 export { OPRISK_REQUEST, OPRISK_SECTIONS, opRiskAnalyses, opRiskModule, opRiskQuestion, type OpRiskQuestion } from './oprisk.ts';
 export { BSA_REQUEST, BSA_SECTIONS, bsaAnalyses, bsaModule, bsaQuestion, type BsaQuestion } from './bsa.ts';
 export { CONCENTRATION_REQUEST, CONCENTRATION_SECTIONS, concentrationAnalyses, concentrationModule, concentrationQuestion, type ConcentrationQuestion } from './concentration.ts';
-export { LOAN_GROWTH_REQUEST, lgQuestion, lgSegments, loanGrowthModule, type LgQuestion } from './loanGrowth.ts';
+export { LOAN_GROWTH_REQUEST, lenderName, lgQuestion, lgSegments, loanGrowthModule, type LgQuestion } from './loanGrowth.ts';
 export { CECL_REQUEST, ceclModule, ceclQuestion, parseCecl, type CeclQuestion } from './cecl.ts';
 export { SHARE_REQUEST, parseShares, shareModule, shareQuestion, type ShareQuestion } from './perShare.ts';
 export { CFO_REQUEST, cfoModule, cfoScorecard, type CfoLine, type CfoRead } from './cfo.ts';

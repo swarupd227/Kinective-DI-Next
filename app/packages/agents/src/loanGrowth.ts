@@ -49,7 +49,8 @@ const usd = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
 const p1 = (n: number) => `${n.toFixed(1)}%`;
 const ORDER: LgSegment[] = ['auto_elsewhere', 'heloc_elsewhere', 'heloc_equity', 'auto_credit'];
 /** "TOYOTA MOTOR CREDIT" as Toyota Motor Credit, keeping acronyms (GM, USA, PNC). */
-const lenderName = (l: string) => l.toLowerCase().split(' ').map((w) => (w.length <= 3 && !['mr', 'of'].includes(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
+const ACRONYMS = new Set(['gm', 'usa', 'pnc', 'td', 'bmo', 'us', 'na', 'fcu', 'cu']);
+export const lenderName = (l: string) => l.toLowerCase().split(' ').map((w) => (ACRONYMS.has(w) ? w.toUpperCase() : w === 'of' ? w : w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
 const monthName = () => new Date().toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
 export function loanGrowthModule(svc: LoanGrowthService, api: ApiService | null = null): ModuleSpec {
