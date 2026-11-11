@@ -7,7 +7,7 @@ import type { Block } from '@dinext/block-schemas';
 import { BudgetStressService, CoreError, type BudgetCheck, type BudgetFigures, type BudgetLevers, type BudgetStressModel, type FileStore } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 import { newBlockId } from './answer.ts';
-import { capitalSpecialists, mm, p1, p2, signed, usd, SOURCES } from './capitalDecision.ts';
+import { capitalSpecialists, mm, p2, signed, usd, SOURCES } from './capitalDecision.ts';
 import { runDecision, type Challenge, type DecisionCase, type DecisionOption, type Evaluated } from './decision.ts';
 import type { ModuleContext, ModuleSpec } from './moduleAgent.ts';
 
@@ -200,7 +200,7 @@ export function budgetMemo(m: BudgetStressModel, input: z.infer<typeof MemoInput
     ...(input.settled.length ? input.settled.map((s) => `- ${s}`) : ['- None.']),
     '',
     `Asked of the board: approve the ${t.year} budget, and the commitment to cut the dividend if a severe year comes.`,
-    `Figures are DI’s estimates from the ${t.quarter} Call Report and its stress test; ${p1(f.levers.depositCostBp / 100)} more deposit cost is the ALCO’s assumption.`,
+    `Figures are DI’s estimates from the ${t.quarter} Call Report and its stress test; the ${f.levers.depositCostBp} bp rise in deposit cost is the ALCO’s assumption.`,
   ].join('\n');
   return { rec, memo: { to: ['Board of Directors'], subject: `The ${t.year} budget, tested against stress`, body: body.slice(0, 4000) } };
 }

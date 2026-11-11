@@ -126,7 +126,9 @@ describe.skipIf(!up)('an acquisition the bank could afford', () => {
       expect(out.outcome).toBe('approval');
       for (const b of blocks) expect(blockSchema.safeParse(b).success).toBe(true);
       expect(texts[0]).toMatch(/^DI holds no data on a target bank/);
-      expect(texts.find((t) => t.startsWith('**Planner:**'))).toMatch(/All cash\*: even a \$50\.0M bank/);
+      expect(texts.find((t) => t.startsWith('**Planner:**'))).toMatch(/All cash\*: Even a \$50\.0M bank/);
+      // A structure ruled out is not challenged again in the second round.
+      expect(texts.find((t) => t.startsWith('**Chief Risk Officer, second round:**')) ?? '').not.toMatch(/All cash|Half cash/);
       const rec = texts.find((t) => t.startsWith('**Recommendation:'))!;
       expect(rec).toMatch(/^\*\*Recommendation: All stock\.\*\* The bank can afford about \$\d+\.\dM in assets/);
       const table = blocks.find((b) => b.title === 'Three ways to pay for the acquisition')!;

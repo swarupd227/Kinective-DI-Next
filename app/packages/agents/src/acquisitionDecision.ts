@@ -163,8 +163,8 @@ export function acquisitionCase(pool: Pool): DecisionCase<DealLevers, DealFigure
     revise,
     stuck: (o) =>
       o.levers.cashPct > 0
-        ? `even a ${mm(MIN_TARGET)} bank at ${x1(MIN_PRICE)} tangible book, paid ${o.levers.cashPct}% in cash, breaks a limit. Cash buys the target’s assets without its capital, and leverage has no room for that; this structure is off the table.`
-        : `even a ${mm(MIN_TARGET)} bank at ${x1(MIN_PRICE)} tangible book breaks a limit; this structure is off the table.`,
+        ? `Even a ${mm(MIN_TARGET)} bank at ${x1(MIN_PRICE)} tangible book, paid ${o.levers.cashPct}% in cash, breaks a limit. Cash buys the target’s assets without its capital, and leverage has no room for that; this structure is off the table.`
+        : `Even a ${mm(MIN_TARGET)} bank at ${x1(MIN_PRICE)} tangible book breaks a limit; this structure is off the table.`,
     nouns: NOUN,
     order: ['leverage', 'cet1', 'liquidity', 'office', 'cre', 'earnback'],
     recommend,

@@ -262,8 +262,11 @@ export async function runDecision<L, F>(spec: ModuleSpec, c: DecisionCase<L, F>,
       const option = options[idx]!;
       // An earlier change in this round may already have settled it.
       if (!c.critique(option, c.evaluate(option.levers)).some((x) => x.check === ch.check)) continue;
-      // An option ruled out this round needs no answer on its other limits.
-      if (saidStuck.has(ch.option)) continue;
+      // An option stuck this round needs no second answer on limits nothing fixes either, and they are not raised again.
+      if (saidStuck.has(ch.option) && !c.revise(option, ch)) {
+        stuck.set(`${ch.option}:${ch.check}`, ch.severity);
+        continue;
+      }
       const model = answered?.replies.find((x) => x.option === ch.option && x.check === ch.check);
       const standing = c.stands(option, ch);
       // A breach is always revised; a thin limit stands only where the case allows it, whatever the model says.
@@ -278,8 +281,7 @@ export async function runDecision<L, F>(spec: ModuleSpec, c: DecisionCase<L, F>,
       const fix = c.revise(option, ch);
       if (!fix) {
         stuck.set(`${ch.option}:${ch.check}`, ch.severity);
-        // Said once for the option: the rest of its stuck challenges have the same answer.
-        if (saidStuck.has(ch.option)) continue;
+        // Said once for the option: the rest of its challenges have the same answer.
         saidStuck.add(ch.option);
         const text = c.stuck?.(option, ch) ?? `Nothing within this plan’s levers fixes ${c.nouns?.[ch.check] ?? ch.check}; it stays with the challenge.`;
         replies.push({ option: ch.option, check: ch.check, action: 'stands', text, round });
