@@ -70,7 +70,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     lendingAdmin: true,
     approvesIncentives: true,
     retention: true,
-    modules: ['portfolio', 'salescard', 'lapforecast', 'refreport', 'interactions', 'predictive', 'gl', 'governance', 'tasks', 'mytime', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'ai-admin', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'callreport', 'collections', 'campaigns', 'loangrowth', 'seg', 'tables', 'irr', 'profitability', 'budget', 'camels', 'basel', 'delinquency', 'liquidity', 'membership', 'records', 'records-members'],
+    modules: ['refdesk', 'portfolio', 'salescard', 'lapforecast', 'refreport', 'interactions', 'predictive', 'gl', 'governance', 'tasks', 'mytime', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'ai-admin', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'callreport', 'collections', 'campaigns', 'loangrowth', 'seg', 'tables', 'irr', 'profitability', 'budget', 'camels', 'basel', 'delinquency', 'liquidity', 'membership', 'records', 'records-members'],
     suggestions: ['What should I do today?', 'Show the October payouts', 'Which regulatory issues are open more than 3 weeks?', 'Which branches and products drive delinquency?', 'What’s our interest rate risk?', 'How much could we borrow tomorrow?', 'Are we ready to file Q3?', 'Show our CAMELS view', 'Show the early-warning list', 'Get me ready for the next ALCO meeting', 'Find members at risk of leaving and draft follow-ups', 'What changed since last month-end?'],
   },
   analyst: {
@@ -99,7 +99,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     lapDetails: true,
     approvesIncentives: true,
     retention: true,
-    modules: ['portfolio', 'salescard', 'lapforecast', 'refreport', 'interactions', 'predictive', 'governance', 'tasks', 'mytime', 'calendar', 'files', 'files-lending', 'lineage', 'indirect', 'prospecting', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'collections', 'seg', 'delinquency', 'membership', 'records', 'records-members'],
+    modules: ['refdesk', 'portfolio', 'salescard', 'lapforecast', 'refreport', 'interactions', 'predictive', 'governance', 'tasks', 'mytime', 'calendar', 'files', 'files-lending', 'lineage', 'indirect', 'prospecting', 'compliance', 'onboarding', 'datalogs', 'datalogs-approve', 'collections', 'seg', 'delinquency', 'membership', 'records', 'records-members'],
     suggestions: ['What should I do today?', 'Who on my team is behind on goals?', 'Approve the October payouts for Westport', 'What’s on my team’s plate?', 'Show the pipeline by product for my branch', 'Prepare me for my meeting with Suzanne Jackson', 'Find members at risk of leaving and draft follow-ups', 'Refer Suzanne Jackson for a HELOC, she prefers a call after 5 pm', 'Show my overdue onboarding touch points', 'Show Westport loans by category'],
   },
   lender: {
@@ -113,7 +113,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     purview: ['Westport'],
     employeeId: 1,
     lapDetails: true,
-    modules: ['lapforecast', 'interactions', 'governance', 'tasks', 'mytime', 'calendar', 'files', 'files-lending', 'indirect', 'delinquency', 'records', 'records-members'],
+    modules: ['refdesk', 'lapforecast', 'interactions', 'governance', 'tasks', 'mytime', 'calendar', 'files', 'files-lending', 'indirect', 'delinquency', 'records', 'records-members'],
     suggestions: ['What should I do today?', 'How am I doing on my goals this month?', 'Which of my apps have sat in underwriting more than five days?', 'Show my stalled applications', 'Create follow-up tasks for my stalled applications', 'What’s on my plate today?'],
   },
   msr: {
@@ -127,7 +127,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     floor: true,
     purview: ['Westport'],
     employeeId: 4,
-    modules: ['interactions', 'governance', 'tasks', 'mytime', 'calendar', 'files', 'compliance', 'onboarding', 'datalogs'],
+    modules: ['refdesk', 'interactions', 'governance', 'tasks', 'mytime', 'calendar', 'files', 'compliance', 'onboarding', 'datalogs'],
     suggestions: ['What should I do today?', 'How am I doing on my goals this month?', 'Why is my referral incentive only $40?', 'What’s on my plate today?', 'Show my overdue referrals', 'Prepare me for my meeting with Suzanne Jackson'],
   },
   bank_cfo: {
@@ -141,7 +141,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     },
     approvesIncentives: true,
     retention: true,
-    modules: ['portfolio', 'salescard', 'lapforecast', 'refreport', 'interactions', 'predictive', 'gl', 'governance', 'tasks', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'datalogs', 'datalogs-approve', 'collections', 'campaigns', 'tables', 'cfo', 'pershare', 'cecl', 'concentration', 'bsa', 'oprisk', 'capplan', 'capactions', 'irr', 'profitability', 'budget', 'camels', 'basel', 'delinquency', 'liquidity', 'membership', 'records', 'records-members', 'callreport'],
+    modules: ['refdesk', 'portfolio', 'salescard', 'lapforecast', 'refreport', 'interactions', 'predictive', 'gl', 'governance', 'tasks', 'calendar', 'files', 'files-board', 'files-lending', 'files-finance', 'lineage', 'indirect', 'indirect-direct', 'prospecting', 'compliance', 'datalogs', 'datalogs-approve', 'collections', 'campaigns', 'tables', 'cfo', 'pershare', 'cecl', 'concentration', 'bsa', 'oprisk', 'capplan', 'capactions', 'irr', 'profitability', 'budget', 'camels', 'basel', 'delinquency', 'liquidity', 'membership', 'records', 'records-members', 'callreport'],
     suggestions: ['Plan our capital actions for next year', 'Get me ready for the next ALCO meeting', 'Are we ready to file the Call Report?', 'What’s our interest rate risk?', 'How much could we borrow tomorrow?', 'What’s our deposit beta?', 'Which products are most profitable?', 'How would our capital hold up in a severe recession?', 'Show our CAMELS view', 'What are our Basel III ratios?', 'Draft the 2027 budget', 'What changed since last month-end?', 'Show loan growth by branch for Q3 vs Q2', 'Show the October payouts'],
   },
   admin: {

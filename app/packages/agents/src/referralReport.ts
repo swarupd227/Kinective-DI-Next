@@ -12,7 +12,7 @@ export const REFERRAL_REPORT_REQUEST =
 const NO_ACCESS = 'Referral reports aren’t part of your DI access.';
 const text = (field: string, headerName: string) => ({ field, headerName, type: 'text' as const });
 const pct = (n: number | null) => (n === null ? '—' : `${n.toFixed(1)}%`);
-const STAGES = ['New Referral', 'Active', 'Sold', 'Not Interested', 'Expired'];
+const STAGES = ['New Referral', 'Not Contacted', 'Left Message', 'Follow Up', 'Active', 'Loan App Taken', 'Product Opened', 'Sold', 'Denied', 'Not Interested', 'Expired'];
 type RefPeriod = '12m' | 'quarter' | 'year';
 /** Where a reporting period starts, and how to say it. */
 export function refPeriod(period: RefPeriod | undefined, today = new Date().toISOString().slice(0, 10)): { since?: string; label: string } {

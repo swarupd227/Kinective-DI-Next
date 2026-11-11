@@ -13,7 +13,7 @@ export { DataLogService, IssueService, OnboardingService, findPerson, ISSUE_REGU
 export { RetentionService, OFFER_RULES, offerRate, type Certificate, type MaturingCertificates, type OfferCost, type RetentionFilter } from './retention.ts';
 export { GoalsService, averagePct, furthestBehind, payFor, ruleText, usd, type GoalsWho, type GoalScore, type IncentiveRule, type PayoutBatch, type PayoutLine, type ScoreExplanation, type Scorecard } from './goals.ts';
 export { PipelineService, PIPELINE_VIEWS, SUMMARY_WINDOW_DAYS, type PipelineView, type PipelineWho, type PipelineApplication, type PipelineCell, type PipelineSummary, type PipelineFilter, type PipelineFound, type PipelineStatus } from './pipeline.ts';
-export { ReferralService, CoreError, REFERRAL_STAGES, CLOSED_STAGES, DUE_DAYS, type CoreContext, type PartyHit, type ReferralDraft, type RouteResult, type DraftCheck, type InboxBox, type InboxItem, type InboxDetail, type ChangeMeta, type ReferralCredit, type ReferralStage } from './referrals.ts';
+export { ReferralService, CoreError, REFERRAL_STAGES, CLOSED_STAGES, WON_STAGES, LOST_STAGES, DUE_DAYS, type CoreContext, type PartyHit, type ReferralDraft, type RouteResult, type DraftCheck, type InboxBox, type InboxItem, type InboxDetail, type ChangeMeta, type ReferralCredit, type ReferralStage } from './referrals.ts';
 export type { AtRiskMember } from './relationship.ts';
 export { ReportStore, DELIVERY_GROUPS, SCHEDULE_RECIPIENT_CAP, type TemplateRow, type ScheduleDraft, type ScheduleRow, type ExportRow, type Recipient, type ShareDraft, type ShareRow, type PinDraft, type PinRow, type SettingsPayload, type SettingsFields, type SettingsChangeRow, type Viewer, openableBy } from './reports.ts';
 export {
@@ -74,4 +74,4 @@ export { BudgetStressModel, BudgetStressService, type BudgetCheck, type BudgetCh
 export { checklistFrom, type OnbChecklist } from './modules.ts';
 export { AttritionModelService, ATTRITION_BANDS, ATTRITION_FEATURES, ATTRITION_FEATURE_LABELS, modelMonthLabel, type MemberSnapshot, type ModelRecord } from './attritionModel.ts';
 export { auc, capture, contributions, predict, train as trainGbm, type Gbm, type GbmParams } from './gbm.ts';
-export { MonteCarloService, SIM_PATHS, type SimPath } from './monteCarlo.ts';
+export { ReferralDeskService, csvCells, parseReferralCsv, type BulkReady, type BulkRow, type ProspectReferral } from './referralDesk.ts';

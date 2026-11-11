@@ -5,6 +5,8 @@ import { DECLINE_DDL } from './relationship.ts';
 import { REPORT_DDL, REPORT_WRITE_TABLES } from './reports.ts';
 
 export const WORKFLOW_DDL = [
+  // Saved views of the referral list: a person's named filters (DI's saved views).
+  `CREATE TABLE ref_saved_view (user_id VARCHAR(40) NOT NULL, name VARCHAR(60) NOT NULL, filters JSON NOT NULL, saved_at DATETIME NOT NULL, PRIMARY KEY (user_id, name))`,
   `CREATE TABLE mod_ref_types (
      type_id VARCHAR(40) PRIMARY KEY,
      category VARCHAR(40) NOT NULL,
@@ -61,6 +63,7 @@ export const WORKFLOW_DDL = [
      created_at DATETIME(3) NOT NULL,
      run_id VARCHAR(40) NULL,
      approval_id VARCHAR(40) NULL,
+     cc JSON NULL,
      UNIQUE KEY ux_com_approval (approval_id),
      KEY ix_com_queue (to_queue_id, stage),
      KEY ix_com_sender (sender_user_id)
@@ -78,7 +81,7 @@ export const WORKFLOW_DDL = [
   ...REPORT_DDL,
 ];
 
-export const WORKFLOW_WRITE_TABLES = ['esp_com_items', 'esp_com_lines', 'esp_com_queues', 'ai_approvals', 'mod_suggestion_decline', ...REPORT_WRITE_TABLES];
+export const WORKFLOW_WRITE_TABLES = ['esp_com_items', 'esp_com_lines', 'esp_com_queues', 'ai_approvals', 'mod_suggestion_decline', 'ref_saved_view', ...REPORT_WRITE_TABLES];
 
 export type RouteRule =
   /** The queue mapped to the member's branch, round-robin among its members (spec 19.5 by_location). */
@@ -107,6 +110,9 @@ export interface ReferralType {
 const contact: FormField[] = [
   { id: 'preferred_contact', label: 'Preferred contact method', type: 'enum', required: true, options: ['Phone', 'Email', 'Text', 'In branch'] },
   { id: 'best_time', label: 'Best time to contact', type: 'enum', required: false, options: ['Morning', 'Afternoon', 'Evening', 'Any time'] },
+  // DI's account picker and several products on one referral, filled from the person's record.
+  { id: 'related_account', label: 'Related account', type: 'text', required: false, help: 'The account this is about, from the member’s accounts, such as Checking …5254' },
+  { id: 'also_interested_in', label: 'Also interested in', type: 'text', required: false, help: 'Other products the member mentioned, for the same conversation' },
 ];
 const amount = (label: string): FormField => ({ id: 'estimated_amount', label, type: 'money', required: false, help: 'Approximate amount the member mentioned' });
 
@@ -120,6 +126,16 @@ export const REFERRAL_TYPES: ReferralType[] = [
   // A staff task, not a sale: it closes as Done, and the agent never contacts the applicant (AI-AGT-181).
   { typeId: 'loan_follow_up', category: 'Task', label: 'Application follow-up', description: 'A task for the owner of a stalled loan application', route: { kind: 'by_location', queue: 'lending', fallbackQueue: 'q_lending_central' }, fields: [{ id: 'application_id', label: 'Application', type: 'text', required: true }] },
   { typeId: 'business_account', category: 'Business', label: 'Business account', description: 'Business checking, savings or lending', route: { kind: 'queue', queueId: 'q_business' }, fields: contact },
+  // The rest of DI's referral types.
+  { typeId: 'personal_loan', category: 'Lending', label: 'Personal loan', description: 'Unsecured personal loan or line of credit', route: { kind: 'by_location', queue: 'lending', fallbackQueue: 'q_lending_central' }, fields: [amount('Estimated loan amount'), ...contact] },
+  { typeId: 'rv_boat_loan', category: 'Lending', label: 'RV or boat loan', description: 'Recreational vehicle, boat or motorcycle loan', route: { kind: 'by_location', queue: 'lending', fallbackQueue: 'q_lending_central' }, fields: [amount('Estimated loan amount'), ...contact] },
+  { typeId: 'student_loan', category: 'Lending', label: 'Student loan', description: 'Private student loan or refinance', route: { kind: 'queue', queueId: 'q_lending_central' }, fields: [amount('Estimated loan amount'), ...contact] },
+  { typeId: 'business_loan', category: 'Business', label: 'Business loan', description: 'Business term loan, line of credit or commercial real estate', route: { kind: 'queue', queueId: 'q_business' }, fields: [amount('Estimated loan amount'), ...contact] },
+  { typeId: 'checking', category: 'Deposits', label: 'Checking account', description: 'A new checking account, or moving direct deposit here', route: { kind: 'by_location', queue: 'service', fallbackQueue: 'q_member_services' }, fields: contact },
+  { typeId: 'savings', category: 'Deposits', label: 'Savings or money market', description: 'A savings or money market account', route: { kind: 'by_location', queue: 'service', fallbackQueue: 'q_member_services' }, fields: [amount('Estimated deposit'), ...contact] },
+  { typeId: 'ira', category: 'Deposits', label: 'IRA', description: 'An IRA, rollover or retirement savings', route: { kind: 'by_location', queue: 'service', fallbackQueue: 'q_member_services' }, fields: [amount('Estimated deposit'), ...contact] },
+  { typeId: 'wealth', category: 'Wealth', label: 'Wealth management', description: 'Investments, financial planning or trust services, with an advisor', route: { kind: 'queue', queueId: 'q_wealth' }, fields: [amount('Estimated assets'), ...contact] },
+  { typeId: 'insurance', category: 'Insurance', label: 'Insurance', description: 'Life, auto, home or loan protection insurance', route: { kind: 'queue', queueId: 'q_wealth' }, fields: contact },
 ];
 
 /**
@@ -149,6 +165,11 @@ export const REFERRAL_PRODUCT: Record<string, string[]> = {
   credit_card: ['Credit Card'],
   certificate: ['Certificates', 'Certificates of Deposit'],
   business_account: ['Business', 'Commercial & Industrial'],
+  personal_loan: ['Personal', 'Consumer'],
+  business_loan: ['Business', 'Commercial & Industrial', 'Commercial Real Estate'],
+  checking: ['Checking'],
+  savings: ['Share Savings', 'Savings', 'Money Market'],
+  ira: ['IRA'],
 };
 /** An open referral with no activity this long expires (DI's auto-expire) [Assumption: 45 days]. */
 export const REFERRAL_EXPIRE_DAYS = 45;
@@ -188,7 +209,8 @@ export function referralHistory(t: GeneratedTenant, asOf: string) {
     if (at < end - 365 * DAY || at > end - 5 * DAY || unit(id, 1201) >= (typeId === 'certificate' ? 0.06 : 0.14)) continue;
     const created = at - (2 + Math.floor(unit(id, 1202) * 22)) * DAY;
     const unopened = unit(id, 1203) < 0.06;
-    add(typeId, party, created, 'Sold', unopened ? created + DAY : at + Math.floor(unit(id, 1204) * 3) * DAY, id, 'Referred at the counter.');
+    // DI's stage bar: some sales close as Product Opened, the rest as Sold.
+    add(typeId, party, created, unit(id, 1206) < 0.3 ? 'Product Opened' : 'Sold', unopened ? created + DAY : at + Math.floor(unit(id, 1204) * 3) * DAY, id, 'Referred at the counter.');
     if (unopened) rows[rows.length - 1]![2] = (t.parties as unknown[][])[Math.floor(unit(id, 1205) * t.parties.length)]![0];
     sold++;
   }
@@ -200,7 +222,9 @@ export function referralHistory(t: GeneratedTenant, asOf: string) {
   const types = ['heloc', 'auto_loan', 'credit_card', 'certificate', 'mortgage', 'retention_follow_up', 'auto_loan', 'credit_card', 'business_account'].filter((ty) => ty === 'retention_follow_up' || REFERRAL_PRODUCT[ty]!.some((cat) => offered.has(cat)));
   for (let k = 0; k < Math.round(sold * 0.9); k++) {
     const created = end - Math.floor(10 + unit(k, 1211) * 350) * DAY;
-    add(types[Math.floor(unit(k, 1212) * types.length)]!, pick(k), created, 'Not Interested', created + Math.floor(3 + unit(k, 1213) * 25) * DAY, 50_000 + k, 'Member said not now.');
+    const ty = types[Math.floor(unit(k, 1212) * types.length)]!;
+    const denied = ['heloc', 'auto_loan', 'mortgage', 'credit_card'].includes(ty) && unit(k, 1214) < 0.3;
+    add(ty, pick(k), created, denied ? 'Denied' : 'Not Interested', created + Math.floor(3 + unit(k, 1213) * 25) * DAY, 50_000 + k, denied ? 'Application denied.' : 'Member said not now.');
   }
   for (let k = 0; k < Math.round(sold * 0.25); k++) {
     const created = end - Math.floor(REFERRAL_EXPIRE_DAYS + 5 + unit(k, 1221) * 300) * DAY;
@@ -208,7 +232,7 @@ export function referralHistory(t: GeneratedTenant, asOf: string) {
   }
   for (let k = 0; k < 8; k++) {
     const party = members.find((p, i) => i > k * 500 && p[5] !== 1)?.[0] as number;
-    add(types[k % types.length]!, party, end - (50 + k * 6) * DAY, k % 2 ? 'Active' : 'New Referral', null, 90_000 + k, 'Waiting on a call back.');
+    add(types[k % types.length]!, party, end - (50 + k * 6) * DAY, ['New Referral', 'Active', 'Follow Up', 'Left Message', 'Not Contacted', 'Loan App Taken', 'Active', 'New Referral'][k]!, null, 90_000 + k, 'Waiting on a call back.');
   }
   return rows;
 }
@@ -226,7 +250,8 @@ export function workflowSeed(profile: TenantProfile, employees: unknown[][]) {
   queues.push(['q_mortgage', 'Mortgage Center', null, '[]', 0]);
   queues.push(['q_card_services', 'Card Services', null, '[]', 0]);
   queues.push(['q_member_services', `${member} Services Center`, null, '[]', 0]);
-  queues.push(['q_business', 'Business Banking', null, '[]', 0]);
+    queues.push(['q_business', 'Business Banking', null, '[]', 0]);
+  queues.push(['q_wealth', 'Wealth Management', null, '[]', 0]);
   const types = REFERRAL_TYPES.map((t) => [t.typeId, t.category, t.label, t.description, JSON.stringify(t.route), JSON.stringify(t.fields), 1]);
   return { queues, types };
 }

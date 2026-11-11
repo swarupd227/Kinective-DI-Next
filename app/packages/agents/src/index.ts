@@ -78,4 +78,4 @@ export { CRE_RESPONSE_AGENT, CRE_RESPONSE_REQUEST, OFFICE_SUBLIMIT, creCase, cre
 export { ACQUISITION_AGENT, ACQUISITION_REQUEST, acquisitionCase, acquisitionMemo, acquisitionModule, targetSizeFrom } from './acquisitionDecision.ts';
 export { BUDGET_STRESS_AGENT, BUDGET_STRESS_REQUEST, budgetCase, budgetMemo, budgetStressModule } from './budgetDecision.ts';
 export { MODEL_REQUEST, attritionModule, modelSummary } from './attritionAgent.ts';
-export { SIMULATION_REQUEST, simulationModule } from './simulationAgent.ts';
+export { REFERRAL_DESK_REQUEST, referralDeskModule, referralDeskPlan } from './referralDesk.ts';

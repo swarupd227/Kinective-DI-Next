@@ -3,7 +3,7 @@
 // the audit trail. It performs no writes and calls no business tools itself.
 import { z } from 'zod';
 import type { ApprovalCardBlock, ContextRef } from '@dinext/block-schemas';
-import { ApprovalError, CoreError, usd, type ReferralService, type RelationshipService } from '@dinext/di-core';
+import { ApprovalError, CoreError, LOST_STAGES, WON_STAGES, usd, type ReferralService, type RelationshipService } from '@dinext/di-core';
 import { SemanticError, type SemanticService } from '@dinext/semantic';
 import { formatMetric, noticeBlock } from './answer.ts';
 import { AGENT_NAME, freshnessAnswer, runAnalytics, type MemoryTurn } from './analytics.ts';
@@ -1058,7 +1058,7 @@ export class Concierge {
           const credited = credit?.credited ? ` **${credit.name}** was credited one sold referral toward the ${new Date(`${credit.periodEnd}T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' })} incentive period.` : credit ? ` No incentive credit: ${credit.reason}` : '';
           void this.deps.audit.event({ eventType: 'ai.action.executed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, operation: approval.operation, resultRef: `com:${item.comId}` });
           const source = [{ kind: 'workflow' as const, label: `Referral #${item.comId}`, ref: `workflow:referrals:${item.comId}` }];
-          const closed = kind === 'stage' && (item.stage === 'Sold' || item.stage === 'Not Interested');
+          const closed = kind === 'stage' && [...WON_STAGES, ...LOST_STAGES].includes(item.stage);
           await sink.text(kind === 'stage' ? `Referral **#${item.comId}** for ${item.name} is now **${item.stage}**.${closed && item.senderUserId !== d.user.id ? ` ${item.senderName} will see that.` : ''}${credited}` : kind === 'assign' ? `Referral **#${item.comId}** is now with **${item.assignee?.name}**.` : `Added your note to referral **#${item.comId}**.`, INBOX_AGENT, source);
           sink.done?.({ notify: closed ? [{ userId: item.senderUserId, title: `Referral #${item.comId} is ${item.stage}`, detail: `${item.name} · ${item.typeLabel}`, comId: item.comId }] : kind === 'assign' ? [{ employeeId: item.assignee?.employeeId, branch: item.branch, title: `Referral #${item.comId} assigned to ${item.assignee?.name}`, detail: `${item.name} · ${item.typeLabel}`, comId: item.comId }] : [] });
           return;

@@ -3,7 +3,7 @@
 // rule holds for classic screens, APIs and agents (BE-RM-001, AI-TRG-020).
 import { createCipheriv, createDecipheriv, createHash } from 'node:crypto';
 import { SCORE_MODELS, type Pool, type ScoreFactor } from '@dinext/tenant-db';
-import { CoreError, type CoreContext, type PartyHit } from './referrals.ts';
+import { CLOSED_STAGES, CoreError, type CoreContext, type PartyHit } from './referrals.ts';
 
 // ---- opaque member tokens ----------------------------------------------------------------------
 
@@ -454,7 +454,7 @@ export class RelationshipService {
     const notes = await q<{ kind: 'Comment' | 'Warning'; code: string | null; text: string; account_id: number | null; created: unknown; created_by: string }>('SELECT kind, code, text, account_id, created, created_by FROM cdm_account_comment WHERE party_id = ? AND active = 1 ORDER BY kind = \'Warning\' DESC, created DESC LIMIT 10', [partyId]).catch(() => []);
     const programRows = await q<{ tier: string; points: number; enrolled_on: unknown }>('SELECT tier, points, enrolled_on FROM rwd_member WHERE party_id = ?', [partyId]).catch(() => null);
     const ledger = programRows?.length ? await q<{ posted: unknown; description: string; points: number }>('SELECT posted, description, points FROM rwd_ledger WHERE party_id = ? ORDER BY posted DESC, entry_id DESC LIMIT 8', [partyId]) : [];
-    const openRefs = await q<{ label: string | null; type_id: string; stage: string; assignee: string | null; created_at: unknown }>("SELECT t.label, c.type_id, c.stage, e.display_name AS assignee, c.created_at FROM esp_com_items c LEFT JOIN mod_ref_types t ON t.type_id = c.type_id LEFT JOIN cdm_employee e ON e.employee_id = c.assignee_employee_id WHERE c.party_id = ? AND c.stage NOT IN ('Sold', 'Not Interested', 'Expired') ORDER BY c.created_at DESC LIMIT 10", [partyId]).catch(() => []);
+    const openRefs = await q<{ label: string | null; type_id: string; stage: string; assignee: string | null; created_at: unknown }>("SELECT t.label, c.type_id, c.stage, e.display_name AS assignee, c.created_at FROM esp_com_items c LEFT JOIN mod_ref_types t ON t.type_id = c.type_id LEFT JOIN cdm_employee e ON e.employee_id = c.assignee_employee_id WHERE c.party_id = ? AND c.stage NOT IN (?) ORDER BY c.created_at DESC LIMIT 10", [partyId, CLOSED_STAGES]).catch(() => []);
     const openTasks = await q<{ title: string; status: string; owner_name: string; due: unknown; created_at: unknown }>("SELECT title, status, owner_name, due, created_at FROM tsk_task WHERE party_id = ? AND status <> 'Done' ORDER BY due IS NULL, due LIMIT 10", [partyId]).catch(() => []);
     const onbTasks = await q<{ touch: string; status: string; owner: string | null; due: unknown }>("SELECT t.touch, t.status, e.display_name AS owner, t.due FROM onb_task t LEFT JOIN cdm_employee e ON e.employee_id = t.assignee_employee_id WHERE t.party_id = ? AND t.status = 'Open' ORDER BY t.due LIMIT 6", [partyId]).catch(() => []);
     const [verified] = await q<{ verified_at: unknown; channel: string; result: string; by_name: string }>('SELECT verified_at, channel, result, by_name FROM rm_verification WHERE party_id = ? ORDER BY verified_at DESC LIMIT 1', [partyId]).catch(() => []);

@@ -2,7 +2,7 @@
 // only by publishing, after validation passes and a test route has run (AI-AGT-070, AI-AGT-071).
 // Every check, test route and count of affected open items is worked out here.
 import type { Pool, WfField, WfSpec } from '@dinext/tenant-db';
-import { CoreError } from './referrals.ts';
+import { CLOSED_STAGES, CoreError } from './referrals.ts';
 
 const rows = async <T>(pool: Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
 const parse = (v: unknown) => (typeof v === 'string' ? JSON.parse(v) : v) as WfSpec;
@@ -38,7 +38,7 @@ export const splitFields = (labels: string[]) => {
 
 /** Open items each live workflow has, so a change can say how many it affects (FE-WF-003). */
 const OPEN_ITEMS: Record<string, string> = {
-  Referral: "SELECT COUNT(*) AS n FROM esp_com_items WHERE definition = 'referral' AND stage NOT IN ('Sold', 'Not Interested', 'Done', 'Expired')",
+  Referral: `SELECT COUNT(*) AS n FROM esp_com_items WHERE definition = 'referral' AND stage NOT IN (${CLOSED_STAGES.map((s) => `'${s}'`).join(', ')})`,
   Task: "SELECT COUNT(*) AS n FROM tsk_task WHERE status = 'Open'",
   'Compliance issue': "SELECT COUNT(*) AS n FROM cpm_issue WHERE status <> 'Closed'",
   'Data log': "SELECT COUNT(*) AS n FROM esp_datalog WHERE status IN ('Draft', 'Submitted', 'Returned')",

@@ -48,18 +48,22 @@ export interface DraftCheck {
   fields: Record<string, string | number>;
 }
 
-/** The stage bar (spec 17.3). Sold and Not Interested close a referral; Done closes a staff task. */
-export const REFERRAL_STAGES = ['New Referral', 'Active', 'Sold', 'Not Interested', 'Done'];
+/** The stage bar (spec 17.3), DI's own: open stages, then the ones that close a referral. Done closes a staff task. */
+export const REFERRAL_STAGES = ['New Referral', 'Not Contacted', 'Left Message', 'Follow Up', 'Active', 'Loan App Taken', 'Product Opened', 'Sold', 'Denied', 'Not Interested', 'Done'];
 /** Any other stage comes from the published Referral workflow, such as "Waiting on member". */
 export type ReferralStage = string;
+/** A referral that ended in a sale: the product was sold or opened. */
+export const WON_STAGES = ['Sold', 'Product Opened'];
+/** A referral that ended without one: the person declined or the application was denied. */
+export const LOST_STAGES = ['Not Interested', 'Denied'];
 /** The stages that close an item. Every other stage is open work. */
-export const CLOSED_STAGES = ['Sold', 'Not Interested', 'Done', 'Expired'];
+export const CLOSED_STAGES = [...WON_STAGES, ...LOST_STAGES, 'Done', 'Expired'];
 const isOpen = (stage: string) => !CLOSED_STAGES.includes(stage);
 
 /** Days to work a referral, by priority [Assumption]: until a tenant sets its own SLA. */
 export const DUE_DAYS: Record<string, number> = { Urgent: 1, High: 2, Normal: 5, Low: 10 };
 
-export type InboxBox = 'mine' | 'team' | 'sent';
+export type InboxBox = 'mine' | 'team' | 'sent' | 'cc';
 
 export interface InboxItem {
   comId: number;
@@ -333,9 +337,10 @@ export class ReferralService {
       comId: r.com_id as number,
       typeLabel: r.type_label as string,
       category: r.category as string,
-      partyId: r.party_id as number,
-      name: `${r.first_name} ${r.last_name}`,
-      last4: memberNumber(r.party_id as number).slice(-4),
+      // A prospect isn't a member yet: no member number, and their name comes from the referral.
+      partyId: (r.party_id as number | null) ?? 0,
+      name: r.party_id === null ? `${String(((typeof r.prospect === 'string' ? JSON.parse(r.prospect) : r.prospect) as { name?: string } | null)?.name ?? 'Prospect')} (prospect)` : `${r.first_name} ${r.last_name}`,
+      last4: r.party_id === null ? 'new' : memberNumber(r.party_id as number).slice(-4),
       branch: r.branch as string,
       stage,
       priority,
@@ -352,9 +357,10 @@ export class ReferralService {
     };
   }
 
-  private static readonly ITEM_SQL = `SELECT c.com_id, c.party_id, c.fields, c.notes, c.stage, c.priority, c.assignee_employee_id, c.sender_user_id, c.sender_name, c.created_at, c.to_queue_id,
+  private static readonly ITEM_SQL = `SELECT c.com_id, c.party_id, c.prospect, c.fields, c.notes, c.stage, c.priority, c.assignee_employee_id, c.sender_user_id, c.sender_name, c.created_at, c.to_queue_id,
       t.label AS type_label, t.category, p.first_name, p.last_name, b.name AS branch, q.name AS queue_name, e.display_name AS assignee_name
-    FROM esp_com_items c JOIN mod_ref_types t ON t.type_id = c.type_id JOIN cdm_party p ON p.party_id = c.party_id JOIN cdm_location b ON b.int_id = p.primary_branch_id
+    FROM esp_com_items c JOIN mod_ref_types t ON t.type_id = c.type_id LEFT JOIN cdm_party p ON p.party_id = c.party_id
+    JOIN cdm_location b ON b.int_id = COALESCE(p.primary_branch_id, CAST(JSON_UNQUOTE(JSON_EXTRACT(c.prospect, '$.branchId')) AS UNSIGNED))
     JOIN esp_com_queues q ON q.queue_id = c.to_queue_id LEFT JOIN cdm_employee e ON e.employee_id = c.assignee_employee_id`;
 
   /**
@@ -369,6 +375,11 @@ export class ReferralService {
       if (who.employeeId === undefined) return [];
       where.push('c.assignee_employee_id = ?');
       params.push(who.employeeId);
+    }
+    if (box === 'cc') {
+      if (who.employeeId === undefined) return [];
+      where.push('JSON_CONTAINS(c.cc, CAST(? AS JSON))');
+      params.push(String(who.employeeId));
     }
     if (box === 'sent') {
       where.push('c.sender_user_id = ?');
@@ -444,13 +455,13 @@ export class ReferralService {
     if (!isOpen(item.stage)) throw new CoreError('INVALID', `Referral #${comId} is already closed as ${item.stage}.`);
     if (stage === 'New Referral') throw new CoreError('INVALID', 'A referral that has started cannot go back to New Referral.');
     const task = item.category === 'Task';
-    if (task ? stage === 'Sold' || stage === 'Not Interested' : stage === 'Done') throw new CoreError('INVALID', task ? 'A task closes as Done.' : 'A referral closes as Sold or Not Interested.');
+    if (task ? [...WON_STAGES, ...LOST_STAGES].includes(stage) : stage === 'Done') throw new CoreError('INVALID', task ? 'A task closes as Done.' : `A referral closes as ${[...WON_STAGES, ...LOST_STAGES].join(', ')}.`);
     // Starting work on something nobody holds makes it yours.
     const claim = isOpen(stage) && !item.assignee && meta.employeeId !== undefined;
     const closing = !isOpen(stage) ? ', closed_at = NOW(3)' : '';
     await this.pool.query(`UPDATE esp_com_items SET stage = ?${claim ? ', assignee_employee_id = ?' : ''}${closing} WHERE com_id = ?`, claim ? [stage, meta.employeeId, comId] : [stage, comId]);
     await this.line(comId, 'stage', `${meta.userName} moved this from ${item.stage} to ${stage}.${note ? ` ${note}` : ''}`, meta.userId);
-    const credit = stage === 'Sold' ? await this.creditReferrer(comId, meta) : null;
+    const credit = WON_STAGES.includes(stage) ? await this.creditReferrer(comId, meta) : null;
     return { item: await this.item(comId, meta, ctx), changed: true, credit };
   }
 

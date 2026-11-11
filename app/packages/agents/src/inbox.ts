@@ -48,7 +48,7 @@ export function inboxList(items: InboxItem[], box: InboxBox, runId: string): Lis
     id: newBlockId('inb'),
     type: 'list',
     version: '1.0.0',
-    title: box === 'mine' ? 'Your open referrals' : box === 'team' ? 'Your team’s open referrals' : 'Referrals you sent',
+    title: box === 'mine' ? 'Your open referrals' : box === 'team' ? 'Your team’s open referrals' : box === 'cc' ? 'Referrals you’re copied on' : 'Referrals you sent',
     provenance: { agent: INBOX_AGENT, runId, operations: ['referral.inbox.list'], sources: [{ kind: 'workflow', label: 'Referrals', ref: 'workflow:referrals' }] },
     freshness: { kind: 'workflow_event' },
     data: {
@@ -68,7 +68,7 @@ export function inboxList(items: InboxItem[], box: InboxBox, runId: string): Lis
 
 function summary(items: InboxItem[], box: InboxBox, filtered: boolean) {
   const over = items.filter((i) => i.overdue).length;
-  const whose = box === 'team' ? 'Your team has' : box === 'sent' ? 'You sent' : 'You have';
+  const whose = box === 'team' ? 'Your team has' : box === 'sent' ? 'You sent' : box === 'cc' ? 'You’re copied on' : 'You have';
   if (!items.length) return filtered ? 'Nothing matches that.' : box === 'sent' ? 'You haven’t sent any referrals yet.' : `${whose} nothing open.`;
   const open = box === 'sent' ? '' : ' open';
   // Filtered to overdue ones, the count is of overdue referrals, never presented as everything open.
@@ -252,8 +252,8 @@ export type InboxIntent = { intent: 'list'; box: InboxBox; olderThan?: number; o
 export function parseInboxRequest(text: string): InboxIntent {
   const t = text.trim().replace(/[.!?]+$/, '');
   const ref = (s: string) => s.replace(/^(referral |the |#)+/i, '').replace(/ referral$/i, '').trim();
-  const mark = /\bmark (.+?) (?:as )?(sold|not interested|active)\b/i.exec(t);
-  if (mark) return { intent: 'stage', ref: ref(mark[1]!), stage: mark[2]!.toLowerCase() === 'sold' ? 'Sold' : mark[2]!.toLowerCase() === 'active' ? 'Active' : 'Not Interested' };
+  const mark = /\bmark (.+?) (?:as )?(sold|not interested|active|product opened|denied|follow up|left message|not contacted|loan app taken)\b/i.exec(t);
+  if (mark) return { intent: 'stage', ref: ref(mark[1]!), stage: mark[2]!.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace('App', 'App') };
   // A stage from the published workflow: "Move referral #123 to Waiting on member". The gateway checks it exists.
   const move = /\bmove (.+?) to (?:the )?["']?(.+?)["']?(?: stage)?$/i.exec(t);
   if (move && /\breferral\b|#\d+/i.test(move[1]!)) return { intent: 'stage', ref: ref(move[1]!), stage: move[2]!.trim() };
@@ -262,7 +262,7 @@ export function parseInboxRequest(text: string): InboxIntent {
   const note = /\b(?:add a )?note (?:to|on) (.+?)[:,]\s*(.+)$/i.exec(t);
   if (note) return { intent: 'note', ref: ref(note[1]!), note: note[2]!.trim() };
   const older = /\bolder than (\d+) days?\b/i.exec(t)?.[1];
-  return { intent: 'list', box: /\b(team|branch|our)\b/i.test(t) ? 'team' : /\b(sent|i sent|my referrals? status)\b/i.test(t) ? 'sent' : 'mine', olderThan: older ? Number(older) : undefined, overdue: /\boverdue\b/i.test(t) && !/\b(waiting|open|all|and which|which are)\b/i.test(t) };
+  return { intent: 'list', box: /\b(copied|cc'?d|cc)\b/i.test(t) ? 'cc' : /\b(team|branch|our)\b/i.test(t) ? 'team' : /\b(sent|i sent|my referrals? status)\b/i.test(t) ? 'sent' : 'mine', olderThan: older ? Number(older) : undefined, overdue: /\boverdue\b/i.test(t) && !/\b(waiting|open|all|and which|which are)\b/i.test(t) };
 }
 
 export async function runInboxOffline(input: InboxInput, deps: { gateway: ToolGateway }, sink: RunSink): Promise<InboxOutcome> {
