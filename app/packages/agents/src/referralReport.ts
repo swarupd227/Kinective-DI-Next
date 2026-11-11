@@ -13,12 +13,25 @@ const NO_ACCESS = 'Referral reports aren’t part of your DI access.';
 const text = (field: string, headerName: string) => ({ field, headerName, type: 'text' as const });
 const pct = (n: number | null) => (n === null ? '—' : `${n.toFixed(1)}%`);
 const STAGES = ['New Referral', 'Active', 'Sold', 'Not Interested', 'Expired'];
+type RefPeriod = '12m' | 'quarter' | 'year';
+/** Where a reporting period starts, and how to say it. */
+export function refPeriod(period: RefPeriod | undefined, today = new Date().toISOString().slice(0, 10)): { since?: string; label: string } {
+  const y = Number(today.slice(0, 4));
+  const m = Number(today.slice(5, 7));
+  if (period === 'quarter') {
+    const q = `${y}-${String(Math.floor((m - 1) / 3) * 3 + 1).padStart(2, '0')}-01`;
+    return { since: q, label: `this quarter (since ${q})` };
+  }
+  if (period === 'year') return { since: `${y}-01-01`, label: `this year (since ${y}-01-01)` };
+  return { label: 'the last 12 months' };
+}
 
 export function referralReportPlan(t: string) {
   const s = t.toLowerCase();
   if (/\b(?:expire|stale|old open|close out)\b/.test(s) && !/\bexpired (?:referrals )?(?:by|last|this)\b/.test(s)) return { tool: 'ref_expire', args: {} };
   const by: RefGroupBy | undefined = /\bby (?:branch|location)\b/.test(s) ? 'branch' : /\bby (?:staff|sender|employee|person|who)\b|\bwho (?:sends|refers|made|makes) the most\b/.test(s) ? 'sender' : /\bby (?:officer|assignee|who worked|lender)\b/.test(s) ? 'assignee' : /\bby (?:type|product)\b|\bconversion\b|\bconvert/.test(s) ? 'type' : undefined;
-  if (by && !/\b(?:list|show me (?:all|the) referrals|export)\b/.test(s)) return { tool: 'ref_performance', args: { by } };
+  const period: RefPeriod | undefined = /\bthis quarter|\bquarter to date|\bqtd\b/.test(s) ? 'quarter' : /\bthis year|\byear to date|\bytd\b/.test(s) ? 'year' : undefined;
+  if (by && !/\b(?:list|show me (?:all|the) referrals|export)\b/.test(s)) return { tool: 'ref_performance', args: period ? { by, period } : { by } };
   const f: Record<string, unknown> = {};
   const stage = STAGES.find((x) => s.includes(x.toLowerCase()));
   if (stage) f.stage = stage;
@@ -48,8 +61,8 @@ export function referralReportModule(svc: ReferralReportService, person: 'member
     prompt: ({ tenant, user, title }) => `You are the Referral Reports agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) looks at referrals across the ${person}s they can see: the full list with filters, conversion by type, sender, branch or the person who worked them, whether each sale really opened the product in the core, and open referrals that have gone ${REFERRAL_EXPIRE_DAYS} days with no activity.
 
 - ref_list (type, stage, branch, sender, assignee, from, to, open): the referrals, newest first.
-- ref_performance (by type, sender, branch or assignee): the last 12 months.
-- ref_expire: the stale referrals, expired on approval.`,
+- ref_performance (by type, sender, branch or assignee; period 12m, quarter or year): conversion for the last 12 months, this quarter or this year.
+- ref_expire: lists the stale referrals and puts up an approval card to expire them. Nothing changes until someone approves the card, so run it whenever stale referrals come up; don't ask first.`,
     plan: (t) => referralReportPlan(t),
     tools: [
       {
@@ -73,18 +86,19 @@ export function referralReportModule(svc: ReferralReportService, person: 'member
       },
       {
         name: 'ref_performance',
-        description: 'Referral conversion over the last 12 months by type, sender, branch or the person who worked them: made, sold, not interested, expired, open, conversion, days to close, and the share of sales that opened the product.',
-        input: z.object({ by: z.enum(['type', 'sender', 'branch', 'assignee']) }).strict(),
-        run: async (a: { by: RefGroupBy }, ctx) => {
+        description: 'Referral conversion over the last 12 months (or this quarter or this year, by period) by type, sender, branch or the person who worked them: made, sold, not interested, expired, open, conversion, days to close, and the share of sales that opened the product.',
+        input: z.object({ by: z.enum(['type', 'sender', 'branch', 'assignee']), period: z.enum(['12m', 'quarter', 'year']).optional() }).strict(),
+        run: async (a: { by: RefGroupBy; period?: RefPeriod }, ctx) => {
           need(ctx);
-          const x = await svc.performance(a.by, ctx);
+          const per = refPeriod(a.period);
+          const x = await svc.performance(a.by, ctx, 12, per.since);
           const t = x.total;
           const best = [...x.rows].filter((r) => r.referrals >= 10 && r.conversionPct !== null).sort((p, q) => q.conversionPct! - p.conversionPct!)[0];
           const label = { type: 'Type', sender: 'Made by', branch: 'Branch', assignee: 'Worked by' }[a.by];
           return {
-            text: `In the last 12 months, **${t.referrals.toLocaleString('en-US')} referrals**: ${t.sold} sold, ${t.notInterested} not interested, ${t.expired} expired and ${t.open} still open, so **${pct(t.conversionPct)}** of those closed sold, in ${t.avgDaysToClose ?? '—'} days on average.${best ? ` ${best.name} converts best, ${pct(best.conversionPct)}.` : ''}${x.notOpened.length ? ` **${x.notOpened.length} sales** have no matching account opened in the core: worth checking before incentive credit is paid.` : ''}`,
+            text: `${per.since ? per.label.replace(/^t/, 'T') : 'In the last 12 months'}, **${t.referrals.toLocaleString('en-US')} referrals**: ${t.sold} sold, ${t.notInterested} not interested, ${t.expired} expired and ${t.open} still open, so **${pct(t.conversionPct)}** of those closed sold, in ${t.avgDaysToClose ?? '—'} days on average.${best ? ` ${best.name} converts best, ${pct(best.conversionPct)}.` : ''}${x.notOpened.length ? ` **${x.notOpened.length} sales** have no matching account opened in the core: worth checking before incentive credit is paid.` : ''}`,
             blocks: [
-              moduleTable(spec, `Referral conversion by ${label.toLowerCase()}, last 12 months`, ctx.runId, 'referral.report.performance', [text('name', label), { field: 'referrals', headerName: 'Made', type: 'count' }, { field: 'sold', headerName: 'Sold', type: 'count' }, { field: 'notInterested', headerName: 'Not interested', type: 'count' }, { field: 'expired', headerName: 'Expired', type: 'count' }, { field: 'open', headerName: 'Open', type: 'count' }, text('conversion', 'Converted'), text('days', 'Days to close'), text('opened', 'Sales opened in core')], [...x.rows, t].map((r) => ({ name: r.name, referrals: r.referrals, sold: r.sold, notInterested: r.notInterested, expired: r.expired, open: r.open, conversion: pct(r.conversionPct), days: r.avgDaysToClose === null ? '—' : String(r.avgDaysToClose), opened: pct(r.openedPct) }))),
+              moduleTable(spec, `Referral conversion by ${label.toLowerCase()}, ${per.since ? per.label.replace(/ \(since .*\)$/, '') : 'last 12 months'}`, ctx.runId, 'referral.report.performance', [text('name', label), { field: 'referrals', headerName: 'Made', type: 'count' }, { field: 'sold', headerName: 'Sold', type: 'count' }, { field: 'notInterested', headerName: 'Not interested', type: 'count' }, { field: 'expired', headerName: 'Expired', type: 'count' }, { field: 'open', headerName: 'Open', type: 'count' }, text('conversion', 'Converted'), text('days', 'Days to close'), text('opened', 'Sales opened in core')], [...x.rows, t].map((r) => ({ name: r.name, referrals: r.referrals, sold: r.sold, notInterested: r.notInterested, expired: r.expired, open: r.open, conversion: pct(r.conversionPct), days: r.avgDaysToClose === null ? '—' : String(r.avgDaysToClose), opened: pct(r.openedPct) }))),
               ...(x.notOpened.length ? [moduleTable(spec, 'Sold, but no matching account opened', ctx.runId, 'referral.report.unopened', [text('id', 'Referral'), text('type', 'Type'), text('member', person === 'member' ? 'Member' : 'Customer'), text('sender', 'From'), text('closed', 'Sold on')], x.notOpened.slice(0, 50).map((r) => ({ id: `#${r.comId}`, type: r.type, member: r.member, sender: r.sender, closed: r.closed ?? '' })))] : []),
             ],
             sources,

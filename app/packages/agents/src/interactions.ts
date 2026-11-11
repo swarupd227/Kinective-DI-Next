@@ -7,7 +7,7 @@ import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.
 
 export const INTERACTION_REQUEST =
   // Case-sensitive so a name reads as a name; the verbs allow a capital at the start of a sentence.
-  /\b(?:[Ll]og|[Rr]ecord|[Nn]ote down|[Aa]dd a note (?:that|about))\b[^.?!]*\b(?:call|visit|conversation|meeting|chat|message|email|interaction|spoke|talked)\b|\b(?:[Ss]poke|[Tt]alked|[Mm]et) (?:with|to) [A-Z][a-z]+ [A-Z][a-z]+\b|\b[Ll]eft (?:a )?(?:voice ?mail|message) for [A-Z][a-z]+\b|\b[Mm]y logged (?:calls|interactions)\b|\b[Ww]hat (?:calls|interactions) (?:did|have) (?:I|we) log/;
+  /\b(?:[Ll]og|[Rr]ecord|[Nn]ote down|[Aa]dd a note (?:that|about))\b[^.?!]*\b(?:call|visit|conversation|meeting|chat|message|email|interaction|spoke|talked)\b|\b(?:[Ss]poke|[Tt]alked|[Mm]et) (?:with|to) [A-Z][a-z]+ [A-Z][a-z]+\b|\b[Ll]eft (?:a )?(?:voice ?mail|message) for [A-Z][a-z]+\b|\b[Mm]y logged (?:calls|interactions)\b|\b[Ii]nteraction log\b|\b(?:[Ll]ogged|[Rr]ecent) interactions\b|\b[Ww]hat (?:calls|interactions) (?:did|have) (?:I|we) log/;
 
 const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
@@ -34,7 +34,7 @@ export function followUpIn(t: string, today = new Date()): string | undefined {
 }
 
 export function interactionPlan(text: string, today = new Date()) {
-  if (/\bmy logged (?:calls|interactions)\b|\bwhat (?:calls|interactions) (?:did|have) (?:i|we) log/i.test(text)) return { tool: 'rm_log_list', args: {} };
+  if (/\bmy logged (?:calls|interactions)\b|\binteraction log\b|\b(?:logged|recent) interactions\b|\bwhat (?:calls|interactions) (?:did|have) (?:i|we) log/i.test(text)) return { tool: 'rm_log_list', args: {} };
   const name = /\b(?:with|to|for|from)\s+([A-Z][a-z’'-]+ [A-Z][a-z’'-]+)/.exec(text)?.[1] ?? /\b([A-Z][a-z’'-]+ [A-Z][a-z’'-]+)\b/.exec(text.replace(/^[A-Z][a-z]+ /, ''))?.[1];
   const s = text.toLowerCase();
   const channel: LogChannel = /\bemail(?:ed)?\b/.test(s) ? 'Email' : /secure message/.test(s) ? 'Secure message' : /\bvideo|zoom|teams\b/.test(s) ? 'Video' : /\btext(?:ed)?\b/.test(s) ? 'Text' : /\b(?:visit|in the branch|came in|stopped by|met)\b/.test(s) ? 'Branch' : 'Phone';

@@ -611,6 +611,9 @@ export interface SegCompany {
   sponsorship: string | null;
 }
 
+/** A ten-digit number as (555) 678-8270; anything else as it is. */
+export const usPhone = (v: string) => (/^\d{10}$/.test(v) ? `(${v.slice(0, 3)}) ${v.slice(3, 6)}-${v.slice(6)}` : v);
+
 export class SegService {
   constructor(private readonly pool: Pool) {}
 
@@ -631,7 +634,7 @@ export class SegService {
     return {
       ...c,
       interactions: log.map((i) => ({ at: day(i.at), kind: i.kind as string, note: i.note as string, by: i.by_name as string })),
-      contact: contact ? { name: contact.contact_name as string, title: contact.title as string, phone: String(contact.phone), email: contact.email as string, branch: contact.branch as string, bdManager: contact.bd_manager as string, active: contact.active === 1, employees: Number(contact.employees), nextFollowUp: contact.next_follow_up ? day(contact.next_follow_up) : null, followUpNote: (contact.follow_up_note as string | null) ?? null } : null,
+      contact: contact ? { name: contact.contact_name as string, title: contact.title as string, phone: usPhone(String(contact.phone)), email: contact.email as string, branch: contact.branch as string, bdManager: contact.bd_manager as string, active: contact.active === 1, employees: Number(contact.employees), nextFollowUp: contact.next_follow_up ? day(contact.next_follow_up) : null, followUpNote: (contact.follow_up_note as string | null) ?? null } : null,
       events: events.map((e) => ({ held: day(e.held), kind: e.kind as string, attendees: Number(e.attendees), newMembers: Number(e.new_members), newLoanDollars: Number(e.new_loan_dollars), by: e.by_name as string })),
     };
   }
@@ -645,8 +648,8 @@ export class SegService {
   /** Follow-ups due within some days (past due included), soonest first, optionally one BD manager's. */
   async followUps(withinDays: number, today: string, bdManager?: string) {
     const until = new Date(Date.parse(`${today}T00:00:00Z`) + withinDays * 86_400_000).toISOString().slice(0, 10);
-    const found = await rows<Record<string, unknown>>(this.pool, `SELECT c.name, c.stage, x.* FROM seg_contact x JOIN seg_company c ON c.company_id = x.company_id WHERE x.next_follow_up IS NOT NULL AND x.next_follow_up <= ?${bdManager ? ' AND x.bd_manager = ?' : ''} ORDER BY x.next_follow_up`, [until, ...(bdManager ? [bdManager] : [])]).catch(() => []);
-    return found.map((r) => ({ companyId: r.company_id as number, company: r.name as string, stage: r.stage as string, due: day(r.next_follow_up), overdue: day(r.next_follow_up) < today, note: (r.follow_up_note as string | null) ?? '', contact: `${r.contact_name}, ${r.title}`, phone: String(r.phone), bdManager: r.bd_manager as string }));
+    const found = await rows<Record<string, unknown>>(this.pool, `SELECT c.name, c.stage, x.* FROM seg_contact x JOIN seg_company c ON c.company_id = x.company_id WHERE x.next_follow_up IS NOT NULL AND c.stage NOT LIKE 'Closed%' AND x.next_follow_up <= ?${bdManager ? ' AND x.bd_manager = ?' : ''} ORDER BY x.next_follow_up`, [until, ...(bdManager ? [bdManager] : [])]).catch(() => []);
+    return found.map((r) => ({ companyId: r.company_id as number, company: r.name as string, stage: r.stage as string, due: day(r.next_follow_up), overdue: day(r.next_follow_up) < today, note: (r.follow_up_note as string | null) ?? '', contact: `${r.contact_name}, ${r.title}`, phone: usPhone(String(r.phone)), bdManager: r.bd_manager as string }));
   }
 
   async scheduleFollowUp(companyId: number, date: string, note: string) {
