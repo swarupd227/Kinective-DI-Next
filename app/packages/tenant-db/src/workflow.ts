@@ -53,6 +53,7 @@ export const WORKFLOW_DDL = [
      priority VARCHAR(10) NOT NULL,
      sender_user_id VARCHAR(40) NOT NULL,
      sender_name VARCHAR(80) NOT NULL,
+     sender_employee_id INT NULL,
      to_queue_id VARCHAR(40) NOT NULL,
      assignee_employee_id INT NULL,
      routing JSON NOT NULL,
@@ -128,7 +129,7 @@ export function referralSeed(parties: number[], now = new Date()) {
   const ago = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString().slice(0, 23).replace('T', ' ');
   const [a, b, c, d, e] = parties;
   const lead = (typeId: string, party: number | undefined, fields: object, notes: string, stage: string, priority: string, queue: string, assignee: number, days: number) => [
-    'referral', typeId, party, JSON.stringify(fields), notes, stage, priority, 'user:5120', 'Marcus Reed', queue, assignee, JSON.stringify({ queueId: queue, assigneeId: assignee, rule: 'seed' }), ago(days),
+    'referral', typeId, party, JSON.stringify(fields), notes, stage, priority, 'user:5120', 'Marcus Reed', 6, queue, assignee, JSON.stringify({ queueId: queue, assigneeId: assignee, rule: 'seed' }), ago(days),
   ];
   return [
     lead('retention_follow_up', a, { preferred_contact: 'Phone' }, 'Attrition score 8 of 10: direct deposit stopped last month.', 'New Referral', 'High', 'q_service_westport', 4, 3),

@@ -4,7 +4,7 @@
 // payload is executed, once, with the approval ID as its idempotency key.
 import { z } from 'zod';
 import type { SemanticService } from '@dinext/semantic';
-import { ApprovalStore, CLOSED_STAGES, CoreError, PIPELINE_VIEWS, usd, OFFER_RULES, type MaturingCertificates, type OfferCost, type RetentionService, type GoalsService, type GoalsWho, type PayoutBatch, type ScoreExplanation, type Scorecard, type ApprovalRecord, type AtRiskMember, type ChangeMeta, type InboxBox, type InboxDetail, type InboxItem, type MemberProfile, type ReferralStage, type PartyHit, type PipelineApplication, type PipelineFound, type PipelineService, type PipelineStatus, type PipelineSummary, type PipelineView, type PipelineWho, type ReferralService, type RelationshipService, type RiskTier, type RouteResult, type Topic } from '@dinext/di-core';
+import { ApprovalStore, CLOSED_STAGES, CoreError, type ReferralCredit, PIPELINE_VIEWS, usd, OFFER_RULES, type MaturingCertificates, type OfferCost, type RetentionService, type GoalsService, type GoalsWho, type PayoutBatch, type ScoreExplanation, type Scorecard, type ApprovalRecord, type AtRiskMember, type ChangeMeta, type InboxBox, type InboxDetail, type InboxItem, type MemberProfile, type ReferralStage, type PartyHit, type PipelineApplication, type PipelineFound, type PipelineService, type PipelineStatus, type PipelineSummary, type PipelineView, type PipelineWho, type ReferralService, type RelationshipService, type RiskTier, type RouteResult, type Topic } from '@dinext/di-core';
 
 export type AgentId = 'referral' | 'relationship' | 'goal' | 'inbox' | 'pipeline' | 'incentives' | 'retention';
 
@@ -387,7 +387,7 @@ interface BatchDone {
   failed: string[];
 }
 
-export type Executed = { operation: 'referral.create'; created: Awaited<ReturnType<ReferralService['create']>> } | { operation: 'referral.change'; item: InboxDetail; kind: 'stage' | 'note' | 'assign'; changed: boolean } | ({ operation: 'referral.create.batch' } & BatchDone) | ({ operation: 'lap.task.create.batch' } & BatchDone) | { operation: 'lap.threshold.set'; label: string; product?: string; days: number } | { operation: 'relationship.suggestion.decline'; declined: { product: string; until: string }; partyId: number } | { operation: 'gi.incentive.approve'; payload: GiPayoutPayload; replayed: boolean } | { operation: 'gi.change'; payload: GiChange };
+export type Executed = { operation: 'referral.create'; created: Awaited<ReturnType<ReferralService['create']>> } | { operation: 'referral.change'; item: InboxDetail; kind: 'stage' | 'note' | 'assign'; changed: boolean; credit?: ReferralCredit | null } | ({ operation: 'referral.create.batch' } & BatchDone) | ({ operation: 'lap.task.create.batch' } & BatchDone) | { operation: 'lap.threshold.set'; label: string; product?: string; days: number } | { operation: 'relationship.suggestion.decline'; declined: { product: string; until: string }; partyId: number } | { operation: 'gi.incentive.approve'; payload: GiPayoutPayload; replayed: boolean } | { operation: 'gi.change'; payload: GiChange };
 
 const round = (n: number) => (Math.abs(n) >= 1000 ? Math.round(n / 100) * 100 : Math.round(n));
 
@@ -818,7 +818,7 @@ export class ToolGateway {
         return { operation: 'gi.change', payload };
       }
       if (approval.operation === 'referral.create') {
-        const created = await this.deps.referrals.create(approval.payload as ReferralPayload, { approvalId: approval.approvalId, runId: approval.runId, userId: ctx.user.id, userName: ctx.user.name }, ctx);
+        const created = await this.deps.referrals.create(approval.payload as ReferralPayload, { approvalId: approval.approvalId, runId: approval.runId, userId: ctx.user.id, userName: ctx.user.name, employeeId: ctx.employeeId }, ctx);
         await this.deps.approvals.markExecuted(approval.approvalId, `com:${created.comId}`);
         return { operation: 'referral.create', created };
       }
@@ -828,7 +828,7 @@ export class ToolGateway {
         let out: Extract<Executed, { operation: 'referral.change' }>;
         if (approval.operation === 'referral.stage.update') {
           const r = await this.deps.referrals.transition(p.comId, p.stage!, p.note, meta, ctx);
-          out = { operation: 'referral.change', item: r.item, kind: 'stage', changed: r.changed };
+          out = { operation: 'referral.change', item: r.item, kind: 'stage', changed: r.changed, credit: 'credit' in r ? r.credit : null };
         } else if (approval.operation === 'referral.note.add') {
           out = { operation: 'referral.change', item: await this.deps.referrals.addNote(p.comId, p.note!, meta, ctx), kind: 'note', changed: true };
         } else {
@@ -851,7 +851,7 @@ export class ToolGateway {
         const items = (approval.payload as BatchPayload | LapTaskPayload).items.map((i) => ({ ...i, name: 'label' in i ? i.label : i.name }));
         for (const [i, item] of items.entries()) {
           try {
-            const c = await this.deps.referrals.create(item, { approvalId: `${approval.approvalId}.${i}`, runId: approval.runId, userId: ctx.user.id, userName: ctx.user.name }, ctx);
+            const c = await this.deps.referrals.create(item, { approvalId: `${approval.approvalId}.${i}`, runId: approval.runId, userId: ctx.user.id, userName: ctx.user.name, employeeId: ctx.employeeId }, ctx);
             created.push({ comId: c.comId, name: item.name, queueName: c.queueName, assignee: c.assignee?.name ?? null, assigneeId: c.assignee?.employeeId, branch: item.branch });
           } catch (e) {
             if (!(e instanceof CoreError)) throw e;

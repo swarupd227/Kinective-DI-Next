@@ -104,3 +104,28 @@ describe.skipIf(!available)('approvals and idempotent create (AI-GRD-071, AI-TRG
     await expect(svc.create(draft, { approvalId: 'apr_testIdem00003', runId: 'R-test-0004', ...user }, { purviewBranches: ['Northgate'] })).rejects.toMatchObject({ code: 'NO_ACCESS' });
   });
 });
+
+describe.skipIf(!available)('a sold referral credits the referrer (Goals & Incentives)', () => {
+  const draft = { typeId: 'heloc', partyId: 1, fields: { preferred_contact: 'Email' }, toQueueId: 'q_lending_westport' };
+  const marcus = { userId: 'user:5120', userName: 'Marcus Reed', employeeId: 6 };
+
+  it('writes one REFERRALS credit for the sender, once, and none for a type without credit', async () => {
+    const made = await svc.create(draft, { approvalId: 'apr_test_credit_1', runId: 'R-test-credit', ...marcus }, {});
+    const [before] = await pool.query("SELECT COUNT(*) AS n FROM cdm_gi_credit WHERE goal_id = 'REFERRALS' AND employee_id = 6");
+    try {
+      const sold = await svc.transition(made.comId, 'Sold', undefined, { userId: 'user:6101', userName: 'Ana Ruiz', employeeId: 1 }, {});
+      expect('credit' in sold && sold.credit).toMatchObject({ credited: true, employeeId: 6, periodEnd: '2026-10-31' });
+      const [after] = await pool.query("SELECT COUNT(*) AS n FROM cdm_gi_credit WHERE goal_id = 'REFERRALS' AND employee_id = 6");
+      expect(Number((after as { n: number }[])[0]!.n)).toBe(Number((before as { n: number }[])[0]!.n) + 1);
+      expect(sold.item.history.some((h) => h.kind === 'credit')).toBe(true);
+      // A savings referral earns no credit, and says why.
+      const cert = await svc.create({ typeId: 'certificate', partyId: 1, fields: {}, toQueueId: 'q_service_westport' }, { approvalId: 'apr_test_credit_2', runId: 'R-test-credit', ...marcus }, {}).catch(() => null);
+      if (cert) {
+        const r = await svc.transition(cert.comId, 'Sold', undefined, marcus, {});
+        expect('credit' in r && r.credit).toMatchObject({ credited: false });
+      }
+    } finally {
+      await admin.query("DELETE FROM cdm_gi_credit WHERE label LIKE 'Referral #% sold:%'");
+    }
+  });
+});

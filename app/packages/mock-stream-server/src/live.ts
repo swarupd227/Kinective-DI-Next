@@ -765,8 +765,10 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
         const d = await wf.referrals.reassign(comId, action.employeeId, meta, ctx);
         notify.push({ employeeId: action.employeeId, branch: d.branch, title: `Referral #${comId} assigned to ${d.assignee?.name}`, detail: `${d.name} · ${d.typeLabel}`, comId });
       } else {
-        const { item, changed } = await wf.referrals.transition(comId, action.stage, action.note, meta, ctx);
-        if (changed) notify.push({ userId: item.senderUserId, title: `Referral #${comId} is ${item.stage}`, detail: `${item.name} · ${item.typeLabel}`, comId });
+        const r = await wf.referrals.transition(comId, action.stage, action.note, meta, ctx);
+        const { item, changed } = r;
+        const credit = 'credit' in r ? r.credit : null;
+        if (changed) notify.push({ userId: item.senderUserId, title: `Referral #${comId} is ${item.stage}`, detail: `${item.name} · ${item.typeLabel}${credit?.credited ? ' · counts toward your referral incentive' : ''}`, comId });
       }
       void audit.event({ eventType: 'referral.action', tenant: tenant!.runtime.key, userId: s.user.id, threadId: '', runId: '', approvalId: '', comId, action: action.kind });
       return { detail: (await referralDetail(persona, comId))!, notify };

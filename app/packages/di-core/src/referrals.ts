@@ -91,6 +91,9 @@ export interface InboxDetail extends InboxItem {
   stages: string[];
 }
 
+/** What a sale did for the referrer's incentive: credited to a period, or why not. */
+export type ReferralCredit = { credited: true; employeeId: number; name: string; periodEnd: string } | { credited: false; reason: string };
+
 export interface ChangeMeta {
   userId: string;
   userName: string;
@@ -274,7 +277,7 @@ export class ReferralService {
    * returns the referral the first call created. The approved queue is used; the person within it
    * comes from the rotation at the moment of creation.
    */
-  async create(draft: ReferralDraft & { toQueueId: string }, meta: { approvalId: string; runId: string; userId: string; userName: string }, ctx: CoreContext) {
+  async create(draft: ReferralDraft & { toQueueId: string }, meta: { approvalId: string; runId: string; userId: string; userName: string; employeeId?: number }, ctx: CoreContext) {
     const check = await this.check(draft);
     if (!check.ok) throw new CoreError('INVALID', [...check.errors, ...check.missing.map((f) => `${f.label} is required.`)].join(' '));
     await this.party(draft.partyId, ctx);
@@ -297,9 +300,9 @@ export class ReferralService {
       const now = sqlTime(new Date());
       const routing = { queueId: queue.queue_id, assigneeId: assignee, rule: direct !== undefined ? 'direct' : m.length ? 'round_robin' : 'queue', pointer: queue.rr_pointer };
       const [ins] = await conn.query(
-        `INSERT INTO esp_com_items (definition, type_id, party_id, fields, notes, stage, priority, sender_user_id, sender_name, to_queue_id, assignee_employee_id, routing, created_at, run_id, approval_id)
-         VALUES ('referral', ?, ?, ?, ?, 'New Referral', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [draft.typeId, draft.partyId, JSON.stringify(check.fields), draft.notes?.slice(0, 500) ?? null, draft.priority ?? 'Normal', meta.userId, meta.userName, queue.queue_id, assignee, JSON.stringify(routing), now, meta.runId, meta.approvalId],
+        `INSERT INTO esp_com_items (definition, type_id, party_id, fields, notes, stage, priority, sender_user_id, sender_name, sender_employee_id, to_queue_id, assignee_employee_id, routing, created_at, run_id, approval_id)
+         VALUES ('referral', ?, ?, ?, ?, 'New Referral', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [draft.typeId, draft.partyId, JSON.stringify(check.fields), draft.notes?.slice(0, 500) ?? null, draft.priority ?? 'Normal', meta.userId, meta.userName, meta.employeeId ?? null, queue.queue_id, assignee, JSON.stringify(routing), now, meta.runId, meta.approvalId],
       );
       const comId = (ins as { insertId: number }).insertId;
       // The audit trail links the record to the run and approval that created it (AI-GRD-092).
@@ -446,7 +449,40 @@ export class ReferralService {
     const claim = isOpen(stage) && !item.assignee && meta.employeeId !== undefined;
     await this.pool.query(`UPDATE esp_com_items SET stage = ?${claim ? ', assignee_employee_id = ?' : ''} WHERE com_id = ?`, claim ? [stage, meta.employeeId, comId] : [stage, comId]);
     await this.line(comId, 'stage', `${meta.userName} moved this from ${item.stage} to ${stage}.${note ? ` ${note}` : ''}`, meta.userId);
-    return { item: await this.item(comId, meta, ctx), changed: true };
+    const credit = stage === 'Sold' ? await this.creditReferrer(comId, meta) : null;
+    return { item: await this.item(comId, meta, ctx), changed: true, credit };
+  }
+
+  /**
+   * A sold referral credits the person who made it toward their "Referrals sold" goal, when the type's
+   * worksheet says it earns credit. The credit lands in the incentive period still open for approval,
+   * or the month it was sold once that period is paid. Written once per referral.
+   */
+  private async creditReferrer(comId: number, meta: ChangeMeta): Promise<ReferralCredit> {
+    const [rows] = await this.pool.query(
+      `SELECT c.sender_employee_id, c.sender_name, t.label, w.credit, e.display_name
+         FROM esp_com_items c JOIN mod_ref_types t ON t.type_id = c.type_id LEFT JOIN mod_ref_worksheet w ON w.type_id = c.type_id
+         LEFT JOIN cdm_employee e ON e.employee_id = c.sender_employee_id WHERE c.com_id = ?`,
+      [comId],
+    );
+    const r = (rows as { sender_employee_id: number | null; sender_name: string; label: string; credit: string | null; display_name: string | null }[])[0];
+    if (!r) return { credited: false, reason: 'The referral wasn’t found.' };
+    if (r.credit !== 'Yes') return { credited: false, reason: `${r.label} referrals don’t earn incentive credit${r.credit ? '' : ' (no credit rule is set for this type)'}.` };
+    if (r.sender_employee_id === null) return { credited: false, reason: `${r.sender_name} isn’t linked to an employee record, so there’s no scorecard to credit.` };
+    const label = `Referral #${comId} sold: ${r.label}`.slice(0, 80);
+    const [dup] = await this.pool.query("SELECT credit_id FROM cdm_gi_credit WHERE goal_id = 'REFERRALS' AND employee_id = ? AND label = ?", [r.sender_employee_id, label]).catch(() => [[{}]]);
+    if ((dup as unknown[]).length) return { credited: false, reason: 'Credit was already given for this referral.' };
+    const [periods] = await this.pool.query('SELECT period_end, state FROM mod_gi_period ORDER BY period_end DESC LIMIT 1').catch(() => [[]]);
+    const latest = (periods as { period_end: unknown; state: string }[])[0];
+    if (!latest) return { credited: false, reason: 'Goals & Incentives isn’t set up here.' };
+    const today = new Date();
+    const latestEnd = latest.period_end instanceof Date ? latest.period_end.toISOString().slice(0, 10) : String(latest.period_end).slice(0, 10);
+    const monthEnd = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
+    const period = latest.state === 'paid' ? monthEnd : latestEnd;
+    const occurred = today.toISOString().slice(0, 10) > period ? period : today.toISOString().slice(0, 10);
+    await this.pool.query("INSERT INTO cdm_gi_credit (goal_id, employee_id, period_end, occurred, label, value, state) VALUES ('REFERRALS', ?, ?, ?, ?, 1, 'counted')", [r.sender_employee_id, period, occurred, label]);
+    await this.line(comId, 'credit', `${r.display_name ?? r.sender_name} was credited one sold referral toward the ${period.slice(0, 7)} incentive period (closed by ${meta.userName}).`, meta.userId);
+    return { credited: true, employeeId: r.sender_employee_id, name: r.display_name ?? r.sender_name, periodEnd: period };
   }
 
   async addNote(comId: number, text: string, meta: ChangeMeta, ctx: CoreContext) {

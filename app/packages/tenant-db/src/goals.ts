@@ -79,7 +79,8 @@ export const GOALS_DDL = [
    )`,
 ];
 
-export const GOALS_WRITE_TABLES = ['mod_gi_payout', 'mod_gi_adjustment'];
+// A sold referral writes the referrer's credit (cdm_gi_credit), so the scorecard follows the referral.
+export const GOALS_WRITE_TABLES = ['mod_gi_payout', 'mod_gi_adjustment', 'cdm_gi_credit'];
 
 export const GI_PERIOD = '2026-10-31';
 export const GI_PRIOR = '2026-09-30';
