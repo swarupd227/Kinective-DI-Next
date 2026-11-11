@@ -26,3 +26,4 @@ export { BUILD_ACCOUNT, OFFCORE_DDL, OFFCORE_DEMO_NAME, OFFCORE_WRITE_TABLES, bu
 export { PREPARED_DIFFERENCES, carryUp, crParents, formulaTerms, preparedFigures, type CrLineShape } from './callReportTree.ts';
 export { CONTRA, GL_DDL, GL_MONTHS, GL_OPEN_MONTH, generateGl } from './gl.ts';
 export { REFERRAL_EXPIRE_DAYS, REFERRAL_PRODUCT, referralHistory } from './workflow.ts';
+export { CHANNEL_ORDER, SALES_GOALS_DDL, generateSalesGoals, loanChannel } from './salesGoals.ts';

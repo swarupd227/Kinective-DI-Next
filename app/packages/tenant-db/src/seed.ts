@@ -21,6 +21,7 @@ import { reportSeed } from './reports.ts';
 import { CR_FILING, generateCallReport } from './callReport.ts';
 import { preparedFigures } from './callReportTree.ts';
 import { GL_DDL, generateGl } from './gl.ts';
+import { SALES_GOALS_DDL, generateSalesGoals } from './salesGoals.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
 import { createSourceTables, seedCoreReplica } from './sources.ts';
@@ -127,6 +128,11 @@ async function main() {
     await insert(admin, 'mod_gi_incentive', ['incentive_id', 'goal_id', 'name', 'payout_type', 'per_unit', 'cap_amount'], GI_INCENTIVES.map((i) => [...i]));
     await insert(admin, 'mod_gi_tier', ['incentive_id', 'tier', 'lower_pct', 'amount'], GI_TIERS.map((x) => [...x]));
     await insert(admin, 'mod_gi_period', ['period_end', 'state'], gi.periods);
+    // Loan goals by channel (minimum and stretch) and sales contests.
+    for (const ddl of SALES_GOALS_DDL) await admin.query(ddl);
+    const sales = generateSalesGoals(t, profile.institutionType === 'bank');
+    await insert(admin, 'fin_loan_goal', ['year', 'channel', 'minimum', 'stretch', 'sort_order'], sales.goals);
+    await insert(admin, 'gi_contest', ['contest_id', 'name', 'categories', 'metric', 'by_level', 'starts', 'ends', 'prize'], sales.contests);
     await insert(admin, 'cdm_gi_credit', ['goal_id', 'employee_id', 'period_end', 'occurred', 'label', 'value', 'state'], gi.credits);
     await insert(admin, 'mod_gi_adjustment', ['employee_id', 'period_end', 'amount', 'reason_code', 'note', 'status', 'created_by'], gi.adjustments);
     for (const ddl of BENCHMARK_DDL) await admin.query(ddl);

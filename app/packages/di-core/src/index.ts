@@ -66,3 +66,4 @@ export { InteractionService, LOG_CHANNELS, LOG_KINDS, type LogChannel, type LogK
 export { generationOf } from './relationship.ts';
 export { ReferralReportService, type RefFilters, type RefGroupBy, type RefRow } from './referralReport.ts';
 export { CapitalActionsModel, CapitalActionsService, LOAN_KEYS, LOAN_TYPES, THIN_SHARE, type CapitalLevers, type CheckId, type CheckStatus, type LoanKey, type PlanCheck, type PlanFigures } from './capitalActions.ts';
+export { SalesScorecardService } from './salesScorecard.ts';
