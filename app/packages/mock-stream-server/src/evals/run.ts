@@ -15,6 +15,9 @@ import { startLiveRuntime } from '../live.ts';
 import { PERSONAS } from '../data.ts';
 import { EVAL_ITEMS, type EvalItem, type EvalSet } from './sets.ts';
 
+// Evals never train: the first-start attrition model would compete with the items for the database.
+process.env.DI_ML_BOOTSTRAP ??= '0';
+
 const live = process.argv.includes('--live');
 const only = process.argv[process.argv.indexOf('--only') + 1];
 const items = EVAL_ITEMS.filter((i) => !process.argv.includes('--only') || i.id.startsWith(only ?? ''));

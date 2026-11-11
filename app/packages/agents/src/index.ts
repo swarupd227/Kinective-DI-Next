@@ -77,3 +77,4 @@ export { FUNDING_CHOICE_AGENT, FUNDING_CHOICE_REQUEST, fundingCase, fundingChoic
 export { CRE_RESPONSE_AGENT, CRE_RESPONSE_REQUEST, OFFICE_SUBLIMIT, creCase, creMemo, creResponseModule } from './creDecision.ts';
 export { ACQUISITION_AGENT, ACQUISITION_REQUEST, acquisitionCase, acquisitionMemo, acquisitionModule, targetSizeFrom } from './acquisitionDecision.ts';
 export { BUDGET_STRESS_AGENT, BUDGET_STRESS_REQUEST, budgetCase, budgetMemo, budgetStressModule } from './budgetDecision.ts';
+export { MODEL_REQUEST, attritionModule, modelSummary } from './attritionAgent.ts';

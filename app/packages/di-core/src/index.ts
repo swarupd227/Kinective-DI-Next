@@ -72,3 +72,5 @@ export { FUNDING_POLICY, FUNDING_RATES, FundingChoiceService, FundingModel, type
 export { AcquisitionModel, AcquisitionService, COST_SAVES, EARNBACK_MAX_YEARS, TARGET_PROFILE, type DealCheck, type DealCheckId, type DealFigures, type DealLevers } from './acquisition.ts';
 export { BudgetStressModel, BudgetStressService, type BudgetCheck, type BudgetCheckId, type BudgetFigures, type BudgetLevers } from './budgetStress.ts';
 export { checklistFrom, type OnbChecklist } from './modules.ts';
+export { AttritionModelService, ATTRITION_BANDS, ATTRITION_FEATURES, ATTRITION_FEATURE_LABELS, modelMonthLabel, type MemberSnapshot, type ModelRecord } from './attritionModel.ts';
+export { auc, capture, contributions, predict, train as trainGbm, type Gbm, type GbmParams } from './gbm.ts';
