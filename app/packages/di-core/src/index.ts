@@ -61,3 +61,4 @@ export { OffcoreService, OFFCORE_FIELDS, OFFCORE_LOAN_BASE, OFFCORE_PREFIX, cate
 export { StressService, SCENARIOS, type QuarterLine, type Scenario, type ScenarioKey } from './stress.ts';
 export { BaselService, BASEL_ASSUMPTIONS, BASEL_THRESHOLDS, CBLR_PCT, CONSERVATION_BUFFER, type RatioKey, type RatioLine, type RwaLine } from './basel.ts';
 export { BALANCE_BANDS, HIGH_LIKELIHOOD, LIKELIHOOD_BANDS, PredictiveService, type BalanceBand, type SuccessRow, type SuggestedPerson } from './predictive.ts';
+export { GlService, type GlCompare, type GlGroup, type GlScope, type GlStatementKind } from './gl.ts';

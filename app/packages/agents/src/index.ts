@@ -65,3 +65,4 @@ export { API_REQUEST, CONNECTION_COLUMNS, LOG_COLUMNS, apisModule, connectionRow
 export { BASEL_SECTIONS, baselAnalyses, baselHeadline, baselModule } from './basel.ts';
 export { CAMELS_SECTIONS, camelsAnalyses, camelsModule, camelsView, type Component as CamelsComponent, type Measure as CamelsMeasure } from './camels.ts';
 export { PREDICTIVE_REQUEST, bandIn, predictiveModule, predictiveQuestion, productIn, type PredictiveQuestion } from './predictive.ts';
+export { GL_REQUEST, dayIn, glModule, glPlan, monthIn } from './gl.ts';

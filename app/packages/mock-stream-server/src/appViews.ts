@@ -9,7 +9,7 @@ import type { Pool } from '@dinext/tenant-db';
 import { SourceService, TableService, secretKeyFrom } from '@dinext/di-core';
 import { ApiService, apiHosts, stampUtc } from '@dinext/di-core';
 import { OffcoreService } from '@dinext/di-core';
-import { BALANCE_BANDS, PredictiveService } from '@dinext/di-core';
+import { BALANCE_BANDS, GlService, PredictiveService } from '@dinext/di-core';
 import { CONNECTION_COLUMNS, LOG_COLUMNS, connectionRows, logRows } from '@dinext/agents';
 import { EmailOutbox } from '@dinext/di-core';
 
@@ -733,6 +733,41 @@ export function createAppViews(deps: ViewDeps) {
         tiles: dims.map((d) => { const own = checks.items.filter((c) => c.dimension === d); const late = d === 'Timeliness' && build.stale; return { label: `${d} checks passed`, value: passed(own), ...(late ? { detail: `Out of date: no build for ${build.ageDays} days` } : {}), tone: own.some((c) => !c.passed) ? ('danger' as const) : late ? ('warning' as const) : ('neutral' as const) }; }),
         prompts: ['Which checks failed?', 'Where does 60+ delinquency come from?'],
         blocks: [table('By domain', 'dq.status_report', [text('domain', 'Domain'), text('passed', 'Passed'), { field: 'rows', headerName: 'Rows failing', type: 'count' }], domains.map((d) => { const own = checks.items.filter((c) => c.domain === d); return { domain: d, passed: passed(own), rows: own.reduce((n, c) => n + c.rowsFailed, 0) }; })), table('Checks', 'dq.status_report', [text('name', 'Check'), text('result', 'Result'), text('domain', 'Domain'), text('dimension', 'Dimension')], checks.items.map((c) => ({ domain: c.domain, dimension: c.dimension, name: c.name, result: c.passed ? 'Passed' : `Failed, ${c.rowsFailed} rows` })))],
+      };
+    },
+    async gl() {
+      const svc = new GlService(pool);
+      const meta = await svc.meta();
+      const [bs, is, mtd, budget, budgetYtd] = await Promise.all([svc.statement('BS', { compare: 'prior_month' }), svc.statement('IS', { compare: 'prior_month' }), svc.statement('BS', { day: meta.latestDay, compare: 'prior_month' }), svc.budget({ by: 'department' }), svc.budget({ by: 'department', ytd: true })]);
+      const short = (n: number) => (Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : usd(n));
+      const t = bs.totals as { assets: number[]; liabilities: number[]; equity: number[] };
+      const n = is.totals as { income: number[]; expenses: number[]; net: number[] };
+      const over = budgetYtd.lines.filter((l) => l.type === 'expense' && !l.favorable).sort((a, b) => b.variance - a.variance);
+      const statement = (x: typeof bs, title: string) => {
+        const cols = [text('line', 'Group'), ...x.periods.map((p, i) => ({ field: `v${i}`, headerName: p, type: 'currency' as const }))];
+        const out: Record<string, string | number>[] = [];
+        for (const side of x.kind === 'BS' ? ['Assets', 'Liabilities', 'Equity'] : ['Income', 'Expenses']) {
+          for (const g of x.groups.filter((gr) => gr.side === side)) out.push({ line: g.group, ...Object.fromEntries(g.values.map((v, i) => [`v${i}`, Math.round(v)])) });
+          const tot = x.kind === 'BS' ? (x.totals as typeof t)[side.toLowerCase() as 'assets'] : (x.totals as typeof n)[side === 'Income' ? 'income' : 'expenses'];
+          out.push({ line: `Total ${side.toLowerCase()}`, ...Object.fromEntries(tot.map((v, i) => [`v${i}`, Math.round(v)])) });
+        }
+        if (x.kind === 'IS') out.push({ line: 'Net income', ...Object.fromEntries((x.totals as typeof n).net.map((v, i) => [`v${i}`, Math.round(v)])) });
+        return table(title, 'gl.statement', cols, out);
+      };
+      const budgetTable = (b: typeof budget) => table(`Budget against actual by department, ${b.label}`, 'gl.budget', [text('name', 'Department'), text('type', 'Type'), { field: 'actual', headerName: 'Actual', type: 'currency' }, { field: 'budget', headerName: 'Budget', type: 'currency' }, { field: 'variance', headerName: 'Variance', type: 'currency' }, text('pct', '%'), text('fav', '')], b.lines.map((l) => ({ name: l.name, type: l.type === 'income' ? 'Income' : 'Expense', actual: Math.round(l.actual), budget: Math.round(l.budget), variance: Math.round(l.variance), pct: l.pct === null ? '' : `${l.pct > 0 ? '+' : ''}${l.pct.toFixed(1)}%`, fav: l.favorable ? 'Favorable' : 'Unfavorable' })));
+      return {
+        title: 'General Ledger',
+        lede: `Statements from the general ledger, ${bs.scope.charAt(0).toLowerCase()}${bs.scope.slice(1)}. September 30 ties to the Call Report. ${new Date(`${meta.openMonth}T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' })} is open, with daily balances through ${day(meta.latestDay)}. Journal entries are kept for September and October.`,
+        take: { headline: `Net income was ${short(n.net[0]!)} in ${is.periods[0]} and ${short(n.net.at(-1)!)} year to date.${over.length ? ` ${over[0]!.name} is ${over[0]!.pct?.toFixed(1)}% over budget for the year, ${short(over[0]!.variance)}.` : ' Every department is within budget for the year.'}`, action: { label: 'Which departments are over budget?', ask: 'Which departments are over budget this year?' } },
+        tiles: [
+          { label: `Total assets, ${bs.periods[0]}`, value: short(t.assets[0]!) },
+          { label: `Total assets, ${day(meta.latestDay)}`, value: short((mtd.totals as typeof t).assets[0]!) },
+          { label: `Net income, ${is.periods[0]}`, value: short(n.net[0]!) },
+          { label: 'Net income, year to date', value: short(n.net.at(-1)!), detail: `Budget ${short(budgetYtd.totals.net.budget)}`, tone: n.net.at(-1)! >= budgetYtd.totals.net.budget ? 'neutral' : 'warning' },
+          { label: 'Departments over budget, YTD', value: String(over.length), tone: over.length ? 'warning' : 'neutral', ask: 'Which departments are over budget this year?' },
+        ],
+        prompts: ['Which departments are over budget this year?', 'Show the balance sheet by account', 'Show the income statement for the last six months', `Show the balance sheet as of October ${Number(meta.latestDay.slice(8))}`, 'Show the journal entries for marketing in September', 'Show budget against actual by cost center'],
+        blocks: [statement(bs, `Balance sheet, ${bs.periods[0]}`), statement(is, `Income statement, ${is.periods[0]}`), budgetTable(budgetYtd), budgetTable(budget)],
       };
     },
     async coremap() {

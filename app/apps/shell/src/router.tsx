@@ -91,6 +91,7 @@ export const router = createBrowserRouter([
           { path: 'm/liquidity/*', element: guarded('liquidity', <AppViewPage app="liquidity" />) },
           { path: 'm/membership/*', element: guarded('membership', <AppViewPage app="membership" />) },
           { path: 'm/cfo/*', element: guarded('cfo', <AppViewPage app="cfo" />) },
+          { path: 'm/gl/*', element: guarded('gl', <AppViewPage app="gl" />) },
           { path: 'm/:module/*', element: page(<AppPlaceholder app="module" />) },
           { path: '*', element: page(<NotFound />) },
         ],

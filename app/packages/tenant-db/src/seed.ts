@@ -20,6 +20,7 @@ import { BENCHMARK_DDL, BUDGET_WRITE_TABLES, benchmarks, budgetSeed, capitalPlan
 import { reportSeed } from './reports.ts';
 import { CR_FILING, generateCallReport } from './callReport.ts';
 import { preparedFigures } from './callReportTree.ts';
+import { GL_DDL, generateGl } from './gl.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
 import { createSourceTables, seedCoreReplica } from './sources.ts';
@@ -176,6 +177,19 @@ async function main() {
       await insert(admin, 'cr_resolution', ['code', 'quarter_end', 'resolution', 'reason', 'decided_by', 'decided_at', 'approval_id'], [['013', prepared.quarter, 'Explained', 'Share drafts presented September 30 cleared after DI’s build; the core matches on the October 1 build. No change.', 'Priya Shah', '2026-10-22 09:15:00', null]]);
       await insert(admin, 'seg_company', ['company_id', 'name', 'stage', 'members', 'new_members', 'loans', 'deposits', 'owner', 'sponsorship'], fx.companies);
       await insert(admin, 'seg_interaction', ['company_id', 'at', 'kind', 'note', 'by_name'], fx.interactions);
+    }
+    {
+      // The general ledger behind the Call Report: statements, budget by cost center, journal entries.
+      const glSource = profile.institutionType === 'bank' ? generateFfiecCallReport(t).gl : generateCallReport(t).gl;
+      const gl = generateGl(t, glSource as unknown[][], profile.institutionType === 'bank');
+      for (const ddl of GL_DDL) await admin.query(ddl);
+      await insert(admin, 'gl_company', ['company_id', 'name', 'kind'], gl.companies);
+      await insert(admin, 'gl_account', ['company_id', 'gl_number', 'name', 'type', 'statement', 'grp', 'sort_order'], gl.accounts);
+      await insert(admin, 'gl_cost_center', ['cost_center', 'name', 'department'], gl.costCenters);
+      await insert(admin, 'gl_balance_month', ['month_end', 'company_id', 'gl_number', 'cost_center', 'amount'], gl.months);
+      await insert(admin, 'gl_balance_day', ['day', 'company_id', 'gl_number', 'balance'], gl.days);
+      await insert(admin, 'gl_budget', ['month_end', 'gl_number', 'cost_center', 'amount'], gl.budget);
+      await insert(admin, 'gl_journal', ['je_id', 'posted', 'company_id', 'gl_number', 'cost_center', 'debit', 'credit', 'description', 'source', 'ticket', 'offset_gl', 'posted_by'], gl.journal);
     }
     await insert(admin, 'cmp_campaign', ['campaign_id', 'name', 'channel', 'product', 'sent', 'applications', 'loan_dollars', 'control_size', 'control_responders', 'cost', 'deposit_dollars', 'launched'], fx.campaigns);
     for (const ddl of WORKFLOW_DDL) await admin.query(ddl);

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import {
+  BookOpen,
   Brain,
   BriefcaseBusiness,
   Calendar,
@@ -80,6 +81,7 @@ export const APP_META: Record<string, AppMeta> = {
   liquidity: { label: 'Liquidity', icon: i(Droplets), path: '/m/liquidity', group: 'modules' },
   membership: { label: 'Membership Growth', icon: i(UsersRound), path: '/m/membership', group: 'modules' },
   cfo: { label: 'CFO Scorecard', icon: i(Scale), path: '/m/cfo', group: 'modules' },
+  gl: { label: 'General Ledger', icon: i(BookOpen), path: '/m/gl', group: 'modules' },
   wfbuilder: { label: 'Workflow Builder', icon: i(Settings2), path: '/workflows/builder', group: 'admin' },
   integrations: { label: 'Integrations', icon: i(Plug), path: '/integrations', group: 'admin' },
   classes: { label: 'Classes', icon: i(ShieldUser), path: '/admin/classes', group: 'admin' },
