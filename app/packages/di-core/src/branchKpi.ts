@@ -6,6 +6,7 @@
 // Each branch in the viewer's purview is shown beside the network: every branch taken together, so a
 // branch manager can compare without seeing another branch by name.
 import type { Pool } from '@dinext/tenant-db';
+import { ProfitabilityService } from './profitability.ts';
 
 const rows = async <T>(pool: Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
 const day = (v: unknown) => String(v instanceof Date ? v.toISOString() : v).slice(0, 10);
@@ -520,6 +521,80 @@ export class BranchKpiService {
     const inView = new Set(branches.map((x) => x.b));
     const incomplete = training.filter((t) => !t.completed && inView.has(t.b)).map((t) => ({ branch: t.b, name: t.name, course: t.course, due: day(t.due), overdue: day(t.due) < asOf }));
     return { asOf, since, incomplete, reasons: reasons.map((r) => ({ reason: r.reason, count: n(r.k) })), ...this.withNetwork(by, branches, line(NETWORK, head, changes, eng, training)) };
+  }
+
+  /**
+   * The branch P&L for a year. Interest and credit cost come from funds transfer pricing on today's
+   * balances (ProfitabilityService, annualized): a loan pays for its funding, a deposit earns a credit for
+   * it. Fees are the branch's accounts at DI's standard fee per account. Direct expenses are what the
+   * general ledger booked to the branch's cost center over the last 12 closed months, against its 2026
+   * budget to date. Head office's operating expenses are then shared out: Lending's by loan balances, the
+   * rest by loans and deposits together [Assumption: DI's standard allocation].
+   */
+  async pnl(scope: Scope = {}) {
+    const branches = await this.branchList(scope);
+    const profit = await new ProfitabilityService(this.pool, 'credit_union').analysis();
+    const [m] = await rows<{ m: unknown }>(this.pool, "SELECT MAX(b.month_end) AS m FROM gl_balance_month b JOIN gl_account a ON a.company_id = b.company_id AND a.gl_number = b.gl_number WHERE a.statement = 'IS' AND b.month_end < (SELECT MAX(month_end) FROM gl_balance_month)");
+    const end = day(m!.m);
+    const yearStart = `${end.slice(0, 4)}-01-01`;
+    const glFrom = day(new Date(Date.UTC(Number(end.slice(0, 4)) - 1, Number(end.slice(5, 7)), 1)));
+    const direct = new Map(
+      (
+        await rows<{ b: string; actual: number; ytd: number }>(
+          this.pool,
+          `SELECT REPLACE(c.name, ' branch', '') AS b, SUM(CASE WHEN g.month_end >= ? THEN g.amount ELSE 0 END) AS actual, SUM(CASE WHEN g.month_end >= ? THEN g.amount ELSE 0 END) AS ytd
+           FROM gl_balance_month g JOIN gl_account a ON a.company_id = g.company_id AND a.gl_number = g.gl_number JOIN gl_cost_center c ON c.cost_center = g.cost_center
+           WHERE c.department = 'Retail' AND a.type = 'expense' AND g.company_id = 1 AND g.month_end <= ? GROUP BY c.name`,
+          [glFrom, yearStart, end],
+        )
+      ).map((r) => [r.b, r]),
+    );
+    const budget = new Map(
+      (
+        await rows<{ b: string; amt: number }>(
+          this.pool,
+          `SELECT REPLACE(c.name, ' branch', '') AS b, SUM(g.amount) AS amt FROM gl_budget g JOIN gl_account a ON a.company_id = 1 AND a.gl_number = g.gl_number JOIN gl_cost_center c ON c.cost_center = g.cost_center
+           WHERE c.department = 'Retail' AND a.type = 'expense' AND g.month_end BETWEEN ? AND ? GROUP BY c.name`,
+          [yearStart, end],
+        )
+      ).map((r) => [r.b, n(r.amt)]),
+    );
+    const overhead = await rows<{ dept: string; amt: number }>(
+      this.pool,
+      `SELECT c.department AS dept, SUM(g.amount) AS amt FROM gl_balance_month g JOIN gl_account a ON a.company_id = g.company_id AND a.gl_number = g.gl_number JOIN gl_cost_center c ON c.cost_center = g.cost_center
+       WHERE c.department <> 'Retail' AND a.type = 'expense' AND a.grp = 'Operating expenses' AND g.company_id = 1 AND g.month_end BETWEEN ? AND ? GROUP BY c.department`,
+      [glFrom, end],
+    );
+    const lendingOverhead = overhead.filter((o) => o.dept === 'Lending').reduce((s, o) => s + n(o.amt), 0);
+    const otherOverhead = overhead.filter((o) => o.dept !== 'Lending').reduce((s, o) => s + n(o.amt), 0);
+    const book = await rows<{ b: string; loans: number; deposits: number }>(
+      this.pool,
+      `SELECT l.name AS b, (SELECT COALESCE(SUM(x.balance), 0) FROM cdm_loan x WHERE x.branch_id = l.int_id AND x.close_date IS NULL AND x.charge_off_date IS NULL AND x.balance > 0) AS loans,
+         (SELECT COALESCE(SUM(d.balance), 0) FROM cdm_deposit_account d WHERE d.branch_id = l.int_id AND d.close_date IS NULL AND d.balance > 0) AS deposits FROM cdm_location l`,
+    );
+    const allLoans = book.reduce((s, r) => s + n(r.loans), 0);
+    const allBalances = book.reduce((s, r) => s + n(r.loans) + n(r.deposits), 0);
+
+    type Line = { branch: string; loans: number; deposits: number; netInterest: number; fees: number; revenue: number; creditCost: number; directExpense: number; directYtd: number; budgetYtd: number; contribution: number; overhead: number; net: number; efficiencyPct: number; returnPct: number };
+    const line = (b: string, loans: number, deposits: number, p: { interest: number; ftp: number; credit: number; fees: number }, d: { actual: number; ytd: number }, budgetYtd: number, oh: number): Line => {
+      const netInterest = p.interest + p.ftp;
+      const revenue = netInterest + p.fees;
+      const contribution = revenue + p.credit - d.actual;
+      return { branch: b, loans, deposits, netInterest, fees: p.fees, revenue, creditCost: -p.credit, directExpense: d.actual, directYtd: d.ytd, budgetYtd, contribution, overhead: oh, net: contribution - oh, efficiencyPct: pct(d.actual + oh, revenue), returnPct: pct(contribution - oh, loans + deposits) };
+    };
+    const by = new Map(
+      book.map((r) => {
+        const p = profit.byBranch.find((x) => x.name === r.b) ?? { interest: 0, ftp: 0, credit: 0, fees: 0 };
+        const d = direct.get(r.b);
+        const oh = (allLoans ? (lendingOverhead * n(r.loans)) / allLoans : 0) + (allBalances ? (otherOverhead * (n(r.loans) + n(r.deposits))) / allBalances : 0);
+        return [r.b, line(r.b, n(r.loans), n(r.deposits), p, { actual: n(d?.actual), ytd: n(d?.ytd) }, budget.get(r.b) ?? 0, oh)];
+      }),
+    );
+    const all = [...by.values()];
+    const sum = (k: keyof Line) => all.reduce((s, l) => s + (l[k] as number), 0);
+    const network = line(NETWORK, sum('loans'), sum('deposits'), { interest: sum('netInterest'), ftp: 0, credit: -sum('creditCost'), fees: sum('fees') }, { actual: sum('directExpense'), ytd: sum('directYtd') }, sum('budgetYtd'), sum('overhead'));
+    const label = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+    return { end, glFrom, endLabel: label(end), overheadPool: lendingOverhead + otherOverhead, ...this.withNetwork(by, branches, network) };
   }
 }
 

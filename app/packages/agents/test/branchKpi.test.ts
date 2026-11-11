@@ -34,6 +34,12 @@ describe('branch performance questions', () => {
       ['Were there any dual control exceptions?', 'bk_audit', {}],
       ['Who hasn’t finished BSA training?', 'bk_people', {}],
       ['What is staff turnover and engagement at my branch?', 'bk_people', {}],
+      ['Show the branch P&L', 'bk_pnl', {}],
+      ['Show the P&L for Westport', 'bk_pnl', { branch: 'Westport' }],
+      ['Which branches make money?', 'bk_pnl', {}],
+      ['What is the most profitable branch?', 'bk_pnl', {}],
+      ['Does my branch lose money?', 'bk_pnl', {}],
+      ['Show branch profitability and the efficiency ratio', 'bk_pnl', {}],
     ];
     for (const [q, tool, args] of cases) {
       expect(BRANCH_KPI_REQUEST.test(q), q).toBe(true);
@@ -41,7 +47,7 @@ describe('branch performance questions', () => {
       expect(p.tool, q).toBe(tool);
       if (args) expect(p.args, q).toEqual(args);
     }
-    for (const q of ['Which branches and products drive delinquency?', 'Show the pipeline by product for my branch', 'Show my overdue onboarding touch points', 'Who on my team is behind on goals?', 'Show Westport loans by category', 'Show my 30/60/90-day onboarding touch points', 'Which regulatory issues are open more than 3 weeks?', 'Does Suzanne Jackson have a debit card?', 'Show loan growth by branch for Q3 vs Q2', 'What did deposit balances do by product type over the last two quarters?', 'Show balances for all branches', 'Column stats for balance', 'Show the AI audit log'])
+    for (const q of ['Which branches and products drive delinquency?', 'Show the pipeline by product for my branch', 'Show my overdue onboarding touch points', 'Who on my team is behind on goals?', 'Show Westport loans by category', 'Show my 30/60/90-day onboarding touch points', 'Which regulatory issues are open more than 3 weeks?', 'Does Suzanne Jackson have a debit card?', 'Show loan growth by branch for Q3 vs Q2', 'What did deposit balances do by product type over the last two quarters?', 'Show balances for all branches', 'Column stats for balance', 'Show the AI audit log', 'Which products are most profitable?', 'What’s our non-interest income?', 'Show the most profitable members'])
       expect(BRANCH_KPI_REQUEST.test(q), q).toBe(false);
   });
 
@@ -186,6 +192,24 @@ describe.skipIf(!opsUp)('branch operations on the credit union', () => {
         for (const b of out.blocks) expect(b.provenance.sources.every((x) => x.ref.startsWith('table:bro_')), name).toBe(true);
       }
       expect((await run('bk_people')).text).toMatch(/against 100%/);
+
+      // The branch P&L: lines add up, the branches' direct expenses are the GL's Retail cost centers, and overhead shares out exactly.
+      const all = await svc.pnl();
+      for (const l of [...all.lines, all.network]) {
+        expect(l.revenue).toBeCloseTo(l.netInterest + l.fees, 2);
+        expect(l.contribution).toBeCloseTo(l.revenue - l.creditCost - l.directExpense, 2);
+        expect(l.net).toBeCloseTo(l.contribution - l.overhead, 2);
+      }
+      expect(all.lines.reduce((s, l) => s + l.overhead, 0)).toBeCloseTo(all.overheadPool, 0);
+      expect(all.network.directExpense).toBeCloseTo(all.lines.reduce((s, l) => s + l.directExpense, 0), 2);
+      expect(all.lines.every((l) => l.directExpense > 0 && l.budgetYtd > 0)).toBe(true);
+      const mine = await svc.pnl(w);
+      expect(mine.lines.map((l) => l.branch)).toEqual(['Westport']);
+      expect(mine.network.net).toBeCloseTo(all.network.net, 2);
+      const pnl = (await spec.tools.find((t) => t.name === 'bk_pnl')!.run({} as never, ctx)) as { text: string; blocks: { provenance: { sources: { ref: string }[] } }[] };
+      expect(pnl.text).toMatch(/\*\*Westport (made|loses) \$[\d.]+M in the 12 months to/);
+      expect(pnl.text).not.toMatch(/Eastgate|Downtown/);
+      expect(pnl.blocks[0]!.provenance.sources[0]!.ref).toBe('table:gl_balance_month');
     } finally {
       await pool.end();
     }

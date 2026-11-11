@@ -17,7 +17,8 @@ const LOBBY_ASK = /\blobby\b|\bwait times?\b|\bfoot traffic\b|\bhow long (?:do )
 const RISK_ASK = /\bctrs?\b|\bcurrency transaction reports?\b|\bstructuring\b|\bskimm\w*\b|\bcheck fraud\b|\belder (?:financial )?(?:abuse|exploitation)\b|\breg(?:ulation)? e\b|\bfraud (?:loss(?:es)?|cases?)\b|\bfraud\b[^.?!]*\bbranch(?:es)?\b|\bbsa\b|\baml\b|\bsars?\b/;
 const AUDIT_ASK = /\baudit (?:exceptions?|findings?)\b|\bsurprise (?:cash )?counts?\b|\bcash counts?\b|\bdual control\b/;
 const PEOPLE_ASK = /\b(?:staff|employee|team) (?:turnover|engagement)\b|\bturnover\b[^.?!]*\b(?:staff|branch|team|people)\b|\bengagement (?:scores?|surveys?)\b|\btraining\b[^.?!]*\b(?:complet\w*|finish\w*|overdue|status|done|behind)\b|\b(?:complet\w*|finish\w*|overdue|done)\b[^.?!]*\btraining\b|\b(?:bsa|aml|fair lending|security|required) training\b/;
-export const BRANCH_KPI_REQUEST = new RegExp([TARGETS_ASK, DQ_ASK, DIGITAL_ASK, PRODUCTIVITY_ASK, COMPLAINT_ASK, BALANCING_ASK, LOBBY_ASK, RISK_ASK, AUDIT_ASK, PEOPLE_ASK].map((r) => r.source).join('|'), 'i');
+const PNL_ASK = /\bp ?& ?l\b|\bprofit and loss\b|\bincome statement\b[^.?!]*\bbranch(?:es)?\b|\bbranch(?:es)?\b[^.?!]*\b(?:profitab\w*|profits?|make money|makes money|lose money|loses money|losing money|efficiency ratio)\b|\b(?:most|least|more|less) profitable branch(?:es)?\b|\b(?:profitab\w*|efficiency ratio)\b[^.?!]*\b(?:by|each|my|our|this) branch(?:es)?\b/;
+export const BRANCH_KPI_REQUEST = new RegExp([PNL_ASK, TARGETS_ASK, DQ_ASK, DIGITAL_ASK, PRODUCTIVITY_ASK, COMPLAINT_ASK, BALANCING_ASK, LOBBY_ASK, RISK_ASK, AUDIT_ASK, PEOPLE_ASK].map((r) => r.source).join('|'), 'i');
 
 const NO_ACCESS = 'Branch performance isn’t part of your DI access.';
 const text = (field: string, headerName: string) => ({ field, headerName, type: 'text' as const });
@@ -64,8 +65,15 @@ const opsSources: ModuleSpec['sources'] = [
 ];
 
 const opsWho = { agent: 'Branch Performance', sources: opsSources };
+const pnlSources: ModuleSpec['sources'] = [
+  { kind: 'table', label: 'General ledger by cost center, and budget', ref: 'table:gl_balance_month' },
+  { kind: 'table', label: 'Loans, for funds transfer pricing', ref: 'table:cdm_loan' },
+  { kind: 'table', label: 'Shares and deposits, for funds transfer pricing', ref: 'table:cdm_deposit_account' },
+];
+const pnlWho = { agent: 'Branch Performance', sources: pnlSources };
+const mm = (v: number) => `$${(v / 1e6).toFixed(2)}M`;
 
-type Kind = 'targets' | 'delinquency' | 'digital' | 'productivity' | 'complaints' | 'balancing' | 'lobby' | 'risk' | 'audit' | 'people';
+type Kind = 'targets' | 'delinquency' | 'digital' | 'productivity' | 'complaints' | 'balancing' | 'lobby' | 'risk' | 'audit' | 'people' | 'pnl';
 
 export function branchKpiPlan(t: string): { tool: string; args: Record<string, unknown> } {
   const s = t.toLowerCase();
@@ -73,6 +81,7 @@ export function branchKpiPlan(t: string): { tool: string; args: Record<string, u
   const named = [/\b(?:at|in|for|of) ([A-Z][a-z]+)\b/g, /\b(?:is|are|did|does|[Ss]how|[Hh]ow(?:'|’)s) ([A-Z][a-z]+)\b/g].flatMap((re) => [...t.matchAll(re)].map((x) => x[1]!)).find((w) => !NOT.includes(w));
   const args = named ? { branch: named } : {};
   const order: [Kind, boolean][] = [
+    ['pnl', PNL_ASK.test(s)],
     ['complaints', /\bcomplaints?\b/.test(s)],
     ['people', PEOPLE_ASK.test(s)],
     ['audit', AUDIT_ASK.test(s)],
@@ -126,7 +135,8 @@ export function branchKpiModule(svc: BranchKpiService): ModuleSpec {
 - bk_lobby (branch): lobby traffic and wait times against the ${LOBBY_WAIT_TARGET}-minute target, and the busiest times.
 - bk_risk (branch): CTRs, structuring and other referrals to the BSA officer, fraud losses by type (skimming, check fraud, elder exploitation) and Reg E claims. Never SARs by branch.
 - bk_audit (branch): audit exceptions and surprise cash counts, with dual control.
-- bk_people (branch): turnover, engagement and required training (${REQUIRED_TRAINING.join(', ')}) against 100%.`,
+- bk_people (branch): turnover, engagement and required training (${REQUIRED_TRAINING.join(', ')}) against 100%.
+- bk_pnl (branch): the branch P&L for a year: net interest after funds transfer pricing, fees, credit cost, the branch's own expenses from the general ledger against budget, its share of head office overhead, net profit and the efficiency ratio.`,
     plan: (t) => branchKpiPlan(t),
     tools: [
       {
@@ -371,6 +381,51 @@ export function branchKpiModule(svc: BranchKpiService): ModuleSpec {
             ],
             sources: opsSources,
             suggestions: overdue.length ? [`Create a to-do for ${overdue[0]!.name} to finish ${overdue[0]!.course} training`, 'Who on my team is behind on goals?', 'Show audit exceptions and surprise cash counts'] : ['Who on my team is behind on goals?', 'Show audit exceptions and surprise cash counts'],
+          };
+        },
+      },
+      {
+        name: 'bk_pnl',
+        description: 'The branch P&L for a year, for the branches in view and the network: net interest after funds transfer pricing, fee income, expected credit cost, the branch’s own expenses from its general ledger cost center (with this year to date against budget), its share of head office overhead, net profit, the efficiency ratio and the return on balances.',
+        input: branchArg,
+        run: async (a: { branch?: string }, ctx) => {
+          need(ctx);
+          const x = await svc.pnl(await scope(ctx, a.branch));
+          const one = x.lines.length === 1 ? x.lines[0]! : null;
+          const net = (v: number) => `${v < 0 ? 'loses ' : 'made '}${mm(Math.abs(v))}`;
+          const budgetSay = (l: { directYtd: number; budgetYtd: number }) => {
+            const gap = l.directYtd - l.budgetYtd;
+            return !l.budgetYtd ? 'there is no budget for it' : Math.abs(gap) <= l.budgetYtd * 0.01 ? `on budget (${mm(l.directYtd)} against ${mm(l.budgetYtd)})` : `${mm(Math.abs(gap))} ${gap > 0 ? 'over' : 'under'} budget (${mm(l.directYtd)} against ${mm(l.budgetYtd)})`;
+          };
+          const year = `the 12 months to ${x.endLabel}`;
+          const ranked = [...x.lines].sort((p, q) => q.net - p.net);
+          const losing = x.lines.filter((l) => l.net < 0);
+          const said = one
+            ? `**${one.branch} ${net(one.net)} in ${year} after its share of head office.** It earned ${mm(one.netInterest)} net interest after funds transfer pricing and ${mm(one.fees)} in fees, less ${mm(one.creditCost)} expected credit cost and ${mm(one.directExpense)} of its own expenses, so it contributes ${mm(one.contribution)} before ${mm(one.overhead)} of head office overhead. Efficiency ratio ${p1(one.efficiencyPct)} (network ${p1(x.network.efficiencyPct)}). Its own expenses this year are ${budgetSay(one)}.`
+            : `**${ranked[0]!.branch} is the most profitable branch (${mm(ranked[0]!.net)} in ${year} after overhead)**${losing.length ? `; ${losing.map((l) => `${l.branch} loses ${mm(-l.net)}`).join(' and ')}` : ''}. Together the branches make ${mm(x.network.net)} at an efficiency ratio of ${p1(x.network.efficiencyPct)}; the rest of net income, the funds transfer pricing spread, stays with Finance and treasury.`;
+          const LINES: [string, (l: (typeof x.lines)[number]) => string][] = [
+            ['Loans', (l) => mm(l.loans)],
+            ['Shares and deposits', (l) => mm(l.deposits)],
+            ['Net interest after funds transfer pricing', (l) => mm(l.netInterest)],
+            ['Fee income', (l) => mm(l.fees)],
+            ['Revenue', (l) => mm(l.revenue)],
+            ['Expected credit cost', (l) => `−${mm(l.creditCost)}`],
+            ['Branch expenses (general ledger)', (l) => `−${mm(l.directExpense)}`],
+            ['Contribution before overhead', (l) => mm(l.contribution)],
+            ['Head office overhead', (l) => `−${mm(l.overhead)}`],
+            ['Net profit', (l) => (l.net < 0 ? `−${mm(-l.net)}` : mm(l.net))],
+            ['Efficiency ratio', (l) => p1(l.efficiencyPct)],
+            ['Return on loans and deposits', (l) => p2(l.returnPct)],
+            [`Branch expenses this year against budget`, (l) => `${mm(l.directYtd)} / ${mm(l.budgetYtd)}`],
+          ];
+          const block = one
+            ? moduleTable(pnlWho, `${one.branch} P&L, ${year}`, ctx.runId, 'branch.kpi.pnl', [text('line', 'Line'), text('branch', one.branch), text('network', 'Network')], LINES.map(([label, f]) => ({ line: label, branch: f(one), network: f(x.network) })), x.end)
+            : moduleTable(pnlWho, `Branch P&L, ${year}`, ctx.runId, 'branch.kpi.pnl', [text('branch', 'Branch'), { field: 'revenue', headerName: 'Revenue', type: 'currency' }, { field: 'credit', headerName: 'Credit cost', type: 'currency' }, { field: 'direct', headerName: 'Branch expenses', type: 'currency' }, { field: 'contribution', headerName: 'Contribution', type: 'currency' }, { field: 'overhead', headerName: 'Overhead', type: 'currency' }, { field: 'net', headerName: 'Net profit', type: 'currency' }, text('eff', 'Efficiency ratio'), text('ret', 'Return on balances')], [...ranked, x.network].map((l) => ({ branch: l.branch, revenue: Math.round(l.revenue), credit: Math.round(l.creditCost), direct: Math.round(l.directExpense), contribution: Math.round(l.contribution), overhead: Math.round(l.overhead), net: Math.round(l.net), eff: p1(l.efficiencyPct), ret: p2(l.returnPct) })), x.end);
+          return {
+            text: `${said} Interest and credit cost are on today’s balances with DI’s standard funds transfer pricing; head office’s ${mm(x.overheadPool)} of operating expenses is shared by balances (Lending’s by loans).`,
+            blocks: [block],
+            sources: pnlSources,
+            suggestions: [one ? `How is ${one.branch} doing against the CEO’s targets?` : 'Which branches are hitting the CEO’s targets?', 'Show staff productivity for my branch', 'Which products are most profitable?'],
           };
         },
       },
