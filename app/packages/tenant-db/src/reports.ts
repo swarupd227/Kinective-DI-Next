@@ -482,6 +482,60 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
         { id: 't1', title: 'Checking by branch', kind: 'table', metrics: ['deposit_balance', 'deposit_account_count'], by: 'branch', where: checking, size: 'full' },
       ],
     },
+    // DI's monthly portfolio reports: member growth, the certificate maturity forecast, deposit growth by
+    // product and delinquency by product, built by the Portfolio Reports analyses.
+    {
+      templateId: 'member_growth_monthly',
+      name: institutionType === 'bank' ? 'Customer growth' : 'Member growth',
+      description: `New, closed and net ${persons} month, quarter and year to date, the average age, and the last 13 month-ends.`,
+      folder: institutionType === 'bank' ? 'Executive' : 'Members',
+      settings: { ...settings('month', ['Executive', 'Branch Manager', 'Finance', 'Marketing']), addHierarchyControls: false, addHistoryControls: false },
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        { id: 'a1', title: `New and closed ${persons}`, kind: 'analysis' as const, analysis: 'port.members.periods', metrics: [], size: 'half' as const },
+        { id: 'a2', title: 'Last 13 month-ends', kind: 'analysis' as const, analysis: 'port.members.months', metrics: [], size: 'half' as const },
+      ],
+    },
+    {
+      templateId: 'cd_maturity_forecast_monthly',
+      name: 'Maturing certificates forecast',
+      description: 'Certificates maturing by interval (30 days to over three years) and term, with the portfolio projected a year out at the renewal rate.',
+      folder: 'Deposits',
+      settings: { ...settings('month', ['Executive', 'Finance', 'Branch Manager']), addHierarchyControls: false, addHistoryControls: false },
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        { id: 'a1', title: 'Certificates maturing, by interval and term', kind: 'analysis' as const, analysis: 'port.cd.intervals', metrics: [], size: 'full' as const },
+        { id: 'a2', title: 'Projected certificate portfolio', kind: 'analysis' as const, analysis: 'port.cd.projection', metrics: [], size: 'half' as const },
+      ],
+    },
+    {
+      templateId: 'deposit_portfolio_monthly',
+      name: 'Deposit portfolio',
+      description: 'Deposit balances and accounts by product, with growth for the month, quarter and year, and 13 months of total deposits.',
+      folder: 'Deposits',
+      settings: { ...settings('month', ['Executive', 'Finance', 'Branch Manager']), addHierarchyControls: false, addHistoryControls: false },
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        { id: 'a1', title: 'Deposit growth by product', kind: 'analysis' as const, analysis: 'port.deposits.growth', metrics: [], size: 'full' as const },
+        { id: 'a2', title: 'Total deposits, 13 months', kind: 'analysis' as const, analysis: 'port.deposits.trend', metrics: [], size: 'half' as const },
+      ],
+    },
+    {
+      templateId: 'loan_delinquency_by_product_monthly',
+      name: 'Loan delinquency by product',
+      description: 'Each loan product’s count and dollars in every delinquency bucket, its share 60 or more days past due, and 24 months of delinquent balances by bucket.',
+      folder: 'Lending',
+      settings: { ...settings('month', ['Executive', 'Lending', 'Finance']), addHierarchyControls: false, addHistoryControls: false },
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        { id: 'a1', title: 'Delinquency by product', kind: 'analysis' as const, analysis: 'port.dq.products', metrics: [], size: 'full' as const },
+        { id: 'a2', title: 'Delinquent balances by bucket, 24 months', kind: 'analysis' as const, analysis: 'port.dq.history', metrics: [], size: 'full' as const },
+      ],
+    },
     {
       templateId: 'lending_auto_loans_monthly',
       name: 'Lending – Auto loans',

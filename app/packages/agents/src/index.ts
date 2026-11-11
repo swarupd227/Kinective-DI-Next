@@ -72,3 +72,4 @@ export { PIPELINE_FORECAST_REQUEST, pipelineForecastModule } from './pipelineFor
 export { CAPITAL_ACTIONS_AGENT, CAPITAL_ACTIONS_REQUEST, SECURITIES_SALE_AGENT, SECURITIES_SALE_REQUEST, capitalActionsModule, capitalCase, capitalMemo, securitiesCase, securitiesMemo, securitiesSaleModule, type CapitalActionsDeps } from './capitalDecision.ts';
 export { CRITIC, MAX_ROUNDS, PLANNER, runDecision, type Challenge, type DecisionCase, type DecisionDeps, type DecisionOption, type Evaluated, type Finding, type Reply, type Specialist } from './decision.ts';
 export { SALES_SCORECARD_REQUEST, salesScorecardModule, salesScorecardPlan } from './salesScorecard.ts';
+export { PORTFOLIO_REQUEST, PORTFOLIO_SECTIONS, portfolioAnalyses, portfolioModule, portfolioQuestion } from './portfolioReports.ts';

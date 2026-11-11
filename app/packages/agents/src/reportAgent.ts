@@ -345,6 +345,8 @@ function widgetFor(item: string, gateway: ReportGateway, periodType: 'month' | '
 
 /** Words too common to say which report someone means ("CAMELS and stress test" isn't named by "and"). */
 const COMMON = new Set(['and', 'the', 'for', 'with', 'all', 'our', 'from', 'this', 'that', 'into', 'per']);
+/** A report counts as named when two of its name's words appear (or its only word): "members" alone isn't "Member growth". */
+const namedNeeds = (name: string) => Math.min(2, name.toLowerCase().split(/\W+/).filter((w) => w.length > 2 && !COMMON.has(w)).length);
 const overlap = (a: string, b: string) => {
   const words = a.toLowerCase().split(/\W+/).filter((w) => w.length > 2 && !COMMON.has(w));
   return words.filter((w) => b.toLowerCase().includes(w)).length;
@@ -390,7 +392,7 @@ export async function runReportOffline(input: ReportInput, deps: { gateway: Repo
       // "Export the Branch scorecard for Sep 2026 to Excel" names the report: run it first, so the
       // export is of exactly what the user would see.
       const list = await deps.gateway.store.list(input.user.id, { userClass: input.userClass });
-      const named = list.map((t) => ({ t, n: overlap(t.name, input.text) })).sort((a, b) => b.n - a.n).find((x) => x.n > 0)?.t;
+      const named = list.map((t) => ({ t, n: overlap(t.name, input.text) })).sort((a, b) => b.n - a.n).find((x) => x.n > 0 && x.n >= namedNeeds(x.t.name))?.t;
       if (named && named.templateId !== state.current?.templateId) {
         const period = parsePeriod(input.text, named.definition.settings.periodType, deps.gateway.semantic.build.latestMonthEnd);
         const branch = (deps.gateway.semantic.dimensionValues.branch ?? []).find((b) => new RegExp(`\\b${b}\\b`, 'i').test(input.text));
@@ -443,7 +445,7 @@ export async function runReportOffline(input: ReportInput, deps: { gateway: Repo
       // "Pin this to Home" means the report on screen; otherwise the saved report the words name.
       const onScreen = /\b(this|it)\b/.test(input.text.toLowerCase()) && state.current && !isDraft;
       const list = onScreen ? [] : (await deps.gateway.store.list(input.user.id, { userClass: input.userClass })).filter((t) => t.status !== 'draft');
-      const named = list.map((t) => ({ t, n: overlap(t.name, input.text) })).sort((a, b) => b.n - a.n).find((x) => x.n > 0)?.t;
+      const named = list.map((t) => ({ t, n: overlap(t.name, input.text) })).sort((a, b) => b.n - a.n).find((x) => x.n > 0 && x.n >= namedNeeds(x.t.name))?.t;
       if (!onScreen && !named) {
         if (state.current && !isDraft) return pinOrDelete(state.current.templateId);
         await call('report_template_list', {});
