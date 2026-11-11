@@ -1,0 +1,138 @@
+// Predictive Analytics across the book: the products the next-best-product model suggests, by deposit
+// balance band (DI's "Products to Suggest"), the people behind any count ("Accounts $10,000+ likely to
+// open a mortgage"), and whether earlier suggestions were taken up ("Successful Suggestions"). One
+// member's suggestions stay with Relationship Manager.
+import { z } from 'zod';
+import { BALANCE_BANDS, CoreError, HIGH_LIKELIHOOD, PredictiveService, type BalanceBand } from '@dinext/di-core';
+import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
+
+export const PREDICTIVE_REQUEST =
+  /\bproducts? to suggest\b|\bsuccessful suggestions?\b|\bsuggestions? (?:that |which )?(?:worked|converted|were (?:taken up|accepted|opened)|paid off|led to)\b|\b(?:were|are) (?:our |the )?suggestions? (?:taken up|working|converting)\b|\b(?:take|took)-?up (?:of|on) (?:our |the )?suggestions?\b|\b(?:how (?:accurate|good|well)|does) (?:is |are )?(?:the |our )?(?:next[- ]best[- ]product|suggestion|propensity) (?:model|scores?)\b|\bnext[- ]best[- ]products? (?:across|for (?:the|our) (?:book|members|customers)|by (?:balance|product)|report|rollup)\b|\b(?:members|customers|accounts|who)(?: with [^.?!]{0,30})? (?:are )?(?:most )?likely to (?:open|buy|take|get)\b|\bpropensity (?:scores?|list|report)\b|\bconversion (?:rate )?(?:of|on|for) (?:our |the )?suggestions?\b/i;
+
+const NO_ACCESS = 'Predictive Analytics isn’t part of your DI access.';
+const text = (field: string, headerName: string) => ({ field, headerName, type: 'text' as const });
+const count = (n: number) => Math.round(n).toLocaleString('en-US');
+const usd = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
+const p1 = (n: number) => `${n.toFixed(1)}%`;
+const longDay = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+const monthOf = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+/** The product a question names, as the model names it. */
+const PRODUCTS: [RegExp, string][] = [
+  [/heloc|home equity/i, 'HELOC'],
+  [/mortgage/i, 'First mortgage'],
+  [/auto|car loan/i, 'Auto loan'],
+  [/credit card|\bcards?\b/i, 'Credit card'],
+  [/certificate|\bcds?\b|share certificate/i, 'Certificate'],
+  [/business account/i, 'Business account'],
+  [/checking/i, 'Checking'],
+];
+export const productIn = (t: string) => PRODUCTS.find(([re]) => re.test(t))?.[1];
+
+/** A balance band a question names: "$10,000+", "over $1,000", "10k plus". */
+export function bandIn(t: string): BalanceBand | undefined {
+  const s = t.toLowerCase().replace(/,/g, '');
+  if (/(?:\$?10(?:000|k)\s*(?:\+|plus|or more)|over \$?10(?:000|k)|more than \$?10(?:000|k))/.test(s)) return '$10,000+';
+  if (/(?:\$?1(?:000|k)\s*(?:\+|plus|or more|to)|over \$?1(?:000|k)\b)/.test(s)) return '$1,000 to $9,999';
+  if (/\$?100\s*(?:\+|plus|to)/.test(s)) return '$100 to $999';
+  if (/negative|below \$?0|overdrawn/.test(s)) return 'Below $0';
+  return undefined;
+}
+
+export type PredictiveQuestion = 'suggest' | 'people' | 'success';
+export function predictiveQuestion(t: string): PredictiveQuestion {
+  if (/success|worked|converted|taken up|take-?up|accepted|paid off|led to|how (?:accurate|good|well)|conversion/i.test(t)) return 'success';
+  if (productIn(t) && /\b(?:who|which|list|show|members|customers|accounts|likely)\b/i.test(t) && !/products? to suggest/i.test(t)) return 'people';
+  return 'suggest';
+}
+
+export function predictiveModule(svc: PredictiveService, person: 'member' | 'customer' = 'member'): ModuleSpec {
+  const need = (ctx: ModuleContext) => {
+    if (!ctx.modules.includes('predictive')) throw new CoreError('NO_ACCESS', NO_ACCESS);
+  };
+  const sources: ModuleSpec['sources'] = [
+    { kind: 'table', label: 'Next best product scores', ref: 'table:cdm_suggestion' },
+    { kind: 'table', label: 'Suggestion history', ref: 'table:cdm_suggestion_history' },
+    { kind: 'table', label: 'Deposit accounts', ref: 'table:cdm_deposit_account' },
+  ];
+  const spec: ModuleSpec = {
+    id: 'predictive',
+    prefix: 'pred',
+    agent: 'Predictive Analytics',
+    request: PREDICTIVE_REQUEST,
+    noAccess: NO_ACCESS,
+    sources,
+    prompt: ({ tenant, user, title }) => `You are the Predictive Analytics agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) uses the next-best-product model across the book: which products to suggest to whom, and whether earlier suggestions were taken up. A suggestion scored ${HIGH_LIKELIHOOD} or more (out of 10) is high-scoring. One person's suggestions belong to Relationship Manager.
+
+- pred_suggest: high-scoring suggestions by product and deposit balance band.
+- pred_people (product, optional band): the people behind one count, highest score first.
+- pred_success: suggestions from earlier monthly runs and how many were opened within about 90 days, by product, by run and by score.`,
+    plan: (t) => {
+      const q = predictiveQuestion(t);
+      if (q === 'success') return { tool: 'pred_success', args: {} };
+      if (q === 'people') {
+        const band = bandIn(t);
+        return { tool: 'pred_people', args: { product: productIn(t)!, ...(band ? { band } : {}) } };
+      }
+      return { tool: 'pred_suggest', args: {} };
+    },
+    tools: [
+      {
+        name: 'pred_suggest',
+        description: 'Products to suggest: how many high-scoring next-best-product suggestions there are for each product, split by the person’s deposit balance band.',
+        input: z.object({}).strict(),
+        run: async (_a: Record<string, never>, ctx) => {
+          need(ctx);
+          const x = await svc.suggestions(ctx);
+          const top = x.products[0]!;
+          const rich = [...x.products].sort((a, b) => b.byBand['$10,000+'] - a.byBand['$10,000+'])[0]!;
+          const cols = [text('product', 'Product'), ...BALANCE_BANDS.map((b, i) => text(`b${i}`, b)), text('total', 'Total')];
+          const rows = x.products.map((p) => ({ product: p.product, ...Object.fromEntries(BALANCE_BANDS.map((b, i) => [`b${i}`, count(p.byBand[b])])), total: count(p.total) }));
+          return {
+            text: `The model has **${count(x.total)} high-scoring suggestions** (${HIGH_LIKELIHOOD} or more out of 10) from its run on ${longDay(x.run)}. **${top.product}** leads with ${count(top.total)}. Among people with $10,000 or more on deposit, ${rich.product} is suggested most (${count(rich.byBand['$10,000+'])}). Ask for any count to see the people behind it.`,
+            blocks: [moduleTable(spec, 'Products to suggest, by deposit balance', ctx.runId, 'pred.suggest', cols, rows, x.run)],
+            sources,
+            suggestions: [`Who with $10,000+ is likely to open a ${rich.product === 'First mortgage' ? 'mortgage' : rich.product}?`, 'Which suggestions were taken up?', `Show ${top.product} suggestions by balance`],
+          };
+        },
+      },
+      {
+        name: 'pred_people',
+        description: 'The people behind one count in Products to suggest: one product, optionally one deposit balance band, highest score first, with the reason the model gives.',
+        input: z.object({ product: z.string().min(2).max(60), band: z.enum(BALANCE_BANDS).optional() }).strict(),
+        run: async (a: { product: string; band?: BalanceBand }, ctx) => {
+          need(ctx);
+          const product = productIn(a.product) ?? a.product;
+          const x = await svc.people(product, a.band ?? null, ctx, 100);
+          if (!x.total) return { text: `No one${a.band ? ` with ${a.band} on deposit` : ''} has a high-scoring ${product} suggestion right now.` };
+          return {
+            text: `**${count(x.total)} ${person}s**${a.band ? ` with ${a.band} on deposit` : ''} have a high-scoring **${product}** suggestion. ${x.total > x.items.length ? `The ${x.items.length} highest scores are below.` : 'They’re below, highest score first.'} I can refer any of them, or build a campaign audience from the list.`,
+            blocks: [moduleTable(spec, `Likely to open ${product}${a.band ? `, ${a.band} on deposit` : ''}`, ctx.runId, 'pred.people', [text('name', 'Name'), text('number', 'Number'), text('branch', 'Branch'), text('score', 'Score'), text('balance', 'On deposit'), text('reason', 'Why')], x.items.map((p) => ({ name: p.name, number: `…${p.last4}`, branch: p.branch, score: `${p.likelihood}/10`, balance: usd(p.balance), reason: p.reason })))],
+            sources,
+            suggestions: ['Which suggestions were taken up?', 'Show products to suggest by balance'],
+          };
+        },
+      },
+      {
+        name: 'pred_success',
+        description: 'Successful suggestions: suggestions from earlier monthly runs and how many were opened within about 90 days, by product, by run, and by score band.',
+        input: z.object({}).strict(),
+        run: async (_a: Record<string, never>, ctx) => {
+          need(ctx);
+          const x = await svc.successes(ctx);
+          const best = [...x.products].sort((a, b) => b.ratePct - a.ratePct)[0]!;
+          const hi = x.scores[0]!;
+          const lo = x.scores.at(-1)!;
+          const t = (title: string, op: string, first: string, rows: typeof x.runs) => moduleTable(spec, title, ctx.runId, op, [text('label', first), text('suggested', 'Suggested'), text('opened', 'Opened'), text('rate', 'Taken up')], rows.map((r) => ({ label: op === 'pred.success.runs' ? monthOf(r.label) : r.label, suggested: count(r.suggested), opened: count(r.opened), rate: p1(r.ratePct) })));
+          return {
+            text: `Of **${count(x.total.suggested)} suggestions** in the ${x.runs.length} monthly runs from ${monthOf(x.runs[0]!.label)} to ${monthOf(x.runs.at(-1)!.label)}, **${count(x.total.opened)}** were opened within about 90 days (${p1(x.total.ratePct)}). The score works: ${p1(hi.ratePct)} of suggestions scored ${hi.label} were taken up, against ${p1(lo.ratePct)} of those scored ${lo.label}. ${best.label} converts best, at ${p1(best.ratePct)}. Opened means the product was opened after the run; DI can’t tell whether the suggestion itself was the reason.`,
+            blocks: [t('Taken up, by product', 'pred.success.products', 'Product', x.products), t('Taken up, by score', 'pred.success.scores', 'Score', x.scores), t('Taken up, by monthly run', 'pred.success.runs', 'Run', x.runs)],
+            sources,
+            suggestions: ['Show products to suggest by balance', `Who is likely to open a ${best.label === 'First mortgage' ? 'mortgage' : best.label}?`],
+          };
+        },
+      },
+    ],
+  };
+  return spec;
+}

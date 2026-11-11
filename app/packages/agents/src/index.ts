@@ -64,3 +64,4 @@ export { ffiecModule } from './ffiec.ts';
 export { API_REQUEST, CONNECTION_COLUMNS, LOG_COLUMNS, apisModule, connectionRows, logRows } from './apis.ts';
 export { BASEL_SECTIONS, baselAnalyses, baselHeadline, baselModule } from './basel.ts';
 export { CAMELS_SECTIONS, camelsAnalyses, camelsModule, camelsView, type Component as CamelsComponent, type Measure as CamelsMeasure } from './camels.ts';
+export { PREDICTIVE_REQUEST, bandIn, predictiveModule, predictiveQuestion, productIn, type PredictiveQuestion } from './predictive.ts';

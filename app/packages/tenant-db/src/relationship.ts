@@ -42,6 +42,16 @@ export const RELATIONSHIP_DDL = [
      run_date DATE NOT NULL,
      KEY ix_sugg_party (party_id)
    )`,
+  // Each monthly run's suggestions and whether the product was opened afterward (within about 90 days).
+  `CREATE TABLE cdm_suggestion_history (
+     run_date DATE NOT NULL,
+     party_id INT NOT NULL,
+     product VARCHAR(60) NOT NULL,
+     likelihood TINYINT NOT NULL,
+     opened_date DATE NULL,
+     KEY ix_sh_run (run_date),
+     KEY ix_sh_party (party_id)
+   )`,
   `CREATE TABLE cdm_loan_application (
      application_id INT PRIMARY KEY,
      party_id INT NOT NULL,
@@ -81,7 +91,7 @@ export const RELATIONSHIP_DDL = [
    )`,
 ];
 
-export const RELATIONSHIP_TABLES = ['cdm_party_contact', 'cdm_digital_usage', 'cdm_attrition_score', 'cdm_suggestion', 'cdm_loan_application', 'cdm_interaction', 'cdm_account_activity'];
+export const RELATIONSHIP_TABLES = ['cdm_party_contact', 'cdm_digital_usage', 'cdm_attrition_score', 'cdm_suggestion', 'cdm_suggestion_history', 'cdm_loan_application', 'cdm_interaction', 'cdm_account_activity'];
 
 export const SCORE_MODELS = { attrition: 'attrition_v4', nextBest: 'next_best_product_v2', runDate: AS_OF };
 
@@ -99,7 +109,15 @@ export interface RelationshipRows {
   applications: unknown[][];
   interactions: unknown[][];
   activity: unknown[][];
+  /** Earlier suggestion runs: run_date, party_id, product, likelihood, opened_date (null when not taken up). */
+  history: unknown[][];
 }
+
+/** Monthly next-best-product runs before the current one, oldest first. */
+export const SUGGESTION_RUNS = ['2026-04-30', '2026-05-31', '2026-06-30', '2026-07-31', '2026-08-31', '2026-09-30'];
+/** The product a suggestion names, by the account category that fulfils it. */
+// A bank has no business deposit category in the demo data, so a new C&I loan stands for the business relationship.
+const SUGGESTED_PRODUCT: Record<string, string> = { Checking: 'Checking', HELOC: 'HELOC', Auto: 'Auto loan', Mortgage: 'First mortgage', Business: 'Business account', 'Commercial & Industrial': 'Business account' };
 
 const DAY = 86_400_000;
 const money = (n: number) => (n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${Math.round(n)}`);
@@ -163,7 +181,7 @@ export function generateRelationship(t: GeneratedTenant): RelationshipRows {
   const certCat = t.profile.deposits.find((d) => d.maturing)?.category;
   const cardCat = loanCats.has('Credit Card') ? 'Credit Card' : null;
 
-  const out: RelationshipRows = { contacts: [], digital: [], attrition: [], suggestions: [], applications: [], interactions: [], activity: [] };
+  const out: RelationshipRows = { contacts: [], digital: [], attrition: [], suggestions: [], applications: [], interactions: [], activity: [], history: [] };
   let suggestionId = 1;
   let applicationId = 1;
   let interactionId = 1;
@@ -268,6 +286,7 @@ export function generateRelationship(t: GeneratedTenant): RelationshipRows {
       if (likelihood >= 3) out.suggestions.push([suggestionId++, id, product, referralType, likelihood, reason, SCORE_MODELS.nextBest, SCORE_MODELS.runDate]);
     };
     const savings = deps.filter((d) => d[3] === savingsCat || d[3] === 'Money Market').reduce((s, d) => s + (d[7] as number), 0);
+    const madeFrom = out.suggestions.length;
     if (isMember) {
       if (!hasChecking) suggest('Checking', null, demo ? 8.5 : age < 30 ? 7.5 : 6, `No checking account; deposits are in ${[...cats].filter((c) => !loanCats.has(c)).join(' and ') || 'savings'} only`);
       if (cats.has('Mortgage') && loanCats.has('HELOC') && !cats.has('HELOC')) suggest('HELOC', 'heloc', 7, 'Has a first mortgage with us and no home equity line');
@@ -277,6 +296,26 @@ export function generateRelationship(t: GeneratedTenant): RelationshipRows {
       if (!cats.has('Auto') && age >= 22 && age <= 65) suggest('Auto loan', 'auto_loan', demo ? 6 : 4.5, 'No auto loan with us');
       if (segment === 'Small Business' && !cats.has('Business')) suggest('Business account', 'business_account', 7, 'Small business segment with no business account');
       if (!cats.has('Mortgage') && age >= 27 && age <= 45 && savings >= 20_000) suggest('First mortgage', 'mortgage', 5.5, `${money(savings)} in savings and no mortgage`);
+
+      // Earlier monthly runs and what followed (Successful Suggestions). A product the member opened in
+      // the last six months was, often, suggested one to three runs before; today's open suggestions
+      // were mostly made before too and not taken up. Drawn with unit() so no other seeded figure moves.
+      const product = (cat: string) => SUGGESTED_PRODUCT[cat] ?? (cat === certCat ? 'Certificate' : cat === cardCat ? 'Credit card' : null);
+      const opened = [...(loansBy.get(id) ?? []).map((l) => [l[0], l[4], l[6]]), ...(depsBy.get(id) ?? []).map((d) => [d[0], d[3], d[4]])] as [number, string, string][];
+      for (const [acct, cat, open] of opened) {
+        const prod = product(cat);
+        if (!prod || open <= SUGGESTION_RUNS[0]! || open > AS_OF || unit(acct, 811) >= (prod === 'Checking' ? 0.2 : 0.45)) continue;
+        const before = SUGGESTION_RUNS.filter((run) => run < open && run >= ymd(new Date(new Date(`${open}T00:00:00Z`).getTime() - 92 * DAY)));
+        const run = before[Math.floor(unit(acct, 812) * before.length)];
+        // Most were scored high; some the model scored low and the member opened anyway.
+        const score = unit(acct, 814) < 0.92 ? 6 + Math.floor(unit(acct, 813) * 5) : 3 + Math.floor(unit(acct, 813) * 3);
+        if (run) out.history.push([run, id, prod, Math.min(10, score), open]);
+      }
+      for (const s of out.suggestions.slice(madeFrom)) {
+        const sid = s[0] as number;
+        if (unit(sid, 821) >= 0.7) continue;
+        out.history.push([SUGGESTION_RUNS[Math.floor(unit(sid, 822) * SUGGESTION_RUNS.length)]!, id, s[2], Math.max(1, Math.min(10, (s[4] as number) + Math.floor(unit(sid, 823) * 3) - 1)), null]);
+      }
     }
 
     // Interactions in the last 365 days, from COMs and the contact centre landing table [CA-29].
