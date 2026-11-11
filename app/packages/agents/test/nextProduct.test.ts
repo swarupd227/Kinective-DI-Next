@@ -102,6 +102,7 @@ describe.skipIf(!up)('the next-best-product model against the bank warehouse', (
     expect((await svc.candidate())?.version).toBe(2);
     const promote = await run(turn('Put next-best-product model version 2 to work'));
     expect(promote.out.approval?.record.riskTier).toBe('medium');
+    expect(validateBlock(promote.out.approval!.card).ok).toBe(true);
     await expect(approve(promote, PRIYA)).rejects.toThrow();
     await approve(promote, ELENA);
     expect((await svc.active())?.version).toBe(2);

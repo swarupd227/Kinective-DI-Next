@@ -213,6 +213,11 @@ export const EVAL_ITEMS: EvalItem[] = [
   // The funding optimizer: the cheapest mix that keeps every limit, found by searching the funding model.
   { id: 'GQ-FOP-001', set: 'golden', persona: 'bank_cfo', q: 'What’s the cheapest way to fund next year’s loan growth?', agent: 'Funding Optimizer', contains: ['that keeps every limit costs', 'all-in'], approval: 'none' },
   { id: 'GQ-FOP-002', set: 'golden', persona: 'bank_cfo', q: 'Optimize our funding for $30 million without brokered CDs', agent: 'Funding Optimizer', contains: ['without brokered CDs'], approval: 'none' },
+  // Decision tables (DMN): read, try, apply and change rules, a change approved by someone else.
+  { id: 'GQ-DMN-001', set: 'golden', persona: 'bank_cfo', q: 'Show the decision tables', agent: 'Decision Rules', contains: ['Consumer loan pricing adjustments', 'Retention outreach'], approval: 'none' },
+  { id: 'GQ-DMN-002', set: 'golden', persona: 'bank_cfo', q: 'What adjustment does a 690 score, 95% LTV, 72-month loan get?', agent: 'Decision Rules', contains: ['+100 bp'], approval: 'none' },
+  { id: 'GQ-DMN-003', set: 'golden', persona: 'bank_cfo', q: 'Set rule 4’s adjustment to 300 bp in the pricing table', agent: 'Decision Rules', contains: ['from +250 bp to +300 bp'], approval: 'medium' },
+  { id: 'PM-DMN-001', set: 'permission', persona: 'msr', q: 'Show the pricing table', refused: true, notContains: ['Tier A credit'], approval: 'none', ref: 'decision tables follow the access of what they decide' },
   { id: 'GQ-CREX-001', set: 'golden', persona: 'bank_cfo', q: 'Respond to the exam finding on CRE', agent: 'CRE Exam Response', contains: ['DI has no copy of the examination report', 'Don’t renew $', '**Recommendation: Strengthen oversight.**'], approval: 'high' },
   { id: 'GQ-ACQ-001', set: 'golden', persona: 'bank_cfo', q: 'Could we afford to acquire a $500M bank?', agent: 'Acquisition', contains: ['DI holds no data on a target bank', 'Cash buys the target’s assets without its capital', '**Recommendation: All stock.** The bank can afford about $'], approval: 'high' },
   { id: 'GQ-BUDST-001', set: 'golden', persona: 'bank_cfo', q: 'Build the 2027 budget and test it against stress', agent: 'Budget and Stress', contains: ['this budget fails its own stress test', 'The severe stress test, not the plan, sets the growth'], approval: 'high' },
@@ -285,10 +290,10 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-API-001', set: 'golden', persona: 'admin', q: 'Show the API connections', agent: 'API Connections', contains: ['API connection'], approval: 'none' },
   { id: 'GQ-API-002', set: 'golden', persona: 'admin', q: 'Show the last five errors from the request log', agent: 'API Connections', approval: 'none' },
   // The trained attrition model: how good it is, and who may see and change it.
-  { id: 'GQ-MDL-001', set: 'golden', persona: 'executive', q: 'How good is the attrition model?', agent: 'Predictive Models', contains: ['attrition model'], approval: 'none' },
+  { id: 'GQ-MDL-001', set: 'golden', persona: 'executive', q: 'How good is the attrition model?', agent: 'Predictive Models', approval: 'none' },
   { id: 'GQ-MDL-003', set: 'golden', persona: 'executive', q: 'Did the High band actually leave?', agent: 'Predictive Models', contains: ['High band'], approval: 'none' },
   // The next-best-product model: one trained model per product, beside the seeded suggestions.
-  { id: 'GQ-NBP-001', set: 'golden', persona: 'executive', q: 'How good is the next-best-product model?', agent: 'Next-Best-Product Model', contains: ['next-best-product model'], approval: 'none' },
+  { id: 'GQ-NBP-001', set: 'golden', persona: 'executive', q: 'How good is the next-best-product model?', agent: 'Next-Best-Product Model', approval: 'none' },
   { id: 'GQ-NBP-002', set: 'golden', persona: 'analyst', q: 'Retrain the next-best-product model', agent: 'Next-Best-Product Model', approval: 'low' },
   { id: 'PM-NBP-001', set: 'permission', persona: 'msr', q: 'Who will open a certificate next?', refused: true, notContains: ['times as likely'], approval: 'none', ref: 'predictive analytics is for managers, finance and analysts' },
   { id: 'GQ-MDL-002', set: 'golden', persona: 'analyst', q: 'Retrain the attrition model', agent: 'Predictive Models', approval: 'low' },

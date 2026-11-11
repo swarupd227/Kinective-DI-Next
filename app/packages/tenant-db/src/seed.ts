@@ -34,6 +34,7 @@ import { createSourceTables, seedCoreReplica } from './sources.ts';
 import { createApiTables } from './apis.ts';
 import { createOffcoreTables } from './offcore.ts';
 import { ML_DDL, ML_WRITE_TABLES, SNAPSHOT_COLUMNS, generateSnapshots } from './ml.ts';
+import { DECISION_TABLE_COLUMNS, DMN_DDL, DMN_WRITE_TABLES, decisionTableRows } from './dmn.ts';
 import { referralHistory, referralSeed, WORKFLOW_DDL, WORKFLOW_WRITE_TABLES, workflowSeed } from './workflow.ts';
 import { generateTransactions, LOAN_GROWTH_DDL, LOAN_GROWTH_WRITE_TABLES, planLoanGrowth } from './loanGrowth.ts';
 import { CONCENTRATION_DDL, generateLoanDetail } from './concentration.ts';
@@ -104,6 +105,9 @@ async function main() {
     // Predictive models: each member at each of the last 12 month-ends, and where models and scores are kept.
     for (const ddl of ML_DDL) await admin.query(ddl);
     await insert(admin, 'hist_member_snapshot', SNAPSHOT_COLUMNS, generateSnapshots(t, rm));
+    // Decision tables people can change, each starting at version 1.
+    for (const ddl of DMN_DDL) await admin.query(ddl);
+    await insert(admin, 'dmn_table_version', DECISION_TABLE_COLUMNS, decisionTableRows(profile.institutionType, BUILD.completedAt));
     for (const ddl of LOAN_GROWTH_DDL) await admin.query(ddl);
     for (const ddl of BSA_DDL) await admin.query(ddl);
     for (const ddl of OPRISK_DDL) await admin.query(ddl);
@@ -288,7 +292,7 @@ async function main() {
     await createApiTables(admin, profile.schema);
     // Off-core loans: DI's store, and the build account that publishes them into cdm_loan.
     await createOffcoreTables(admin, profile.schema);
-    for (const table of ML_WRITE_TABLES) await admin.query(`GRANT INSERT, UPDATE, DELETE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
+    for (const table of [...ML_WRITE_TABLES, ...DMN_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE, DELETE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     if (profile.institutionType === 'credit_union') await seedCoreReplica(admin, profile.schema);
     console.log(`${profile.key}: ${t.parties.length} parties, ${t.loans.length} loans, ${t.deposits.length} deposit accounts, ${t.histLoan.length} loan history rows, ${rm.interactions.length} interactions in ${((Date.now() - started) / 1000).toFixed(1)}s`);
   }

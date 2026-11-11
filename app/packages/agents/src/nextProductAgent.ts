@@ -178,7 +178,7 @@ export function nextProductModule(svc: NextProductModelService): ModuleSpec {
               text: `I’ll put next-best-product model **v${v}** to work${cur ? ` in place of v${cur.version}` : ''} and rescore every member. Model risk policy: someone other than the person asking approves a model before it’s used.`,
               done: `Next-best-product model v${v} is in use.`,
               risk: 'medium',
-              secondApprover: { role: 'Someone other than the requester, such as the chief risk officer or the CEO', policy: 'Model risk management: a model is approved by someone other than the person who asked for it before it is used.' },
+              secondApprover: { role: 'Someone other than the requester, such as the chief risk officer or the CEO', policy: 'Model risk management' },
               apply: { version: v },
             },
           };

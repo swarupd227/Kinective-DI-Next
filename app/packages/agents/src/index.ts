@@ -86,3 +86,4 @@ export { FUNDING_OPTIMIZER_REQUEST, fundingOptimizerModule } from './fundingOpti
 export { STOCK_EXTRA_SECTIONS, stockExtraAnalyses } from './stockReportsExtra.ts';
 export { SALES_OVERRIDE_REQUEST, salesOverridesModule } from './salesOverrides.ts';
 export { NEXT_PRODUCT_REQUEST, modelProductIn, nextProductModule } from './nextProductAgent.ts';
+export { DECISION_RULES_REQUEST, caseIn, decisionRulesModule, editsIn, tableIn } from './decisionRulesAgent.ts';

@@ -201,7 +201,7 @@ export function attritionModule(svc: AttritionModelService): ModuleSpec {
               text: `I’ll put attrition model **v${c.version}** to work${m ? ` in place of v${m.version}` : ''} and rescore every member for the last six month-ends. Model risk policy: someone other than the person asking approves a model before it’s used.`,
               done: `Attrition model v${c.version} is in use.`,
               risk: 'medium',
-              secondApprover: { role: 'Someone other than the requester, such as the chief risk officer or the CEO', policy: 'Model risk management: a model is approved by someone other than the person who asked for it before it is used.' },
+              secondApprover: { role: 'Someone other than the requester, such as the chief risk officer or the CEO', policy: 'Model risk management' },
               apply: { modelId: c.modelId, version: c.version },
             },
           };

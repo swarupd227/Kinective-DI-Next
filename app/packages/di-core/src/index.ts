@@ -81,3 +81,4 @@ export { OnboardingDeskService, RULE_CONDITIONS, TOUCH_TYPES, type OnbRule, type
 export { FundingOptimizerService, type OptimizedMix } from './fundingOptimizer.ts';
 export { CrossSellService } from './crossSell.ts';
 export { NEXT_PRODUCT_BANDS, NEXT_PRODUCT_MIN_AUC, NextProductModelService, type ProductModel } from './nextProductModel.ts';
+export { DecisionTableService, PRICING_EXCEPTION_BP, compileTable, parseCell, validateTable, type CellValue, type Decision, type DecisionTable, type TableEdit } from './decisionTables.ts';

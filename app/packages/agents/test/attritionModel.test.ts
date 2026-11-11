@@ -120,6 +120,7 @@ describe.skipIf(!up)('the attrition model against the warehouse', () => {
     expect((await svc.models()).find((m) => m.status === 'Candidate')?.version).toBe(2);
     const promote = await run(turn('Put attrition model version 2 to work'));
     expect(promote.out.approval?.record.riskTier).toBe('medium');
+    expect(validateBlock(promote.out.approval!.card).ok).toBe(true);
     await expect(approve(promote, PRIYA)).rejects.toThrow();
     await approve(promote, DANA);
     const all = await svc.models();
