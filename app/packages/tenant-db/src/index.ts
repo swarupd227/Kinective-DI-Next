@@ -28,3 +28,4 @@ export { CONTRA, GL_DDL, GL_MONTHS, GL_OPEN_MONTH, generateGl } from './gl.ts';
 export { REFERRAL_EXPIRE_DAYS, REFERRAL_PRODUCT, referralHistory } from './workflow.ts';
 export { CHANNEL_ORDER, SALES_GOALS_DDL, generateSalesGoals, loanChannel } from './salesGoals.ts';
 export { ATTRIBUTION_DAYS, CAMPAIGN_CATEGORIES, CAMPAIGN_HISTORY_DDL } from './campaignHistory.ts';
+export { BD_GOALS, SEG_DETAIL_DDL, SEG_DETAIL_WRITE_TABLES, generateSegDetail } from './segDetail.ts';

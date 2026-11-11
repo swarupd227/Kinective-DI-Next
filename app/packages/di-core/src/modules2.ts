@@ -625,8 +625,55 @@ export class SegService {
     const hits = (await this.companies()).filter((c) => words.every((w) => c.name.toLowerCase().includes(w)));
     if (hits.length !== 1) throw new CoreError('NOT_FOUND', hits.length ? `More than one company matches “${name}”.` : `There’s no company called “${name}”.`);
     const c = hits[0]!;
-    const log = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM seg_interaction WHERE company_id = ? ORDER BY interaction_id DESC LIMIT 3', [c.companyId]);
-    return { ...c, interactions: log.map((i) => ({ at: day(i.at), kind: i.kind as string, note: i.note as string, by: i.by_name as string })) };
+    const log = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM seg_interaction WHERE company_id = ? ORDER BY at DESC, interaction_id DESC LIMIT 3', [c.companyId]);
+    const contact = (await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM seg_contact WHERE company_id = ?', [c.companyId]).catch(() => []))[0];
+    const events = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM seg_event WHERE company_id = ? ORDER BY held DESC LIMIT 5', [c.companyId]).catch(() => []);
+    return {
+      ...c,
+      interactions: log.map((i) => ({ at: day(i.at), kind: i.kind as string, note: i.note as string, by: i.by_name as string })),
+      contact: contact ? { name: contact.contact_name as string, title: contact.title as string, phone: String(contact.phone), email: contact.email as string, branch: contact.branch as string, bdManager: contact.bd_manager as string, active: contact.active === 1, employees: Number(contact.employees), nextFollowUp: contact.next_follow_up ? day(contact.next_follow_up) : null, followUpNote: (contact.follow_up_note as string | null) ?? null } : null,
+      events: events.map((e) => ({ held: day(e.held), kind: e.kind as string, attendees: Number(e.attendees), newMembers: Number(e.new_members), newLoanDollars: Number(e.new_loan_dollars), by: e.by_name as string })),
+    };
+  }
+
+  /** The date the last build ran to. */
+  async asOf() {
+    const [b] = await rows<{ d: unknown }>(this.pool, "SELECT as_of_date AS d FROM meta_build WHERE state = 'completed' ORDER BY as_of_date DESC LIMIT 1");
+    return day(b!.d);
+  }
+
+  /** Follow-ups due within some days (past due included), soonest first, optionally one BD manager's. */
+  async followUps(withinDays: number, today: string, bdManager?: string) {
+    const until = new Date(Date.parse(`${today}T00:00:00Z`) + withinDays * 86_400_000).toISOString().slice(0, 10);
+    const found = await rows<Record<string, unknown>>(this.pool, `SELECT c.name, c.stage, x.* FROM seg_contact x JOIN seg_company c ON c.company_id = x.company_id WHERE x.next_follow_up IS NOT NULL AND x.next_follow_up <= ?${bdManager ? ' AND x.bd_manager = ?' : ''} ORDER BY x.next_follow_up`, [until, ...(bdManager ? [bdManager] : [])]).catch(() => []);
+    return found.map((r) => ({ companyId: r.company_id as number, company: r.name as string, stage: r.stage as string, due: day(r.next_follow_up), overdue: day(r.next_follow_up) < today, note: (r.follow_up_note as string | null) ?? '', contact: `${r.contact_name}, ${r.title}`, phone: String(r.phone), bdManager: r.bd_manager as string }));
+  }
+
+  async scheduleFollowUp(companyId: number, date: string, note: string) {
+    if (!moved(await this.pool.query('UPDATE seg_contact SET next_follow_up = ?, follow_up_note = ? WHERE company_id = ?', [date, note.slice(0, 200), companyId]).then((r) => r[0]))) throw new CoreError('NOT_FOUND', 'That company has no contact record.');
+  }
+
+  /**
+   * The business development scorecard for a month: each BD manager's calls and emails, meetings, events,
+   * and what the events brought in, against the monthly goals.
+   */
+  async bdScorecard(month: string) {
+    const from = `${month.slice(0, 7)}-01`;
+    const goals = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM seg_bd_goal ORDER BY sort_order').catch(() => []);
+    if (!goals.length) throw new CoreError('NOT_FOUND', 'Business development goals aren’t set up here.');
+    const touch = await rows<{ by_name: string; kind: string; n: number }>(this.pool, 'SELECT by_name, kind, COUNT(*) AS n FROM seg_interaction WHERE at BETWEEN ? AND ? GROUP BY by_name, kind', [from, month]);
+    const ev = await rows<Record<string, unknown>>(this.pool, 'SELECT by_name, COUNT(*) AS events, SUM(new_members) AS m, SUM(new_checking) AS ck, SUM(new_loan_dollars) AS loans, SUM(referrals) AS refs FROM seg_event WHERE held BETWEEN ? AND ? GROUP BY by_name', [from, month]);
+    const people = [...new Set([...touch.map((t) => t.by_name), ...ev.map((e) => e.by_name as string)])].sort();
+    return {
+      month,
+      goals: goals.map((g) => ({ metric: g.metric as string, label: g.label as string, target: Number(g.monthly_target), unit: g.unit as 'count' | 'currency' })),
+      people: people.map((p) => {
+        const e = ev.find((x) => x.by_name === p);
+        const n = (kinds: string[]) => touch.filter((t) => t.by_name === p && kinds.includes(t.kind)).reduce((s, t) => s + Number(t.n), 0);
+        const actual: Record<string, number> = { contacts: n(['Phone call', 'Email']), meetings: n(['Meeting']), events: Number(e?.events ?? 0), new_members: Number(e?.m ?? 0), new_checking: Number(e?.ck ?? 0), new_loans: Number(e?.loans ?? 0), referrals: Number(e?.refs ?? 0) };
+        return { name: p, actual, pct: Object.fromEntries(goals.map((g) => [g.metric as string, Number(g.monthly_target) ? Math.round((actual[g.metric as string]! / Number(g.monthly_target)) * 100) : 0])) };
+      }),
+    };
   }
 
   async log(p: { companyId: number; kind: string; note: string }, meta: { approvalId: string; actor: string; on: string }) {

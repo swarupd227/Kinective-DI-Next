@@ -849,7 +849,7 @@ export function segModule(seg: SegService, today: () => string): ModuleSpec {
     id: 'seg',
     prefix: 'seg',
     agent: 'SEG Development',
-    request: /\bSEGs?\b|\bsponsor(?:ship|ing)?\b|\blunch-and-learn\b|\bprospect stage\b/,
+    request: /\bSEGs?\b|\bsponsor(?:ship|ing)?\b|\blunch-and-learn\b|\bprospect stage\b|\b[Bb][Dd] score ?card\b|\bbusiness development (?:score ?card|goals?|activity)\b|\bemployer groups?\b/,
     noAccess,
     sources: [{ kind: 'table', label: 'SEG Management', ref: 'table:seg_company' }],
     prompt: ({ tenant, user, title }) => `You are the SEG/Business Development agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) develops select employee groups.
@@ -857,7 +857,9 @@ export function segModule(seg: SegService, today: () => string): ModuleSpec {
 - "Which SEGs had the most new members?": seg_performance.
 - "Prepare me for my SEG meeting with Albany Medical": seg_brief.
 - "Log a SEG call with Acme HR ...": seg_interaction_prepare.
-- "Move Acme HR to Proposal": seg_stage_prepare. Stages from Submit Letter for Board Approval onward need a note.`,
+- "Move Acme HR to Proposal": seg_stage_prepare. Stages from Submit Letter for Board Approval onward need a note.
+- "Which SEG follow-ups are due?": seg_follow_ups. "Schedule a follow-up with Acme HR on November 20: ...": seg_follow_up_set.
+- "Show the BD scorecard": seg_bd_scorecard, each business development manager's activity and results this month against goals.`,
     plan: (text) => {
       const t = clean(text);
       const name = company.exec(t)?.[1]?.trim();
@@ -865,9 +867,61 @@ export function segModule(seg: SegService, today: () => string): ModuleSpec {
       if (/\bmove\b/i.test(t) && stage) return { tool: 'seg_stage_prepare', args: { company: /\b[Mm]ove ((?:[A-Z][\w&'-]*\s?){1,4}?)\s+to\b/.exec(t)?.[1]?.trim() ?? '', stage, ...(/[:—]\s*(.+)$/.exec(t)?.[1] ? { note: /[:—]\s*(.+)$/.exec(t)![1] } : {}) } };
       if (/^\s*log\b/i.test(t)) return name ? { tool: 'seg_interaction_prepare', args: { company: name.replace(/[,.].*$/, ''), kind: /\bmeeting\b/i.test(t) ? 'Meeting' : 'Phone call', note: t } } : { say: 'Which company was it?' };
       if (/\b(prepare|brief)\b/i.test(t) && name) return { tool: 'seg_brief', args: { company: name } };
+      if (/\bscore ?card\b|\bbusiness development (?:goals?|activity)\b/i.test(t)) return { tool: 'seg_bd_scorecard', args: {} };
+      const when = /\b(?:on|for)\s+((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2})\b/i.exec(t)?.[1];
+      if (/\bschedule\b[^.?!]*\bfollow[- ]?up\b/i.test(t) && name && when) {
+        const d = new Date(`${when} ${today().slice(0, 4)} 12:00 UTC`);
+        const iso = Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+        return iso ? { tool: 'seg_follow_up_set', args: { company: name.replace(/\s+on$/i, '').trim(), date: iso < today() ? `${Number(iso.slice(0, 4)) + 1}${iso.slice(4)}` : iso, note: /[:—]\s*(.+)$/.exec(t)?.[1] ?? 'Follow up' } } : { say: 'What date should the follow-up be?' };
+      }
+      if (/\bfollow[- ]?ups?\b/i.test(t)) return { tool: 'seg_follow_ups', args: {} };
       return { tool: 'seg_performance', args: {} };
     },
     tools: [
+      {
+        name: 'seg_follow_ups',
+        description: 'SEG follow-ups due in the next 14 days or past due, soonest first, with the contact and the business development manager.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const list = await seg.followUps(14, today());
+          if (!list.length) return { text: 'No SEG follow-ups are due in the next two weeks.' };
+          const late = list.filter((f) => f.overdue);
+          return {
+            text: `**${list.length} SEG follow-ups** are due in the next two weeks${late.length ? `, ${late.length} already past due (${late.slice(0, 3).map((f) => f.company).join(', ')})` : ''}. The first is ${list[0]!.company}, ${list[0]!.due}: ${list[0]!.note.toLowerCase()}.`,
+            blocks: [moduleTable(spec, 'SEG follow-ups', ctx.runId, 'seg.follow_ups', [{ field: 'due', headerName: 'Due', type: 'text' }, { field: 'company', headerName: 'Company', type: 'text' }, { field: 'stage', headerName: 'Stage', type: 'text' }, { field: 'contact', headerName: 'Contact', type: 'text' }, { field: 'phone', headerName: 'Phone', type: 'text' }, { field: 'note', headerName: 'For', type: 'text' }, { field: 'bd', headerName: 'BD manager', type: 'text' }], list.map((f) => ({ due: `${f.due}${f.overdue ? ', past due' : ''}`, company: f.company, stage: f.stage, contact: f.contact, phone: f.phone, note: f.note, bd: f.bdManager })))],
+          };
+        },
+      },
+      {
+        name: 'seg_follow_up_set',
+        description: 'Schedule the next follow-up with a company: date and what it is for. Returns approval_required.',
+        input: z.object({ company: z.string().min(2).max(80), date: z.string().regex(/^20\d\d-\d\d-\d\d$/), note: z.string().min(2).max(200) }).strict(),
+        run: async (a: { company: string; date: string; note: string }, ctx) => {
+          need(ctx);
+          const c = await seg.company(a.company);
+          return { change: { summary: `Follow up with ${c.name} on ${a.date}`, changes: [{ label: 'Next follow-up', before: c.contact?.nextFollowUp ?? '—', after: `${a.date}: ${a.note}` }], text: `I’ve prepared the next follow-up with **${c.name}** for ${a.date}.`, done: `The follow-up with **${c.name}** is set for ${a.date}.`, risk: 'low', apply: { companyId: c.companyId, date: a.date, note: a.note } } };
+        },
+        apply: async (p: { companyId: number; date: string; note: string }) => seg.scheduleFollowUp(p.companyId, p.date, p.note),
+      },
+      {
+        name: 'seg_bd_scorecard',
+        description: 'The business development scorecard this month: each BD manager’s calls and emails, meetings, events, new members, new checking, new loan dollars and referrals against the monthly goals.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          // The month the data runs to: today's, or the last build's when today is past it.
+          const asOf = await seg.asOf();
+          const x = await seg.bdScorecard(today() < asOf ? today() : asOf);
+          if (!x.people.length) return { text: 'No business development activity is logged this month yet.' };
+          const fmt = (v: number, unit: string) => (unit === 'currency' ? money(v) : String(v));
+          const lead = [...x.people].sort((a, b) => Object.values(b.pct).reduce((s, v) => s + v, 0) - Object.values(a.pct).reduce((s, v) => s + v, 0))[0]!;
+          return {
+            text: `Business development so far this month, against the monthly goals: **${lead.name}** is furthest along. ${x.people.map((p) => `${p.name}: ${p.actual.contacts} calls and emails (${p.pct.contacts}%), ${p.actual.meetings} meetings, ${p.actual.new_members} new members`).join('; ')}.`,
+            blocks: [moduleTable(spec, 'BD scorecard, this month', ctx.runId, 'seg.bd_scorecard', [{ field: 'name', headerName: 'BD manager', type: 'text' }, ...x.goals.map((g) => ({ field: g.metric, headerName: `${g.label} (goal ${fmt(g.target, g.unit)})`, type: 'text' as const }))], x.people.map((p) => ({ name: p.name, ...Object.fromEntries(x.goals.map((g) => [g.metric, `${fmt(p.actual[g.metric]!, g.unit)} (${p.pct[g.metric]}%)`])) })))],
+          };
+        },
+      },
       {
         name: 'seg_performance',
         description: 'Companies by new members, with stage, loans and deposits.',
@@ -886,7 +940,7 @@ export function segModule(seg: SegService, today: () => string): ModuleSpec {
         run: async (a: { company: string }, ctx) => {
           need(ctx);
           const c = await seg.company(a.company);
-          return { text: `**${c.name}** is at **${c.stage}**, with ${c.members} members, ${money(c.loans)} in loans and ${money(c.deposits)} in deposits.${c.sponsorship ? ` Sponsorship: ${c.sponsorship}.` : ''}${c.interactions.length ? `\n\nLast interactions:\n${c.interactions.map((i) => `- ${i.at}, ${i.kind}: ${i.note}`).join('\n')}` : ' There are no interactions yet.'}` };
+          return { text: `**${c.name}** is at **${c.stage}**, with ${c.members} members, ${money(c.loans)} in loans and ${money(c.deposits)} in deposits.${c.sponsorship ? ` Sponsorship: ${c.sponsorship}.` : ''}${c.interactions.length ? `\n\nLast interactions:\n${c.interactions.map((i) => `- ${i.at}, ${i.kind}: ${i.note}`).join('\n')}` : ' There are no interactions yet.'}${c.contact ? `\n\nContact: **${c.contact.name}**, ${c.contact.title}, ${c.contact.phone}, ${c.contact.email}. Branch ${c.contact.branch}; business development manager ${c.contact.bdManager}; about ${c.contact.employees.toLocaleString('en-US')} employees.${c.contact.nextFollowUp ? ` Next follow-up ${c.contact.nextFollowUp}${c.contact.followUpNote ? `: ${c.contact.followUpNote}` : ''}.` : ''}` : ''}${c.events.length ? `\n\nRecent events: ${c.events.map((e) => `${e.kind} on ${e.held} (${e.attendees} attended, ${e.newMembers} joined)`).join('; ')}.` : ''}` };
         },
       },
       {
