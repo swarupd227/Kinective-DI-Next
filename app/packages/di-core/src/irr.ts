@@ -77,6 +77,9 @@ export interface Position {
   floating: boolean;
 }
 
+/** A position grown or shrunk in proportion: the same rate, terms and behaviour on a larger or smaller balance. */
+export const scalePosition = (p: Position, k: number): Position => (k === 1 ? p : { ...p, balance: p.balance * k, flows: (s) => p.flows(s).map((x) => x * k) });
+
 /** Amortizing cash flows with prepayment that speeds up when rates fall and slows when they rise. */
 function amortizing(balance: number, remaining: number, cpr: number, shockBp: number) {
   const speed = Math.min(2, Math.max(0.5, 1 - (shockBp / 100) * 0.12));
@@ -234,6 +237,30 @@ export class IrrService {
     const assets = values.filter((x) => x.side === 'asset').reduce((s, x) => s + x.value, 0);
     const liabilities = values.filter((x) => x.side === 'liability').reduce((s, x) => s + x.value, 0);
     return { assets, liabilities, nev: assets - liabilities, byPosition: values };
+  }
+
+  /**
+   * NII and economic value at a few shocks on a changed balance sheet, for comparing plans. Each
+   * percentage is against that balance sheet's own unshocked value, as the analysis measures it, and
+   * the limits are the analysis's. With no change it matches the analysis.
+   */
+  whatIf(loaded: Awaited<ReturnType<IrrService['positions']>>, change: (ps: Position[]) => Position[] = (ps) => ps, shocks: number[] = [200, 300, 400]) {
+    const bank = loaded.form === 'FFIEC 051';
+    // Non-rate-sensitive assets stay at today's book, as the analysis carries them.
+    const rateAssets = loaded.positions.filter((p) => p.side === 'asset').reduce((s, p) => s + p.balance, 0);
+    const otherAssets = loaded.totalAssets ? Math.max(0, loaded.totalAssets - rateAssets) : rateAssets * 0.04;
+    const ps = change(loaded.positions);
+    const n0 = this.nii(ps, 0).nii;
+    const e0 = this.nev(ps, 0).nev + otherAssets;
+    return {
+      ev: e0,
+      nii: n0,
+      shocks: shocks.map((s) => {
+        const ev = this.nev(ps, s).nev + otherAssets;
+        const nii = this.nii(ps, s).nii;
+        return { shockBp: s, evPct: ((ev - e0) / e0) * 100, niiPct: ((nii - n0) / n0) * 100, evLimitPct: bank ? (IRR_LIMITS_BANK.eveDeclinePct[Math.abs(s)] ?? IRR_LIMITS.nevDeclinePct) : IRR_LIMITS.nevDeclinePct, niiLimitPct: bank ? (IRR_LIMITS_BANK.niiDeclinePct[Math.abs(s)] ?? IRR_LIMITS.niiDeclinePct) : IRR_LIMITS.niiDeclinePct };
+      }),
+    };
   }
 
   async analysis() {

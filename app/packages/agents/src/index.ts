@@ -69,3 +69,5 @@ export { GL_REQUEST, dayIn, glModule, glPlan, monthIn } from './gl.ts';
 export { INTERACTION_REQUEST, followUpIn, interactionModule, interactionPlan } from './interactions.ts';
 export { REFERRAL_REPORT_REQUEST, referralReportModule, referralReportPlan } from './referralReport.ts';
 export { PIPELINE_FORECAST_REQUEST, pipelineForecastModule } from './pipelineForecast.ts';
+export { CAPITAL_ACTIONS_AGENT, CAPITAL_ACTIONS_REQUEST, SECURITIES_SALE_AGENT, SECURITIES_SALE_REQUEST, capitalActionsModule, capitalCase, capitalMemo, securitiesCase, securitiesMemo, securitiesSaleModule, type CapitalActionsDeps } from './capitalDecision.ts';
+export { CRITIC, MAX_ROUNDS, PLANNER, runDecision, type Challenge, type DecisionCase, type DecisionDeps, type DecisionOption, type Evaluated, type Finding, type Reply, type Specialist } from './decision.ts';

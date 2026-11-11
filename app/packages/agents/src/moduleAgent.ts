@@ -96,6 +96,8 @@ export interface ModuleSpec {
   today?: (ctx: ModuleContext) => Promise<ModuleWork | null>;
   /** The offline planner: a tool and its arguments, or something to say. */
   plan: (text: string, ctx: ModuleContext) => { tool: string; args: unknown } | { say: string };
+  /** Runs the whole turn itself, live or offline, instead of the one-tool loop: a multi-agent decision. */
+  run?: (input: ModuleTurn, deps: { model: ModelClient | null; gateway: ModuleGateway; beatMs?: number }, sink: RunSink) => Promise<ModuleOutcome>;
 }
 
 export interface ModuleTurn {

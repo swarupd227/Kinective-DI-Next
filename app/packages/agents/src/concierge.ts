@@ -724,7 +724,7 @@ export class Concierge {
     }
     // Module answers are written once; a bank hears "customer" where a credit union hears "member".
     const out = turn.tenant.institutionType === 'bank' ? bankWords(sink) : sink;
-    const r = this.deps.model ? await runModule(spec, input, { model: this.deps.model, gateway }, out) : await runModuleOffline(spec, input, { gateway }, out);
+    const r = spec.run ? await spec.run(input, { model: this.deps.model, gateway, beatMs: this.deps.beatMs }, out) : this.deps.model ? await runModule(spec, input, { model: this.deps.model, gateway }, out) : await runModuleOffline(spec, input, { gateway }, out);
     usage.push(...r.usage);
     if (r.asked) this.moduleAsking.set(turn.threadId, { spec, text });
     else this.moduleAsking.delete(turn.threadId);
