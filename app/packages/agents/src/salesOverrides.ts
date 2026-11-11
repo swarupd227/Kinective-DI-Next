@@ -24,8 +24,8 @@ interface Pending {
 async function pending(pool: Pool, ctx: ModuleContext): Promise<Pending[]> {
   const scope = ctx.purviewBranches ? ' AND b.name IN (?)' : '';
   const [rows] = await pool.query(
-    `SELECT a.adjustment_id, e.display_name, b.name AS branch, a.period_end, a.amount, a.reason_code, a.note, a.created_by
-       FROM mod_gi_adjustment a JOIN cdm_employee e ON e.employee_id = a.employee_id JOIN cdm_location b ON b.int_id = e.branch_id
+    `SELECT a.adjustment_id, e.display_name, b.name AS branch, a.period_end, a.amount, a.reason_code, a.note, COALESCE(u.name, a.created_by) AS created_by
+       FROM mod_gi_adjustment a JOIN cdm_employee e ON e.employee_id = a.employee_id JOIN cdm_location b ON b.int_id = e.branch_id LEFT JOIN iam_user u ON u.user_id = a.created_by
       WHERE a.status = 'Pending' AND a.created_by <> ?${scope} ORDER BY a.period_end, a.adjustment_id`,
     [ctx.user.id, ...(ctx.purviewBranches ? [ctx.purviewBranches.length ? ctx.purviewBranches : ['']] : [])],
   );

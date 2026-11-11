@@ -78,7 +78,7 @@ export function onboardingDeskTools(desk: OnboardingDeskService, files: FileStor
         if (!rules.length) return { text: 'There are no follow-up rules yet. Try “Create a follow-up rule: after day 21 with no direct deposit, call them, high priority”.' };
         const groups = [...new Set(rules.map((r) => r.group))];
         return {
-          text: `**${rules.length} follow-up rules** in ${groups.length} ${groups.length === 1 ? 'group' : 'groups'} (${groups.join(', ')}); ${rules.filter((r) => r.active).length} are on.`,
+          text: `**${rules.length} follow-up rules** in ${groups.length} ${groups.length === 1 ? 'group' : 'groups'} (${groups.join(', ')}); ${rules.filter((r) => r.active).length} are on: ${[...rules].sort((a, b) => a.ruleId - b.ruleId).map((r) => `#${r.ruleId} ${r.name} (${r.active ? 'on' : 'off'})`).join('; ')}.`,
           blocks: [moduleTable(spec(), 'Follow-up rules', ctx.runId, 'onboarding.rules', ruleCols, ruleRows(rules))],
           suggestions: [`Who does rule #${rules[0]!.ruleId} catch today?`, `Copy rule #${rules[0]!.ruleId} as a 45-day version`],
         };
