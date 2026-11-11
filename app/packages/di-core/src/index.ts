@@ -77,3 +77,4 @@ export { auc, capture, contributions, predict, train as trainGbm, type Gbm, type
 export { ReferralDeskService, csvCells, parseReferralCsv, type BulkReady, type BulkRow, type ProspectReferral } from './referralDesk.ts';
 export { MonteCarloService, SIM_PATHS, type SimPath } from './monteCarlo.ts';
 export { OnboardingDeskService, RULE_CONDITIONS, TOUCH_TYPES, type OnbRule, type RuleMatch } from './onboardingDesk.ts';
+export { FundingOptimizerService, type OptimizedMix } from './fundingOptimizer.ts';

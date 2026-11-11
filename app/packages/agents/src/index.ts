@@ -81,3 +81,4 @@ export { MODEL_REQUEST, attritionModule, modelSummary } from './attritionAgent.t
 export { REFERRAL_DESK_REQUEST, referralDeskModule, referralDeskPlan } from './referralDesk.ts';
 export { SIMULATION_REQUEST, simulationModule } from './simulationAgent.ts';
 export { onboardingDeskPlan, onboardingDeskTools, ruleFrom } from './onboardingDesk.ts';
+export { FUNDING_OPTIMIZER_REQUEST, fundingOptimizerModule } from './fundingOptimizerAgent.ts';
