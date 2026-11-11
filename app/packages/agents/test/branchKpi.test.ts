@@ -180,6 +180,11 @@ describe.skipIf(!opsUp)('branch operations on the credit union', () => {
       const run = async (name: string) => (await spec.tools.find((t) => t.name === name)!.run({} as never, ctx)) as { text: string };
       expect((await run('bk_risk')).text).toMatch(/SARs aren’t shown by branch/);
       expect((await run('bk_balancing')).text).toMatch(/transactions an hour/);
+      // The operations reports cite the operations tables, not the month-end ones.
+      for (const name of ['bk_balancing', 'bk_lobby', 'bk_risk', 'bk_audit', 'bk_people']) {
+        const out = (await spec.tools.find((t) => t.name === name)!.run({} as never, ctx)) as { blocks: { provenance: { sources: { ref: string }[] } }[] };
+        for (const b of out.blocks) expect(b.provenance.sources.every((x) => x.ref.startsWith('table:bro_')), name).toBe(true);
+      }
       expect((await run('bk_people')).text).toMatch(/against 100%/);
     } finally {
       await pool.end();
