@@ -165,7 +165,8 @@ describe.skipIf(!up)('the day against the warehouse', () => {
   });
 
   it('shows totals, with no names, to someone without Application Details', async () => {
-    const p = await buildToday(priya, gateway);
+    // Pipeline only: overdue referrals across every branch would otherwise outrank the total.
+    const p = await buildToday({ ...priya, apps: ['lap'] }, gateway);
     const stalled = p.items.find((i) => i.kind === 'totals');
     expect(stalled?.title).toMatch(/^\d+ applications have stalled$/);
     expect(p.items.filter((i) => i.kind === 'application')).toEqual([]);

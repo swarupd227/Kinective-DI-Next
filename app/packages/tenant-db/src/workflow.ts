@@ -1,6 +1,6 @@
 // Workflow store for COMs (spec 19) and the referral configuration from the Referral Builder
 // Worksheet (spec 17.3). Unlike the warehouse tables, the application account may write here.
-import type { TenantProfile } from './generate.ts';
+import { unit, type GeneratedTenant, type TenantProfile } from './generate.ts';
 import { DECLINE_DDL } from './relationship.ts';
 import { REPORT_DDL, REPORT_WRITE_TABLES } from './reports.ts';
 
@@ -54,6 +54,7 @@ export const WORKFLOW_DDL = [
      sender_user_id VARCHAR(40) NOT NULL,
      sender_name VARCHAR(80) NOT NULL,
      sender_employee_id INT NULL,
+     closed_at DATETIME(3) NULL,
      to_queue_id VARCHAR(40) NOT NULL,
      assignee_employee_id INT NULL,
      routing JSON NOT NULL,
@@ -138,6 +139,78 @@ export function referralSeed(parties: number[], now = new Date()) {
     lead('retention_follow_up', d, { preferred_contact: 'Text' }, 'Attrition score 7 of 10: balances falling.', 'New Referral', 'High', 'q_service_westport', 5, 1),
     lead('auto_loan', e, { preferred_contact: 'Phone' }, 'Wants to refinance from another lender.', 'Active', 'Normal', 'q_lending_westport', 1, 6),
   ];
+}
+
+/** The account category that fulfils each referral type, for checking that a sale was really opened. */
+export const REFERRAL_PRODUCT: Record<string, string[]> = {
+  heloc: ['HELOC'],
+  auto_loan: ['Auto'],
+  mortgage: ['Mortgage'],
+  credit_card: ['Credit Card'],
+  certificate: ['Certificates', 'Certificates of Deposit'],
+  business_account: ['Business', 'Commercial & Industrial'],
+};
+/** An open referral with no activity this long expires (DI's auto-expire) [Assumption: 45 days]. */
+export const REFERRAL_EXPIRE_DAYS = 45;
+
+/**
+ * A year of referral history, all closed except a few gone stale: sales tied to accounts members really
+ * opened (made a few days before the account), declines, and referrals that expired. Senders are the
+ * branch's MSRs and manager; lending goes to its loan officers. Drawn with unit() so nothing else moves.
+ */
+export function referralHistory(t: GeneratedTenant, asOf: string) {
+  const end = new Date(`${asOf}T12:00:00Z`).getTime();
+  const DAY = 86_400_000;
+  const stamp = (ms: number) => new Date(ms).toISOString().slice(0, 23).replace('T', ' ');
+  const staff = (branch: number, roles: string[]) => (t.employees as [number, string, string, number][]).filter((e) => e[3] === branch && roles.includes(e[2]));
+  const branchName = (b: number) => String((t.locations as unknown[][])[b - 1]?.[1] ?? '').toLowerCase();
+  const partyBranch = new Map((t.parties as unknown[][]).map((p) => [p[0] as number, p[5] as number]));
+  const rows: unknown[][] = [];
+  const add = (typeId: string, party: number, created: number, stage: string, closed: number | null, key: number, note: string) => {
+    const branch = partyBranch.get(party) ?? 1;
+    const lending = ['heloc', 'auto_loan', 'mortgage', 'business_account'].includes(typeId);
+    const senders = staff(branch, ['MSR', 'Branch manager']);
+    const workers = staff(branch, lending ? ['Loan officer'] : ['MSR']);
+    const sender = senders[Math.floor(unit(key, 1301) * senders.length)];
+    const worker = workers[Math.floor(unit(key, 1302) * workers.length)];
+    if (!sender) return;
+    const queue = typeId === 'mortgage' ? 'q_mortgage' : typeId === 'business_account' ? 'q_business' : `q_${lending ? 'lending' : 'service'}_${branchName(branch)}`;
+    rows.push(['referral', typeId, party, JSON.stringify({ preferred_contact: ['Phone', 'Email', 'Text', 'In branch'][Math.floor(unit(key, 1303) * 4)] }), note, stage, unit(key, 1304) < 0.15 ? 'High' : 'Normal', `emp:${sender[0]}`, sender[1], sender[0], queue, worker?.[0] ?? null, JSON.stringify({ queueId: queue, assigneeId: worker?.[0] ?? null, rule: 'history' }), stamp(created), closed === null ? null : stamp(closed)]);
+  };
+  const byType = Object.entries(REFERRAL_PRODUCT);
+  // Sales: accounts opened in the last year that a referral led to; a few sold where nothing opens after.
+  const accounts = [...(t.loans as unknown[][]).map((l) => [l[0], l[1], l[4], l[6]]), ...(t.deposits as unknown[][]).map((d) => [d[0], d[1], d[3], d[4]])] as [number, number, string, string][];
+  let sold = 0;
+  for (const [id, party, cat, open] of accounts) {
+    const typeId = byType.find(([, cats]) => cats.includes(cat))?.[0];
+    if (!typeId) continue;
+    const at = new Date(`${open}T12:00:00Z`).getTime();
+    if (at < end - 365 * DAY || at > end - 5 * DAY || unit(id, 1201) >= (typeId === 'certificate' ? 0.06 : 0.14)) continue;
+    const created = at - (2 + Math.floor(unit(id, 1202) * 22)) * DAY;
+    const unopened = unit(id, 1203) < 0.06;
+    add(typeId, party, created, 'Sold', unopened ? created + DAY : at + Math.floor(unit(id, 1204) * 3) * DAY, id, 'Referred at the counter.');
+    if (unopened) rows[rows.length - 1]![2] = (t.parties as unknown[][])[Math.floor(unit(id, 1205) * t.parties.length)]![0];
+    sold++;
+  }
+  // Declines and expiries in proportion; a few stale ones still open outside the first branch.
+  const members = (t.parties as unknown[][]).filter((p) => p[8] === 1);
+  const pick = (k: number) => members[Math.floor(unit(k, 1210) * members.length)]![0] as number;
+  // Only products this institution offers, so a bank without cards gets no card referrals.
+  const offered = new Set(accounts.map((a) => a[2]));
+  const types = ['heloc', 'auto_loan', 'credit_card', 'certificate', 'mortgage', 'retention_follow_up', 'auto_loan', 'credit_card', 'business_account'].filter((ty) => ty === 'retention_follow_up' || REFERRAL_PRODUCT[ty]!.some((cat) => offered.has(cat)));
+  for (let k = 0; k < Math.round(sold * 0.9); k++) {
+    const created = end - Math.floor(10 + unit(k, 1211) * 350) * DAY;
+    add(types[Math.floor(unit(k, 1212) * types.length)]!, pick(k), created, 'Not Interested', created + Math.floor(3 + unit(k, 1213) * 25) * DAY, 50_000 + k, 'Member said not now.');
+  }
+  for (let k = 0; k < Math.round(sold * 0.25); k++) {
+    const created = end - Math.floor(REFERRAL_EXPIRE_DAYS + 5 + unit(k, 1221) * 300) * DAY;
+    add(types[Math.floor(unit(k, 1222) * types.length)]!, pick(70_000 + k), created, 'Expired', created + REFERRAL_EXPIRE_DAYS * DAY, 70_000 + k, 'No contact made.');
+  }
+  for (let k = 0; k < 8; k++) {
+    const party = members.find((p, i) => i > k * 500 && p[5] !== 1)?.[0] as number;
+    add(types[k % types.length]!, party, end - (50 + k * 6) * DAY, k % 2 ? 'Active' : 'New Referral', null, 90_000 + k, 'Waiting on a call back.');
+  }
+  return rows;
 }
 
 /** Queues per branch (lending: loan officers; service: MSRs) plus the institution-wide queues. */

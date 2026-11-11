@@ -64,3 +64,4 @@ export { BALANCE_BANDS, HIGH_LIKELIHOOD, LIKELIHOOD_BANDS, PredictiveService, ty
 export { GlService, type GlCompare, type GlGroup, type GlScope, type GlStatementKind } from './gl.ts';
 export { InteractionService, LOG_CHANNELS, LOG_KINDS, type LogChannel, type LogKind } from './interactions.ts';
 export { generationOf } from './relationship.ts';
+export { ReferralReportService, type RefFilters, type RefGroupBy, type RefRow } from './referralReport.ts';

@@ -26,7 +26,7 @@ import { TENANT_DDL } from './schema.ts';
 import { createSourceTables, seedCoreReplica } from './sources.ts';
 import { createApiTables } from './apis.ts';
 import { createOffcoreTables } from './offcore.ts';
-import { referralSeed, WORKFLOW_DDL, WORKFLOW_WRITE_TABLES, workflowSeed } from './workflow.ts';
+import { referralHistory, referralSeed, WORKFLOW_DDL, WORKFLOW_WRITE_TABLES, workflowSeed } from './workflow.ts';
 import { generateTransactions, LOAN_GROWTH_DDL, LOAN_GROWTH_WRITE_TABLES, planLoanGrowth } from './loanGrowth.ts';
 import { CONCENTRATION_DDL, generateLoanDetail } from './concentration.ts';
 import { BSA_DDL, generateBsa } from './bsa.ts';
@@ -218,6 +218,8 @@ async function main() {
     await insert(admin, 'esp_com_queues', ['queue_id', 'name', 'branch_id', 'member_employee_ids', 'rr_pointer'], wf.queues);
   const firstBranch = (t.parties as unknown[][]).filter((p) => p[5] === 1 && p[0] !== 1).slice(0, 5).map((p) => p[0] as number);
   await insert(admin, 'esp_com_items', ['definition', 'type_id', 'party_id', 'fields', 'notes', 'stage', 'priority', 'sender_user_id', 'sender_name', 'sender_employee_id', 'to_queue_id', 'assignee_employee_id', 'routing', 'created_at'], referralSeed(firstBranch));
+  // A year of referral history for reporting: sales tied to accounts opened, declines, expiries.
+  await insert(admin, 'esp_com_items', ['definition', 'type_id', 'party_id', 'fields', 'notes', 'stage', 'priority', 'sender_user_id', 'sender_name', 'sender_employee_id', 'to_queue_id', 'assignee_employee_id', 'routing', 'created_at', 'closed_at'], referralHistory(t, AS_OF));
     await insert(admin, 'esp_report_templates', ['template_id', 'name', 'folder', 'status', 'owner_user_id', 'owner_name', 'definition', 'origin', 'version', 'thread_id', 'approval_id', 'created_at', 'updated_at'], reportSeed(profile.institutionType));
     // The application account reads tenant data only (spec 26.2: read-only on customer tables), and
     // writes only the workflow store, through approved DI Core operations.

@@ -67,3 +67,4 @@ export { CAMELS_SECTIONS, camelsAnalyses, camelsModule, camelsView, type Compone
 export { PREDICTIVE_REQUEST, bandIn, predictiveModule, predictiveQuestion, productIn, type PredictiveQuestion } from './predictive.ts';
 export { GL_REQUEST, dayIn, glModule, glPlan, monthIn } from './gl.ts';
 export { INTERACTION_REQUEST, followUpIn, interactionModule, interactionPlan } from './interactions.ts';
+export { REFERRAL_REPORT_REQUEST, referralReportModule, referralReportPlan } from './referralReport.ts';

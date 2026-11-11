@@ -583,7 +583,7 @@ export function createAppViews(deps: ViewDeps) {
       // Referrals in the person's purview, by the member's home branch; a branch's count says it's the branch's.
       const branches = ctx.purviewBranches;
       const [referrals] = (await pool.query(
-        `SELECT COUNT(*) AS n FROM esp_com_items i${branches ? ' JOIN cdm_party p ON p.party_id = i.party_id JOIN cdm_location b ON b.int_id = p.primary_branch_id' : ''} WHERE i.definition = 'referral' AND i.stage NOT IN ('Sold', 'Not Interested', 'Done')${branches ? ' AND b.name IN (?)' : ''}`,
+        `SELECT COUNT(*) AS n FROM esp_com_items i${branches ? ' JOIN cdm_party p ON p.party_id = i.party_id JOIN cdm_location b ON b.int_id = p.primary_branch_id' : ''} WHERE i.definition = 'referral' AND i.stage NOT IN ('Sold', 'Not Interested', 'Done', 'Expired')${branches ? ' AND b.name IN (?)' : ''}`,
         branches ? [branches.length ? branches : ['']] : [],
       )) as unknown as [{ n: number }[]];
       const where = branches?.length ? ` at ${branches.join(' and ')}` : '';

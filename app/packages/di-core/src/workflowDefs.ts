@@ -38,7 +38,7 @@ export const splitFields = (labels: string[]) => {
 
 /** Open items each live workflow has, so a change can say how many it affects (FE-WF-003). */
 const OPEN_ITEMS: Record<string, string> = {
-  Referral: "SELECT COUNT(*) AS n FROM esp_com_items WHERE definition = 'referral' AND stage NOT IN ('Sold', 'Not Interested', 'Done')",
+  Referral: "SELECT COUNT(*) AS n FROM esp_com_items WHERE definition = 'referral' AND stage NOT IN ('Sold', 'Not Interested', 'Done', 'Expired')",
   Task: "SELECT COUNT(*) AS n FROM tsk_task WHERE status = 'Open'",
   'Compliance issue': "SELECT COUNT(*) AS n FROM cpm_issue WHERE status <> 'Closed'",
   'Data log': "SELECT COUNT(*) AS n FROM esp_datalog WHERE status IN ('Draft', 'Submitted', 'Returned')",

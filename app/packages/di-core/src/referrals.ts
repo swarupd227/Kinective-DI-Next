@@ -53,7 +53,7 @@ export const REFERRAL_STAGES = ['New Referral', 'Active', 'Sold', 'Not Intereste
 /** Any other stage comes from the published Referral workflow, such as "Waiting on member". */
 export type ReferralStage = string;
 /** The stages that close an item. Every other stage is open work. */
-export const CLOSED_STAGES = ['Sold', 'Not Interested', 'Done'];
+export const CLOSED_STAGES = ['Sold', 'Not Interested', 'Done', 'Expired'];
 const isOpen = (stage: string) => !CLOSED_STAGES.includes(stage);
 
 /** Days to work a referral, by priority [Assumption]: until a tenant sets its own SLA. */
@@ -447,7 +447,8 @@ export class ReferralService {
     if (task ? stage === 'Sold' || stage === 'Not Interested' : stage === 'Done') throw new CoreError('INVALID', task ? 'A task closes as Done.' : 'A referral closes as Sold or Not Interested.');
     // Starting work on something nobody holds makes it yours.
     const claim = isOpen(stage) && !item.assignee && meta.employeeId !== undefined;
-    await this.pool.query(`UPDATE esp_com_items SET stage = ?${claim ? ', assignee_employee_id = ?' : ''} WHERE com_id = ?`, claim ? [stage, meta.employeeId, comId] : [stage, comId]);
+    const closing = !isOpen(stage) ? ', closed_at = NOW(3)' : '';
+    await this.pool.query(`UPDATE esp_com_items SET stage = ?${claim ? ', assignee_employee_id = ?' : ''}${closing} WHERE com_id = ?`, claim ? [stage, meta.employeeId, comId] : [stage, comId]);
     await this.line(comId, 'stage', `${meta.userName} moved this from ${item.stage} to ${stage}.${note ? ` ${note}` : ''}`, meta.userId);
     const credit = stage === 'Sold' ? await this.creditReferrer(comId, meta) : null;
     return { item: await this.item(comId, meta, ctx), changed: true, credit };
