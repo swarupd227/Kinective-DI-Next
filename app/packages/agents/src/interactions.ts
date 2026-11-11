@@ -101,7 +101,7 @@ export function interactionModule(svc: InteractionService, person: 'member' | 'c
         run: async (_: unknown, ctx) => {
           need(ctx);
           const list = await svc.recent(ctx, ctx.user.name);
-          if (!list.length) return { text: `You haven’t logged any interactions in DI yet. Try “Log a call with <${person}>: …”.` };
+          if (!list.length) return { text: `You haven’t logged any interactions in DI yet. Try “Log a call with Suzanne Jackson: she asked about a HELOC”.` };
           return {
             text: `You’ve logged **${list.length}** interactions lately; the latest was with ${list[0]!.name} (${list[0]!.kind.toLowerCase()}).`,
             blocks: [moduleTable(spec, 'Interactions you logged', ctx.runId, 'rm.log.list', [{ field: 'at', headerName: 'When', type: 'text' }, { field: 'name', headerName: person === 'member' ? 'Member' : 'Customer', type: 'text' }, { field: 'kind', headerName: 'Interaction', type: 'text' }, { field: 'summary', headerName: 'Summary', type: 'text' }, { field: 'followUp', headerName: 'Follow up', type: 'text' }], list.map((l) => ({ at: l.at, name: l.name, kind: `${l.kind} · ${l.channel}`, summary: l.summary, followUp: l.followUp ?? '' })))],

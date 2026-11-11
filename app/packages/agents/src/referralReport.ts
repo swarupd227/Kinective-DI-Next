@@ -62,7 +62,7 @@ export function referralReportModule(svc: ReferralReportService, person: 'member
 
 - ref_list (type, stage, branch, sender, assignee, from, to, open): the referrals, newest first.
 - ref_performance (by type, sender, branch or assignee; period 12m, quarter or year): conversion for the last 12 months, this quarter or this year.
-- ref_expire: lists the stale referrals and puts up an approval card to expire them. Nothing changes until someone approves the card, so run it whenever stale referrals come up; don't ask first.`,
+- ref_expire: lists the stale referrals and puts up an approval card to expire them. Nothing changes until someone approves the card, so run it whenever stale referrals come up; don't ask first. Its card ends the turn, so when a request also asks for conversion or a list, run those first and ref_expire last.`,
     plan: (t) => referralReportPlan(t),
     tools: [
       {
