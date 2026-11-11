@@ -13,7 +13,6 @@ describe('referral report questions', () => {
       ['Show referral conversion by type', 'ref_performance', { by: 'type' }],
       ['Who makes the most referrals?', 'ref_performance', { by: 'sender' }],
       ['Show referral performance by branch', 'ref_performance', { by: 'branch' }],
-      ['Show referral performance by branch this quarter', 'ref_performance', { by: 'branch', period: 'quarter' }],
       ['Show all sold HELOC referrals', 'ref_list', { stage: 'Sold', type: 'HELOC' }],
       ['Which referrals have gone stale?', 'ref_expire', {}],
     ];

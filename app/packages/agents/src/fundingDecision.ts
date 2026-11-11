@@ -155,7 +155,7 @@ export function fundingCase(pool: Pool): DecisionCase<FundingLevers, FundingFigu
       `It funds the ${mm(f.growth)} of loan growth at ${p2(f.allIn * 100)} all in, ${mm2(f.cost)} a year (${usd(f.epsImpact)} a share after tax).`,
       `EVE ends at ${neg(f.eve200)} at +200 bp and ${neg(f.eve400)} at +400 bp; wholesale funding is ${p1(f.wholesalePct)} of funding against ${FUNDING_POLICY.wholesaleMaxPct}%, and available funding ${p1(f.availablePct)} of deposits.`,
       dear.option.key !== pick.option.key ? `${dear.option.name} costs ${mm2(dear.figures.cost - f.cost)} a year more${dear.figures.cannibalized ? `, because the special also reprices about ${mm(dear.figures.cannibalized)} of the bank’s own balances` : ''}.` : '',
-      -t.eve[400] > t.eve.limit400 ? `EVE at +400 bp is over its limit before any funding (${neg(t.eve[400])}); funding can only avoid adding to it, and the securities sale is the fix.` : '',
+      -t.eve[400] > t.eve.limit400 ? `EVE at +400 bp is over its limit before any funding (${neg(t.eve[400])}); funding can only avoid adding to it; reducing it is a separate decision for ALCO.` : '',
     ];
     return { key: pick.option.key, why: parts.filter(Boolean).join(' ') };
   };

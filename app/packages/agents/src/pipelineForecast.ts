@@ -7,7 +7,7 @@ import { CoreError, PipelineService, type PipelineView } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 export const PIPELINE_FORECAST_REQUEST =
-  /\bprojected closings?\b|\b(?:expected|projected|forecast(?:ed)?) (?:to )?(?:close|closings?|fundings?)\b|\bclosings? (?:forecast|projection|this month|next (?:\d+ days|month|quarter))\b|\bforecast\b[^.?!]*\b(?:closings?|fundings?|(?:the |my |our )?(?:loan )?pipeline)\b|\bpipeline forecast\b|\bwhat (?:will|is going to) (?:fund|close)\b|\bfund(?:ings?)? by month\b|\bwhat(?:'s| is| will) (?:going to )?clos(?:e|ing)\b|\bpull[- ]through\b|\b(?:fico|credit(?: score)?) (?:tiers?|bands?|segments?)\b|\b(?:applications?|apps|pipeline) by (?:fico|credit)\b|\bapproved (?:but|and) not (?:yet )?(?:funded|closed)\b|\bwaiting to (?:close|fund)\b/i;
+  /\bprojected closings?\b|\b(?:expected|projected|forecast(?:ed)?) (?:to )?(?:close|closings?|fundings?)\b|\bclosings? (?:forecast|projection|this month|next (?:\d+ days|month|quarter))\b|\bforecast\b[^.?!]*\b(?:closings?|fundings?|the pipeline)\b|\bwhat(?:'s| is| will) (?:going to )?clos(?:e|ing)\b|\bpull[- ]through\b|\b(?:fico|credit(?: score)?) (?:tiers?|bands?|segments?)\b|\b(?:applications?|apps|pipeline) by (?:fico|credit)\b|\bapproved (?:but|and) not (?:yet )?(?:funded|closed)\b|\bwaiting to (?:close|fund)\b/i;
 
 const NO_ACCESS = 'The loan pipeline isn’t part of your DI access.';
 const text = (field: string, headerName: string) => ({ field, headerName, type: 'text' as const });

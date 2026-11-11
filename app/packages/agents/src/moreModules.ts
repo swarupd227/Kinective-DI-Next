@@ -358,7 +358,7 @@ export function callReportModule(cr: CallReportService): ModuleSpec {
           const x = await cr.reconcile();
           if (!x) return { text: 'No prepared figures are on file for this quarter, so there’s nothing to check DI’s against yet. Once your own 5300 is loaded, I’ll compare every line.' };
           const roots = x.items.filter((i) => !i.follows);
-          const settledText = (i: (typeof x.items)[number]) => (i.resolution ? `${i.resolution.resolution}: ${i.resolution.reason}` : i.follows ? 'Follows from a line above' : 'Open');
+          const settledText = (i: (typeof x.items)[number]) => (i.resolution ? `${i.resolution}: ${i.resolution.reason}` : i.follows ? 'Follows from a line above' : 'Open');
           const head = `I compared **${x.compared} lines** with ${x.upload.file} (uploaded by ${x.upload.by} on ${x.upload.at}): **${x.matched} match**${x.items.length ? ` and **${x.items.length} differ**` : ''}.`;
           const body = roots.length ? ` The differences start on ${roots.length} ${roots.length === 1 ? 'line' : 'lines'}: ${roots.map((i) => `**${i.code}** ${i.name} (prepared ${dollars(i.prepared)}, DI ${dollars(i.di)}, ${i.difference > 0 ? '+' : '−'}${dollars(Math.abs(i.difference))}${i.resolution ? `, settled as ${i.resolution.resolution}` : ''})`).join('; ')}. The rest follow in the totals above them.` : '';
           const open = x.open.length ? ` **${x.open.length}** still ${x.open.length === 1 ? 'needs' : 'need'} settling: say which figure is right, for example “DI is correct on ${x.open[0]!.code} because…” or “The prepared figure is correct on ${x.open[0]!.code}, adjust DI”.` : x.items.length ? ' Every difference is settled.' : '';

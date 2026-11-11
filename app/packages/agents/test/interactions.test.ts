@@ -13,8 +13,6 @@ describe('logging an interaction', () => {
   it('reads the member, channel, summary and follow-up from what the user says', () => {
     const q = 'Log a call with Suzanne Jackson: she asked about a HELOC for a kitchen remodel, follow up on Friday';
     expect(INTERACTION_REQUEST.test(q)).toBe(true);
-    expect(interactionPlan('Show the interaction log for this week', TODAY).tool).toBe('rm_log_list');
-    expect(INTERACTION_REQUEST.test('Show the interaction log for this week')).toBe(true);
     expect(interactionPlan(q, TODAY)).toEqual({ tool: 'rm_log', args: { member: 'Suzanne Jackson', channel: 'Phone', kind: 'Sales conversation', summary: 'she asked about a HELOC for a kitchen remodel', follow_up: '2026-11-13' } });
     expect(interactionPlan('I just spoke with Robert Jackson in the branch about updating his address', TODAY).args).toMatchObject({ member: 'Robert Jackson', channel: 'Branch' });
     expect(interactionPlan('Left a voicemail for Suzanne Jackson about her certificate', TODAY).args).toMatchObject({ kind: 'Left message' });

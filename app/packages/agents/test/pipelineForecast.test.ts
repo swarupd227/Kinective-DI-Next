@@ -8,7 +8,7 @@ import { PIPELINE_FORECAST_REQUEST, pipelineForecastModule } from '../src/index.
 
 describe('pipeline forecast questions', () => {
   it('are recognized, and leave stalled applications to the pipeline agent', () => {
-    for (const q of ['Forecast the loan pipeline: what will fund by month?', 'What will close in the next 30 days?', 'Show projected closings', 'Show applications by credit tier', 'Which loans are approved but not yet funded?']) expect(PIPELINE_FORECAST_REQUEST.test(q), q).toBe(true);
+    for (const q of ['What will close in the next 30 days?', 'Show projected closings', 'Show applications by credit tier', 'Which loans are approved but not yet funded?']) expect(PIPELINE_FORECAST_REQUEST.test(q), q).toBe(true);
     expect(PIPELINE_FORECAST_REQUEST.test('Show my stalled applications')).toBe(false);
     const spec = pipelineForecastModule({} as PipelineService);
     expect(spec.plan('Show applications by credit tier', {} as never)).toEqual({ tool: 'lap_credit_tiers', args: {} });

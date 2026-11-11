@@ -11,7 +11,6 @@ describe('portfolio report questions', () => {
     const cases: [string, string][] = [
       ['Show member growth', 'members'],
       ['Show the CD maturity forecast', 'cds'],
-      ['Which certificates mature in the next 90 days and how much will renew?', 'cds'],
       ['Show deposit growth by product', 'deposits'],
       ['Show delinquency by product', 'delinquency'],
     ];

@@ -171,8 +171,8 @@ export async function runDecision<L, F>(spec: ModuleSpec, c: DecisionCase<L, F>,
   const step = (id: string, state: StepUpdate['state'], resultSummary?: string) => sink.step(planId, { id, state, ...(resultSummary ? { resultSummary: resultSummary.slice(0, 240) } : {}) });
 
   const planned = await ask(
-    `You are the planner for ${input.tenant.name}'s ${c.title.toLowerCase()}. Specialists for capital, CECL, rate risk, concentration, liquidity and stress report their limits; you then draft three plans whose figures code computes, a chief risk officer challenges them, and you recommend one for the board.`,
-    `<data>Goal from ${input.user.name}, ${input.user.title}: ${input.text}</data>\nWrite the plan of work.`,
+    `You are the planner for ${input.tenant.name}'s ${c.title.toLowerCase()}. These specialists report their limits, and only these: ${c.specialists.map((s) => s.agent).join(', ')}. You then draft three plans whose figures code computes, a chief risk officer challenges them, and you recommend one for the board.`,
+    `<data>Goal from ${input.user.name}, ${input.user.title}: ${input.text}</data>\nWrite the plan of work. Name only the specialists listed.`,
     PlanSchema,
   );
   const planText = planned ? check(planned.plan, c.planText) : c.planText;

@@ -154,7 +154,7 @@ export function creCase(pool: Pool): DecisionCase<CapitalLevers, PlanFigures> & 
     blocks: (results, runId) => {
       const t = (field: string, headerName: string) => ({ field, headerName, type: 'text' as const });
       const rows = rowsFor(results);
-      return [{ id: newBlockId('cre'), type: 'table', version: '1.0.0', title: 'Three responses to the CRE finding', subtitle: `${office.loans} office loans, ${mm(office.balance)}; ${mm(office.maturing)} matures in the next year and ${mm(office.thinDscr)} covers its debt service less than 1.15 times.`, provenance: { agent: CRE_RESPONSE_AGENT, runId, operations: ['cre.plans'], sources: SOURCES }, freshness: { kind: 'workflow_event' }, data: { columns: [t('item', ''), t('now', 'Today'), ...results.map((r) => t(r.option.key, r.option.name))], rows, rowCount: rows.length } } as Block];
+      return [{ id: newBlockId('cre'), type: 'table', version: '1.0.0', title: 'Three responses to the CRE finding', subtitle: `${office.loans} office loans, ${mm(office.balance)}; ${mm(office.thinDscr)} of them cover debt service less than 1.15 times; ${mm(office.maturing)} matures in the next year, ${mm(office.maturingThin)} of it under 1.15 times.`, provenance: { agent: CRE_RESPONSE_AGENT, runId, operations: ['cre.plans'], sources: SOURCES }, freshness: { kind: 'workflow_event' }, data: { columns: [t('item', ''), t('now', 'Today'), ...results.map((r) => t(r.option.key, r.option.name))], rows, rowCount: rows.length } } as Block];
     },
     memo: (chosen, why, results, replies) => ({
       tool: 'cre_memo',

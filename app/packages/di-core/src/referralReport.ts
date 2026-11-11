@@ -79,8 +79,8 @@ export class ReferralReportService {
    * Conversion over the last months, grouped: referrals made, sold, not interested, expired, still open,
    * the share of closed referrals that sold, days to close, and the share of sales that opened the product.
    */
-  async performance(by: RefGroupBy, ctx: CoreContext, months = 12, since?: string) {
-    const from = since ?? new Date(Date.now() - months * 30.4 * 86_400_000).toISOString().slice(0, 10);
+  async performance(by: RefGroupBy, ctx: CoreContext, months = 12) {
+    const from = new Date(Date.now() - months * 30.4 * 86_400_000).toISOString().slice(0, 10);
     const all = await this.rows({ from }, ctx);
     const key = (r: RefRow) => (by === 'type' ? r.type : by === 'sender' ? r.sender : by === 'branch' ? r.branch : (r.assignee ?? 'Unassigned'));
     const groups = new Map<string, RefRow[]>();

@@ -1,7 +1,7 @@
 // Session bootstrap (spec 11.3): load the session, open the main stream, then render. Holds the
 // API client, stream store and connection for the whole shell. Tokens would live in memory here
 // (FE-ARCH-061); the mock Experience Layer needs none.
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { RotateCw } from 'lucide-react';
 import { Button } from '@dinext/ui';
@@ -100,19 +100,6 @@ function SessionBootstrap({ children }: { children: ReactNode }) {
   }, [live]);
 
   const session = sessionQuery.data;
-  // The server ties a stream to the person who asked for its ticket, so after a switch of person the
-  // stream reconnects as them; otherwise their own tasks would open with nothing in them.
-  const streamUser = useRef<string | null>(null);
-  const userId = session?.user.id;
-  useEffect(() => {
-    if (!userId) return;
-    if (streamUser.current !== null && streamUser.current !== userId) {
-      live.connection.stop();
-      live.connection.start();
-    }
-    streamUser.current = userId;
-  }, [userId, live]);
-
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
