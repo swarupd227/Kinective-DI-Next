@@ -285,6 +285,10 @@ export const EVAL_ITEMS: EvalItem[] = [
   // The trained attrition model: how good it is, and who may see and change it.
   { id: 'GQ-MDL-001', set: 'golden', persona: 'executive', q: 'How good is the attrition model?', agent: 'Predictive Models', contains: ['attrition model'], approval: 'none' },
   { id: 'GQ-MDL-003', set: 'golden', persona: 'executive', q: 'Did the High band actually leave?', agent: 'Predictive Models', contains: ['High band'], approval: 'none' },
+  // The next-best-product model: one trained model per product, beside the seeded suggestions.
+  { id: 'GQ-NBP-001', set: 'golden', persona: 'executive', q: 'How good is the next-best-product model?', agent: 'Next-Best-Product Model', contains: ['next-best-product model'], approval: 'none' },
+  { id: 'GQ-NBP-002', set: 'golden', persona: 'analyst', q: 'Retrain the next-best-product model', agent: 'Next-Best-Product Model', approval: 'low' },
+  { id: 'PM-NBP-001', set: 'permission', persona: 'msr', q: 'Who will open a certificate next?', refused: true, notContains: ['times as likely'], approval: 'none', ref: 'predictive analytics is for managers, finance and analysts' },
   { id: 'GQ-MDL-002', set: 'golden', persona: 'analyst', q: 'Retrain the attrition model', agent: 'Predictive Models', approval: 'low' },
   { id: 'PM-MDL-001', set: 'permission', persona: 'msr', q: 'Who does the attrition model say will leave?', refused: true, notContains: ['Chance within 90 days'], approval: 'none', ref: 'predictive analytics is for managers, finance and analysts' },
   // Off-core loans: a servicer's spreadsheet joins DI's loan figures through the file upload agent.

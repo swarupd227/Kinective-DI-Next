@@ -80,3 +80,4 @@ export { MonteCarloService, SIM_PATHS, type SimPath } from './monteCarlo.ts';
 export { OnboardingDeskService, RULE_CONDITIONS, TOUCH_TYPES, type OnbRule, type RuleMatch } from './onboardingDesk.ts';
 export { FundingOptimizerService, type OptimizedMix } from './fundingOptimizer.ts';
 export { CrossSellService } from './crossSell.ts';
+export { NEXT_PRODUCT_BANDS, NEXT_PRODUCT_MIN_AUC, NextProductModelService, type ProductModel } from './nextProductModel.ts';

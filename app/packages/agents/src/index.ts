@@ -85,3 +85,4 @@ export { onboardingDeskPlan, onboardingDeskTools, ruleFrom } from './onboardingD
 export { FUNDING_OPTIMIZER_REQUEST, fundingOptimizerModule } from './fundingOptimizerAgent.ts';
 export { STOCK_EXTRA_SECTIONS, stockExtraAnalyses } from './stockReportsExtra.ts';
 export { SALES_OVERRIDE_REQUEST, salesOverridesModule } from './salesOverrides.ts';
+export { NEXT_PRODUCT_REQUEST, modelProductIn, nextProductModule } from './nextProductAgent.ts';

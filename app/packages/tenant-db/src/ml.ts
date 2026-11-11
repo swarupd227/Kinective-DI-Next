@@ -10,6 +10,11 @@
 // The demo's members are generated, so the snapshots are too. Before leaving, members show what usually
 // comes before it (a direct deposit stopped, balances drained, logins stopped, fees and complaints), more
 // or less clearly depending on why they left; some show nothing, as real members often don't.
+// For the next-best-product model, each row also says which products the member held, whether they were
+// shopping for a loan (looking at loan rates in online banking, or asking about a loan) and whether a large
+// deposit landed in the last 90 days. Before a member opens a loan they often shop for one first, and
+// before a certificate, money market or savings account a large deposit often lands; about 60% show it,
+// and some members who open nothing show the same thing.
 import type { GeneratedTenant } from './generate.ts';
 import { AS_OF, unit } from './generate.ts';
 
@@ -32,6 +37,9 @@ export const ML_DDL = [
      contacts_3m TINYINT NOT NULL,
      complaints_3m TINYINT NOT NULL,
      cert_maturing_90d TINYINT NOT NULL,
+     loan_shopping_90d TINYINT NOT NULL DEFAULT 0,
+     large_deposit_90d TINYINT NOT NULL DEFAULT 0,
+     held VARCHAR(255) NOT NULL DEFAULT '',
      PRIMARY KEY (month_end, party_id),
      KEY ix_snap_party (party_id)
    )`,
@@ -115,7 +123,8 @@ interface Exit {
 /**
  * One row per member per month-end: [month_end, party_id, branch_id, tenure_months, age, products,
  * has_checking, has_loan, deposit_balance, balance_change_3m, direct_deposit, dd_stopped_90d,
- * days_since_login, fees_3m, contacts_3m, complaints_3m, cert_maturing_90d].
+ * days_since_login, fees_3m, contacts_3m, complaints_3m, cert_maturing_90d, loan_shopping_90d,
+ * large_deposit_90d, held].
  */
 export function generateSnapshots(t: GeneratedTenant, rm: { digital: unknown[][]; activity: unknown[][]; interactions: unknown[][] }) {
   const months = snapshotMonths();
@@ -170,6 +179,14 @@ export function generateSnapshots(t: GeneratedTenant, rm: { digital: unknown[][]
       const contacts = (contactsBy.get(id) ?? []).filter((c) => c.at <= m && daysBetween(c.at, m) < 92);
       const fees = k === 0 ? fee30 + (unit(id, 500) < 0.1 ? 29 : 0) : unit(id, 500 + k) < 0.08 ? 29 : unit(id, 520 + k) < 0.15 ? 5 : 0;
       const cert = deps.some((d) => d[6] && String(d[6]) > m && daysBetween(m, String(d[6])) <= 90) ? 1 : 0;
+      const held = [...cats].map(String).sort().join(',').slice(0, 255);
+      // What comes before opening a product: shopping before a loan, a large deposit before savings.
+      const at0 = months.indexOf(m);
+      const soon = (open: unknown) => String(open).slice(0, 10) > m && daysBetween(m, String(open).slice(0, 10)) <= 75 && monthsBetween(join, String(open).slice(0, 10)) >= 1;
+      const loanSoon = loans.some((l) => soon(l[6]));
+      const saveSoon = deps.some((d) => d[3] !== 'Checking' && soon(d[4]));
+      const shopping = (loanSoon && unit(id, 700 + at0) < 0.6) || unit(id, 720 + at0) < 0.04 ? 1 : 0;
+      const largeDeposit = (saveSoon && unit(id, 740 + at0) < 0.6) || unit(id, 760 + at0) < 0.04 ? 1 : 0;
       let change = bal3 > 0 ? Math.max(-1, Math.min(9, Math.round(((bal - bal3) / bal3) * 1000) / 1000)) : 0;
       let shownBal = bal;
       let shownDd = dd;
@@ -188,7 +205,13 @@ export function generateSnapshots(t: GeneratedTenant, rm: { digital: unknown[][]
         }
         if (login < 365 && unit(id, 605) < 0.5) shownLogin = Math.min(364, login + 30 + Math.floor(unit(id, 606 + at) * 60));
       }
-      rows.push([m, id, p[5], Math.max(0, monthsBetween(join, m)), Math.max(18, Math.min(100, Math.floor(daysBetween(birth, m) / 365.25))), cats.size, cats.has('Checking') ? 1 : 0, loans.some((l) => openAt(l[6], l[7], m)) ? 1 : 0, round2(shownBal), change, shownDd, shownStop, shownLogin, fees, Math.min(20, contacts.length), Math.min(10, contacts.filter((c) => c.fee).length), cert]);
+      // A large deposit lifts balances; it isn't a false alarm for leaving.
+      if (largeDeposit && change > -0.1) {
+        const lift = 0.15 + unit(id, 780 + at0) * 0.35;
+        change = Math.round((change + lift) * 1000) / 1000;
+        shownBal *= 1 + lift;
+      }
+      rows.push([m, id, p[5], Math.max(0, monthsBetween(join, m)), Math.max(18, Math.min(100, Math.floor(daysBetween(birth, m) / 365.25))), cats.size, cats.has('Checking') ? 1 : 0, loans.some((l) => openAt(l[6], l[7], m)) ? 1 : 0, round2(shownBal), change, shownDd, shownStop, shownLogin, fees, Math.min(20, contacts.length), Math.min(10, contacts.filter((c) => c.fee).length), cert, shopping, largeDeposit, held]);
     }
   }
 
@@ -265,10 +288,10 @@ export function generateSnapshots(t: GeneratedTenant, rm: { digital: unknown[][]
         }
       }
       const age = base[4] as number;
-      rows.push([m, id, x.branch, base[3], x.reason === 'Deceased' ? Math.max(age, 72 + Math.floor(u(300) * 20)) : age, prods, base[6], base[7], round2(Math.max(0, bal)), Math.round(change * 1000) / 1000, dd, stopped, login, fees, Math.min(20, contacts), Math.min(10, complaints), cert]);
+      rows.push([m, id, x.branch, base[3], x.reason === 'Deceased' ? Math.max(age, 72 + Math.floor(u(300) * 20)) : age, prods, base[6], base[7], round2(Math.max(0, bal)), Math.round(change * 1000) / 1000, dd, stopped, login, fees, Math.min(20, contacts), Math.min(10, complaints), cert, 0, 0, base[19]]);
     }
   }
   return rows;
 }
 
-export const SNAPSHOT_COLUMNS = ['month_end', 'party_id', 'branch_id', 'tenure_months', 'age', 'products', 'has_checking', 'has_loan', 'deposit_balance', 'balance_change_3m', 'direct_deposit', 'dd_stopped_90d', 'days_since_login', 'fees_3m', 'contacts_3m', 'complaints_3m', 'cert_maturing_90d'];
+export const SNAPSHOT_COLUMNS = ['month_end', 'party_id', 'branch_id', 'tenure_months', 'age', 'products', 'has_checking', 'has_loan', 'deposit_balance', 'balance_change_3m', 'direct_deposit', 'dd_stopped_90d', 'days_since_login', 'fees_3m', 'contacts_3m', 'complaints_3m', 'cert_maturing_90d', 'loan_shopping_90d', 'large_deposit_90d', 'held'];

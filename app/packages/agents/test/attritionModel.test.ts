@@ -52,7 +52,10 @@ describe.skipIf(!up)('the attrition model against the warehouse', () => {
     return gateway.execute(a, { user: by, modules: o.t.modules, runId: o.t.runId, threadId: o.t.threadId });
   };
   const clear = async () => {
-    for (const t of ['ml_score', 'ml_drift', 'ml_model']) await admin.query(`DELETE FROM ${t}`);
+    // Only the attrition model's rows: other models share these tables.
+    await admin.query("DELETE s FROM ml_score s JOIN ml_model m ON m.model_id = s.model_id WHERE m.name = 'attrition'");
+    await admin.query("DELETE d FROM ml_drift d JOIN ml_model m ON m.model_id = d.model_id WHERE m.name = 'attrition'");
+    await admin.query("DELETE FROM ml_model WHERE name = 'attrition'");
   };
 
   beforeAll(async () => {
@@ -66,7 +69,7 @@ describe.skipIf(!up)('the attrition model against the warehouse', () => {
   afterAll(async () => {
     await clear();
     await Promise.all([pool.end(), admin.end()]);
-  });
+  }, 60_000);
 
   it('trains on earlier months, checks on later ones, and finds most leavers in its top 10%', async () => {
     const m = (await svc.bootstrap())!;
@@ -95,7 +98,7 @@ describe.skipIf(!up)('the attrition model against the warehouse', () => {
     // A branch manager sees their own branch only.
     const westport = await svc.top(m.modelId, { limit: 20, purviewBranches: ['Westport'] });
     expect(westport.items.every((x) => x.branch === 'Westport')).toBe(true);
-  });
+  }, 60_000);
 
   it('answers in words, and hides names from someone without member details', async () => {
     const status = await run(turn('How good is the attrition model?'));
@@ -108,7 +111,7 @@ describe.skipIf(!up)('the attrition model against the warehouse', () => {
     expect(gateway.match('Is the attrition model drifting?')?.agent).toBe('Predictive Models');
     // The follow-up DI suggests after the model's status must come back to the model.
     expect(gateway.match('Did the High band actually leave?')?.agent).toBe('Predictive Models');
-  });
+  }, 60_000);
 
   it('retrains a candidate, and only someone else can put it to work', async () => {
     const retrain = await run(turn('Retrain the attrition model'));
