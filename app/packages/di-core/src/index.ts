@@ -82,3 +82,4 @@ export { FundingOptimizerService, type OptimizedMix } from './fundingOptimizer.t
 export { CrossSellService } from './crossSell.ts';
 export { NEXT_PRODUCT_BANDS, NEXT_PRODUCT_MIN_AUC, NextProductModelService, type ProductModel } from './nextProductModel.ts';
 export { DecisionTableService, PRICING_EXCEPTION_BP, compileTable, parseCell, validateTable, type CellValue, type Decision, type DecisionTable, type TableEdit } from './decisionTables.ts';
+export { SURVIVAL_FEATURES, SURVIVAL_LABELS, SurvivalModelService, fitCox, outlook, type SurvivalRecord } from './survivalModel.ts';

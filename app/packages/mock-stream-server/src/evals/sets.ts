@@ -296,6 +296,10 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-NBP-001', set: 'golden', persona: 'executive', q: 'How good is the next-best-product model?', agent: 'Next-Best-Product Model', approval: 'none' },
   { id: 'GQ-NBP-002', set: 'golden', persona: 'analyst', q: 'Retrain the next-best-product model', agent: 'Next-Best-Product Model', approval: 'low' },
   { id: 'PM-NBP-001', set: 'permission', persona: 'msr', q: 'Who will open a certificate next?', refused: true, notContains: ['times as likely'], approval: 'none', ref: 'predictive analytics is for managers, finance and analysts' },
+  // The survival model: how long members stay, what makes them stay longer, deposits at risk.
+  { id: 'GQ-SV-001', set: 'golden', persona: 'executive', q: 'How long do members stay?', agent: 'Lifetime and Survival', contains: ['are still here after a year'], approval: 'none' },
+  { id: 'GQ-SV-002', set: 'golden', persona: 'bank_cfo', q: 'What makes customers stay longer?', agent: 'Lifetime and Survival', approval: 'none' },
+  { id: 'PM-SV-001', set: 'permission', persona: 'msr', q: 'What deposits are at risk over the next year?', refused: true, notContains: ['expects about'], approval: 'none', ref: 'predictive analytics is for managers, finance and analysts' },
   { id: 'GQ-MDL-002', set: 'golden', persona: 'analyst', q: 'Retrain the attrition model', agent: 'Predictive Models', approval: 'low' },
   { id: 'PM-MDL-001', set: 'permission', persona: 'msr', q: 'Who does the attrition model say will leave?', refused: true, notContains: ['Chance within 90 days'], approval: 'none', ref: 'predictive analytics is for managers, finance and analysts' },
   // Off-core loans: a servicer's spreadsheet joins DI's loan figures through the file upload agent.
