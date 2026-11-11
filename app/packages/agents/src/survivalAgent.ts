@@ -10,9 +10,9 @@ import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.
 export const SURVIVAL_REQUEST =
   /\bsurvival (?:model|curves?|analysis)\b|\bretention curves?\b|\bkaplan[- ]meier\b|\bcox (?:model|regression)\b|\bhazard ratios?\b|\bhow long (?:do|will|does|would) (?:our |the |new |a )?(?:members?|customers?|people|relationships?) (?:stay|last)\b|\b(?:median|average|expected) (?:tenure|lifetime|membership length|relationship length)\b|\bstill (?:here|members|customers|with us) (?:after|in)\b|\bdeposits?(?: are| is)? at risk (?:over|in|across) (?:the next|a) (?:year|12 months)\b|\bdeposits?(?: are| is)? at risk (?:from|if) (?:members|customers) (?:leave|leaving)\b|\b(?:what|which things?) (?:makes?|keeps?) (?:members|customers) (?:stay|longer)\b|\bstay longer\b|\b(?:member|customer) lifetimes?\b|\blifetime (?:model|curve)\b|\bretrain\b[^.?!]*\bsurvival\b|\b(?:promote|activate|approve|put)\b[^.?!]*\bsurvival model\b/i;
 
-const pct = (v: number, d = 0) => `${(v * 100).toFixed(d)}%`;
+const pct = (v: number, d = 0) => (v >= 0.995 && d === 0 ? 'over 99%' : `${(v * 100).toFixed(d)}%`);
 const n = (v: number) => Math.round(v).toLocaleString('en-US');
-const money = (v: number) => (v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${Math.round(v / 1e3)}K`);
+const money = (v: number) => (v >= 1e9 ? `$${(v / 1e9).toFixed(2)}B` : v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${Math.round(v / 1e3)}K`);
 const years = (months: number | null) => (months === null ? 'more than 25 years' : months < 24 ? `${months} months` : `${(months / 12).toFixed(1)} years`);
 const text = (field: string, headerName: string) => ({ field, headerName, type: 'text' as const });
 

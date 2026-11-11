@@ -80,7 +80,7 @@ const slug = (p: string) => p.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(
 const heldOf = (s: Snapshot) => new Set(String(s.held ?? '').split(',').filter(Boolean));
 const featureLabel = (f: string) =>
   ({
-    tenure_months: 'Months as a member',
+    tenure_months: 'Months with us',
     age: 'Age',
     products: 'Products held',
     log_balance: 'Deposit balance',
@@ -120,7 +120,7 @@ function reason(feature: string, s: Snapshot, products: string[]): string | null
     case 'contacts_3m':
       return Number(s.contacts_3m) >= 2 ? `${s.contacts_3m} contacts with staff in 3 months` : null;
     case 'tenure_months':
-      return Number(s.tenure_months) >= 60 ? `Member for ${Math.floor(Number(s.tenure_months) / 12)} years` : Number(s.tenure_months) < 12 ? 'Joined in the last year' : null;
+      return Number(s.tenure_months) >= 60 ? `With us for ${Math.floor(Number(s.tenure_months) / 12)} years` : Number(s.tenure_months) < 12 ? 'Joined in the last year' : null;
     case 'age':
       return `Age ${s.age}`;
     case 'products':

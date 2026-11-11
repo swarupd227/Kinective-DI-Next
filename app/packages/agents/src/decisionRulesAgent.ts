@@ -149,7 +149,7 @@ export function decisionRulesModule(svc: DecisionTableService): ModuleSpec {
           const result = svc.outcome(t!, d);
           const why = d.matched.map((m) => `rule ${m}${t!.rules[m - 1]!.then.reason ? ` (${t!.rules[m - 1]!.then.reason})` : ''}`).join(', ');
           return {
-            text: d.matched.length ? `With ${given}, the ${t!.name.toLowerCase()} gives **${result}**, from ${why}.${t!.key === 'loan_pricing' && (d.total ?? 0) > PRICING_EXCEPTION_BP ? ` That’s over +${PRICING_EXCEPTION_BP} bp, so it needs a pricing exception.` : ''}` : `With ${given}, no rule in the ${t!.name.toLowerCase()} matches.`,
+            text: d.matched.length ? `With ${given}, the ${t!.name.toLowerCase()} table gives **${result}**, from ${why}.${t!.key === 'loan_pricing' && (d.total ?? 0) > PRICING_EXCEPTION_BP ? ` That’s over +${PRICING_EXCEPTION_BP} bp, so it needs a pricing exception.` : ''}` : `With ${given}, no rule in the ${t!.name.toLowerCase()} table matches.`,
             blocks: d.matched.length ? [grid(spec, { ...t!, rules: d.matched.map((m) => t!.rules[m - 1]!) }, ctx.runId, `Rules that matched (${d.matched.map((m) => `#${m}`).join(', ')})`)] : [],
           };
         },
@@ -164,7 +164,7 @@ export function decisionRulesModule(svc: DecisionTableService): ModuleSpec {
           const top = r.outcomes.filter((o) => !/^No action/.test(o.outcome)).slice(0, 3);
           const ex = t!.key === 'loan_pricing' ? r.decided.filter((x) => (x.d.total ?? 0) > PRICING_EXCEPTION_BP).length : 0;
           return {
-            text: `Over ${r.about}, the ${t!.name.toLowerCase()} decides: ${top.map((o) => `**${o.outcome}** for ${n(o.n)}`).join(', ')}${r.outcomes.length > top.length ? ', and the rest below' : ''}.${t!.key === 'loan_pricing' ? ` ${n(ex)} would need a pricing exception (over +${PRICING_EXCEPTION_BP} bp).` : ''}${r.neverFires.length ? ` ${r.neverFires.length === 1 ? 'Rule' : 'Rules'} ${r.neverFires.join(', ')} never ${r.neverFires.length === 1 ? 'fires' : 'fire'} on today’s data.` : ''}${r.unmatched ? ` ${n(r.unmatched)} match no rule.` : ''}`,
+            text: `Over ${r.about}, the ${t!.name.toLowerCase()} table decides: ${top.map((o) => `**${o.outcome}** for ${n(o.n)}`).join(', ')}${r.outcomes.length > top.length ? ', and the rest below' : ''}.${t!.key === 'loan_pricing' ? ` ${n(ex)} would need a pricing exception (over +${PRICING_EXCEPTION_BP} bp).` : ''}${r.neverFires.length ? ` ${r.neverFires.length === 1 ? 'Rule' : 'Rules'} ${r.neverFires.join(', ')} never ${r.neverFires.length === 1 ? 'fires' : 'fire'} on today’s data.` : ''}${r.unmatched ? ` ${n(r.unmatched)} match no rule.` : ''}`,
             blocks: [
               moduleTable(spec, `What it decides, ${r.about}`, ctx.runId, 'dmn.apply', [text('outcome', 'Outcome'), { field: 'n', headerName: 'How many', type: 'count' }], r.outcomes.map((o) => ({ outcome: o.outcome, n: o.n }))),
               moduleTable(spec, 'How often each rule fires', ctx.runId, 'dmn.fired', [text('rule', 'Rule'), text('when', 'When'), { field: 'n', headerName: 'Fires', type: 'count' }], t!.rules.map((x, i) => ({ rule: `#${i + 1}`, when: t!.inputs.map((c) => (x.when[c.key] && x.when[c.key] !== '-' ? `${c.label.replace(/\s*\(.*\)$/, '')} ${x.when[c.key]}` : null)).filter(Boolean).join(', ') || 'Anything else', n: r.fired[i]! }))),

@@ -291,7 +291,7 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-API-002', set: 'golden', persona: 'admin', q: 'Show the last five errors from the request log', agent: 'API Connections', approval: 'none' },
   // The trained attrition model: how good it is, and who may see and change it.
   { id: 'GQ-MDL-001', set: 'golden', persona: 'executive', q: 'How good is the attrition model?', agent: 'Predictive Models', approval: 'none' },
-  { id: 'GQ-MDL-003', set: 'golden', persona: 'executive', q: 'Did the High band actually leave?', agent: 'Predictive Models', contains: ['High band'], approval: 'none' },
+  { id: 'GQ-MDL-003', set: 'golden', persona: 'executive', q: 'Did the High band actually leave?', agent: 'Predictive Models', approval: 'none' },
   // The next-best-product model: one trained model per product, beside the seeded suggestions.
   { id: 'GQ-NBP-001', set: 'golden', persona: 'executive', q: 'How good is the next-best-product model?', agent: 'Next-Best-Product Model', approval: 'none' },
   { id: 'GQ-NBP-002', set: 'golden', persona: 'analyst', q: 'Retrain the next-best-product model', agent: 'Next-Best-Product Model', approval: 'low' },

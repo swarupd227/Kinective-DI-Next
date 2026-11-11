@@ -19,7 +19,7 @@ export const modelMonthLabel = (iso: string) => `${MONTHS[Number(iso.slice(5, 7)
 /** What the attrition model reads about each member, in the order it reads them. */
 export const ATTRITION_FEATURES = ['tenure_months', 'age', 'products', 'has_checking', 'has_loan', 'log_balance', 'balance_change_3m', 'direct_deposit', 'dd_stopped_90d', 'days_since_login', 'fees_3m', 'contacts_3m', 'complaints_3m', 'cert_maturing_90d'] as const;
 export const ATTRITION_FEATURE_LABELS: Record<string, string> = {
-  tenure_months: 'Months as a member',
+  tenure_months: 'Months with us',
   age: 'Age',
   products: 'Products held',
   has_checking: 'Has checking',
@@ -84,7 +84,7 @@ function reason(feature: string, s: MemberSnapshot): string | null {
     case 'cert_maturing_90d':
       return Number(s.cert_maturing_90d) ? 'Certificate matures within 90 days' : null;
     case 'tenure_months':
-      return Number(s.tenure_months) < 36 ? `Member for ${s.tenure_months < 12 ? `${s.tenure_months} months` : `${Math.floor(Number(s.tenure_months) / 12)} years`}` : null;
+      return Number(s.tenure_months) < 36 ? `With us for ${s.tenure_months < 12 ? `${s.tenure_months} months` : `${Math.floor(Number(s.tenure_months) / 12)} years`}` : null;
     case 'log_balance':
       return Number(s.deposit_balance) < 500 ? `Low balances: ${money(Number(s.deposit_balance))}` : null;
     case 'age':
