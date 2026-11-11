@@ -54,6 +54,7 @@ export { ALCO_POLICY, AlcoService, type PolicyLine, type PolicyStatus } from './
 export { ProfitabilityService, FTP_CURVE, LOSS_RATE, type ProfitLine } from './profitability.ts';
 export { BudgetService, type BudgetLine, type BudgetEvent } from './budget.ts';
 export { BranchScorecardService, type BranchLine } from './branchScorecard.ts';
+export { BRANCH_MEASURES, BRANCH_TARGETS, BranchKpiService, LOBBY_WAIT_TARGET, NETWORK, REG_E_DAYS, REQUIRED_TRAINING, meetsTarget, targetStatus, type BranchComplaintLine, type BranchDigitalLine, type BranchDqLine, type BranchKpiLine, type BranchMeasure, type BranchProductivityLine, type OpenComplaint, type TargetStatus } from './branchKpi.ts';
 export { LendingProductionService, WINDOW_DAYS as PRODUCTION_WINDOW_DAYS, type OfficerLine } from './lendingProduction.ts';
 export { ApiService, stampUtc, AUTH_LABELS, PLATFORMS, PERSONAL_RETENTION_DAYS, REDACTED, apiHosts, type ApiConnection, type AuthKind, type LogEntry, type SavedApiLogin, type Transport } from './apis.ts';
 export { relayPlatform, type HttpRequest, type HttpResponse } from './relaySim.ts';

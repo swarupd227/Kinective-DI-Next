@@ -56,6 +56,7 @@ export { SHARE_REQUEST, parseShares, shareModule, shareQuestion, type ShareQuest
 export { CFO_REQUEST, cfoModule, cfoScorecard, type CfoLine, type CfoRead } from './cfo.ts';
 export { combineAnalyses } from './report.ts';
 export { branchAnalyses } from './branchScorecard.ts';
+export { BRANCH_KPI_REQUEST, branchKpiModule, branchKpiPlan, showMeasure } from './branchKpi.ts';
 export { lendingAnalyses } from './lendingProduction.ts';
 export { PROFIT_SECTIONS, profitAnalyses, profitabilityModule } from './profitability.ts';
 export { budgetModule, proposeTarget } from './budget.ts';

@@ -38,6 +38,7 @@ import { referralHistory, referralSeed, WORKFLOW_DDL, WORKFLOW_WRITE_TABLES, wor
 import { generateTransactions, LOAN_GROWTH_DDL, LOAN_GROWTH_WRITE_TABLES, planLoanGrowth } from './loanGrowth.ts';
 import { CONCENTRATION_DDL, generateLoanDetail } from './concentration.ts';
 import { BSA_DDL, generateBsa } from './bsa.ts';
+import { seedBranchOps } from './branchOps.ts';
 import { generateOpRisk, OPRISK_DDL } from './oprisk.ts';
 
 const BATCH = 2000;
@@ -127,6 +128,8 @@ async function main() {
       await insert(admin, 'fraud_case', ['case_id', 'opened', 'fraud_type', 'channel', 'party_id', 'gross_loss', 'recovered', 'prevented', 'elder', 'status'], bsa.fraud);
       await insert(admin, 'bsa_program', ['item', 'area', 'status', 'as_of', 'due', 'detail'], bsa.program);
     }
+    // A credit union's branch operations: teller balancing, vault, lobby, CTRs and referrals, fraud, audits, training and staff.
+    if (profile.institutionType === 'credit_union') await seedBranchOps(admin, profile.schema);
     if (growthPlan) {
       await insert(admin, 'cdm_transaction', ['txn_id', 'account_id', 'party_id', 'post_date', 'amount', 'txn_type', 'description', 'counterparty'], generateTransactions(growthPlan, t, rm.digital));
       await insert(admin, 'lg_campaign', ['campaign_id', 'name', 'segments', 'holdout_pct', 'treatment', 'control', 'status', 'created_by', 'created_on', 'sent_on', 'push_id', 'approval_id'], growthPlan.campaign);
