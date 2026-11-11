@@ -185,14 +185,15 @@ export function governanceModule(gov: GovernanceService, year: () => number): Mo
       },
       {
         name: 'gov_feedback',
-        description: 'The review queue of ratings on DI’s answers, thumbs down first. Needs the AI usage permission.',
+        description: 'The review queue of ratings on DI’s answers, thumbs down first, and notes sent with the Feedback button. Needs the AI usage permission.',
         input: z.object({}).strict(),
         run: async (_: unknown, ctx) => {
           admin(ctx);
           const list = await gov.feedbackQueue();
           if (!list.length) return { text: 'Nobody has rated an answer yet.' };
           const down = list.filter((f) => f.rating === 'down').length;
-          return { text: `**${plural(list.length, 'rating')}** on DI’s answers, ${down} thumbs down.`, blocks: [moduleTable(spec, 'Answer feedback', ctx.runId, 'ai.feedback.list', [{ field: 'rating', headerName: 'Rating', type: 'text' }, { field: 'question', headerName: 'Question', type: 'text' }, { field: 'comment', headerName: 'Comment', type: 'text' }, { field: 'agent', headerName: 'Agent', type: 'text' }, { field: 'by', headerName: 'From', type: 'text' }, { field: 'runId', headerName: 'Run', type: 'text' }], list.map((f) => ({ rating: f.rating === 'down' ? 'Thumbs down' : 'Thumbs up', question: f.question, comment: f.comment, agent: f.agent, by: f.by, runId: f.runId })))] };
+          const notes = list.filter((f) => f.rating === 'note').length;
+          return { text: `**${plural(list.length - notes, 'rating')}** on DI’s answers, ${down} thumbs down${notes ? `, and ${plural(notes, 'note')} from the Feedback button` : ''}.`, blocks: [moduleTable(spec, 'Answer feedback', ctx.runId, 'ai.feedback.list', [{ field: 'rating', headerName: 'Rating', type: 'text' }, { field: 'question', headerName: 'Question', type: 'text' }, { field: 'comment', headerName: 'Comment', type: 'text' }, { field: 'agent', headerName: 'Agent', type: 'text' }, { field: 'by', headerName: 'From', type: 'text' }, { field: 'runId', headerName: 'Run', type: 'text' }], list.map((f) => ({ rating: f.rating === 'down' ? 'Thumbs down' : 'Thumbs up', question: f.question, comment: f.comment, agent: f.agent, by: f.by, runId: f.runId })))] };
         },
       },
     ],

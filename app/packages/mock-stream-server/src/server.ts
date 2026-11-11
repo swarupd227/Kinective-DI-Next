@@ -746,6 +746,13 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         res.end(f.body);
         return;
       }
+      if (method === 'POST' && path === '/v1/feedback/general') {
+        const body = await readBody<{ comment?: unknown; page?: unknown }>(req);
+        if (typeof body.comment !== 'string' || !body.comment.trim() || body.comment.length > 500) return json(res, 400, { code: 'INVALID' });
+        const page = typeof body.page === 'string' ? body.page.replace(/[^\w/.-]/g, '').slice(0, 34) : '';
+        const kept = await live?.feedback(persona(), { runId: `page:${page || '/'}`, rating: 'note', comment: body.comment });
+        return json(res, kept ? 204 : 503);
+      }
       if (method === 'POST' && path === '/v1/feedback') {
         const body = await readBody<{ runId?: unknown; rating?: unknown; comment?: unknown }>(req);
         if (typeof body.runId !== 'string' || !/^[\w-]{1,40}$/.test(body.runId) || (body.rating !== 'up' && body.rating !== 'down')) return json(res, 400, { code: 'INVALID' });

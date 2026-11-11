@@ -482,6 +482,49 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
         { id: 't1', title: 'Checking by branch', kind: 'table', metrics: ['deposit_balance', 'deposit_account_count'], by: 'branch', where: checking, size: 'full' },
       ],
     },
+    // DI's cross-sell, attrition and financial statement stock reports, computed by their analyses.
+    {
+      templateId: 'cross_sell_monthly',
+      name: 'Cross-sell',
+      description: `Products per ${institutionType === 'bank' ? 'customer' : 'member'}: how many hold one, two, three or more, by branch and age, and how many hold each product.`,
+      folder: institutionType === 'bank' ? 'Executive' : 'Members',
+      settings: { ...settings('month', ['Executive', 'Branch Manager', 'Marketing']), addHierarchyControls: false, addHistoryControls: false },
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        { id: 'a1', title: 'By number of products', kind: 'analysis' as const, analysis: 'xsell.distribution', metrics: [], size: 'half' as const },
+        { id: 'a2', title: 'Product penetration', kind: 'analysis' as const, analysis: 'xsell.penetration', metrics: [], size: 'half' as const },
+        { id: 'a3', title: 'By branch', kind: 'analysis' as const, analysis: 'xsell.branch', metrics: [], size: 'full' as const },
+        { id: 'a4', title: 'By age', kind: 'analysis' as const, analysis: 'xsell.age', metrics: [], size: 'full' as const },
+      ],
+    },
+    {
+      templateId: 'attrition_monthly',
+      name: 'Attrition risk',
+      description: `${institutionType === 'bank' ? 'Customers' : 'Members'} at risk of leaving by branch, the deposits they hold, and the reasons behind the risk.`,
+      folder: institutionType === 'bank' ? 'Executive' : 'Members',
+      settings: { ...settings('month', ['Executive', 'Branch Manager', 'Marketing']), addHierarchyControls: false, addHistoryControls: false },
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        { id: 'a1', title: 'Risk by branch', kind: 'analysis' as const, analysis: 'attr.branch', metrics: [], size: 'full' as const },
+        { id: 'a2', title: 'Reasons', kind: 'analysis' as const, analysis: 'attr.reasons', metrics: [], size: 'full' as const },
+      ],
+    },
+    {
+      templateId: 'financial_statements_monthly',
+      name: 'Financial statements',
+      description: 'The balance sheet against the last year-end, the income statement for the month and year to date, and budget against actual by department, from the general ledger.',
+      folder: 'Finance',
+      settings: { ...settings('month', ['Executive', 'Finance']), addHierarchyControls: false, addHistoryControls: false },
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        { id: 'a1', title: 'Balance sheet', kind: 'analysis' as const, analysis: 'fin.bs', metrics: [], size: 'full' as const },
+        { id: 'a2', title: 'Income statement', kind: 'analysis' as const, analysis: 'fin.is', metrics: [], size: 'full' as const },
+        { id: 'a3', title: 'Budget against actual, year to date', kind: 'analysis' as const, analysis: 'fin.budget', metrics: [], size: 'full' as const },
+      ],
+    },
     // DI's monthly portfolio reports: member growth, the certificate maturity forecast, deposit growth by
     // product and delinquency by product, built by the Portfolio Reports analyses.
     {

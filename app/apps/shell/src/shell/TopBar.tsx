@@ -7,6 +7,7 @@ import * as Popover from '@radix-ui/react-popover';
 import { IconButton, SegmentedControl, usePreferences, type Density, type ThemePreference } from '@dinext/ui';
 import { useSession } from '../session/SessionProvider.tsx';
 import { NotificationsButton } from './NotificationsPanel.tsx';
+import { FeedbackButton } from './FeedbackButton.tsx';
 import { APP_META, appLabel as labelFor } from './apps.tsx';
 import { BrandMark } from './BrandMark.tsx';
 import { viewLabel } from './paneViews.ts';
@@ -46,6 +47,7 @@ export function TopBar({ threadId }: { threadId?: string }) {
       </p>
       <div className={styles.tools}>
         <IconButton label="Search" icon={<Search size={18} aria-hidden />} onClick={() => setPalette(true)} aria-keyshortcuts="Control+K Meta+K" />
+        <FeedbackButton />
         <NotificationsButton />
         <UserMenu />
       </div>
@@ -133,6 +135,7 @@ export function DeskBar({ threadId }: { threadId?: string }) {
           <span className={styles.searchText}>Search or jump to…</span>
           <kbd className={styles.kbd}>Ctrl K</kbd>
         </button>
+        <FeedbackButton />
         <NotificationsButton />
         <UserMenu withName />
       </div>

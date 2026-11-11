@@ -180,6 +180,8 @@ export function createApiClient({ baseUrl, token }: ApiClientOptions) {
       return { blob: await res.blob(), fileName: name };
     },
     feedback: (f: { runId: string; rating: 'up' | 'down'; comment?: string }) => send<void>('POST', '/v1/feedback', f),
+    /** Feedback about DI or a page, from the header's Feedback button. */
+    generalFeedback: (f: { comment: string; page: string }) => send<void>('POST', '/v1/feedback/general', f),
     table: (tableId: string) => get<TableData>(`/v1/tables/${encodeURIComponent(tableId)}`),
     tableWorkbench: (tableId: string) => get<TableWorkbench>(`/v1/tables/${encodeURIComponent(tableId)}/workbench`),
 

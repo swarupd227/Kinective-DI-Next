@@ -220,7 +220,7 @@ export class GovernanceService {
   }
 
   /** A person's rating of an answer. A later rating of the same run replaces it in reports. */
-  async feedback(f: { runId: string; userId: string; rating: 'up' | 'down'; comment?: string }) {
+  async feedback(f: { runId: string; userId: string; rating: 'up' | 'down' | 'note'; comment?: string }) {
     await this.pool.query('INSERT INTO ai_feedback (run_id, user_id, at, rating, comment) VALUES (?, ?, UTC_TIMESTAMP(3), ?, ?)', [f.runId, f.userId, f.rating, f.comment?.trim().slice(0, 500) || null]);
   }
 
@@ -262,6 +262,6 @@ export class GovernanceService {
   /** Each person's latest rating per run. Thumbs down lead the queue. */
   async feedbackQueue() {
     const list = await rows<Record<string, unknown>>(this.pool, 'SELECT f.run_id, f.rating, f.comment, f.at, COALESCE(u.name, f.user_id) AS name, r.agent, r.question FROM ai_feedback f JOIN (SELECT run_id, user_id, MAX(feedback_id) AS id FROM ai_feedback GROUP BY run_id, user_id) l ON l.id = f.feedback_id LEFT JOIN iam_user u ON u.user_id = f.user_id LEFT JOIN ai_run r ON r.run_id = f.run_id ORDER BY f.rating = \'down\' DESC, f.at DESC LIMIT 50');
-    return list.map((f) => ({ runId: f.run_id as string, rating: f.rating as string, comment: (f.comment as string | null) ?? '', at: stamp(f.at), by: f.name as string, agent: (f.agent as string | null) ?? '—', question: (f.question as string | null) ?? '—' }));
+    return list.map((f) => ({ runId: f.run_id as string, rating: f.rating as string, comment: (f.comment as string | null) ?? '', at: stamp(f.at), by: f.name as string, agent: (f.agent as string | null) ?? '—', question: String(f.run_id).startsWith('page:') ? `Feedback on ${String(f.run_id).slice(5)}` : (f.question as string | null) ?? '—' }));
   }
 }

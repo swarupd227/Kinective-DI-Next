@@ -82,3 +82,5 @@ export { REFERRAL_DESK_REQUEST, referralDeskModule, referralDeskPlan } from './r
 export { SIMULATION_REQUEST, simulationModule } from './simulationAgent.ts';
 export { onboardingDeskPlan, onboardingDeskTools, ruleFrom } from './onboardingDesk.ts';
 export { FUNDING_OPTIMIZER_REQUEST, fundingOptimizerModule } from './fundingOptimizerAgent.ts';
+export { STOCK_EXTRA_SECTIONS, stockExtraAnalyses } from './stockReportsExtra.ts';
+export { SALES_OVERRIDE_REQUEST, salesOverridesModule } from './salesOverrides.ts';
