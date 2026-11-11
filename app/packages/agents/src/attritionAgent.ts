@@ -8,7 +8,7 @@ import { ATTRITION_BANDS, CoreError, modelMonthLabel, type AttritionModelService
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 export const MODEL_REQUEST =
-  /\b(?:attrition|churn|retention|leaving) model\b|\bpredictive models?\b|\bmodel(?:'s|’s)? (?:accuracy|drift|versions?|performance|validation|history)\b|\bhow (?:good|accurate|well) is the model\b|\bretrain\b|\b(?:promote|activate|approve|put)\b[^.?!]*\b(?:model|version)\b|\bdrift(?:ing|ed)?\b|\b(?:chance|probability) of leaving\b|\bmodel (?:say|says|thinks|predicts|flags?)\b/i;
+  /\b(?:attrition|churn|retention|leaving) model\b|\bpredictive models?\b|\bmodel(?:'s|’s)? (?:accuracy|drift|versions?|performance|validation|history)\b|\bhow (?:good|accurate|well) is the model\b|\bretrain\b|\b(?:promote|activate|approve|put)\b[^.?!]*\b(?:model|version)\b|\bdrift(?:ing|ed)?\b|\b(?:chance|probability) of leaving\b|\bmodel (?:say|says|thinks|predicts|flags?)\b|\b(?:high|medium|low)[- ]band\b/i;
 
 const pct = (v: number, d = 0) => `${(v * 100).toFixed(d)}%`;
 const n = (v: number) => Math.round(v).toLocaleString('en-US');

@@ -106,6 +106,8 @@ describe.skipIf(!up)('the attrition model against the warehouse', () => {
     const named = await run(turn('Who does the attrition model say will leave?', DANA, ['predictive', 'records-members']));
     expect(named.text).not.toMatch(/Names are hidden/);
     expect(gateway.match('Is the attrition model drifting?')?.agent).toBe('Predictive Models');
+    // The follow-up DI suggests after the model's status must come back to the model.
+    expect(gateway.match('Did the High band actually leave?')?.agent).toBe('Predictive Models');
   });
 
   it('retrains a candidate, and only someone else can put it to work', async () => {
