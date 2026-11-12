@@ -284,7 +284,8 @@ export const recordsAction = (result: SemanticResult, metric: string, label: str
   const kind = result.records?.[metric];
   if (!kind) return [];
   const where = (result.request.filters ?? []).filter((f) => f.op !== 'not_in').flatMap((f) => f.values);
-  const noun = kind === 'members' ? 'members' : kind;
+  // A bank's metric says "Customers": the records behind it are customers too.
+  const noun = kind === 'members' ? (/\bcustomers?\b/i.test(label) ? 'customers' : 'members') : kind;
   return [{ id: 'records', kind: 'ask_followup', label: `Show the ${noun} behind it`, params: { question: `Show the ${noun} behind ${label.replace(/\s*\(.*\)$/, '').toLowerCase()}${where.length ? ` for ${where.join(', ')}` : ''}` } }];
 };
 
@@ -413,9 +414,30 @@ export function buildBlock(spec: BlockSpec, results: Map<string, SemanticResult>
     a11y: {
       summary: `${spec.chart === 'line' ? 'Line' : spec.chart === 'donut' ? 'Donut' : 'Bar'} chart of ${col.label.toLowerCase()} by ${xCol.label.toLowerCase()}${spec.series_by ? `, split by ${spec.series_by}` : ''}. Values range from ${formatMetric(Math.min(...values), col.format)} to ${formatMetric(Math.max(...values), col.format)}. Switch to the table view for every value.`.slice(0, 600),
     },
-    data: { chartType: spec.chart, dataset: { dimensions, source }, series, axes: { y: [{ title: col.label, unit: unitOf(col.format) }] }, legend: series.length > 1 },
+    data: { chartType: spec.chart, dataset: { dimensions, source }, series, axes: { y: [{ title: col.label, unit: unitOf(col.format) }] }, legend: series.length > 1, ...pointActionsFor(spec.x, col.label, definitions.get(metric), recordsAction(result, metric, col.label)[0]) },
   };
   return block;
+}
+
+/**
+ * What clicking a region or branch offers: one level down (region to branch, branch to the product
+ * split the metric allows), why it sits where it does, and the records behind it. Other charts (by
+ * month, by product) get the chart's general follow-ups.
+ */
+export function pointActionsFor(x: string, label: string, def: MetricDefinition | undefined, records: NonNullable<Block['actions']>[number] | undefined): { pointActions?: NonNullable<ChartBlock['data']['pointActions']> } {
+  if (x !== 'region' && x !== 'branch') return {};
+  const name = /^[A-Z][a-z]/.test(label) ? label.charAt(0).toLowerCase() + label.slice(1) : label;
+  const next = x === 'region' ? 'Branch' : ['Loan category', 'Deposit category', 'Age band'].find((d) => def?.dimensionsAllowed.includes(d));
+  const at = x === 'region' ? 'the {x} region' : '{x}';
+  const out: NonNullable<ChartBlock['data']['pointActions']> = [];
+  out.push(
+    next
+      ? { id: 'drill', kind: 'drill', label: `{x} by ${next.toLowerCase()}`, question: `Show ${name} at ${at} by ${next.toLowerCase()}` }
+      : { id: 'drill', kind: 'drill', label: 'Break down {x}', question: `Break down ${name} at ${at}` },
+  );
+  out.push({ id: 'why', kind: 'why', label: 'Why is {x} at {value}?', question: `Why is ${name} {value} at ${at}?` });
+  if (records && typeof records.params?.question === 'string') out.push({ id: 'rows', kind: 'rows', label: records.label.replace(/\bit\b/, '{x}'), question: `${records.params.question} at ${at}` });
+  return { pointActions: out };
 }
 
 export function noticeBlock(kind: NoticeBlock['data']['kind'], message: string, agent: string, runId: string, extra: Partial<NoticeBlock['data']> = {}): NoticeBlock {

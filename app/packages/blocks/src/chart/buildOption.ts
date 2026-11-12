@@ -3,6 +3,7 @@
 import type { ChartBlock } from '@dinext/block-schemas';
 import type { EChartsCoreOption } from 'echarts/core';
 import { formatAxis, formatValue, rateDecimals } from '../format.ts';
+import { isTimeAxis } from './pointMenu.ts';
 
 export interface ChartTheme {
   palette: string[];
@@ -27,7 +28,7 @@ export function pointCount(block: ChartBlock): number {
   return block.data.dataset.source.length * block.data.series.length;
 }
 
-export function buildOption(block: ChartBlock, theme: ChartTheme, reducedMotion: boolean): EChartsCoreOption {
+export function buildOption(block: ChartBlock, theme: ChartTheme, reducedMotion: boolean, opts: { clickable?: boolean } = {}): EChartsCoreOption {
   const { chartType, dataset, series, axes, legend, markLines } = block.data;
   const unit = axes?.y?.[0]?.unit;
   const dims = dataset.dimensions.map((d) => d.name);
@@ -48,6 +49,9 @@ export function buildOption(block: ChartBlock, theme: ChartTheme, reducedMotion:
   });
   const decimals = unit === 'percent' ? rateDecimals(plotted) : undefined;
   const tooltipValue = (v: unknown) => (typeof v === 'number' ? formatValue(v, unit ?? 'number', { decimals }) : String(v ?? '—'));
+  // The hover is read up close, beside a gap in hundredths ("0.04 pts above"), so rates get two places.
+  const hoverValue = (v: unknown) => (typeof v === 'number' ? formatValue(v, unit ?? 'number', { decimals: unit === 'percent' ? Math.max(decimals ?? 1, 2) : decimals }) : String(v ?? '—'));
+  const axisTooltip = tooltipLines(block, hoverValue, opts.clickable === true);
 
   const base: EChartsCoreOption = {
     animation: !reducedMotion,
@@ -62,6 +66,7 @@ export function buildOption(block: ChartBlock, theme: ChartTheme, reducedMotion:
       borderColor: theme.border,
       textStyle: { ...textStyle, color: theme.text },
       valueFormatter: tooltipValue,
+      ...(chartType === 'pie' || chartType === 'donut' || chartType === 'scatter' ? {} : { formatter: axisTooltip }),
     },
     // Legend sits top right so the y-axis title (with its unit, spec 10.4) can sit top left.
     legend: legend === false ? { show: false } : { show: series.length > 1 || chartType === 'pie' || chartType === 'donut', top: 0, right: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8, textStyle },
@@ -142,5 +147,56 @@ export function buildOption(block: ChartBlock, theme: ChartTheme, reducedMotion:
             : undefined,
       };
     }),
+  };
+}
+
+/**
+ * The hover for one category: each series' value with what it means next to the others. Over time,
+ * the change from the point before ("up 0.12 pts from Aug"); across branches or products, the gap
+ * from their average ("0.30 pts above the average"). Plain text: the tooltip is richText (no HTML).
+ */
+export function tooltipLines(block: ChartBlock, fmt: (v: unknown) => string, clickable: boolean) {
+  const { dataset, series, axes } = block.data;
+  const unit = axes?.y?.[0]?.unit;
+  const dims = dataset.dimensions.map((d) => d.name);
+  const time = isTimeAxis(block);
+  const pts = unit === 'percent';
+  const diff = (now: number, then: number) => {
+    const d = now - then;
+    if (pts) return `${Math.abs(d).toFixed(2)} pts`;
+    // Counts move by people or accounts ("up 12"); a percentage of 29,000 would read "0.0%".
+    if (unit === 'count') return Math.abs(d) < 1 ? null : Math.round(Math.abs(d)).toLocaleString('en-US');
+    if (!then) return null;
+    const pct = Math.abs((d / Math.abs(then)) * 100);
+    return `${pct.toFixed(pct < 0.1 ? 2 : 1)}%`;
+  };
+  return (raw: unknown) => {
+    const list = (Array.isArray(raw) ? raw : [raw]) as { dataIndex: number; seriesIndex: number; name?: string }[];
+    const first = list[0];
+    if (!first) return '';
+    const row = dataset.source[first.dataIndex] ?? [];
+    const lines = [String(first.name ?? row[0] ?? '')];
+    for (const p of list) {
+      const s = series[p.seriesIndex];
+      if (!s) continue;
+      const at = dims.indexOf(s.encode.y);
+      const v = row[at];
+      let note = '';
+      if (typeof v === 'number' && !s.comparison) {
+        if (time && first.dataIndex > 0) {
+          const before = dataset.source[first.dataIndex - 1]?.[at];
+          const d = typeof before === 'number' ? diff(v, before) : null;
+          if (d && v !== before) note = ` (${v > (before as number) ? 'up' : 'down'} ${d} from ${String(dataset.source[first.dataIndex - 1]?.[0] ?? 'before')})`;
+        } else if (!time && dataset.source.length >= 3) {
+          const all = dataset.source.map((r) => r[at]).filter((x): x is number => typeof x === 'number');
+          const avg = all.reduce((a, b) => a + b, 0) / all.length;
+          const d = diff(v, avg);
+          if (d && Math.abs(v - avg) > 1e-9) note = ` (${d} ${v > avg ? 'above' : 'below'} the average)`;
+        }
+      }
+      lines.push(`${series.length > 1 ? `${s.name}: ` : ''}${fmt(v)}${note}`);
+    }
+    if (clickable) lines.push('Click for more');
+    return lines.join('\n');
   };
 }

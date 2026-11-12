@@ -7,6 +7,18 @@
   border-bottom: 1px solid var(--color-border-subtle);
 }
 
+.chart {
+  position: relative;
+}
+
+/* The menu opens from where the chart was clicked: an empty anchor at that point. */
+.anchor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
 .note {
   margin-top: var(--space-2);
   font-size: var(--type-caption-size);

@@ -70,6 +70,15 @@ export const chartData = z.strictObject({
   legend: z.boolean().optional(),
   markLines: z.array(z.strictObject({ value: z.number(), label: z.string().max(40) })).max(4).optional(),
   sampled: z.boolean().optional(),
+  /**
+   * What clicking a bar or point offers: each becomes a follow-up question in the conversation, with
+   * "{x}" replaced by the category clicked and "{value}" by its formatted value. Without these the
+   * chart offers "Why?" and a breakdown in general words.
+   */
+  pointActions: z
+    .array(z.strictObject({ id: z.string().max(20), kind: z.enum(['drill', 'why', 'rows']), label: z.string().max(60), question: z.string().max(300) }))
+    .max(4)
+    .optional(),
 });
 
 // ---- table ------------------------------------------------------------------------------------

@@ -22,6 +22,14 @@
   outline: none;
 }
 
+.heading {
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  font-weight: var(--weight-semibold);
+}
+
 .item[data-highlighted] {
   background: var(--color-bg-hover);
 }

@@ -14,6 +14,7 @@ import { DefinitionCardView } from './definition/DefinitionCardView.tsx';
 import { LineageGraphView } from './lineage/LineageGraphView.tsx';
 import { FormPreviewView } from './form/FormPreviewView.tsx';
 import { useBlockHost } from './context.tsx';
+import { asAction } from './chart/pointMenu.ts';
 import styles from './BlockRenderer.module.css';
 
 const ChartView = lazy(() => import('./chart/ChartView.tsx'));
@@ -194,6 +195,8 @@ function ChartBlockView({ block, status, progressText }: { block: ChartBlock; st
             complete={complete}
             view={view}
             onDrill={drill ? (category) => host.onAction?.(block, { ...drill, params: { ...drill.params, category } }) : undefined}
+            onPointAsk={host.onAction ? (choice) => host.onAction?.(block, asAction(choice)) : undefined}
+            drill={drill}
           />
         </Suspense>
       )}
