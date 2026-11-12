@@ -4,7 +4,9 @@
 import { randomBytes } from 'node:crypto';
 import type { ApprovalCardBlock, ApprovalDecisionRequest, Block, KpiGroupBlock, ListBlock, Member360Block, SearchResult, StreamEvent, StreamingEnvelope, TableData } from '@dinext/block-schemas';
 import { activityModule, salesOverridesModule, stockExtraAnalyses, referralDeskModule, cfoModule, shareModule, ceclModule, loanGrowthModule, predictiveModule, glModule, interactionModule, referralReportModule, pipelineForecastModule, salesScorecardModule, portfolioModule, portfolioAnalyses, concentrationModule, concentrationAnalyses, bsaModule, bsaAnalyses, opRiskModule, opRiskAnalyses, capitalPlanModule, capitalPlanAnalyses, coreMappingModule, budgetModule, profitAnalyses, profitabilityModule } from '@dinext/agents';
+import { camelsAnalyses, camelsModule } from '@dinext/agents';
 import { simulationModule } from '@dinext/agents';
+import { cfoScorecard } from '@dinext/agents';
 import { decisionRulesModule } from '@dinext/agents';
 import { DecisionTableService } from '@dinext/di-core';
 import { MonteCarloService } from '@dinext/di-core';
@@ -12,7 +14,6 @@ import { branchKpiModule } from '@dinext/agents';
 import { BranchKpiService } from '@dinext/di-core';
 import { fundingOptimizerModule } from '@dinext/agents';
 import { FundingOptimizerService } from '@dinext/di-core';
-import { camelsAnalyses, camelsModule } from '@dinext/agents';
 import { acquisitionModule, budgetStressModule, capitalActionsModule, creResponseModule, fundingChoiceModule, securitiesSaleModule } from '@dinext/agents';
 import { baselAnalyses, baselModule } from '@dinext/agents';
 import { FeeIncomeService, FundingRiskService, NiiService, PerShareService, CeclService, LoanGrowthService, PredictiveService, GlService, InteractionService, ReferralReportService, SalesScorecardService, PortfolioService, ConcentrationService, BsaService, OpRiskService, CapitalPlanService, workToday, BudgetService, ProfitabilityService } from '@dinext/di-core';
@@ -940,7 +941,10 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       if (!tenant?.runtime.semantic) return null;
       const b = await buildBriefing(tenant.runtime.semantic, personaContext(persona));
       const purview = PERSONAS[persona].purview;
-      const kpis: KpiGroupBlock = { ...b.kpis, title: undefined, provenance: { ...b.kpis.provenance, filters: purview ? [`Limited to your purview: ${purview.join(', ')}`] : b.kpis.provenance.filters } };
+      const shared: KpiGroupBlock = { ...b.kpis, title: undefined, provenance: { ...b.kpis.provenance, filters: purview ? [`Limited to your purview: ${purview.join(', ')}`] : b.kpis.provenance.filters } };
+      // A bank's finance leader sees margin where others see head count.
+      const finance = tenant.runtime.institutionType === 'bank' && PERSONAS[persona].modules?.includes('cfo');
+      const kpis = finance ? await financeKpis(tenant.runtime.semantic, shared).catch((err) => (console.error('[home]', err), shared)) : shared;
       const lookAt: ListBlock = {
         id: blockId(),
         type: 'list',
@@ -954,6 +958,11 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
           items: b.lookAt.filter((l) => l.kind === 'outlier').map((l, i) => ({ id: `l${i + 1}`, icon: 'alert', title: l.title, subtitle: l.subtitle, why: l.why, link: `/c/new?q=${encodeURIComponent(l.question)}` })),
         },
       };
+      // A finance leader also sees what the CFO Scorecard reads as a concern, ahead of the branch outliers.
+      if (finance) {
+        const concerns = await financeConcerns(tenant.runtime.semantic, tenant.pool).catch((err) => (console.error('[home]', err), []));
+        lookAt.data.items = [...concerns, ...lookAt.data.items].slice(0, 5);
+      }
       // Scheduled reports with their last result; failures carry "Why?" (spec 8.8 acceptance).
       const gw = tenant.runtime.reports?.gateway;
       const mine = gw ? await gw.store.schedules(PERSONAS[persona].session.user.id) : [];
@@ -1211,6 +1220,55 @@ const DAY = 86_400_000;
  * incentive so far, the referrals they sent and the work waiting for them. Code writes every figure
  * and the sentence; nothing here is branch or institution money they don't manage.
  */
+/**
+ * A bank's finance leader reads the month as margin, not head count: their figures are loans, deposits,
+ * net interest margin against last quarter, and delinquency. Without two quarters of margin, the
+ * institution's figures stand as they are.
+ */
+export async function financeKpis(svc: Pick<SemanticService, 'query' | 'model'>, base: KpiGroupBlock): Promise<KpiGroupBlock> {
+  if (!svc.model.metrics.net_interest_margin) return base;
+  const r = await svc.query({ metrics: ['net_interest_margin'], time: { grain: 'quarter', last: 5 } }, { canViewSql: false }).catch(() => null);
+  const values = (r?.rows ?? []).map((x) => ({ period: String(x.period ?? ''), value: x.net_interest_margin === null || x.net_interest_margin === undefined ? null : Number(x.net_interest_margin) })).filter((x): x is { period: string; value: number } => x.value !== null && Number.isFinite(x.value));
+  const now = values.at(-1);
+  const before = values.at(-2);
+  if (!now || !before) return base;
+  const bp = Math.round((now.value - before.value) * 100);
+  const nim: KpiGroupBlock['data']['items'][number] = {
+    label: 'Net interest margin',
+    value: now.value,
+    unit: 'percent',
+    format: { decimals: 2 },
+    comparison: { label: `${now.period} vs ${before.period}`, value: bp, unit: 'bp', direction: bp > 0 ? 'up' : bp < 0 ? 'down' : 'flat', goodWhen: 'up' },
+    sparkline: values.map((v) => v.value),
+    metricRef: 'metric:net_interest_margin',
+  };
+  const kept = base.data.items.filter((i) => i.metricRef !== 'metric:member_count');
+  const dq = kept.findIndex((i) => i.metricRef === 'metric:delinquency_ratio_60_plus');
+  const items = dq < 0 ? [...kept, nim] : [...kept.slice(0, dq), nim, ...kept.slice(dq)];
+  const sources = [...base.provenance.sources.filter((s) => s.ref !== 'metric:member_count'), { kind: 'metric' as const, label: svc.model.metrics.net_interest_margin.label, ref: 'metric:net_interest_margin' }];
+  return { ...base, provenance: { ...base.provenance, sources }, data: { ...base.data, items } };
+}
+
+/** The CFO Scorecard's concerns as Home items, each opening the question that explains it. */
+export async function financeConcerns(svc: SemanticService, pool: Pool): Promise<ListBlock['data']['items']> {
+  const s = await cfoScorecard(svc, pool);
+  return s.lines
+    .filter((l) => l.read === 'Concern' && l.now !== null)
+    .slice(0, 3)
+    .map((l, i) => {
+      const said = l.why.replace(/\.$/, '');
+      return {
+        id: `cfo${i + 1}`,
+        icon: 'trend_down',
+        title: `${l.label}: ${l.now!.toFixed(l.places)}%`,
+        subtitle: said,
+        badge: { label: 'Concern', tone: 'danger' as const },
+        why: `From the CFO Scorecard for ${s.quarter}. DI reads a measure as a concern when it is worse than both plan and peers, or past its watch level.`,
+        link: `/c/new?q=${encodeURIComponent(`Why is our ${l.label.charAt(0).toLowerCase()}${l.label.slice(1)} ${said.charAt(0).toLowerCase()}${said.slice(1)}?`)}`,
+      };
+    });
+}
+
 export function personalKpis(base: KpiGroupBlock, mine: Scorecard | null, sent: Pick<InboxItem, 'createdAt' | 'stage'>[], work: { open: number; overdue: number } | null, now = Date.now()) {
   const scored = mine?.goals.filter((g) => !g.qualifier && g.target > 0) ?? [];
   const attainment = scored.length ? Math.round((scored.reduce((n, g) => n + Math.min(g.actual / g.target, 2), 0) / scored.length) * 1000) / 10 : null;
