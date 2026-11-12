@@ -19,9 +19,9 @@ describe('the branch a compliance question names', () => {
 
   it('reaches the issues list as its branch filter', () => {
     const spec = complianceModule({} as IssueService, {} as never);
-    expect(spec.plan!('Show the open complaints for Westport')).toEqual({ tool: 'cpm_issues_list', args: { branch: 'Westport' } });
-    expect(spec.plan!('Show the regulatory complaints at Eastgate')).toEqual({ tool: 'cpm_issues_list', args: { branch: 'Eastgate', kind: 'regulatory' } });
-    expect(spec.plan!('Show open complaints')).toEqual({ tool: 'cpm_issues_list', args: {} });
+    expect(spec.plan!('Show the open complaints for Westport', {} as never)).toEqual({ tool: 'cpm_issues_list', args: { branch: 'Westport' } });
+    expect(spec.plan!('Show the regulatory complaints at Eastgate', {} as never)).toEqual({ tool: 'cpm_issues_list', args: { branch: 'Eastgate', kind: 'regulatory' } });
+    expect(spec.plan!('Show open complaints', {} as never)).toEqual({ tool: 'cpm_issues_list', args: {} });
   });
 });
 
@@ -37,8 +37,8 @@ describe.skipIf(!up)('compliance issues by branch on the credit union', () => {
       const elena = { user: { id: 'user:1001', name: 'Elena' }, modules: ['compliance'], runId: 'r', threadId: 't' };
       const marcus = { ...elena, user: { id: 'user:5120', name: 'Marcus Reed' }, purviewBranches: ['Westport'] };
 
-      const all = await issues.list({}, elena);
-      const west = await issues.list({ branch: 'westport' }, elena);
+      const all = await issues.list({}, {});
+      const west = await issues.list({ branch: 'westport' }, {});
       expect(west.items.length).toBeGreaterThan(0);
       expect(west.items.every((i) => i.branch === 'Westport')).toBe(true);
       expect(west.count).toBe(all.items.filter((i) => i.branch === 'Westport').length);
