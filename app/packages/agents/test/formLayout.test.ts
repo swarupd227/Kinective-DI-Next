@@ -163,7 +163,7 @@ describe.skipIf(!up)('against the warehouse', () => {
 
   it('gives referrals the stages of the published Referral workflow', async () => {
     const referrals = new ReferralService(pool, 'credit_union');
-    expect(await referrals.stages()).toEqual(['New Referral', 'Active', 'Sold', 'Not Interested', 'Done']);
+    expect(await referrals.stages()).toEqual(['New Referral', 'Not Contacted', 'Left Message', 'Follow Up', 'Active', 'Loan App Taken', 'Product Opened', 'Sold', 'Denied', 'Not Interested', 'Done']);
     const live = await wf.find('Referral', 'Active');
     await admin.query("UPDATE wf_definition SET spec = ? WHERE def_id = ?", [JSON.stringify({ ...live.spec, stages: ['New Referral', 'Active', 'Waiting on member', 'Sold', 'Not Interested', 'Done'] }), live.defId]);
     expect(await referrals.stages()).toContain('Waiting on member');

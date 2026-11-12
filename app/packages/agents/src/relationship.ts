@@ -110,7 +110,10 @@ function userMessage(input: RelationshipInput, state: RelationshipThread) {
 
 /** Every number in the text must come from tool results or the question (spec 26.6 numeric check). */
 function grounded(text: string, corpus: string) {
-  const known = new Set((corpus.match(/\d[\d,]*(?:\.\d+)?/g) ?? []).map((n) => n.replace(/,/g, '')));
+  // A date in the data stands for its year only ("since June 2008"): its month and day digits mustn't
+  // license a bare number such as "12 years".
+  const dated = corpus.replace(/\b(\d{4})-\d{2}(?:-\d{2})?(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z?)?/g, '$1');
+  const known = new Set((dated.match(/\d[\d,]*(?:\.\d+)?/g) ?? []).map((n) => n.replace(/,/g, '')));
   const kilo = new Set([...known].map((n) => String(Math.round(Number(n) / 1000))));
   const removed: string[] = [];
   const keep = text.split(/(?<=[.!?])\s+/).filter((s) => {

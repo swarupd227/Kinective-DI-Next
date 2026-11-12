@@ -16,7 +16,7 @@ describe('routing the new questions', () => {
     expect(lap.plan('Show the loan hierarchy for indirect', {} as never)).toEqual({ tool: 'lap_hierarchy', args: { channel: 'Indirect' } });
     const pred = predictiveModule({} as never, 'member', { svc: {} as never, pool });
     expect(pred.plan('Who are our least profitable members?', {} as never)).toEqual({ tool: 'pred_profit', args: { show: 'bottom' } });
-    expect(pred.plan('Why are members leaving? Show the root causes', {} as never)).toEqual({ tool: 'pred_root_causes', args: {} });
+    expect(pred.plan('Why are members at risk? Show the root causes of attrition', {} as never)).toEqual({ tool: 'pred_root_causes', args: {} });
   });
 });
 
