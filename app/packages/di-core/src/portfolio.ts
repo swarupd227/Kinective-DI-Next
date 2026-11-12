@@ -5,7 +5,7 @@
 // and dollars in each bucket and the bucket mix over time. Limited to the user's purview.
 import type { Pool } from '@dinext/tenant-db';
 import { DQ_BUCKETS } from './delinquency.ts';
-import type { CoreContext } from './referrals.ts';
+import { CoreError, type CoreContext } from './referrals.ts';
 
 const rows = async <T>(pool: Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
 const day = (v: unknown) => String(v instanceof Date ? v.toISOString() : v).slice(0, 10);
@@ -29,6 +29,36 @@ export const CD_INTERVALS = [
 
 export class PortfolioService {
   constructor(private readonly pool: Pool) {}
+
+  /**
+   * One node of the org hierarchy (ESP's empsortdata tree) and each unit under it: branches beneath,
+   * people, deposits and loans, rolled up from the branches. The institution when no unit is named.
+   */
+  async orgRollup(unit?: string, ctx: CoreContext = {}) {
+    const units = await (this.pool.query('SELECT unit_id, name, level, parent_id, branch_id FROM cdm_org_unit') as Promise<[{ unit_id: number; name: string; level: string; parent_id: number | null; branch_id: number | null }[], unknown]>).then((r) => r[0]).catch(() => null);
+    if (units === null || !units.length) return null;
+    const node = unit ? units.find((u) => u.name.toLowerCase() === unit.toLowerCase()) ?? units.find((u) => u.name.toLowerCase().includes(unit.toLowerCase())) : units.find((u) => u.parent_id === null);
+    if (!node) throw new CoreError('NOT_FOUND', `There’s no unit called “${unit}” in the org hierarchy. Units: ${units.filter((u) => u.level !== 'Branch').map((u) => u.name).join(', ')}.`);
+    const under = (id: number): number[] => {
+      const kids = units.filter((u) => u.parent_id === id);
+      return kids.length ? kids.flatMap((k) => (k.branch_id !== null ? [k.branch_id] : under(k.unit_id))) : [];
+    };
+    const [rows] = (await this.pool.query(
+      `SELECT b.int_id AS id, b.name, (SELECT COUNT(*) FROM cdm_party p WHERE p.primary_branch_id = b.int_id) AS people,
+              (SELECT COALESCE(SUM(balance), 0) FROM cdm_deposit_account d WHERE d.branch_id = b.int_id AND d.close_date IS NULL) AS deposits,
+              (SELECT COALESCE(SUM(balance), 0) FROM cdm_loan l WHERE l.branch_id = b.int_id AND l.close_date IS NULL AND l.charge_off_date IS NULL) AS loans
+         FROM cdm_location b`,
+    )) as unknown as [{ id: number; name: string; people: number; deposits: unknown; loans: unknown }[]];
+    const seen = ctx.purviewBranches ? rows.filter((r) => ctx.purviewBranches!.includes(r.name)) : rows;
+    const sum = (ids: number[]) => {
+      const mine = seen.filter((r) => ids.includes(r.id));
+      return { branches: mine.length, people: mine.reduce((s, r) => s + Number(r.people), 0), deposits: Math.round(mine.reduce((s, r) => s + Number(r.deposits), 0)), loans: Math.round(mine.reduce((s, r) => s + Number(r.loans), 0)) };
+    };
+    const children = units.filter((u) => u.parent_id === node.unit_id).map((u) => ({ name: u.name, level: u.level, ...sum(u.branch_id !== null ? [u.branch_id] : under(u.unit_id)) })).filter((c) => c.branches > 0);
+    const path: string[] = [];
+    for (let p: (typeof units)[number] | undefined = node; p; p = units.find((u) => u.unit_id === p!.parent_id)) path.unshift(p.name);
+    return { unit: node.name, level: node.level, path, total: sum(node.branch_id !== null ? [node.branch_id] : under(node.unit_id)), children };
+  }
 
   /**
    * The book by product (ESP's loan and share products): accounts, balances, the balance-weighted rate,

@@ -9,7 +9,7 @@ import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.
 import type { ReportAnalyses } from './report.ts';
 
 export const PORTFOLIO_REQUEST =
-  /\b(?:member|customer) growth\b|\bnew (?:and|vs\.?|versus) closed (?:members|customers)\b|\b(?:members|customers) (?:joined|added|lost) (?:this|month|quarter|year)|\baverage (?:member|customer) age\b|\b(?:cd|certificate)s? (?:maturity|maturities|maturing) (?:forecast|schedule|by term|by interval)\b|\bmaturing (?:cds?|certificates)\b[^.?!]*\b(?:forecast|by term|by interval)|\b(?:cd|certificate) (?:maturity )?forecast\b|\b(?:how much|what share|what percent(?:age)?)\b[^.?!]*\b(?:will|would|to) renew\b|\b(?:cd|certificate) renewals? (?:forecast|projection)\b|\brenewal (?:forecast|projection)\b|\bdeposit (?:growth|portfolio)\b|\bdeposits? by product\b|\bdelinquency by (?:product|loan type|sub-?product)\b|\bdelinquency buckets?\b[^.?!]*\b(?:product|history|over time)\b|\b(?:loan|deposit|share) products?\b|\b(?:loans|deposits|shares|the book) by (?:loan |deposit |share )?product name\b|\bproduct (?:catalog|list|mix)\b|\bwhat products do we (?:offer|have)\b/i;
+  /\b(?:member|customer) growth\b|\bnew (?:and|vs\.?|versus) closed (?:members|customers)\b|\b(?:members|customers) (?:joined|added|lost) (?:this|month|quarter|year)|\baverage (?:member|customer) age\b|\b(?:cd|certificate)s? (?:maturity|maturities|maturing) (?:forecast|schedule|by term|by interval)\b|\bmaturing (?:cds?|certificates)\b[^.?!]*\b(?:forecast|by term|by interval)|\b(?:cd|certificate) (?:maturity )?forecast\b|\b(?:how much|what share|what percent(?:age)?)\b[^.?!]*\b(?:will|would|to) renew\b|\b(?:cd|certificate) renewals? (?:forecast|projection)\b|\brenewal (?:forecast|projection)\b|\bdeposit (?:growth|portfolio)\b|\bdeposits? by product\b|\bdelinquency by (?:product|loan type|sub-?product)\b|\bdelinquency buckets?\b[^.?!]*\b(?:product|history|over time)\b|\b(?:loan|deposit|share) products?\b|\b(?:loans|deposits|shares|the book) by (?:loan |deposit |share )?product name\b|\bproduct (?:catalog|list|mix)\b|\bwhat products do we (?:offer|have)\b|\borg (?:hierarchy|tree|chart|structure)\b|\bbranch hierarchy\b|\broll(?:ed)? ?up by (?:region|area|unit)\b|\bunits? under\b/i;
 
 const text = (field: string, headerName: string) => ({ field, headerName, type: 'text' as const });
 const cnt = (field: string, headerName: string) => ({ field, headerName, type: 'count' as const });
@@ -110,7 +110,7 @@ export function portfolioModule(svc: PortfolioService, person: 'member' | 'custo
     prompt: ({ tenant, user, title }) => `You are the Portfolio Reports agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) reads the monthly portfolio reports.
 
 - portfolio_report with question members (new, closed and net ${person}s, average age), cds (certificate maturity forecast), deposits (deposit growth by product) or delinquency (by product, counts and dollars per bucket).`,
-    plan: (t) => (/\b(?:loan|deposit|share) products?\b|\bby (?:loan |deposit |share )?product name\b|\bproduct (?:catalog|list|mix)\b|\bwhat products do we (?:offer|have)\b/i.test(t) ? { tool: 'port_products', args: { kind: /\b(?:deposit|share|savings|checking)\b/i.test(t) ? 'deposit' : 'loan' } } : { tool: 'portfolio_report', args: { question: portfolioQuestion(t) } }),
+    plan: (t) => /\borg (?:hierarchy|tree|chart|structure)\b|\bbranch hierarchy\b|\broll(?:ed)? ?up by (?:region|area|unit)\b|\bunits? under\b/i.test(t) ? { tool: 'port_org', args: (/\b(?:under|for|in) (?:the )?([A-Z][\w ]+?)(?: region| unit)?\s*[?.]?$/.exec(t)?.[1] ? { unit: /\b(?:under|for|in) (?:the )?([A-Z][\w ]+?)(?: region| unit)?\s*[?.]?$/.exec(t)![1] } : {}) } : (/\b(?:loan|deposit|share) products?\b|\bby (?:loan |deposit |share )?product name\b|\bproduct (?:catalog|list|mix)\b|\bwhat products do we (?:offer|have)\b/i.test(t) ? { tool: 'port_products', args: { kind: /\b(?:deposit|share|savings|checking)\b/i.test(t) ? 'deposit' : 'loan' } } : { tool: 'portfolio_report', args: { question: portfolioQuestion(t) } }),
     tools: [
       {
         name: 'portfolio_report',
@@ -137,6 +137,22 @@ export function portfolioModule(svc: PortfolioService, person: 'member' | 'custo
           return {
             text: `${list.length} ${isLoan ? 'loan' : 'deposit'} products. **${top.name}** is the largest, ${mm(top.balance)} (${top.sharePct}%) in ${top.accounts.toLocaleString('en-US')} accounts${top.ratePct !== null ? ` at ${top.ratePct}%` : ''}.`,
             blocks: [moduleTable(who, isLoan ? 'Loans by product' : 'Deposits by product', ctx.runId, `portfolio.products.${kind}`, [text('name', 'Product'), text('category', 'Category'), cnt('accounts', 'Accounts'), cur('balance', 'Balance'), text('share', 'Share'), text('rate', 'Rate'), ...(isLoan ? [text('term', 'Average term'), text('dq', '60+ days'), text('reg', '5300 line')] : [])], list.map((r) => ({ name: r.name, category: r.category, accounts: r.accounts, balance: r.balance, share: `${r.sharePct}%`, rate: r.ratePct === null ? '—' : `${r.ratePct}%`, term: r.termMonths === null ? '—' : `${r.termMonths} months`, dq: r.dq60Pct === null ? '—' : `${r.dq60Pct}%`, reg: r.regCode ?? '—' })))],
+          };
+        },
+      },
+      {
+        name: 'port_org',
+        description: 'The org hierarchy (institution, regions, branches) and one unit’s roll-up: each unit under it with its branches, people, deposits and loans. The institution when no unit is named.',
+        input: z.object({ unit: z.string().max(80).optional() }).strict(),
+        run: async (a: { unit?: string }, ctx: ModuleContext) => {
+          need(ctx);
+          const x = await svc.orgRollup(a.unit, ctx);
+          if (x === null) return { text: 'The org hierarchy isn’t loaded for this institution yet.' };
+          if (!x.children.length) return { text: `${x.unit} has no units under it that you can see.` };
+          return {
+            text: `**${x.path.join(' › ')}** (${x.level.toLowerCase()}): ${x.total.branches} ${x.total.branches === 1 ? 'branch' : 'branches'}, ${x.total.people.toLocaleString('en-US')} people, ${mm(x.total.deposits)} in deposits and ${mm(x.total.loans)} in loans. Under it: ${x.children.map((c) => c.name).join(', ')}.`,
+            blocks: [moduleTable(who, `${x.unit}: units under it`, ctx.runId, 'portfolio.org', [text('name', 'Unit'), text('level', 'Level'), cnt('branches', 'Branches'), cnt('people', 'People'), cur('deposits', 'Deposits'), cur('loans', 'Loans')], x.children)],
+            suggestions: x.children.filter((c) => c.level !== 'Branch').slice(0, 2).map((c) => `Show the units under ${c.name}`),
           };
         },
       },

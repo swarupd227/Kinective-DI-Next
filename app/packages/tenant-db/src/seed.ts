@@ -29,6 +29,7 @@ import { ONB_DESK_DDL, ONB_DESK_UPDATES, ONB_DESK_WRITE_TABLES, generateOnboardi
 import { CR_EXTRA_DDL, CR_EXTRA_WRITE_TABLES } from './cr5300Extra.ts';
 import { ESP_ORIGINATION_DDL, generateOrigination } from './espOrigination.ts';
 import { ESP_PRODUCT_DDL, generateProducts } from './espProducts.ts';
+import { ESP_ORG_DDL, generateOrg } from './espOrg.ts';
 import { ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
@@ -115,6 +116,9 @@ async function main() {
     await insert(admin, 'cdm_loan_product', ['product_id', 'name', 'loan_category', 'reg_amount_code', 'reg_count_code', 'secured', 'revolving'], esp2.loanProducts);
     await insert(admin, 'cdm_deposit_product', ['product_id', 'name', 'deposit_category', 'interest_bearing', 'minimum_balance', 'monthly_fee'], esp2.depositProducts);
     await insert(admin, 'cdm_account_product', ['account_kind', 'account_id', 'product_id'], esp2.accounts);
+    // ESP alignment, step 3: the org hierarchy, institution to region to branch.
+    for (const ddl of ESP_ORG_DDL) await admin.query(ddl);
+    await insert(admin, 'cdm_org_unit', ['unit_id', 'name', 'level', 'parent_id', 'branch_id'], generateOrg(profile.name, t.locations as unknown[][]));
     // Predictive models: each member at each of the last 12 month-ends, and where models and scores are kept.
     for (const ddl of ML_DDL) await admin.query(ddl);
     await insert(admin, 'hist_member_snapshot', SNAPSHOT_COLUMNS, generateSnapshots(t, rm));
