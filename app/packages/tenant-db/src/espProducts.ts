@@ -76,7 +76,9 @@ export function generateProducts(institutionType: string, loans: unknown[][], de
   const D = bank ? BANK_DEPOSITS : CU_DEPOSITS;
   const accounts: unknown[][] = [];
   for (const l of loans) {
-    const p = pick(L, String(l[4]), unit(l[0] as number, 2201));
+    // A mortgage's product follows its term (term_months at 15): 15 years or less is the 15-year product.
+    const term = l[15] === null || l[15] === undefined ? null : Number(l[15]);
+    const p = String(l[4]) === 'Mortgage' && term !== null ? L.find((x) => x[0] === (term <= 180 ? 'MTG-15' : 'MTG-30')) : pick(L, String(l[4]), unit(l[0] as number, 2201));
     if (p) accounts.push(['loan', l[0], p[0]]);
   }
   for (const d of deposits) {

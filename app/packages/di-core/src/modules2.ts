@@ -560,8 +560,12 @@ export class CollectionsService {
     for (const [partyId, list] of byParty) {
       const last = list.at(-1)!;
       const yearAgo = new Date(Date.parse(`${last.at}T00:00:00Z`) - 365 * 86_400_000).toISOString().slice(0, 10);
-      const base = list.filter((x) => x.at <= yearAgo).at(-1) ?? list[0]!;
-      if (base.at === last.at) continue;
+      // The score about a year ago: the last one on or before that date if it is no more than a quarter
+      // older, otherwise the first one after it (a newer application). Never a years-old application score.
+      const quarterBefore = new Date(Date.parse(`${yearAgo}T00:00:00Z`) - 92 * 86_400_000).toISOString().slice(0, 10);
+      const prior = list.filter((x) => x.at <= yearAgo).at(-1);
+      const base = prior && prior.at >= quarterBefore ? prior : list.find((x) => x.at > yearAgo);
+      if (!base || base.at === last.at) continue;
       const drop = base.score - last.score;
       if (drop >= minDrop) drops.push({ partyId, from: base.score, fromDate: base.at, to: last.score, toDate: last.at, drop });
     }

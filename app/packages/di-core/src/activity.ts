@@ -13,10 +13,11 @@ export class ActivityService {
     return rows<{ one: number }>(this.pool, 'SELECT 1 AS one FROM cdm_share_transaction LIMIT 1').then((r) => r.length > 0, () => false);
   }
 
-  /** Fees charged in the period: by fee type, by product and by branch, with how many accounts paid one. */
-  async fees(ctx: CoreContext = {}) {
+  /** Fees charged in the period: by fee type, by product and by branch, with how many accounts paid one. One fee type only when `type` is given. */
+  async fees(ctx: CoreContext = {}, type?: string) {
     if (!(await this.loaded())) return null;
-    const s = scoped(ctx);
+    const s0 = scoped(ctx);
+    const s = type ? { sql: `${s0.sql} AND f.fee_type = ?`, params: [...s0.params, type] } : s0;
     const base = `FROM (SELECT t.account_id, t.party_id, t.amount, c.fee_type, d.branch_id, ap.product_id FROM cdm_share_transaction t JOIN cdm_transaction_code c ON c.code = t.code JOIN cdm_deposit_account d ON d.account_id = t.account_id LEFT JOIN cdm_account_product ap ON ap.account_kind = 'deposit' AND ap.account_id = t.account_id WHERE c.fee_type IS NOT NULL
                    UNION ALL SELECT t.loan_id, t.party_id, t.amount, c.fee_type, l.branch_id, ap.product_id FROM cdm_loan_transaction t JOIN cdm_transaction_code c ON c.code = t.code JOIN cdm_loan l ON l.loan_id = t.loan_id LEFT JOIN cdm_account_product ap ON ap.account_kind = 'loan' AND ap.account_id = t.loan_id WHERE c.fee_type IS NOT NULL) f JOIN cdm_location b ON b.int_id = f.branch_id WHERE 1 = 1${s.sql}`;
     const by = (key: string) => rows<{ k: string | null; n: number; accts: number; amt: unknown }>(this.pool, `SELECT ${key} AS k, COUNT(*) AS n, COUNT(DISTINCT f.account_id) AS accts, -SUM(f.amount) AS amt ${base} GROUP BY k ORDER BY amt DESC`, s.params);

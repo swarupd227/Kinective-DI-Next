@@ -28,6 +28,11 @@ for (const DB of ['dinext_t_test_cu', 'dinext_t_test_bank']) {
       expect(Number(bad.n)).toBe(0);
     });
 
+    it('puts each mortgage on the product that matches its term', async () => {
+      const bad = await one<{ n: number }>("SELECT COUNT(*) AS n FROM cdm_loan l JOIN cdm_account_product ap ON ap.account_kind = 'loan' AND ap.account_id = l.loan_id WHERE l.loan_category = 'Mortgage' AND l.term_months IS NOT NULL AND ap.product_id <> IF(l.term_months <= 180, 'MTG-15', 'MTG-30')");
+      expect(Number(bad.n)).toBe(0);
+    });
+
     it('ties product totals to the book', async () => {
       const svc = new PortfolioService(pool);
       const loans = (await svc.products('loan'))!;

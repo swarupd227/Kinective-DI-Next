@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { PortfolioService } from '@dinext/di-core';
 import { tenantPool, warehouseAvailable } from '@dinext/tenant-db';
-import { portfolioModule } from '../src/index.ts';
+import { PIPELINE_FORECAST_REQUEST, portfolioModule } from '../src/index.ts';
 
 describe('routing', () => {
   it('sends org questions to the roll-up', () => {
@@ -12,6 +12,10 @@ describe('routing', () => {
     expect(port.plan('Show the org hierarchy', {} as never)).toEqual({ tool: 'port_org', args: {} });
     expect(port.plan('Show the units under North', {} as never)).toEqual({ tool: 'port_org', args: { unit: 'North' } });
     expect(port.plan('Show our loan products', {} as never)).toEqual({ tool: 'port_products', args: { kind: 'loan' } });
+    // Pipeline Forecast comes first in the list; its loan hierarchy must leave the org tree alone.
+    expect(PIPELINE_FORECAST_REQUEST.test('Show the org hierarchy')).toBe(false);
+    expect(PIPELINE_FORECAST_REQUEST.test('Show the branch hierarchy')).toBe(false);
+    expect(PIPELINE_FORECAST_REQUEST.test('Show the loan hierarchy')).toBe(true);
   });
 });
 

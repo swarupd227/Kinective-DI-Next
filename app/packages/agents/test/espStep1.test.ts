@@ -53,6 +53,8 @@ for (const DB of ['dinext_t_test_cu', 'dinext_t_test_bank']) {
       expect(drops.loaded).toBe(true);
       expect(drops.items.length).toBeGreaterThan(0);
       expect(drops.items.every((d) => d.drop >= 40)).toBe(true);
+      // Measured over about a year: the earlier score is never more than 15 months before the latest.
+      expect(drops.items.every((d) => Date.parse(d.toDate) - Date.parse(d.fromDate) <= 457 * 86_400_000)).toBe(true);
       const p = await new RelationshipService(pool, DB.replace('dinext_t_', ''), DB.endsWith('bank') ? 'bank' : 'credit_union').profile(drops.items[0]!.partyId, {});
       expect(p.creditHistory.length).toBeGreaterThan(1);
       // The 360's credit score tile still reads the latest loan's score, as before.

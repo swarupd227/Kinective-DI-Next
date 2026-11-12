@@ -10,7 +10,8 @@ describe('routing', () => {
   it('sends fee and channel questions to Account Activity', () => {
     for (const q of ['Show overdraft fees by branch', 'What is our channel mix?', 'Show fees by product']) expect(ACTIVITY_REQUEST.test(q), q).toBe(true);
     const m = activityModule({} as never);
-    expect(m.plan('Show overdraft fees by branch', {} as never)).toEqual({ tool: 'act_fees', args: {} });
+    expect(m.plan('Show overdraft fees by branch', {} as never)).toEqual({ tool: 'act_fees', args: { type: 'Overdraft' } });
+    expect(m.plan('Show fees by product', {} as never)).toEqual({ tool: 'act_fees', args: {} });
     expect(m.plan('What is our channel mix?', {} as never)).toEqual({ tool: 'act_channels', args: {} });
   });
 });
@@ -33,6 +34,9 @@ for (const DB of ['dinext_t_test_cu', 'dinext_t_test_bank']) {
       expect(sum(f.byType)).toBe(Math.round(f.total));
       expect(sum(f.byBranch)).toBe(Math.round(f.total));
       expect(f.byType.map((t) => t.name)).toContain('Overdraft');
+      const od = (await svc.fees({}, 'Overdraft'))!;
+      expect(od.byType.map((t) => t.name)).toEqual(['Overdraft']);
+      expect(sum(od.byBranch)).toBe(Math.round(f.byType.find((t) => t.name === 'Overdraft')!.amount));
       const c = (await svc.channels())!;
       expect(c.map((x) => x.channel)).toEqual(expect.arrayContaining(['Card', 'ATM', 'Teller', 'ACH']));
     });
