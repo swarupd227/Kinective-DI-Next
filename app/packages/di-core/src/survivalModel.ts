@@ -349,13 +349,15 @@ export class SurvivalModelService {
   async activate(modelId: number, by: string, approvalId: string | null) {
     const m = await this.model(modelId);
     if (!m) throw new CoreError('NOT_FOUND', 'That model version no longer exists.');
+    // Scores first, then the switch: no one sees the new version before its scores are written.
+    const scored = await this.score(modelId);
     const old = (await this.models()).filter((x) => x.status === 'Active').map((x) => x.modelId);
     if (old.length) {
       await this.pool.query("UPDATE ml_model SET status = 'Retired' WHERE model_id IN (?)", [old]);
       await this.pool.query('DELETE FROM ml_score WHERE model_id IN (?)', [old]);
     }
     await this.pool.query("UPDATE ml_model SET status = 'Active', approved_by = ?, approval_id = ?, activated_at = ? WHERE model_id = ?", [by, approvalId, nowSql(), modelId]);
-    return this.score(modelId);
+    return scored;
   }
 
   async score(modelId: number) {

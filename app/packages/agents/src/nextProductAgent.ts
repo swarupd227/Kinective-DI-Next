@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import { CoreError, NEXT_PRODUCT_BANDS, NEXT_PRODUCT_MIN_AUC, modelMonthLabel, type NextProductModelService, type ProductModel } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
+import { trainOnDemand } from './modelTraining.ts';
 
 export const NEXT_PRODUCT_REQUEST =
   /\bnext[- ]best[- ]product model\b|\bnext[- ]product model\b|\bproduct (?:propensity|opening) models?\b|\b(?:propensity|product) models? (?:for|by) product\b|\bwhat (?:will|would) (?:\w+ ){0,3}open next\b|\bopen next\b|\bwho (?:will|might|is going to|are going to) open\b[^.?!]*\bnext\b|\bretrain\b[^.?!]*\bproduct\b|\b(?:promote|activate|approve|put)\b[^.?!]*\bproduct model\b|\bproduct model (?:say|says|thinks|predicts)\b/i;
@@ -43,9 +44,10 @@ export function nextProductModule(svc: NextProductModelService): ModuleSpec {
     if (!ctx.modules.includes('predictive')) throw new CoreError('NO_ACCESS', noAccess);
   };
   const names = (ctx: ModuleContext) => ctx.modules.includes('records-members') || ctx.modules.includes('records-customers');
+  const ensure = trainOnDemand(() => svc.bootstrap(), 'Next-best-product model');
   const active = async () => {
     const a = await svc.active();
-    if (!a) throw new CoreError('NOT_FOUND', 'No next-best-product model is in use yet. DI trains the first one when it starts; ask again in a few minutes.');
+    if (!a) throw new CoreError('NOT_FOUND', ensure() ? 'No next-best-product model is in use yet, so DI is training one now. Ask again in a minute or two.' : 'No next-best-product model is in use yet. DI trains the first one when it starts; ask again in a few minutes.');
     return a;
   };
 

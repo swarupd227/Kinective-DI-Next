@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import { CoreError, modelMonthLabel, type SurvivalModelService, type SurvivalRecord } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
+import { trainOnDemand } from './modelTraining.ts';
 
 export const SURVIVAL_REQUEST =
   /\bsurvival (?:model|curves?|analysis)\b|\bretention curves?\b|\bkaplan[- ]meier\b|\bcox (?:model|regression)\b|\bhazard ratios?\b|\bhow long (?:do|will|does|would) (?:our |the |new |a )?(?:members?|customers?|people|relationships?) (?:stay|last)\b|\b(?:median|average|expected) (?:tenure|lifetime|membership length|relationship length)\b|\bstill (?:here|members|customers|with us) (?:after|in)\b|\bdeposits?(?: are| is)? at risk (?:over|in|across) (?:the next|a) (?:year|12 months)\b|\bdeposits?(?: are| is)? at risk (?:from|if) (?:members|customers) (?:leave|leaving)\b|\b(?:what|which things?) (?:makes?|keeps?) (?:members|customers) (?:stay|longer)\b|\bstay longer\b|\b(?:member|customer) lifetimes?\b|\blifetime (?:model|curve)\b|\bretrain\b[^.?!]*\bsurvival\b|\b(?:promote|activate|approve|put)\b[^.?!]*\bsurvival model\b/i;
@@ -21,9 +22,10 @@ export function survivalModule(svc: SurvivalModelService): ModuleSpec {
   const need = (ctx: ModuleContext) => {
     if (!ctx.modules.includes('predictive')) throw new CoreError('NO_ACCESS', noAccess);
   };
+  const ensure = trainOnDemand(() => svc.bootstrap(), 'Survival model');
   const active = async () => {
     const m = await svc.active();
-    if (!m) throw new CoreError('NOT_FOUND', 'No survival model is in use yet. DI fits the first one when it starts; ask again in a few minutes.');
+    if (!m) throw new CoreError('NOT_FOUND', ensure() ? 'No survival model is in use yet, so DI is fitting one now. Ask again in a minute or two.' : 'No survival model is in use yet. DI fits the first one when it starts; ask again in a few minutes.');
     return m;
   };
   const names = (ctx: ModuleContext) => ctx.modules.includes('records-members') || ctx.modules.includes('records-customers');

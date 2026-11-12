@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import { ATTRITION_BANDS, CoreError, modelMonthLabel, type AttritionModelService, type ModelRecord } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
+import { trainOnDemand } from './modelTraining.ts';
 
 export const MODEL_REQUEST =
   /\b(?:attrition|churn|retention|leaving) model\b|\bpredictive models?\b|\bmodel(?:'s|’s)? (?:accuracy|drift|versions?|performance|validation|history)\b|\bhow (?:good|accurate|well) is the model\b|\bretrain\b|\b(?:promote|activate|approve|put)\b[^.?!]*\b(?:model|version)\b|\bdrift(?:ing|ed)?\b|\b(?:chance|probability) of leaving\b|\bmodel (?:say|says|thinks|predicts|flags?)\b|\b(?:high|medium|low)[- ]band\b/i;
@@ -26,9 +27,10 @@ export function attritionModule(svc: AttritionModelService): ModuleSpec {
   const need = (ctx: ModuleContext) => {
     if (!ctx.modules.includes('predictive')) throw new CoreError('NO_ACCESS', noAccess);
   };
+  const ensure = trainOnDemand(() => svc.bootstrap(), 'Attrition model');
   const active = async () => {
     const m = await svc.active();
-    if (!m) throw new CoreError('NOT_FOUND', 'No attrition model is in use yet. DI trains the first one when it starts; ask again in a minute.');
+    if (!m) throw new CoreError('NOT_FOUND', ensure() ? 'No attrition model is in use yet, so DI is training one now. Ask again in a minute or two.' : 'No attrition model is in use yet. DI trains the first one when it starts; ask again in a minute.');
     return m;
   };
   const names = (ctx: ModuleContext) => ctx.modules.includes('records-members') || ctx.modules.includes('records-customers');

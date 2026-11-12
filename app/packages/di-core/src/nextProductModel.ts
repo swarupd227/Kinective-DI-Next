@@ -276,13 +276,15 @@ export class NextProductModelService {
   async activate(version: number, by: string, approvalId: string | null) {
     const set = (await this.models()).filter((m) => m.version === version && m.status !== 'Not used');
     if (!set.length) throw new CoreError('NOT_FOUND', `There’s no version ${version} of the next-best-product model.`);
+    // Scores first, then the switch: no one sees the new version before its scores are written.
+    const scored = await this.score(version);
     const old = (await this.models()).filter((m) => m.status === 'Active').map((m) => m.modelId);
     if (old.length) {
       await this.pool.query("UPDATE ml_model SET status = 'Retired' WHERE model_id IN (?)", [old]);
       await this.pool.query('DELETE FROM ml_score WHERE model_id IN (?)', [old]);
     }
     await this.pool.query("UPDATE ml_model SET status = 'Active', approved_by = ?, approval_id = ?, activated_at = ? WHERE model_id IN (?)", [by, approvalId, nowSql(), set.map((m) => m.modelId)]);
-    return this.score(version);
+    return scored;
   }
 
   /** Scores every member at the latest month-end for each product they don't hold, keeping their top three. */

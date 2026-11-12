@@ -223,9 +223,11 @@ export class AttritionModelService {
   async activate(modelId: number, by: string, approvalId: string | null) {
     const m = await this.model(modelId);
     if (!m) throw new CoreError('NOT_FOUND', 'That model version no longer exists.');
+    // Scores first, then the switch: no one sees the new version before its scores are written.
+    const scored = await this.score(modelId);
     await this.pool.query("UPDATE ml_model SET status = 'Retired' WHERE name = ? AND status = 'Active'", [m.name]);
     await this.pool.query("UPDATE ml_model SET status = 'Active', approved_by = ?, approval_id = ?, activated_at = ? WHERE model_id = ?", [by, approvalId, nowSql(), modelId]);
-    return this.score(modelId);
+    return scored;
   }
 
   /** Scores every member at each of the last six month-ends: a history to compare against, and this month's reasons. */
