@@ -30,6 +30,7 @@ import { CR_EXTRA_DDL, CR_EXTRA_WRITE_TABLES } from './cr5300Extra.ts';
 import { ESP_ORIGINATION_DDL, generateOrigination } from './espOrigination.ts';
 import { ESP_PRODUCT_DDL, generateProducts } from './espProducts.ts';
 import { ESP_ORG_DDL, generateOrg } from './espOrg.ts';
+import { ESP_TXN_DDL, generateTransactions30 } from './espTransactions.ts';
 import { ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
@@ -119,6 +120,14 @@ async function main() {
     // ESP alignment, step 3: the org hierarchy, institution to region to branch.
     for (const ddl of ESP_ORG_DDL) await admin.query(ddl);
     await insert(admin, 'cdm_org_unit', ['unit_id', 'name', 'level', 'parent_id', 'branch_id'], generateOrg(profile.name, t.locations as unknown[][]));
+    // ESP alignment, step 4: the last 30 days of loan and share transactions, with their codes.
+    for (const ddl of ESP_TXN_DDL) await admin.query(ddl);
+    const productFee = new Map(esp2.depositProducts.map((p) => [p[0] as string, Number(p[5])]));
+    const accountFee = new Map(esp2.accounts.filter((a) => a[0] === 'deposit').map((a) => [a[1] as number, productFee.get(a[2] as string) ?? 0]));
+    const esp4 = generateTransactions30(t.deposits as unknown[][], t.loans as unknown[][], accountFee);
+    await insert(admin, 'cdm_transaction_code', ['code', 'description', 'direction', 'fee_type'], esp4.codes);
+    await insert(admin, 'cdm_share_transaction', ['txn_id', 'account_id', 'party_id', 'posted', 'code', 'amount', 'channel', 'branch_id'], esp4.share);
+    await insert(admin, 'cdm_loan_transaction', ['txn_id', 'loan_id', 'party_id', 'posted', 'code', 'amount', 'principal', 'interest', 'channel'], esp4.loan);
     // Predictive models: each member at each of the last 12 month-ends, and where models and scores are kept.
     for (const ddl of ML_DDL) await admin.query(ddl);
     await insert(admin, 'hist_member_snapshot', SNAPSHOT_COLUMNS, generateSnapshots(t, rm));

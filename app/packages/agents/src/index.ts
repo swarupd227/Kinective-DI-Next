@@ -88,3 +88,4 @@ export { SALES_OVERRIDE_REQUEST, salesOverridesModule } from './salesOverrides.t
 export { NEXT_PRODUCT_REQUEST, modelProductIn, nextProductModule } from './nextProductAgent.ts';
 export { DECISION_RULES_REQUEST, caseIn, decisionRulesModule, editsIn, tableIn } from './decisionRulesAgent.ts';
 export { SURVIVAL_REQUEST, survivalModule } from './survivalAgent.ts';
+export { ACTIVITY_REQUEST, activityModule } from './activity.ts';

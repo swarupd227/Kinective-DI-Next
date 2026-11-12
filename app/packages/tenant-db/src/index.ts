@@ -40,3 +40,4 @@ export { DECISION_TABLE_COLUMNS, DMN_DDL, DMN_WRITE_TABLES, decisionTableRows, d
 export { ESP_ORIGINATION_DDL, generateOrigination } from './espOrigination.ts';
 export { ESP_PRODUCT_DDL, generateProducts } from './espProducts.ts';
 export { ESP_ORG_DDL, generateOrg } from './espOrg.ts';
+export { ESP_TXN_DDL, TXN_CODES, generateTransactions30 } from './espTransactions.ts';
