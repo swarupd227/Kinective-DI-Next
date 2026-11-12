@@ -31,7 +31,7 @@ export const FOLLOW_UP_TYPE = 'retention_follow_up';
 /** The certificate's lowest-cost offer, for the branch's call notes. */
 function certOffer(o: MaturingCertificates['items'][number]['offer']) {
   if (o.kind === 'renew') return 'Call about the renewal at the current rate.';
-  if (o.kind === 'at_limit') return 'Already at the offer rule’s limit: call about the renewal, with no rate offer.';
+  if (o.kind === 'at_limit') return 'Already at or above the offer rule’s limit: call about the renewal, with no rate offer.';
   return `Lowest-cost offer: ${o.rate}% on renewal (+${Number(o.raise.toFixed(2))} points), about $${Math.round(o.cost).toLocaleString('en-US')} more a year.`;
 }
 /** One card lists every task, so it stays short enough to read before approving. */

@@ -66,10 +66,11 @@ const whole = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
 export function offersText(f: MaturingCertificates) {
   const o = f.offers;
   if (!f.count) return '';
+  const n = (x: number) => x.toLocaleString('en-US');
   const parts = [
-    o.raise ? `${o.raise} get a raise on renewal` : '',
-    o.renew ? `${o.renew} renew as they are` : '',
-    o.atLimit ? `${o.atLimit} ${o.atLimit === 1 ? 'is' : 'are'} already at the offer rule’s limit, so ${o.atLimit === 1 ? 'it gets' : 'they get'} a call and no rate` : '',
+    o.raise ? `${n(o.raise)} ${o.raise === 1 ? 'gets' : 'get'} a raise on renewal` : '',
+    o.renew ? `${n(o.renew)} ${o.renew === 1 ? 'renews as it is' : 'renew as they are'}` : '',
+    o.atLimit ? `${n(o.atLimit)} ${o.atLimit === 1 ? 'is' : 'are'} already at or above the offer rule’s limit, so ${o.atLimit === 1 ? 'it gets' : 'they get'} a call and no rate` : '',
   ].filter(Boolean);
   const held = o.held ? ` The offer rules hold ${o.held} below the usual step.` : '';
   return ` The lowest-cost offer for each comes to about **${whole(o.cost)}** more interest a year: ${parts.join(', ')}.${held}`;
@@ -78,7 +79,7 @@ export function offersText(f: MaturingCertificates) {
 /** "4.4% (+0.5 points), $612 a year", "Renew at 3.9%" or "Already 4.75%, the rule's limit: a call, no rate". */
 export function offerLabel(c: Certificate) {
   if (c.offer.kind === 'renew') return `Renew at ${c.rate}%`;
-  if (c.offer.kind === 'at_limit') return `Already ${c.rate}%, at the rule’s limit: a call, no rate`;
+  if (c.offer.kind === 'at_limit') return `Already ${c.rate}%, at or above the rule’s limit: a call, no rate`;
   return `${c.offer.rate}% (+${pts(c.offer.raise)}), ${whole(c.offer.cost)} a year`;
 }
 

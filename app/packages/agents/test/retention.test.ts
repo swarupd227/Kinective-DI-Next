@@ -115,7 +115,7 @@ describe.skipIf(!up)('retention against the warehouse', () => {
     const r = recorder();
     await runRetentionOffline(input('Which certificates mature in the next 90 days and are at risk?', 'thr_ret2'), { gateway }, r.sink);
     expect(r.texts[0]).toMatch(/certificates\*\* worth .* look likely to leave/);
-    expect(r.texts[0]).toMatch(/The lowest-cost offer for each comes to about \*\*\$[\d,]+\*\* more interest a year: \d+ get a raise on renewal/);
+    expect(r.texts[0]).toMatch(/The lowest-cost offer for each comes to about \*\*\$[\d,]+\*\* more interest a year: [\d,]+ gets? a raise on renewal/);
     expect(validateBlock(r.blocks[0]!).ok).toBe(true);
     const rows = (r.blocks[0] as unknown as { data: { rows: { offer: string }[] } }).data.rows;
     expect(rows.every((x) => /^[\d.]+% \(\+[\d.]+ points?\), \$[\d,]+ a year$|^Already .* no rate$/.test(x.offer))).toBe(true);
