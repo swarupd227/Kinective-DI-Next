@@ -525,6 +525,44 @@ const STRESS: Record<string, string> = { direct_deposit_stopped: 'direct deposit
 export class CollectionsService {
   constructor(private readonly pool: Pool) {}
 
+  /**
+   * Borrowers with an open loan whose credit score has slid: the latest quarterly pull against the
+   * score a year before (or at application, if later), largest drop first. From the score history.
+   */
+  async scoreDrops(ctx: CoreContext, minDrop = 40) {
+    const scope = ctx.purviewBranches ? ' AND b.name IN (?)' : '';
+    const hist = await rows<{ party_id: number; as_of: unknown; score: number }>(
+      this.pool,
+      `SELECT h.party_id, h.as_of, h.score FROM cdm_credit_score_history h JOIN cdm_party p ON p.party_id = h.party_id JOIN cdm_location b ON b.int_id = p.primary_branch_id
+        WHERE h.score_type = 'FICO 8' AND EXISTS (SELECT 1 FROM cdm_loan l WHERE l.party_id = h.party_id AND l.close_date IS NULL AND l.charge_off_date IS NULL AND l.balance > 0)${scope}
+        ORDER BY h.party_id, h.as_of`,
+      ctx.purviewBranches ? [ctx.purviewBranches.length ? ctx.purviewBranches : ['']] : [],
+    ).catch(() => null);
+    if (hist === null) return { loaded: false, items: [] as { partyId: number; name: string; last4: string; branch: string; from: number; fromDate: string; to: number; toDate: string; drop: number; loans: number }[] };
+    const byParty = new Map<number, { at: string; score: number }[]>();
+    for (const h of hist) (byParty.get(h.party_id) ?? byParty.set(h.party_id, []).get(h.party_id)!).push({ at: day(h.as_of), score: Number(h.score) });
+    const drops: { partyId: number; from: number; fromDate: string; to: number; toDate: string; drop: number }[] = [];
+    for (const [partyId, list] of byParty) {
+      const last = list.at(-1)!;
+      const yearAgo = new Date(Date.parse(`${last.at}T00:00:00Z`) - 365 * 86_400_000).toISOString().slice(0, 10);
+      const base = list.filter((x) => x.at <= yearAgo).at(-1) ?? list[0]!;
+      if (base.at === last.at) continue;
+      const drop = base.score - last.score;
+      if (drop >= minDrop) drops.push({ partyId, from: base.score, fromDate: base.at, to: last.score, toDate: last.at, drop });
+    }
+    drops.sort((a, b) => b.drop - a.drop);
+    const top = drops.slice(0, 200);
+    if (!top.length) return { loaded: true, items: [] };
+    const info = await rows<{ party_id: number; first_name: string; last_name: string; branch: string; loans: unknown }>(
+      this.pool,
+      `SELECT p.party_id, p.first_name, p.last_name, b.name AS branch, (SELECT COALESCE(SUM(l.balance), 0) FROM cdm_loan l WHERE l.party_id = p.party_id AND l.close_date IS NULL AND l.charge_off_date IS NULL) AS loans
+         FROM cdm_party p JOIN cdm_location b ON b.int_id = p.primary_branch_id WHERE p.party_id IN (?)`,
+      [top.map((d) => d.partyId)],
+    );
+    const by = new Map(info.map((i) => [i.party_id, i]));
+    return { loaded: true, total: drops.length, items: top.map((d) => ({ ...d, name: `${by.get(d.partyId)?.first_name} ${by.get(d.partyId)?.last_name}`, last4: memberNumber(d.partyId).slice(-4), branch: by.get(d.partyId)?.branch ?? '', loans: Math.round(Number(by.get(d.partyId)?.loans ?? 0)) })) };
+  }
+
   /** Loans still current whose borrower shows stress. Already-delinquent loans belong to collections. */
   async watchlist(ctx: CoreContext) {
     const scope = ctx.purviewBranches ? ' AND b.name IN (?)' : '';

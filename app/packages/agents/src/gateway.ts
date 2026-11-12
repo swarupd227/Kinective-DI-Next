@@ -430,6 +430,7 @@ function profileForModel(p: MemberProfile, ref: string) {
     open_work: p.workflows.map((w) => ({ kind: w.kind, title: w.title, status: w.status, owner: w.owner, due: w.due })),
     identity_last_verified: p.lastVerification,
     employment_and_life: p.about,
+    credit_score_history: p.creditHistory,
     transactions_90d: p.transactions ? { count: p.transactions.total90d, latest: p.transactions.items.slice(0, 10).map((t) => ({ date: t.date, description: t.description, amount: round(t.amount), type: t.type, account: t.account })) } : 'not loaded from the core for this institution',
   };
 }

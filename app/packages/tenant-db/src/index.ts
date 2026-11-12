@@ -37,3 +37,4 @@ export { TOUCHES } from './modules.ts';
 export { CR_EXTRA_DDL, CR_EXTRA_WRITE_TABLES } from './cr5300Extra.ts';
 export { LOAN_TYPES as CR_LOAN_TYPES } from './callReport.ts';
 export { DECISION_TABLE_COLUMNS, DMN_DDL, DMN_WRITE_TABLES, decisionTableRows, defaultDecisionTables, type DmnColumn, type DmnRule, type DmnTableDef } from './dmn.ts';
+export { ESP_ORIGINATION_DDL, generateOrigination } from './espOrigination.ts';

@@ -6,7 +6,7 @@ import { CoreError, GoalsService, SalesScorecardService } from '@dinext/di-core'
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 export const SALES_SCORECARD_REQUEST =
-  /\bloan score ?card\b|\b(?:loan|lending) (?:goals?|production) by channel\b|\bby channel\b[^.?!]*\b(?:goals?|minimum|stretch)\b|\bstretch goals?\b|\b(?:minimum|stretch) (?:goals?|targets?)\b|\b(?:sales )?contests?\b|\bsales (?:drive|competition|push)\b|\b(?:summer|fall|spring|winter) (?:drive|push)\b|\bleaderboard\b|\bregional score ?cards?\b|\bscore ?cards? by region\b|\bby region\b[^.?!]*\b(?:goals?|score ?cards?|incentives?)\b|\bwhich region\b/i;
+  /\bloan score ?card\b|\b(?:loan|lending) (?:goals?|production) by channel\b|\bby channel\b[^.?!]*\b(?:goals?|minimum|stretch)\b|\bstretch goals?\b|\b(?:minimum|stretch) (?:goals?|targets?)\b|\b(?:sales )?contests?\b|\bsales (?:drive|competition|push)\b|\b(?:summer|fall|spring|winter) (?:drive|push)\b|\bleaderboard\b|\bregional score ?cards?\b|\bscore ?cards? by region\b|\bby region\b[^.?!]*\b(?:goals?|score ?cards?|incentives?)\b|\bwhich region\b|\bwho opened (?:the )?most\b|\baccounts? opened by\b|\bopened by (?:employee|staff|whom|who)\b|\b(?:originated|originating) (?:at|branch)\b/i;
 
 const NO_ACCESS = 'Sales scorecards aren’t part of your DI access.';
 const text = (field: string, headerName: string) => ({ field, headerName, type: 'text' as const });
@@ -14,6 +14,7 @@ const mm = (n: number) => (Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$
 const monthName = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
 export function salesScorecardPlan(t: string) {
+  if (/\bwho opened\b|\bopened by\b|\boriginat/i.test(t)) return { tool: 'sales_opened_by', args: {} };
   if (/\bcontests?\b|\bdrive\b|\bpush\b|\bcompetition\b|\bleaderboard\b/i.test(t)) return { tool: 'sales_contests', args: {} };
   if (/\bregion/i.test(t)) return { tool: 'sales_regions', args: {} };
   return { tool: 'sales_loan_scorecard', args: {} };
@@ -35,9 +36,27 @@ export function salesScorecardModule(svc: SalesScorecardService, goals: GoalsSer
 
 - sales_loan_scorecard (month): loan production by channel against the year's minimum and stretch, month to date and year to date. Leave month out for the latest month; don't ask which month. The score card is by channel, not by lender: say so in a line when asked by lender and show it by channel.
 - sales_contests: sales contests, running and ended, with standings.
-- sales_regions: the incentive scorecards rolled up by region.`,
+- sales_regions: the incentive scorecards rolled up by region.
+- sales_opened_by (from, to; default this month to date): accounts opened by each employee, loans and deposits, the channel (branch, online, dealer) and how many were originated at a branch other than the one that services them.`,
     plan: (t) => salesScorecardPlan(t),
     tools: [
+      {
+        name: 'sales_opened_by',
+        description: 'Accounts opened in a period by who opened them: each employee’s loans and deposits opened (count and dollars), accounts opened online or through dealers, and how many were originated at a branch other than the servicing one. Default this month to date.',
+        input: z.object({ from: z.string().regex(/^20\d\d-\d\d-\d\d$/).optional(), to: z.string().regex(/^20\d\d-\d\d-\d\d$/).optional() }).strict(),
+        run: async (a: { from?: string; to?: string }, ctx) => {
+          need(ctx);
+          const x = await svc.openedBy(ctx, a.from, a.to);
+          if (!x) return { text: 'Who opened each account isn’t loaded for this institution yet.' };
+          if (!x.total) return { text: `No accounts were opened from ${a.from ?? 'the start of the month'} to ${a.to ?? 'now'}.` };
+          const top = x.people.find((p) => p.role !== '—');
+          const ch = x.channels.map((c) => `${c.name.toLowerCase()} ${c.accounts}`).join(', ');
+          return {
+            text: `From ${x.from} to ${x.to}, **${x.total.toLocaleString('en-US')} accounts** were opened (${ch}).${top ? ` **${top.name}** (${top.role}, ${top.branch}) opened the most: ${top.loans} loans and ${top.deposits} deposit accounts.` : ''}`,
+            blocks: [moduleTable(spec, 'Accounts opened, by who opened them', ctx.runId, 'sales.opened_by', [text('name', 'Opened by'), text('role', 'Role'), text('branch', 'Branch'), { field: 'loans', headerName: 'Loans', type: 'count' }, { field: 'loanDollars', headerName: 'Loan dollars', type: 'currency' }, { field: 'deposits', headerName: 'Deposit accounts', type: 'count' }, { field: 'depositDollars', headerName: 'Deposit balances', type: 'currency' }, { field: 'elsewhere', headerName: 'Originated at another branch', type: 'count' }], x.people.slice(0, 100))],
+          };
+        },
+      },
       {
         name: 'sales_loan_scorecard',
         description: 'The Monthly Loan Score Card: loan production by channel for a month and the year to date, against the year’s minimum and stretch goals (prorated to the month), with percent to each.',

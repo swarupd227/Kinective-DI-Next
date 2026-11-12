@@ -678,7 +678,7 @@ export function collectionsModule(col: CollectionsService): ModuleSpec {
     id: 'collections',
     prefix: 'col',
     agent: 'Collections Early Warning',
-    request: new RegExp(`\\bearly[- ]warning\\b|\\bwatch ?list\\b|\\boutreach tasks?\\b|${DRAW_REQUEST.source}`, 'i'),
+    request: new RegExp(`\\bearly[- ]warning\\b|\\bwatch ?list\\b|\\boutreach tasks?\\b|\\bcredit scores?\\b[^.?!]*\\b(?:drop|dropped|fell|fallen|slid|declin)|\\bscore migration\\b|${DRAW_REQUEST.source}`, 'i'),
     noAccess,
     sources: [{ kind: 'table', label: 'Loans and predictive scores', ref: 'table:cdm_loan' }],
     today: async (ctx) => {
@@ -691,14 +691,33 @@ export function collectionsModule(col: CollectionsService): ModuleSpec {
 - "Show the early-warning list": col_watchlist. The list holds loans still current whose borrower shows stress (direct deposit stopped, falling balances, no recent login) and HELOCs whose ten-year draw period ends in the next 12 months.
 - "Which HELOCs are reaching the end of their draw?": col_watchlist with focus heloc_draw.
 - "Queue outreach tasks": col_outreach_prepare.
+- "Whose credit scores have dropped?", "score migration": col_score_drops, borrowers whose latest quarterly pull fell 40 points or more in a year.
 - You never contact a borrower, change loan terms or take adverse action. You only queue tasks for the collections team.`,
     plan: (text) => {
       const t = clean(text);
       if (/\b(call|email|text|contact|waive|defer|modify)\b.*\b(borrowers?|members?|loans?)\b/i.test(t) && !/\btasks?\b/i.test(t)) return { say: 'I don’t contact borrowers or change loans. I can queue outreach tasks for the collections team.' };
       if (/\b(queue|create|prepare)\b.*\btasks?\b/i.test(t)) return { tool: 'col_outreach_prepare', args: {} };
+      if (/\bscores?\b[^.?!]*\b(?:drop|dropped|fell|fallen|slid|declin|migrat)|\bscore migration\b/i.test(t)) return { tool: 'col_score_drops', args: {} };
       return { tool: 'col_watchlist', args: DRAW_REQUEST.test(t) ? { focus: 'heloc_draw' } : {} };
     },
     tools: [
+      {
+        name: 'col_score_drops',
+        description: 'Borrowers with an open loan whose credit score has slid: the latest quarterly soft pull against a year before (or the application score, if later), 40 points or more, largest drop first, with what they owe.',
+        input: z.object({ min_drop: z.number().int().min(10).max(200).default(40) }).strict(),
+        run: async (a: { min_drop?: number }, ctx) => {
+          need(ctx);
+          const x = await col.scoreDrops(ctx, a.min_drop ?? 40);
+          if (!x.loaded) return { text: 'Credit score history isn’t loaded for this institution yet, so I can’t see score movement.' };
+          if (!x.items.length) return { text: `No borrower’s score fell ${a.min_drop ?? 40} points or more in the last year.` };
+          const owed = x.items.reduce((s, i) => s + i.loans, 0);
+          return {
+            text: `**${(x.total ?? x.items.length).toLocaleString('en-US')} borrowers** saw their credit score fall ${a.min_drop ?? 40} points or more in a year${x.items.length < (x.total ?? 0) ? ` (the ${x.items.length} largest drops are below)` : ''}, owing **${money(owed)}** between them. The steepest: ${x.items[0]!.name}, ${x.items[0]!.from} to ${x.items[0]!.to}. A falling score is an early sign; it isn’t a reason for adverse action on its own.`,
+            blocks: [moduleTable(spec, 'Credit score drops', ctx.runId, 'collections.score_drops', [{ field: 'name', headerName: 'Borrower', type: 'text' }, { field: 'branch', headerName: 'Branch', type: 'text' }, { field: 'from', headerName: 'Score then', type: 'count' }, { field: 'fromDate', headerName: 'Then', type: 'date' }, { field: 'to', headerName: 'Score now', type: 'count' }, { field: 'toDate', headerName: 'Now', type: 'date' }, { field: 'drop', headerName: 'Drop', type: 'count' }, { field: 'loans', headerName: 'Owes', type: 'currency' }], x.items.map((i) => ({ name: i.name, branch: i.branch, from: i.from, fromDate: i.fromDate, to: i.to, toDate: i.toDate, drop: i.drop, loans: i.loans })))],
+            suggestions: ['Show the early-warning list', 'Queue outreach tasks'],
+          };
+        },
+      },
       {
         name: 'col_watchlist',
         description: 'Loans that are current but whose borrower shows stress, and HELOCs whose draw period ends within 12 months, with the signals. focus heloc_draw lists only those HELOCs.',

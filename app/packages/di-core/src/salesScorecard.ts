@@ -57,6 +57,51 @@ export class SalesScorecardService {
   }
 
   /** Sales contests, running and ended, with the standings: loans counted or dollars, by loan officer or branch. */
+  /**
+   * Accounts opened in a period by who opened them (ESP's openedByEmpNumber), with the channel and how
+   * many were originated at a branch other than the one that services them. From the origination stamps.
+   */
+  async openedBy(ctx: CoreContext = {}, fromDate?: string, toDate?: string) {
+    const to = toDate ?? (await this.asOf());
+    const from = fromDate ?? `${to.slice(0, 7)}-01`;
+    const scope = ctx.purviewBranches ? ' AND b.name IN (?)' : '';
+    const params = (kind: string) => [kind, from, to, ...(ctx.purviewBranches ? [ctx.purviewBranches.length ? ctx.purviewBranches : ['']] : [])];
+    const q = (kind: 'loan' | 'deposit') =>
+      kind === 'loan'
+        ? `SELECT o.opened_by_employee_id AS emp, o.channel, o.originating_branch_id <> l.branch_id AS elsewhere, l.original_amount AS amount, b.name AS branch FROM cdm_account_origination o JOIN cdm_loan l ON l.loan_id = o.account_id JOIN cdm_location b ON b.int_id = o.originating_branch_id WHERE o.account_kind = ? AND l.open_date BETWEEN ? AND ?${scope}`
+        : `SELECT o.opened_by_employee_id AS emp, o.channel, o.originating_branch_id <> d.branch_id AS elsewhere, d.balance AS amount, b.name AS branch FROM cdm_account_origination o JOIN cdm_deposit_account d ON d.account_id = o.account_id JOIN cdm_location b ON b.int_id = o.originating_branch_id WHERE o.account_kind = ? AND d.open_date BETWEEN ? AND ?${scope}`;
+    const run = async (kind: 'loan' | 'deposit') => ((await this.pool.query(q(kind), params(kind)).catch(() => [null]))[0] as { emp: number | null; channel: string; elsewhere: number; amount: unknown; branch: string }[] | null);
+    const [loans, deposits] = [await run('loan'), await run('deposit')];
+    if (loans === null || deposits === null) return null;
+    const [emps] = await this.pool.query('SELECT e.employee_id, e.display_name, e.role, b.name AS branch FROM cdm_employee e JOIN cdm_location b ON b.int_id = e.branch_id');
+    const emp = new Map((emps as { employee_id: number; display_name: string; role: string; branch: string }[]).map((e) => [e.employee_id, e]));
+    const people = new Map<string, { name: string; role: string; branch: string; loans: number; loanDollars: number; deposits: number; depositDollars: number; elsewhere: number }>();
+    const channel = new Map<string, number>();
+    for (const [kind, list] of [['loan', loans], ['deposit', deposits]] as const) {
+      for (const r of list) {
+        channel.set(r.channel, (channel.get(r.channel) ?? 0) + 1);
+        const e = r.emp === null ? null : emp.get(r.emp);
+        const key = e ? String(r.emp) : `${r.channel}`;
+        const p = people.get(key) ?? people.set(key, { name: e ? e.display_name : r.channel === 'Dealer' ? 'Dealers (indirect)' : 'Online, no employee', role: e?.role ?? '—', branch: e?.branch ?? '—', loans: 0, loanDollars: 0, deposits: 0, depositDollars: 0, elsewhere: 0 }).get(key)!;
+        if (kind === 'loan') {
+          p.loans++;
+          p.loanDollars += Number(r.amount);
+        } else {
+          p.deposits++;
+          p.depositDollars += Number(r.amount);
+        }
+        if (Number(r.elsewhere)) p.elsewhere++;
+      }
+    }
+    return {
+      from,
+      to,
+      people: [...people.values()].map((p) => ({ ...p, loanDollars: Math.round(p.loanDollars), depositDollars: Math.round(p.depositDollars) })).sort((a, b) => b.loans + b.deposits - (a.loans + a.deposits)),
+      channels: [...channel.entries()].map(([name, n]) => ({ name, accounts: n })).sort((a, b) => b.accounts - a.accounts),
+      total: loans.length + deposits.length,
+    };
+  }
+
   async contests(ctx: CoreContext = {}) {
     const asOf = await this.asOf();
     const [list] = await this.pool.query('SELECT * FROM gi_contest ORDER BY starts DESC').catch(() => [[]]);

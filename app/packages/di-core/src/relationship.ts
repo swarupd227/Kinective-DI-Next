@@ -134,6 +134,8 @@ export interface MemberProfile {
   workflows: { kind: 'Referral' | 'Task' | 'Onboarding'; title: string; status: string; owner: string | null; due: string | null; opened: string }[];
   /** Employment, leisure, and life events and goals the person shared (DI's member tabs). */
   about: { employer: string | null; occupation: string | null; incomeBand: string | null; yearsEmployed: number | null; interests: string[]; lifeEvents: { event: string; date: string }[]; goals: string[] } | null;
+  /** Credit score pulls on file (ESP's credit score history), newest first: empty where none are loaded. */
+  creditHistory: { date: string; type: string; score: number; source: string }[];
   /** The latest identity verification recorded in DI. */
   lastVerification: { at: string; channel: string; result: string; by: string } | null;
 }
@@ -461,6 +463,7 @@ export class RelationshipService {
     const onbTasks = await q<{ touch: string; status: string; owner: string | null; due: unknown }>("SELECT t.touch, t.status, e.display_name AS owner, t.due FROM onb_task t LEFT JOIN cdm_employee e ON e.employee_id = t.assignee_employee_id WHERE t.party_id = ? AND t.status = 'Open' ORDER BY t.due LIMIT 6", [partyId]).catch(() => []);
     const [aboutRow] = await q<{ employer: string | null; occupation: string | null; income_band: string | null; years_employed: number | null; interests: unknown; life_events: unknown; goals: unknown }>('SELECT employer, occupation, income_band, years_employed, interests, life_events, goals FROM cdm_party_profile WHERE party_id = ?', [partyId]).catch(() => []);
     const parsed = <T>(v: unknown, d: T): T => (v === null || v === undefined ? d : ((typeof v === 'string' ? JSON.parse(v) : v) as T));
+    const creditRows = await q<{ as_of: unknown; score_type: string; score: number; source: string }>('SELECT as_of, score_type, score, source FROM cdm_credit_score_history WHERE party_id = ? ORDER BY as_of DESC LIMIT 12', [partyId]).catch(() => []);
     const [verified] = await q<{ verified_at: unknown; channel: string; result: string; by_name: string }>('SELECT verified_at, channel, result, by_name FROM rm_verification WHERE party_id = ? ORDER BY verified_at DESC LIMIT 1', [partyId]).catch(() => []);
     const label = (c: string) => LOAN_LABEL[c] ?? c;
     const line = (kind: 'deposit' | 'loan', id: number, name: string, r: { balance: number; balance_30d: number; fees_30d: number; rate: number; open_date: string }, extra: Partial<AccountLine> = {}): AccountLine => ({
@@ -579,6 +582,7 @@ export class RelationshipService {
         ...onbTasks.map((t) => ({ kind: 'Onboarding' as const, title: `Onboarding: ${t.touch}`, status: t.status, owner: t.owner, due: day10(t.due), opened: day10(t.due) })),
       ],
       about: aboutRow ? { employer: aboutRow.employer, occupation: aboutRow.occupation, incomeBand: aboutRow.income_band, yearsEmployed: aboutRow.years_employed === null ? null : Number(aboutRow.years_employed), interests: parsed<string[]>(aboutRow.interests, []), lifeEvents: parsed<{ event: string; date: string }[]>(aboutRow.life_events, []), goals: parsed<string[]>(aboutRow.goals, []) } : null,
+      creditHistory: creditRows.map((c) => ({ date: day10(c.as_of), type: c.score_type, score: Number(c.score), source: c.source })),
       lastVerification: verified ? { at: String(verified.verified_at instanceof Date ? verified.verified_at.toISOString() : verified.verified_at).slice(0, 16).replace(' ', 'T'), channel: verified.channel, result: verified.result, by: verified.by_name } : null,
     };
   }
