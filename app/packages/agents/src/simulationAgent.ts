@@ -9,7 +9,7 @@ import { newBlockId } from './answer.ts';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 export const SIMULATION_REQUEST =
-  /\bmonte[- ]?carlo\b|\bsimulat(?:e|ed|es|ion|ions|ing)\b|\b(?:range|distribution|spread) of (?:outcomes|results|capital|earnings|losses|possible)\b|\btail risk\b|\bworst (?:5|five|1|one) ?(?:%|percent)|\bworst (?:simulated )?paths\b|\b(?:what are the odds|how likely|what(?:'s| is) the (?:chance|probability|likelihood)|chances?|probability|likelihood|odds)\b[^.?!]*\b(?:capital|leverage|net worth|breach|minimum|fall below|drop below|losses?|net income|earnings|nii|net interest income|lose money|loss year)\b/i;
+  /\bmonte[- ]?carlo\b|\bsimulat(?:e|ed|es|ion|ions|ing)\b|\b(?:range|distribution|spread) of (?:outcomes|results|capital|earnings|losses|possible)\b|\btail risk\b|\bworst (?:5|five|1|one) ?(?:%|percent)|\bworst (?:simulated )?paths\b|\b(?:what are the odds|how likely|chances?|probability|likelihood|odds)\b[^.?!]*\b(?:budget|targets?|(?:hit|meet|make|miss)(?:ing)? (?:the |our )?plan)\b|\b(?:budget|plan) at risk\b|\b(?:what are the odds|how likely|what(?:'s| is) the (?:chance|probability|likelihood)|chances?|probability|likelihood|odds)\b[^.?!]*\b(?:capital|leverage|net worth|breach|minimum|fall below|drop below|losses?|net income|earnings|nii|net interest income|lose money|loss year)\b/i;
 
 const p = (v: number, d = 1) => `${v.toFixed(d)}%`;
 const chance = (v: number) => (v === 0 ? 'none of the paths' : v < 0.1 ? 'under 0.1%' : v < 1 ? `${v.toFixed(1)}%` : `${v.toFixed(0)}%`);
@@ -21,11 +21,26 @@ const money = (v: number) => {
 const text = (field: string, headerName: string) => ({ field, headerName, type: 'text' as const });
 
 type Analysis = NonNullable<Awaited<ReturnType<MonteCarloService['analysis']>>>;
+type Budget = NonNullable<Awaited<ReturnType<MonteCarloService['budget']>>>;
 
 export function simulationModule(svc: MonteCarloService): ModuleSpec {
   const noAccess = 'The stress test and its simulation are for finance and executives.';
   const need = (ctx: ModuleContext) => {
     if (!ctx.modules.includes('camels')) throw new CoreError('NO_ACCESS', noAccess);
+  };
+  // The budget simulation is for those who see the budget or the stress test.
+  const needBudget = (ctx: ModuleContext) => {
+    if (!ctx.modules.includes('camels') && !ctx.modules.includes('budget')) throw new CoreError('NO_ACCESS', 'The budget and its simulation are for finance and executives.');
+  };
+  let cachedBudget: { at: number; b: Promise<Budget | null> } | null = null;
+  const budget = async () => {
+    if (!cachedBudget || Date.now() - cachedBudget.at > 5 * 60_000) cachedBudget = { at: Date.now(), b: svc.budget() };
+    const b = await cachedBudget.b.catch((e: unknown) => {
+      cachedBudget = null;
+      throw e;
+    });
+    if (!b) throw new CoreError('NOT_FOUND', 'There’s no Call Report in DI yet, so there’s no starting point to simulate from.');
+    return b;
   };
   // Cached for a few minutes: the inputs change with the nightly build, not between questions.
   let cached: { at: number; a: Promise<Analysis | null> } | null = null;
@@ -54,10 +69,12 @@ export function simulationModule(svc: MonteCarloService): ModuleSpec {
 - "Run a Monte Carlo on capital", "what's the chance we fall below the minimum?", "how low could capital go?": sim_capital.
 - "What's the range for net interest income and earnings?", "what's the chance we lose money next year?": sim_earnings.
 - "What do the worst paths have in common?", "what drives the tail?": sim_tail.
+- "What's the chance we hit the budget?", "which targets are at risk?", "Monte Carlo on the budget": sim_budget.
 - "What does the simulation assume?": sim_assumptions.
 - Say what the figures are: chances under DI's illustrative assumptions, from thousands of random economies through the stress test's model. Not a forecast, and not the scenarios of record.`,
     plan: (t) => {
       if (/\bassum/i.test(t)) return { tool: 'sim_assumptions', args: {} };
+      if (/\bbudget\b|\btargets?\b|\b(?:hit|meet|make|miss)(?:ing)? (?:the |our )?plan\b|\bplan at risk\b/i.test(t)) return { tool: 'sim_budget', args: {} };
       if (/\bworst\b|\btail\b|\bin common\b|\bdrives?\b|\bwhat goes wrong\b/i.test(t)) return { tool: 'sim_tail', args: {} };
       if (/\bnii\b|\bnet interest\b|\bearnings\b|\bnet income\b|\bincome\b|\blose money\b|\bloss year\b|\bprofit/i.test(t) && !/\bcapital\b|\bleverage\b|\bnet worth\b/i.test(t)) return { tool: 'sim_earnings', args: {} };
       return { tool: 'sim_capital', args: {} };
@@ -131,6 +148,33 @@ export function simulationModule(svc: MonteCarloService): ModuleSpec {
               { measure: `${a.creCategory}' share of losses`, worst: p(w.creShare * 100, 0), all: p(t.creShare * 100, 0) },
             ], a.asOf)],
             suggestions: ['What’s the chance capital falls below the minimum?', 'Run the stress test'],
+          };
+        },
+      },
+      {
+        name: 'sim_budget',
+        description: 'Monte Carlo on the budget: the next four quarters in thousands of random economies, read as the budget’s measures (ROA, NIM, efficiency, net charge-offs, the capital ratio, loan and deposit growth), against the latest budget’s targets. The range of each, the chance of meeting each target and all of them, and what moves ROA most.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          needBudget(ctx);
+          const b = await budget();
+          if (!b.year) return { text: 'There’s no budget in DI yet, so there are no targets to test. Ask the Budget agent to draft one.' };
+          const fmt = (m: Budget['measures'][number], v: number) => (m.key === 'efficiency_ratio' ? p(v, 1) : p(v, 2));
+          const withTargets = b.measures.filter((m) => m.target !== null && m.chanceMeets !== null);
+          const risky = [...withTargets].sort((x, y) => x.chanceMeets! - y.chanceMeets!);
+          const roa = b.measures.find((m) => m.key === 'return_on_assets')!;
+          const top = b.drivers.slice(0, 2);
+          return {
+            text: `Over the next four quarters, in ${b.paths.toLocaleString('en-US')} simulated economies, ${roa.target !== null ? `ROA meets the ${b.year} target of ${p(roa.target, 2)} in **${chance(roa.chanceMeets!)}** of paths` : 'ROA'} (typical ${p(roa.p50, 2)}, worst 5% ${p(roa.p5, 2)} or lower). The targets most at risk: ${risky.slice(0, 3).map((m) => `**${m.label.toLowerCase()}** (${chance(m.chanceMeets!)} chance of meeting ${fmt(m, m.target!)}; typical ${fmt(m, m.p50)})`).join(', ')}. ${b.chanceAll !== null ? `The chance of meeting every target at once is ${chance(b.chanceAll)}.` : ''} ${top.length ? `What moves ROA most across the paths: ${top.map((d) => d.label.toLowerCase()).join(' and ')}.` : ''} Loan and deposit growth are centred on the last 12 months’ trend (${b.trend.loans !== null ? p(b.trend.loans, 1) : '—'} and ${b.trend.deposits !== null ? p(b.trend.deposits, 1) : '—'}), not on the plan. These are chances under DI’s illustrative assumptions, not a forecast.`,
+            blocks: [
+              moduleTable(spec, `The ${b.year} budget across ${b.paths.toLocaleString('en-US')} simulated paths`, ctx.runId, 'sim.budget', [text('measure', 'Measure'), text('target', 'Target'), text('p5', 'Worst 5%'), text('p50', 'Typical'), text('p95', 'Best 5%'), text('meets', 'Chance of meeting it')], b.measures.map((m) => {
+                const worst = m.better === 'up' ? m.p5 : m.p95;
+                const best = m.better === 'up' ? m.p95 : m.p5;
+                return { measure: m.label, target: m.target === null ? '—' : `${m.better === 'up' ? 'At least' : 'At most'} ${fmt(m, m.target)}`, p5: fmt(m, worst), p50: fmt(m, m.p50), p95: fmt(m, best), meets: m.chanceMeets === null ? '—' : chance(m.chanceMeets) };
+              }), b.asOf),
+              moduleTable(spec, 'What moves ROA across the paths', ctx.runId, 'sim.budget.drivers', [text('driver', 'Driver'), text('moves', 'Moves with ROA'), text('way', 'When it rises, ROA')], b.drivers.map((d) => ({ driver: d.label, moves: d.share >= 0.5 ? 'Strongly' : d.share >= 0.15 ? 'Somewhat' : 'Little', way: d.direction === 'up' ? 'Rises' : 'Falls' })), b.asOf),
+            ],
+            suggestions: ['What’s the chance capital falls below the minimum?', 'What does the simulation assume?'],
           };
         },
       },

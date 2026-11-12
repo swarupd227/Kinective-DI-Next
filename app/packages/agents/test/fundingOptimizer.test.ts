@@ -76,3 +76,52 @@ describe.skipIf(!up)('the optimizer against the bank warehouse', () => {
     expect(refused.text).not.toMatch(/all-in/);
   }, 60_000);
 });
+
+const CU = 'dinext_t_test_cu';
+const cuUp = await warehouseAvailable(CU).then((ok) => ok && tenantPool(CU).query('SELECT 1 FROM cr_value LIMIT 1').then(() => true, () => false));
+
+describe.skipIf(!cuUp)('the optimizer for a credit union', () => {
+  let pool: Pool;
+  let svc: FundingOptimizerService;
+  let spec: ModuleSpec;
+  let gateway: ModuleGateway;
+  const CEO = { id: 'user:9229', name: 'Dana Lee', title: 'President and CEO' };
+  const run = async (text: string, modules = ['liquidity']) => {
+    const texts: string[] = [];
+    const blocks: Block[] = [];
+    const sink: RunSink = { signal: new AbortController().signal, routing: () => {}, plan: () => 'blk_plan00000000', step: () => {}, text: async (m) => void texts.push(m), block: async (b) => void blocks.push(b), suggestion: () => {} };
+    const turn: ModuleTurn = { runId: 'R-fop-cu', threadId: `thr_${Math.random().toString(36).slice(2, 10)}`, text, user: CEO, tenant: { name: 'Harborview Federal Credit Union' }, modules };
+    await runModuleOffline(spec, turn, { gateway }, sink);
+    return { text: texts.join(' '), blocks };
+  };
+  beforeAll(() => {
+    pool = tenantPool(CU);
+    svc = new FundingOptimizerService(pool, 'credit_union');
+    spec = fundingOptimizerModule(svc);
+    gateway = new ModuleGateway(new ApprovalStore(pool), [spec]);
+  });
+  afterAll(() => pool.end());
+
+  it('checks a credit union’s limits, and holds extra funding as liquidity when that is what keeps the floor', async () => {
+    const r = (await svc.optimize())!;
+    const c = r.chosen!;
+    expect(c).toBeTruthy();
+    const ids = c.figures.checks.map((x) => x.id);
+    expect(ids).toEqual(expect.arrayContaining(['nev300', 'nii300', 'nonmember', 'liquid']));
+    for (const x of c.figures.checks) expect(x.status === 'breach' && !(x.today && !x.worseThanToday)).toBe(false);
+    // What's raised covers the growth, and any extra is held, not lent.
+    const raised = c.levers.deposits + c.levers.fhlb + c.levers.brokered + c.fromCash;
+    expect(raised).toBeCloseTo(r.growth + r.extra, -2);
+    expect((c.figures.held ?? 0)).toBeCloseTo(r.extra, -2);
+  }, 120_000);
+
+  it('answers in a credit union’s words', async () => {
+    const out = await run('What’s the cheapest way to fund next year’s loan growth without nonmember certificates?');
+    expect(out.text).toMatch(/that keeps every limit costs/);
+    expect(out.text).toMatch(/without nonmember certificates/);
+    expect(out.text).not.toMatch(/brokered CDs/);
+    for (const b of out.blocks) expect(validateBlock(b).ok).toBe(true);
+    const refused = await run('Optimize our funding', ['predictive']);
+    expect(refused.text).not.toMatch(/all-in/);
+  }, 120_000);
+});

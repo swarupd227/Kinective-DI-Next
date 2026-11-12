@@ -150,6 +150,7 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-SIM-001', set: 'golden', persona: 'bank_cfo', q: 'What’s the chance capital falls below the minimum?', agent: 'Scenario Simulation', contains: ['simulated economies', 'worst 5%'], approval: 'none' },
   { id: 'GQ-SIM-002', set: 'golden', persona: 'executive', q: 'What do the worst 5% of simulated paths have in common?', agent: 'Scenario Simulation', contains: ['severely adverse'], approval: 'none' },
   { id: 'GQ-SIM-003', set: 'golden', persona: 'bank_cfo', q: 'What’s the chance we lose money next year?', agent: 'Scenario Simulation', contains: ['net loss over the next four quarters'], approval: 'none' },
+  { id: 'GQ-SIM-004', set: 'golden', persona: 'executive', q: 'What’s the chance we hit the budget?', agent: 'Scenario Simulation', contains: ['The targets most at risk'], approval: 'none' },
   { id: 'PM-SIM-001', set: 'permission', persona: 'msr', q: 'Run a Monte Carlo on capital', refused: true, notContains: ['simulated economies'], approval: 'none', ref: 'the stress test is for finance and executives' },
   { id: 'PM-CAM-001', set: 'permission', persona: 'branch', q: 'Run the stress test', refused: true, notContains: ['severely adverse'], approval: 'none', ref: 'the stress test is for finance and executives' },
   // Branch Performance: the CEO's six branch measures against target, delinquency at 30/60/90, digital adoption, productivity and the complaint log.
@@ -213,6 +214,7 @@ export const EVAL_ITEMS: EvalItem[] = [
   // The funding optimizer: the cheapest mix that keeps every limit, found by searching the funding model.
   { id: 'GQ-FOP-001', set: 'golden', persona: 'bank_cfo', q: 'What’s the cheapest way to fund next year’s loan growth?', agent: 'Funding Optimizer', contains: ['that keeps every limit costs', 'all-in'], approval: 'none' },
   { id: 'GQ-FOP-002', set: 'golden', persona: 'bank_cfo', q: 'Optimize our funding for $30 million without brokered CDs', agent: 'Funding Optimizer', contains: ['without brokered CDs'], approval: 'none' },
+  { id: 'GQ-FOP-003', set: 'golden', persona: 'executive', q: 'What’s the cheapest way to fund next year’s loan growth?', agent: 'Funding Optimizer', contains: ['that keeps every limit costs'], notContains: ['brokered CDs'], approval: 'none' },
   // Decision tables (DMN): read, try, apply and change rules, a change approved by someone else.
   { id: 'GQ-DMN-001', set: 'golden', persona: 'bank_cfo', q: 'Show the decision tables', agent: 'Decision Rules', contains: ['Consumer loan pricing adjustments', 'Retention outreach'], approval: 'none' },
   { id: 'GQ-DMN-002', set: 'golden', persona: 'bank_cfo', q: 'What adjustment does a 690 score, 95% LTV, 72-month loan get?', agent: 'Decision Rules', contains: ['+100 bp'], approval: 'none' },

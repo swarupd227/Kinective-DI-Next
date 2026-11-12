@@ -74,5 +74,22 @@ for (const [schema, type] of [['dinext_t_test_bank', 'bank'], ['dinext_t_test_cu
       expect(gateway.match('What is the probability we breach the minimum?')?.agent).toBe('Scenario Simulation');
       expect(gateway.match('Run the stress test')?.agent).toBe('CAMELS and stress test');
     });
+
+    it('tests the budget: each target’s chance, and what moves ROA', async () => {
+      const b = (await svc.budget(1500))!;
+      expect(b.year).not.toBeNull();
+      for (const m of b.measures) {
+        expect(m.p5).toBeLessThanOrEqual(m.p50);
+        expect(m.p50).toBeLessThanOrEqual(m.p95);
+        if (m.chanceMeets !== null) expect(m.chanceMeets).toBeGreaterThanOrEqual(0);
+      }
+      // Meeting every target at once is no likelier than meeting the hardest one.
+      expect(b.chanceAll!).toBeLessThanOrEqual(Math.min(...b.measures.filter((m) => m.chanceMeets !== null).map((m) => m.chanceMeets!)) + 1e-9);
+      expect(b.drivers[0]!.label).toMatch(/Credit losses|downturn/);
+      const out = await run('What’s the chance we hit the budget?', ['budget']);
+      expect(out.text).toMatch(/The targets most at risk/);
+      for (const x of out.blocks) expect(validateBlock(x).ok).toBe(true);
+      expect(gateway.match('What’s the chance we hit the budget?')?.agent).toBe('Scenario Simulation');
+    }, 120_000);
   });
 }
