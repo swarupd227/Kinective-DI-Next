@@ -27,7 +27,32 @@ const num = (r: SemanticResult, metric: string, where: Record<string, string> = 
   return row ? Number(row[metric]) : null;
 };
 
-export async function buildBriefing(svc: SemanticService, ctx: QueryContext, runId = 'home'): Promise<Briefing> {
+/**
+ * Home's briefing changes only when the warehouse is rebuilt (nightly), yet every Home visit asked for
+ * it: five warehouse queries each time. Home's is kept for ten minutes per purview; "Brief me" in a
+ * conversation (its own run id) is always computed fresh.
+ */
+export const BRIEFING_CACHE_MS = 10 * 60_000;
+let homeCache = new WeakMap<SemanticService, Map<string, { at: number; value: Promise<Briefing> }>>();
+
+/** After a load changes the warehouse (an off-core file), so Home shows the new figures at once. */
+export function clearBriefingCache() {
+  homeCache = new WeakMap();
+}
+
+export function buildBriefing(svc: SemanticService, ctx: QueryContext, runId = 'home'): Promise<Briefing> {
+  if (runId !== 'home') return computeBriefing(svc, ctx, runId);
+  const byCtx = homeCache.get(svc) ?? homeCache.set(svc, new Map()).get(svc)!;
+  const key = JSON.stringify(ctx);
+  const hit = byCtx.get(key);
+  if (hit && Date.now() - hit.at < BRIEFING_CACHE_MS) return hit.value;
+  const value = computeBriefing(svc, ctx, runId);
+  byCtx.set(key, { at: Date.now(), value });
+  value.catch(() => byCtx.get(key)?.value === value && byCtx.delete(key));
+  return value;
+}
+
+async function computeBriefing(svc: SemanticService, ctx: QueryContext, runId: string): Promise<Briefing> {
   const m = svc.model.metrics;
   const [now, history, joins, branches, core] = await Promise.all([
     svc.query({ metrics: ['loan_balance', 'deposit_balance', 'delinquency_ratio_60_plus', 'member_count'] }, ctx),

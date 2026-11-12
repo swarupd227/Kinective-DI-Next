@@ -5,6 +5,7 @@
 // SFTP folders and scheduled uploaders come in a later slice.
 import { z } from 'zod';
 import { CoreError, OFFCORE_FIELDS, convert, profile, tableNameFrom, type Cell, type ColumnProfile, type FileProfile, type FileStore, type IngestService, type OffcorePlan, type OffcoreService, type UploadedTable, type ValueKind } from '@dinext/di-core';
+import { clearBriefingCache } from './briefing.ts';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 const FILE = /[“"]([^”"]+\.(?:csv|tsv|txt|xlsx|xls))[”"]|(\S+\.(?:csv|tsv|txt|xlsx|xls))\b/i;
@@ -252,6 +253,7 @@ export function dataLoadModule(files: FileStore | null, ingest: IngestService | 
         apply: async (p: Pick<OffcorePlan, 'file' | 'feed' | 'source' | 'servicer' | 'asOf' | 'rows' | 'skipped' | 'balance' | 'delinquent60' | 'columns'>, meta, ctx) => {
           const svc = needOffcore(ctx);
           const r = await svc.publish(p, { userId: ctx.user.id, name: ctx.user.name }, { approvalId: meta.approvalId });
+          clearBriefingCache(); // Home's figures include off-core loans: show the new ones at once.
           const by = await svc.bySource();
           const total = by.reduce((s, x) => s + x.balance, 0);
           return {
