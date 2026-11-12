@@ -18,8 +18,23 @@ export const proposeCategory = (text: string) => CATEGORY_WORDS.find(([w]) => w.
 const SOURCES = ['Call In', 'Branch', 'Email', 'BBB', ...ISSUE_REGULATORS];
 const longDate = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 const label = (id: number) => `issue #${id}`;
+/** Capitalized words after "at", "in" or "for" that aren't a branch: question words, sources, months. */
+const NOT_BRANCH = ['The', 'My', 'Our', 'What', 'Who', 'That', 'Today', 'All', 'Every', 'Each', 'Branch', 'Call', 'Email', 'Member', 'Members', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+/** The branch a question names ("open complaints for Westport"), checked against real branch names when the tool runs. */
+export const namedBranch = (t: string) => [/\b(?:at|in|for) ([A-Z][a-z]+)\b/g, /\b([A-Z][a-z]+)['’]s\b/g].flatMap((re) => [...t.matchAll(re)].map((x) => x[1]!)).find((w) => !NOT_BRANCH.includes(w));
 
 export function complianceModule(issues: IssueService, pool: Pool): ModuleSpec {
+  /** A branch the question named: a real one the viewer may see, or nothing for a word that isn't a branch. */
+  const branchOf = async (asked: string | undefined, ctx: ModuleContext) => {
+    const name = asked?.trim().toLowerCase();
+    if (!name) return undefined;
+    const [rows] = await pool.query('SELECT name FROM cdm_location ORDER BY int_id');
+    const found = (rows as { name: string }[]).map((r) => r.name).find((b) => b.toLowerCase() === name);
+    if (!found) return undefined;
+    const mine = ctx.purviewBranches;
+    if (mine && !mine.includes(found)) throw new CoreError('NO_ACCESS', `That’s outside the branches you can see, so I can’t show ${found}’s issues. Your access covers ${mine.join(', ')}.`);
+    return found;
+  };
   const spec: ModuleSpec = {
     id: 'compliance',
     prefix: 'cpm',
@@ -30,6 +45,7 @@ export function complianceModule(issues: IssueService, pool: Pool): ModuleSpec {
     prompt: ({ tenant, user, title }) => `You are the Compliance & Problem Management agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) works member and regulatory issues.
 
 - "Which regulatory issues are open more than 3 weeks?": cpm_issues_list. Three weeks is older_than_days 21.
+- "Show the open complaints for Westport": cpm_issues_list with branch "Westport".
 - "Summarize case 4471": cpm_issue_get.
 - "What are the top root causes?": cpm_root_causes.
 - "Log a complaint from James Lee about a double fee": cpm_issue_create. Don't decide if it's a regulatory complaint under any rule: a person confirms the source on the card.
@@ -57,20 +73,23 @@ export function complianceModule(issues: IssueService, pool: Pool): ModuleSpec {
       if (/\broot causes?\b/i.test(t)) return { tool: 'cpm_root_causes', args: {} };
       const weeks = /\b(?:more than|over|older than) (\d+) weeks?\b/i.exec(t);
       const days = /\b(?:more than|over|older than) (\d+) days?\b/i.exec(t);
-      return { tool: 'cpm_issues_list', args: { ...(/\bregulatory\b/i.test(t) ? { kind: 'regulatory' } : {}), ...(SOURCES.find((s) => new RegExp(`\\b${s}\\b`).test(t)) ? { source: SOURCES.find((s) => new RegExp(`\\b${s}\\b`).test(t)) } : {}), ...(weeks ? { older_than_days: Number(weeks[1]) * 7 } : days ? { older_than_days: Number(days[1]) } : {}), ...(/\boverdue\b/i.test(t) ? { overdue_only: true } : {}) } };
+      const branch = namedBranch(t);
+      return { tool: 'cpm_issues_list', args: { ...(branch ? { branch } : {}), ...(/\bregulatory\b/i.test(t) ? { kind: 'regulatory' } : {}), ...(SOURCES.find((s) => new RegExp(`\\b${s}\\b`).test(t)) ? { source: SOURCES.find((s) => new RegExp(`\\b${s}\\b`).test(t)) } : {}), ...(weeks ? { older_than_days: Number(weeks[1]) * 7 } : days ? { older_than_days: Number(days[1]) } : {}), ...(/\boverdue\b/i.test(t) ? { overdue_only: true } : {}) } };
     },
     tools: [
       {
         name: 'cpm_issues_list',
-        description: 'Open issues, oldest first, with owner and status. Filter by kind, source or age.',
-        input: z.object({ kind: z.enum(['customer', 'regulatory']).optional(), source: z.string().max(24).optional(), older_than_days: z.number().int().min(0).max(365).optional(), overdue_only: z.boolean().optional() }).strict(),
-        run: async (a: { kind?: string; source?: string; older_than_days?: number; overdue_only?: boolean }, ctx) => {
+        description: 'Open issues, oldest first, with owner and status. Filter by kind, source, age or branch.',
+        input: z.object({ branch: z.string().max(40).optional(), kind: z.enum(['customer', 'regulatory']).optional(), source: z.string().max(24).optional(), older_than_days: z.number().int().min(0).max(365).optional(), overdue_only: z.boolean().optional() }).strict(),
+        run: async (a: { branch?: string; kind?: string; source?: string; older_than_days?: number; overdue_only?: boolean }, ctx) => {
           need(ctx);
-          const f = await issues.list({ kind: a.kind, source: a.source, olderThan: a.older_than_days, overdueOnly: a.overdue_only }, ctx);
-          if (!f.count) return { text: 'No open issues match that.' };
+          const branch = await branchOf(a.branch, ctx);
+          const f = await issues.list({ kind: a.kind, source: a.source, olderThan: a.older_than_days, overdueOnly: a.overdue_only, branch }, ctx);
+          const at = branch ? ` at ${branch}` : '';
+          if (!f.count) return { text: `No open issues${at} match that.` };
           const by = f.bySource.map((s) => `${s.count} ${s.source}`).join(', ');
           return {
-            text: `**${f.count} ${f.count === 1 ? 'issue' : 'issues'}**: ${by}. The oldest has been open **${f.oldestDays} days**.`,
+            text: `**${f.count} ${f.count === 1 ? 'issue' : 'issues'}${at}**: ${by}. The oldest has been open **${f.oldestDays} days**.`,
             blocks: [moduleTable(spec, 'Issues', ctx.runId, 'cpm.issue.list', [{ field: 'id', headerName: 'Issue', type: 'text' }, { field: 'member', headerName: 'Member', type: 'text' }, { field: 'source', headerName: 'Source', type: 'text' }, { field: 'opened', headerName: 'Opened', type: 'date' }, { field: 'age', headerName: 'Age', type: 'days' }, { field: 'owner', headerName: 'Owner', type: 'text' }, { field: 'status', headerName: 'Status', type: 'text' }], f.items.slice(0, 25).map((i) => ({ id: `#${i.issueId}`, member: `${i.member} (…${i.last4})`, source: i.source, opened: i.opened, age: i.ageDays, owner: i.owner ?? 'Unassigned', status: i.overdue ? `${i.status}, past due` : i.status })), f.asOf)],
             suggestions: f.items.slice(0, 1).map((i) => `Summarize case ${i.issueId}`),
           };

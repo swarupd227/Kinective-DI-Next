@@ -61,6 +61,8 @@ export interface IssueFilter {
   olderThan?: number;
   includeClosed?: boolean;
   overdueOnly?: boolean;
+  /** One branch's issues, by name. The viewer's purview still applies. */
+  branch?: string;
 }
 
 const ISSUE_SQL = `SELECT i.*, p.first_name, p.last_name, b.name AS branch, e.display_name AS owner_name FROM cpm_issue i JOIN cdm_party p ON p.party_id = i.party_id JOIN cdm_location b ON b.int_id = i.branch_id LEFT JOIN cdm_employee e ON e.employee_id = i.owner_employee_id`;
@@ -80,7 +82,7 @@ export class IssueService {
     const [rows] = await this.pool.query(`${ISSUE_SQL} WHERE 1 = 1${f.includeClosed ? '' : " AND i.status <> 'Closed'"}${scope.sql} ORDER BY i.opened`, scope.params);
     const items = (rows as Record<string, unknown>[])
       .map((r) => this.toIssue(r, asOf))
-      .filter((i) => (!f.kind || i.kind === f.kind) && (!f.source || i.source.toLowerCase() === f.source.toLowerCase()) && (f.olderThan === undefined || i.ageDays > f.olderThan) && (!f.overdueOnly || i.overdue));
+      .filter((i) => (!f.kind || i.kind === f.kind) && (!f.source || i.source.toLowerCase() === f.source.toLowerCase()) && (f.olderThan === undefined || i.ageDays > f.olderThan) && (!f.overdueOnly || i.overdue) && (!f.branch || i.branch.toLowerCase() === f.branch.toLowerCase()));
     const bySource = new Map<string, number>();
     for (const i of items) bySource.set(i.source, (bySource.get(i.source) ?? 0) + 1);
     return { asOf, count: items.length, oldestDays: Math.max(0, ...items.map((i) => i.ageDays)), bySource: [...bySource].map(([source, count]) => ({ source, count })).sort((a, b) => b.count - a.count), items };

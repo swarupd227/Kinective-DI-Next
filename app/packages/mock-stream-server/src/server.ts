@@ -475,6 +475,11 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
             if (s.id === 'scheduled_reports') return real.scheduled ? [{ ...s, blocks: [real.scheduled] }] : [];
             return [s];
           });
+          // A branch manager's branch against the CEO's targets follows "Needs you".
+          if (real.branch) {
+            const at = home.sections.findIndex((s) => s.id === 'approvals');
+            home.sections.splice(at + 1, 0, { id: 'branch_targets', title: real.branch.title, blocks: real.branch.ops.data.items.length ? [real.branch.kpis, real.branch.ops] : [real.branch.kpis] });
+          }
           home.jump = real.jump;
           // Pinned holds only reports someone actually put on Home, one tab each.
           home.tabs = real.pinned.map((p) => ({ id: `pin-${p.templateId}`, label: p.name, blocks: [p.canvas] }));

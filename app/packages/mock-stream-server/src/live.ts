@@ -20,6 +20,7 @@ import { AnthropicModelClient, AuditLog, delinquencyModule, irrModule, liquidity
 import { ApprovalStore, ActivityService, CrossSellService, ReferralDeskService, OnboardingDeskService, AlcoService, BranchScorecardService, DelinquencyService, LendingProductionService, IrrService, LiquidityService, MembershipService, WorksheetService, CalendarStore, FileStore, foldersFor, TaskService, WorkflowDefService, IndirectService, ProspectService, QueryService, GovernanceService, LineageService, CallReportService, CampaignService, CollectionsService, CoreError, DataLogService, GoalsService, IssueService, OnboardingService, OperationsService, RetentionService, SegService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type CoreContext, type InboxItem, type Scorecard, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
 import type { JumpCard, AppNotification, AppView, AppViewId, QueryRun, DiTake, GoalsIndex, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
 import { createAppViews } from './appViews.ts';
+import { branchHome, type BranchHome } from './branchHome.ts';
 import { columnStatRows, dataLoadModule, sourcesModule, tablesModule } from '@dinext/agents';
 import { IngestService, SourceService, coreSystem, secretKeyFrom, TableService, type TableObject } from '@dinext/di-core';
 import { ApiService, apiHosts } from '@dinext/di-core';
@@ -177,7 +178,7 @@ export interface LiveRuntime {
    * or refused it; `onDone` fires when any follow-on work (executing the write) has streamed.
    */
   decide(persona: PersonaId, req: { approvalId: string; threadId: string; runId: string; body: ApprovalDecisionRequest }, emit: (e: Emit) => void, onDone: (result: unknown) => void, speed: number): Promise<ApprovalDecisionResult>;
-  home(persona: PersonaId): Promise<{ kpis: KpiGroupBlock; narrative: string; lookAt: ListBlock; scheduled: ListBlock | null; jump: JumpCard[]; pinned: { templateId: string; name: string; audience: string; pinnedBy: string; canvas: ReportCanvasBlock }[]; referrals: { open: number; overdue: number } | null } | null>;
+  home(persona: PersonaId): Promise<{ kpis: KpiGroupBlock; narrative: string; lookAt: ListBlock; scheduled: ListBlock | null; jump: JumpCard[]; pinned: { templateId: string; name: string; audience: string; pinnedBy: string; canvas: ReportCanvasBlock }[]; referrals: { open: number; overdue: number } | null; branch?: BranchHome | null } | null>;
   /**
    * A member's 360 for the workspace or the member page (GET /v1/members/{token}). Null when the
    * relationship data is not loaded; NO_ACCESS for a token outside the purview. Logged as an access.
@@ -1003,7 +1004,10 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
         const own = personalKpis(kpis, mine, sent, referrals);
         return { kpis: own.kpis, narrative: own.narrative, lookAt: { ...lookAt, data: { ...lookAt.data, items: [] } }, scheduled, pinned, referrals, jump: [] };
       }
-      return { kpis, narrative: b.homeNarrative, lookAt, scheduled, pinned, referrals, jump: jumpCards(persona, { kpis: b.kpis, lookAt: b.lookAt.filter((l) => l.kind === 'outlier') }, pinned, referrals) };
+      // A credit union branch manager also sees their branch against the CEO's targets.
+      const one = purview?.length === 1 ? purview[0]! : null;
+      const branch = one && tenant.runtime.institutionType === 'credit_union' && PERSONAS[persona].modules?.includes('branchkpi') ? await branchHome(new BranchKpiService(tenant.pool), one, kpis).catch((err) => (console.error('[home]', err), null)) : null;
+      return { kpis, narrative: b.homeNarrative, lookAt, scheduled, pinned, referrals, branch, jump: jumpCards(persona, { kpis: b.kpis, lookAt: b.lookAt.filter((l) => l.kind === 'outlier') }, pinned, referrals) };
     },
 
     async table(persona, tableId) {
