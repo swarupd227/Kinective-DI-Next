@@ -31,6 +31,7 @@ import { ESP_ORIGINATION_DDL, generateOrigination } from './espOrigination.ts';
 import { ESP_PRODUCT_DDL, generateProducts } from './espProducts.ts';
 import { ESP_ORG_DDL, generateOrg } from './espOrg.ts';
 import { ESP_TXN_DDL, generateTransactions30 } from './espTransactions.ts';
+import { ESP_OWNER_DDL, generateOwners } from './espOwners.ts';
 import { ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
@@ -128,6 +129,9 @@ async function main() {
     await insert(admin, 'cdm_transaction_code', ['code', 'description', 'direction', 'fee_type'], esp4.codes);
     await insert(admin, 'cdm_share_transaction', ['txn_id', 'account_id', 'party_id', 'posted', 'code', 'amount', 'channel', 'branch_id'], esp4.share);
     await insert(admin, 'cdm_loan_transaction', ['txn_id', 'loan_id', 'party_id', 'posted', 'code', 'amount', 'principal', 'interest', 'channel'], esp4.loan);
+    // ESP alignment, step 5: who is on each account and in what role. Totals keep counting the primary owner.
+    for (const ddl of ESP_OWNER_DDL) await admin.query(ddl);
+    await insert(admin, 'cdm_account_owner', ['account_kind', 'account_id', 'party_id', 'role'], generateOwners(t.parties as unknown[][], t.deposits as unknown[][], t.loans as unknown[][]));
     // Predictive models: each member at each of the last 12 month-ends, and where models and scores are kept.
     for (const ddl of ML_DDL) await admin.query(ddl);
     await insert(admin, 'hist_member_snapshot', SNAPSHOT_COLUMNS, generateSnapshots(t, rm));

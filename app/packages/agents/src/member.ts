@@ -117,6 +117,14 @@ export function memberTake(p: MemberProfile, topics: Topic[]): DiTake {
 }
 
 /** The full record, in the Relationship Dashboard's section order [BK p11] (FE-RM-001). */
+/** An account's detail line, with who else is on it (joint owners, co-borrowers, signers, beneficiaries). */
+function ownersDetail(p: MemberProfile, suffix: string, base: string | null): { detail?: string } {
+  const others = p.coOwners.filter((c) => c.suffix === suffix);
+  const who = others.length ? others.map((c) => `${c.role === 'Beneficiary' ? 'beneficiary' : c.role === 'Authorized signer' ? 'signer' : 'with'} ${c.name}`).join(', ') : '';
+  const text = [base, who && `${who.charAt(0).toUpperCase()}${who.slice(1)}`].filter(Boolean).join('. ');
+  return text ? { detail: text.slice(0, 80) } : {};
+}
+
 /** What to say under a digital service: 90-day use where it's loaded, else when it started. */
 function digitalDetail(d: MemberProfile['digital'][number], u: MemberProfile['usage'], lastLogin: string | undefined): string | null {
   if (u && d.enrolled) {
@@ -178,8 +186,14 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
         },
         {
           kind: 'accounts',
-          deposits: p.deposits.slice(0, 40).map((a) => ({ name: a.name, suffix: a.suffix, relationship: a.relationship, balance: a.balance, change30d: Math.round((a.balance - a.balance30d) * 100) / 100, fees30d: a.fees30d, rate: a.rate, ...(a.maturity ? { detail: `Matures ${longDate(a.maturity)}` } : {}) })),
-          loans: p.loans.slice(0, 40).map((a) => ({ name: a.name, suffix: a.suffix, relationship: a.relationship, balance: a.balance, change30d: Math.round((a.balance - a.balance30d) * 100) / 100, fees30d: a.fees30d, rate: a.rate, ...(a.daysPastDue ? { detail: `${a.daysPastDue} days past due` } : {}) })),
+          deposits: [
+            ...p.deposits.slice(0, 40).map((a) => ({ name: a.name, suffix: a.suffix, relationship: a.relationship, balance: a.balance, change30d: Math.round((a.balance - a.balance30d) * 100) / 100, fees30d: a.fees30d, rate: a.rate, ...(ownersDetail(p, a.suffix, a.maturity ? `Matures ${longDate(a.maturity)}` : null)) })),
+            ...p.sharedAccounts.filter((s) => s.kind === 'deposit').slice(0, Math.max(0, 40 - p.deposits.length)).map((s) => ({ name: s.name, suffix: s.suffix, relationship: s.role === 'Authorized signer' ? ('Authorized' as const) : ('Joint' as const), balance: s.balance, change30d: 0, fees30d: 0, detail: `${s.role}; ${s.primary}’s account`.slice(0, 80) })),
+          ],
+          loans: [
+            ...p.loans.slice(0, 40).map((a) => ({ name: a.name, suffix: a.suffix, relationship: a.relationship, balance: a.balance, change30d: Math.round((a.balance - a.balance30d) * 100) / 100, fees30d: a.fees30d, rate: a.rate, ...(ownersDetail(p, a.suffix, a.daysPastDue ? `${a.daysPastDue} days past due` : null)) })),
+            ...p.sharedAccounts.filter((s) => s.kind === 'loan').slice(0, Math.max(0, 40 - p.loans.length)).map((s) => ({ name: s.name, suffix: s.suffix, relationship: 'Joint' as const, balance: s.balance, change30d: 0, fees30d: 0, detail: `Co-borrower; ${s.primary}’s loan`.slice(0, 80) })),
+          ],
         },
         {
           kind: 'digital',

@@ -431,6 +431,8 @@ function profileForModel(p: MemberProfile, ref: string) {
     identity_last_verified: p.lastVerification,
     employment_and_life: p.about,
     credit_score_history: p.creditHistory,
+    accounts_also_on: p.sharedAccounts.map((s) => ({ kind: s.kind, name: s.name, ends: s.suffix, role: s.role, owner: s.primary, balance: round(s.balance) })),
+    others_on_their_accounts: p.coOwners.map((c) => ({ ends: c.suffix, name: c.name, role: c.role })),
     transactions_90d: p.transactions ? { count: p.transactions.total90d, latest: p.transactions.items.slice(0, 10).map((t) => ({ date: t.date, description: t.description, amount: round(t.amount), type: t.type, account: t.account })) } : 'not loaded from the core for this institution',
   };
 }
