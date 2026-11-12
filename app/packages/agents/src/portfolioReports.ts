@@ -17,8 +17,8 @@ const cur = (field: string, headerName: string) => ({ field, headerName, type: '
 const mm = (n: number) => (Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${Math.round(n).toLocaleString('en-US')}`);
 const signed = (n: number, f: (x: number) => string) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${f(Math.abs(n))}`;
 const monthName = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
-const SOURCES: ModuleSpec['sources'] = [{ kind: 'table', label: 'Members, deposits and loans, from the core', ref: 'table:cdm_party' }, { kind: 'table', label: 'Month-end history', ref: 'table:hist_deposit_month' }];
-const who = { agent: 'Portfolio Reports', sources: SOURCES };
+const sourcesFor = (person: string): ModuleSpec['sources'] => [{ kind: 'table', label: `${person === 'customer' ? 'Customers' : 'Members'}, deposits and loans, from the core`, ref: 'table:cdm_party' }, { kind: 'table', label: 'Month-end history', ref: 'table:hist_deposit_month' }];
+const whoFor = (person: string) => ({ agent: 'Portfolio Reports', sources: sourcesFor(person) });
 
 export type PortfolioQuestion = 'members' | 'cds' | 'deposits' | 'delinquency';
 export function portfolioQuestion(t: string): PortfolioQuestion {
@@ -30,7 +30,7 @@ export function portfolioQuestion(t: string): PortfolioQuestion {
 
 /** The tables and takes for each question; reports and answers share them. */
 async function build(svc: PortfolioService, q: PortfolioQuestion, runId: string, ctx: CoreContext, person: string) {
-  const t = (title: string, op: string, cols: Parameters<typeof moduleTable>[4], rows: Record<string, string | number>[]) => moduleTable(who, title, runId, op, cols, rows);
+  const t = (title: string, op: string, cols: Parameters<typeof moduleTable>[4], rows: Record<string, string | number>[]) => moduleTable(whoFor(person), title, runId, op, cols, rows);
   if (q === 'members') {
     const x = await svc.memberGrowth(ctx);
     const ytd = x.periods.find((p) => p.period === 'YTD')!;
@@ -97,6 +97,8 @@ export function portfolioAnalyses(svc: PortfolioService, person: 'member' | 'cus
 }
 
 export function portfolioModule(svc: PortfolioService, person: 'member' | 'customer' = 'member'): ModuleSpec {
+  const SOURCES = sourcesFor(person);
+  const who = whoFor(person);
   const need = (ctx: ModuleContext) => {
     if (!ctx.modules.includes('portfolio')) throw new CoreError('NO_ACCESS', 'Portfolio reports aren’t part of your DI access.');
   };

@@ -15,6 +15,11 @@ describe('routing', () => {
     expect(port.plan('Show member growth', {} as never)).toEqual({ tool: 'portfolio_report', args: { question: 'members' } });
     expect(callReportModule({} as never).plan('Show the 5300 loan lines by product', {} as never)).toEqual({ tool: 'cr_product_lines', args: {} });
   });
+
+  it('names the bank’s people customers in its sources', () => {
+    expect(portfolioModule({} as never, 'customer').sources[0]!.label).toBe('Customers, deposits and loans, from the core');
+    expect(portfolioModule({} as never).sources[0]!.label).toBe('Members, deposits and loans, from the core');
+  });
 });
 
 for (const DB of ['dinext_t_test_cu', 'dinext_t_test_bank']) {
@@ -26,6 +31,11 @@ for (const DB of ['dinext_t_test_cu', 'dinext_t_test_bank']) {
     it('gives every account one product of its own category', async () => {
       const bad = await one<{ n: number }>("SELECT (SELECT COUNT(*) FROM cdm_loan l LEFT JOIN cdm_account_product ap ON ap.account_kind = 'loan' AND ap.account_id = l.loan_id LEFT JOIN cdm_loan_product p ON p.product_id = ap.product_id WHERE p.product_id IS NULL OR p.loan_category <> l.loan_category) + (SELECT COUNT(*) FROM cdm_deposit_account d LEFT JOIN cdm_account_product ap ON ap.account_kind = 'deposit' AND ap.account_id = d.account_id LEFT JOIN cdm_deposit_product p ON p.product_id = ap.product_id WHERE p.product_id IS NULL OR p.deposit_category <> d.deposit_category) AS n");
       expect(Number(bad.n)).toBe(0);
+    });
+
+    it('has no home equity product on small consumer loans', async () => {
+      const r = await one<{ n: number }>("SELECT COUNT(*) AS n FROM cdm_loan_product WHERE loan_category = 'Consumer' AND name LIKE '%Home Equity%'");
+      expect(Number(r.n)).toBe(0);
     });
 
     it('puts each mortgage on the product that matches its term', async () => {
