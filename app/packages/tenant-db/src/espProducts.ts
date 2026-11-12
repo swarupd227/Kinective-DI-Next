@@ -36,9 +36,9 @@ const BANK_LOANS: LoanProduct[] = [
   ['MTG-15', '15-Year Fixed Mortgage', 'Mortgage', 0.3, null, null, 1, 0],
   ['AUTO', 'Auto Loan', 'Auto', 1, null, null, 1, 0],
   ['PERS', 'Personal Loan', 'Consumer', 0.6, null, null, 0, 0],
-  // The bank's consumer loans are small unsecured or deposit-secured installment loans ($1k to $25k,
-  // about four years), so no home equity product here: that would need a lien and a longer term.
-  ['DEP-SEC', 'Deposit-Secured Loan', 'Consumer', 0.4, null, null, 1, 0],
+  // The bank's consumer loans are small installment loans ($1k to $25k, about four years, 10% to 18%),
+  // so neither home equity (a lien, a longer term) nor deposit-secured (priced near the deposit rate) fits.
+  ['INST', 'Consumer Installment Loan', 'Consumer', 0.4, null, null, 0, 0],
 ];
 const CU_DEPOSITS: DepositProduct[] = [
   ['SAV', 'Primary Share Savings', 'Share Savings', 1, 1, 5, 0],
