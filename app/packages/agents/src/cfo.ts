@@ -243,6 +243,14 @@ export function cfoModule(svc: () => Promise<SemanticService>, pool: Pool): Modu
     request: CFO_REQUEST,
     noAccess: CFO_NO_ACCESS,
     sources: [{ kind: 'table', label: 'FFIEC 051 Call Report values', ref: 'table:cr_value' }],
+    // A light allowance is the quarter's provision decision, so it is the CFO's to act on, not just to watch.
+    today: async (ctx) => {
+      if (!ctx.modules.includes('cfo')) return null;
+      const l = (await cfoScorecard(await svc(), pool)).lines.find((x) => x.metric === 'allowance_to_cecl_estimate');
+      if (!l?.cecl || l.read === 'Strong' || l.cecl.booked >= l.cecl.estimate) return null;
+      const short = l.cecl.estimate - l.cecl.booked;
+      return { id: 'cecl', title: `Allowance $${(short / 1e6).toFixed(2)}M short of DI’s CECL estimate`, why: `$${(l.cecl.booked / 1e6).toFixed(2)}M booked against $${(l.cecl.estimate / 1e6).toFixed(2)}M (${l.now?.toFixed(0)}%). Topping it up is this quarter’s provision.`, badge: 'Provision', ask: 'Is our allowance enough under CECL?', weight: 215 };
+    },
     prompt: ({ tenant, user, title }) => `You are the CFO Scorecard agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) runs the bank's finances. The scorecard is capital, earnings, funding and credit quality from the Call Report, each against plan, peers and regulatory minimums, with DI's read.
 
 - "Show me the CFO scorecard", "how do the CFO measures look?": cfo_scorecard.

@@ -63,6 +63,12 @@ describe.skipIf(!up)('CFO Scorecard', () => {
       expect(view.text).toContain(s.headline);
       expect(view.blocks[0]!.data.rows).toHaveLength(s.lines.length);
       await expect(spec.tools[0]!.run({} as never, { ...ctx, modules: [] })).rejects.toThrow(/isn’t part of your DI access/);
+      // A light allowance is on the CFO's day, as the quarter's provision; a strong one isn't.
+      const cecl = by('allowance_to_cecl_estimate');
+      const day = await spec.today!(ctx as never);
+      if (cecl.cecl && cecl.read !== 'Strong' && cecl.cecl.booked < cecl.cecl.estimate) expect(day).toMatchObject({ id: 'cecl', title: expect.stringMatching(/^Allowance \$\d+\.\d{2}M short of DI’s CECL estimate$/), ask: 'Is our allowance enough under CECL?' });
+      else expect(day).toBeNull();
+      expect(await spec.today!({ ...ctx, modules: [] } as never)).toBeNull();
     } finally {
       await pool.end();
     }

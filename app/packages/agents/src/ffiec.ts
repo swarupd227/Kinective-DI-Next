@@ -47,6 +47,14 @@ export function ffiecModule(cr: CallReportService): ModuleSpec {
     request: /^(?![\s\S]*\b(?:unrealized|aoci|accumulated other comprehensive|underwater|bond portfolio|securities portfolio)\b)[\s\S]*?(?:\bffiec\b|\bcall report\b|\b051\b|\bready to file\b|\b(rc|ri)-[a-z]\b|\bschedule (rc|ri)\b|\b(rcon|riad)[a-z0-9]{4}\b|\bcblr\b|\bcommunity bank leverage\b|\bleverage ratio\b|\btier 1\b|\bcre concentration\b|\bcommercial real estate concentration\b|\buncategori[sz]ed gl\b|\bnonaccrual\b)/i,
     noAccess: NO_ACCESS,
     sources: [{ kind: 'table', label: 'FFIEC 051 Call Report', ref: 'table:cr_line' }],
+    // The filing leads a finance leader's day while anything blocks it: edits to correct, then changes to explain.
+    today: async () => {
+      const r = await cr.readiness();
+      const needed = r.explanations.filter((e) => e.status === 'Needed').length;
+      if (!r.errors.length && !r.warnings.length && !needed) return null;
+      const parts = [r.errors.length ? `${r.errors.length} ${r.errors.length === 1 ? 'edit' : 'edits'} to correct` : '', r.warnings.length ? `${r.warnings.length} ${r.warnings.length === 1 ? 'warning' : 'warnings'} to review` : '', needed ? `${needed} ${needed === 1 ? 'change' : 'changes'} to explain` : ''].filter(Boolean);
+      return { id: 'callreport', title: `Call Report: ${parts.join(', ')}`, why: r.errors.length ? `It can’t be filed in CDR until “${r.errors[0]!.name}” passes.` : 'Quality edits and large changes need an explanation before filing in CDR.', badge: r.errors.length ? 'Blocks filing' : 'Before filing', ask: 'Are we ready to file the Call Report?', weight: r.errors.length ? 240 : 220 };
+    },
     prompt: ({ tenant, user, title }) => `You are the Call Report agent inside Kinective Data Intelligence (DI) for ${tenant}, a bank. ${user} (${title}) prepares the quarterly FFIEC 051 Call Report (domestic offices, under $5B), on the June 2026 forms. Items are MDRM codes: RCON for the balance sheet (RCON2170 total assets, RCON2122 total loans, RCON2200 deposits, RCON3210 equity, RCON1403 nonaccrual, RCON5597 uninsured deposits) and RIAD for income (RIAD4074 net interest income, RIAD4340 net income). FFIEC validity edits must be corrected; quality and intraseries edits need an explanation. The bank elects the community bank leverage ratio (8% from July 1, 2026), so RC-R Part II isn't needed. It's due 30 days after quarter end in the FFIEC's Central Data Repository (CDR).
 
 - "Can you create this report?", "are you able to prepare the Call Report?": cr_overview.

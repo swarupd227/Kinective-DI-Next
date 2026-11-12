@@ -35,6 +35,13 @@ describe.skipIf(!up)('the FFIEC 051 on the warehouse', () => {
   });
   afterAll(async () => pool.end());
 
+  it('puts what blocks the filing at the top of the finance leader’s day', async () => {
+    const day = await ffiecModule(cr).today!({} as never);
+    expect(day).toMatchObject({ id: 'callreport', badge: 'Blocks filing', ask: 'Are we ready to file the Call Report?', weight: 240 });
+    expect(day!.title).toMatch(/^Call Report: 1 edit to correct/);
+    expect(day!.why).toMatch(/can’t be filed in CDR until “.+” passes\./);
+  });
+
   it('balances, and every validity edit but the GL mapping passes', async () => {
     const lines = await cr.lines();
     const v = (c: string) => lines.find((l) => l.code === c)!.current!;
