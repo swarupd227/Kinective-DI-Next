@@ -15,6 +15,39 @@ export const OFFER_RULES = [
 
 export const offerRate = (balance: number) => OFFER_RULES.find((r) => balance >= r.minBalance)!.rate;
 
+/**
+ * The smallest raise on renewal that each attrition band calls for [Assumption]: a member who isn't
+ * at risk renews as they are, medium risk gets a quarter point, high risk half a point. Demo steps
+ * until a tenant sets its own; no step goes past the offer rule for the balance.
+ */
+export const OFFER_STEPS: Record<'High' | 'Medium' | 'Low', number> = { High: 0.5, Medium: 0.25, Low: 0 };
+
+/** The lowest-cost retention offer for one certificate, priced over a year. */
+export interface RetentionOffer {
+  /** renew: no raise needed; raise: a step up; at_limit: already at its rule, so a call and no rate. */
+  kind: 'renew' | 'raise' | 'at_limit';
+  rate: number;
+  /** Points above the current rate. */
+  raise: number;
+  /** Extra interest over a year. */
+  cost: number;
+  /** The raise held below the band's step by the offer rule. */
+  held: boolean;
+}
+
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Picks the cheapest offer the band calls for, held to the rule for the balance. */
+export function retentionOffer(c: { amount: number; rate: number; band: 'High' | 'Medium' | 'Low' }): RetentionOffer {
+  const step = OFFER_STEPS[c.band];
+  if (!step) return { kind: 'renew', rate: c.rate, raise: 0, cost: 0, held: false };
+  const limit = offerRate(c.amount);
+  if (c.rate >= limit) return { kind: 'at_limit', rate: c.rate, raise: 0, cost: 0, held: true };
+  const rate = r2(Math.min(limit, c.rate + step));
+  const raise = r2(rate - c.rate);
+  return { kind: 'raise', rate, raise, cost: r2((c.amount * raise) / 100), held: raise < step };
+}
+
 /** The model's reasons, in words that read in a sentence. */
 const SIGNALS: Record<string, string> = { direct_deposit_stopped: 'direct deposit stopped', balance_drop: 'falling balances', single_product: 'only one product', short_tenure: 'a short relationship', no_recent_login: 'no recent login' };
 const NO_CHECKING = 'no checking account';
@@ -32,6 +65,7 @@ export interface Certificate {
   band: 'High' | 'Medium' | 'Low';
   atRisk: boolean;
   signals: string[];
+  offer: RetentionOffer;
 }
 
 export interface RetentionFilter {
@@ -48,6 +82,8 @@ export interface MaturingCertificates {
   atRisk: { count: number; dollars: number };
   high: number;
   signals: { label: string; count: number }[];
+  /** The lowest-cost offers for the certificates shown: a year's extra interest and how they split. */
+  offers: { cost: number; renew: number; raise: number; atLimit: number; held: number };
   /** At risk first, then the largest. */
   items: Certificate[];
 }
@@ -96,7 +132,9 @@ export class RetentionService {
       const raw = typeof r.factors === 'string' ? JSON.parse(r.factors) : (r.factors ?? []);
       const factors = (raw as { code: string; weight: number }[]).filter((x) => x.weight > 0 && SIGNALS[x.code]).map((x) => SIGNALS[x.code]!);
       const matures = day(r.maturity_date);
-      return { partyId: r.party_id as number, name: `${String(r.first_name)} ${String(r.last_name)}`, last4: memberNumber(r.party_id as number).slice(-4), branch: r.branch as string, amount: Number(r.balance), rate: Number(r.rate), matures, daysLeft: between(asOf, matures), score, band, atRisk: band !== 'Low', signals: [...factors, ...(r.has_checking ? [] : [NO_CHECKING])] };
+      const amount = Number(r.balance);
+      const rate = Number(r.rate);
+      return { partyId: r.party_id as number, name: `${String(r.first_name)} ${String(r.last_name)}`, last4: memberNumber(r.party_id as number).slice(-4), branch: r.branch as string, amount, rate, matures, daysLeft: between(asOf, matures), score, band, atRisk: band !== 'Low', signals: [...factors, ...(r.has_checking ? [] : [NO_CHECKING])], offer: retentionOffer({ amount, rate, band }) };
     });
     const risky = all.filter((c) => c.atRisk);
     const shown = f.atRiskOnly ? risky : all;
@@ -111,6 +149,13 @@ export class RetentionService {
       atRisk: { count: risky.length, dollars: sum(risky) },
       high: risky.filter((c) => c.band === 'High').length,
       signals: [...counts].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count).slice(0, 3),
+      offers: {
+        cost: r2(shown.reduce((n, c) => n + c.offer.cost, 0)),
+        renew: shown.filter((c) => c.offer.kind === 'renew').length,
+        raise: shown.filter((c) => c.offer.kind === 'raise').length,
+        atLimit: shown.filter((c) => c.offer.kind === 'at_limit').length,
+        held: shown.filter((c) => c.offer.kind === 'raise' && c.offer.held).length,
+      },
       items: [...shown].sort((a, b) => Number(b.atRisk) - Number(a.atRisk) || b.score - a.score || b.amount - a.amount),
     };
   }

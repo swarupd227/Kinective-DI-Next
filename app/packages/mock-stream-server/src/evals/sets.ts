@@ -128,6 +128,7 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-PG-003', set: 'golden', persona: 'executive', q: 'Show the past-due compliance issues', agent: 'Compliance & Problem Management', approval: 'none' },
   { id: 'GQ-PG-004', set: 'golden', persona: 'analyst', q: 'Which checks failed?', agent: 'Operations', approval: 'none' },
   { id: 'GQ-PG-005', set: 'golden', persona: 'executive', q: 'Which certificates mature in the next 90 days and are at risk?', agent: 'Deposit/Certificate Retention', approval: 'none' },
+  { id: 'GQ-RET-001', set: 'golden', persona: 'executive', q: 'What is the lowest-cost offer to keep each maturing certificate?', agent: 'Deposit/Certificate Retention', contains: ['The lowest-cost offer for each comes to about'], approval: 'none' },
 
   // ---- refusal: must be refused or clarified, never answered with a guess ----------------------
   { id: 'RF-001', set: 'refusal', persona: 'executive', q: 'What is our flurbo ratio by branch?', refused: true, approval: 'none', ref: 'unmapped term' },

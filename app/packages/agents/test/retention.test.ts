@@ -82,6 +82,28 @@ describe.skipIf(!up)('retention against the warehouse', () => {
     expect(await service.offerCost(4.5, f, {})).toEqual(cost);
   });
 
+  it('picks the lowest-cost offer for each certificate, by its risk and held to its rule', async () => {
+    const found = await service.maturing({}, {});
+    const step = { High: 0.5, Medium: 0.25, Low: 0 };
+    for (const c of found.items) {
+      const o = c.offer;
+      expect(o.rate, c.name).toBeLessThanOrEqual(Math.max(c.rate, offerRate(c.amount)));
+      if (c.band === 'Low') expect(o).toMatchObject({ kind: 'renew', cost: 0 });
+      else if (c.rate >= offerRate(c.amount)) expect(o).toMatchObject({ kind: 'at_limit', cost: 0 });
+      else {
+        expect(o.kind).toBe('raise');
+        expect(o.rate).toBeCloseTo(Math.min(offerRate(c.amount), c.rate + step[c.band]), 2);
+        expect(o.cost).toBeCloseTo((c.amount * (o.rate - c.rate)) / 100, 1);
+      }
+    }
+    expect(found.offers.renew + found.offers.raise + found.offers.atLimit).toBe(found.count);
+    expect(found.offers.cost).toBeCloseTo(found.items.reduce((n, c) => n + c.offer.cost, 0), 1);
+    expect(found.offers.raise).toBeGreaterThan(0);
+    // Cheaper than offering every at-risk certificate its rule's limit.
+    const risky = await service.maturing({ atRiskOnly: true }, {});
+    expect(risky.offers.cost).toBeLessThan((await service.offerCost(4.75, { atRiskOnly: true }, {})).cost);
+  });
+
   it('refuses a rate above the rules, so DI can’t propose one', async () => {
     const r = recorder();
     const out = await runRetentionOffline(input('What would it cost to offer 6% on the at-risk group?', 'thr_ret1'), { gateway }, r.sink);
@@ -93,7 +115,10 @@ describe.skipIf(!up)('retention against the warehouse', () => {
     const r = recorder();
     await runRetentionOffline(input('Which certificates mature in the next 90 days and are at risk?', 'thr_ret2'), { gateway }, r.sink);
     expect(r.texts[0]).toMatch(/certificates\*\* worth .* look likely to leave/);
+    expect(r.texts[0]).toMatch(/The lowest-cost offer for each comes to about \*\*\$[\d,]+\*\* more interest a year: \d+ get a raise on renewal/);
     expect(validateBlock(r.blocks[0]!).ok).toBe(true);
+    const rows = (r.blocks[0] as unknown as { data: { rows: { offer: string }[] } }).data.rows;
+    expect(rows.every((x) => /^[\d.]+% \(\+[\d.]+ points?\), \$[\d,]+ a year$|^Already .* no rate$/.test(x.offer))).toBe(true);
     expect(JSON.stringify(r.blocks[0])).not.toContain('partyId');
   });
 
@@ -105,6 +130,7 @@ describe.skipIf(!up)('retention against the warehouse', () => {
     const items = (out.approval!.record.payload as { items: { notes: string }[] }).items;
     expect(items.length).toBeLessThanOrEqual(5);
     expect(items[0]!.notes).toMatch(/certificate at .* matures/);
+    expect(items.every((x) => /Lowest-cost offer: [\d.]+% on renewal|no rate offer/.test(x.notes))).toBe(true);
   });
 
   it('keeps it from anyone without the access', async () => {

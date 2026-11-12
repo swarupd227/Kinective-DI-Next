@@ -5,7 +5,7 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import type { ApprovalCardBlock, Block, TableBlock } from '@dinext/block-schemas';
-import { OFFER_RULES, usd, type ApprovalRecord as Approval, type MaturingCertificates, type OfferCost } from '@dinext/di-core';
+import { OFFER_RULES, usd, type ApprovalRecord as Approval, type Certificate, type MaturingCertificates, type OfferCost } from '@dinext/di-core';
 import { newBlockId } from './answer.ts';
 import type { ToolCallRecord } from './audit.ts';
 import { FOLLOW_UP_CAP, type BatchDraft, type GatewayContext, type GatewayResult, type ToolGateway } from './gateway.ts';
@@ -54,12 +54,36 @@ export function maturingText(f: MaturingCertificates, atRiskOnly: boolean) {
   if (!f.count) return `Nothing ${atRiskOnly ? 'at risk ' : ''}matures in the next ${f.days} days.`;
   const main = f.signals.length ? ` The main signals are ${f.signals.map((s) => s.label).join(', ')}.` : '';
   const high = f.high ? ` ${f.high} ${f.high === 1 ? 'has' : 'have'} a high attrition score.` : '';
-  if (atRiskOnly) return `**${certs(f.count)}** worth **${money(f.dollars)}** ${f.count === 1 ? 'matures' : 'mature'} in the next ${f.days} days and ${f.count === 1 ? 'looks' : 'look'} likely to leave.${high}${main}`;
-  return `**${certs(f.count)}** worth **${money(f.dollars)}** ${f.count === 1 ? 'matures' : 'mature'} in the next ${f.days} days. **${f.atRisk.count}** of them, worth **${money(f.atRisk.dollars)}**, ${f.atRisk.count === 1 ? 'looks' : 'look'} likely to leave.${high}${main}`;
+  const offers = offersText(f);
+  if (atRiskOnly) return `**${certs(f.count)}** worth **${money(f.dollars)}** ${f.count === 1 ? 'matures' : 'mature'} in the next ${f.days} days and ${f.count === 1 ? 'looks' : 'look'} likely to leave.${high}${main}${offers}`;
+  return `**${certs(f.count)}** worth **${money(f.dollars)}** ${f.count === 1 ? 'matures' : 'mature'} in the next ${f.days} days. **${f.atRisk.count}** of them, worth **${money(f.atRisk.dollars)}**, ${f.atRisk.count === 1 ? 'looks' : 'look'} likely to leave.${high}${main}${offers}`;
+}
+
+const pts = (n: number) => `${Number(n.toFixed(2))} ${n === 1 ? 'point' : 'points'}`;
+const whole = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
+
+/** "The lowest-cost offer for each comes to about $X more interest a year: ..." */
+export function offersText(f: MaturingCertificates) {
+  const o = f.offers;
+  if (!f.count) return '';
+  const parts = [
+    o.raise ? `${o.raise} get a raise on renewal` : '',
+    o.renew ? `${o.renew} renew as they are` : '',
+    o.atLimit ? `${o.atLimit} ${o.atLimit === 1 ? 'is' : 'are'} already at the offer rule’s limit, so ${o.atLimit === 1 ? 'it gets' : 'they get'} a call and no rate` : '',
+  ].filter(Boolean);
+  const held = o.held ? ` The offer rules hold ${o.held} below the usual step.` : '';
+  return ` The lowest-cost offer for each comes to about **${whole(o.cost)}** more interest a year: ${parts.join(', ')}.${held}`;
+}
+
+/** "4.4% (+0.5 points), $612 a year", "Renew at 3.9%" or "Already 4.75%, the rule's limit: a call, no rate". */
+export function offerLabel(c: Certificate) {
+  if (c.offer.kind === 'renew') return `Renew at ${c.rate}%`;
+  if (c.offer.kind === 'at_limit') return `Already ${c.rate}%, at the rule’s limit: a call, no rate`;
+  return `${c.offer.rate}% (+${pts(c.offer.raise)}), ${whole(c.offer.cost)} a year`;
 }
 
 export const maturingBlock = (f: MaturingCertificates, runId: string) =>
-  table('Certificates', runId, 'deposit.certificates.maturing', [{ field: 'member', headerName: 'Member', type: 'text' }, { field: 'branch', headerName: 'Branch', type: 'text' }, { field: 'amount', headerName: 'Amount', type: 'currency' }, { field: 'rate', headerName: 'Rate', type: 'text' }, { field: 'matures', headerName: 'Matures', type: 'date' }, { field: 'risk', headerName: 'Attrition', type: 'text' }, { field: 'signals', headerName: 'Signals', type: 'text' }], f.items.slice(0, 25).map((c) => ({ member: `${c.name} (…${c.last4})`, branch: c.branch, amount: c.amount, rate: `${c.rate}%`, matures: c.matures, risk: `${c.band} (${c.score})`, signals: c.signals.join(', ') || 'None' })), f.asOf);
+  table('Certificates', runId, 'deposit.certificates.maturing', [{ field: 'member', headerName: 'Member', type: 'text' }, { field: 'branch', headerName: 'Branch', type: 'text' }, { field: 'amount', headerName: 'Amount', type: 'currency' }, { field: 'rate', headerName: 'Rate', type: 'text' }, { field: 'matures', headerName: 'Matures', type: 'date' }, { field: 'risk', headerName: 'Attrition', type: 'text' }, { field: 'signals', headerName: 'Signals', type: 'text' }, { field: 'offer', headerName: 'Lowest-cost offer', type: 'text' }], f.items.slice(0, 25).map((c) => ({ member: `${c.name} (…${c.last4})`, branch: c.branch, amount: c.amount, rate: `${c.rate}%`, matures: c.matures, risk: `${c.band} (${c.score})`, signals: c.signals.join(', ') || 'None', offer: offerLabel(c) })), f.asOf);
 
 /** The cost with its inputs, so it can be checked (AI-AGT-230). */
 export function costText(c: OfferCost) {
@@ -89,6 +113,7 @@ function systemPrompt(input: RetentionInput) {
 
 How you work:
 - "Which certificates mature in the next 90 days and are at risk?": deposit_certificates_maturing, then outcome "maturing". "At risk" or "likely to leave" means at_risk_only.
+- "What offer should we make on each?" or "the cheapest offer to keep them": deposit_certificates_maturing, then outcome "maturing". Code picks each certificate's lowest-cost offer from its attrition band and the offer rules, and shows it.
 - "What would it cost to match 4.5%?": deposit_offer_cost, then outcome "cost". Use the same filters as the question before if they refer to it.
 - "What can we offer?": deposit_offer_rules, then outcome "rules".
 - "Create call tasks": deposit_certificates_maturing with at_risk_only, then retention_follow_ups_create with the first ${FOLLOW_UP_CAP} member_refs, then outcome "approval".

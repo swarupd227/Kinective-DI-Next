@@ -27,6 +27,13 @@ export interface ToolDef<I extends z.ZodType = z.ZodType> {
 /** One approval covers at most this many people, so the list can be read before it is approved. */
 export const FOLLOW_UP_CAP = 5;
 export const FOLLOW_UP_TYPE = 'retention_follow_up';
+
+/** The certificate's lowest-cost offer, for the branch's call notes. */
+function certOffer(o: MaturingCertificates['items'][number]['offer']) {
+  if (o.kind === 'renew') return 'Call about the renewal at the current rate.';
+  if (o.kind === 'at_limit') return 'Already at the offer rule’s limit: call about the renewal, with no rate offer.';
+  return `Lowest-cost offer: ${o.rate}% on renewal (+${Number(o.raise.toFixed(2))} points), about $${Math.round(o.cost).toLocaleString('en-US')} more a year.`;
+}
 /** One card lists every task, so it stays short enough to read before approving. */
 export const LAP_TASK_CAP = 10;
 export const LAP_TASK_TYPE = 'loan_follow_up';
@@ -520,8 +527,8 @@ export class ToolGateway {
             return { ok: true, content: offerCost, offerCost };
           }
           const found = await this.deps.retention!.maturing(filter, ctx);
-          const top = found.items.slice(0, 25).map((c) => ({ member_ref: this.refFor(c.partyId, ctx), name: c.name, branch: c.branch, amount: c.amount, rate: c.rate, matures: c.matures, score: c.score, band: c.band, signals: c.signals }));
-          return { ok: true, content: { as_of: found.asOf, days: found.days, count: found.count, dollars: found.dollars, at_risk: found.atRisk, high: found.high, signals: found.signals, certificates: top }, maturing: { found, atRiskOnly: filter.atRiskOnly }, memberRefs: found.items.filter((c) => c.atRisk).slice(0, 25).map((c) => this.refFor(c.partyId, ctx)) };
+          const top = found.items.slice(0, 25).map((c) => ({ member_ref: this.refFor(c.partyId, ctx), name: c.name, branch: c.branch, amount: c.amount, rate: c.rate, matures: c.matures, score: c.score, band: c.band, signals: c.signals, lowest_cost_offer: c.offer }));
+          return { ok: true, content: { as_of: found.asOf, days: found.days, count: found.count, dollars: found.dollars, at_risk: found.atRisk, high: found.high, signals: found.signals, offers: found.offers, certificates: top }, maturing: { found, atRiskOnly: filter.atRiskOnly }, memberRefs: found.items.filter((c) => c.atRisk).slice(0, 25).map((c) => this.refFor(c.partyId, ctx)) };
         }
         case 'gi.scorecard.get': {
           const scorecard = await this.deps.goals!.scorecard(args.employee as string | undefined, giWho(ctx), ctx);
@@ -722,7 +729,7 @@ export class ToolGateway {
             // From the Retention agent, the reason to call is the certificate itself.
             const cert = agent === 'retention' ? (await this.deps.retention?.maturing({ days: 365 }, ctx))?.items.find((c) => c.partyId === id) : undefined;
             const reason = cert ? `${usd(cert.amount)} certificate at ${cert.rate}% matures ${new Date(`${cert.matures}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}` : (p.attrition.factors.find((f) => f.weight > 0)?.label ?? 'High attrition score');
-            items.push({ typeId: FOLLOW_UP_TYPE, partyId: id, fields: check.fields, notes: (a.notes ?? (cert ? `${reason}. Attrition score ${p.attrition.score} of 10. Call about the renewal; offers must stay within the offer rules.` : `Attrition score ${p.attrition.score} of 10: ${reason}.`)).slice(0, 300), priority: 'High', toQueueId: route.queueId, name: `${p.name} (…${p.last4})`, branch: p.branch, to: route.queueName, reason });
+            items.push({ typeId: FOLLOW_UP_TYPE, partyId: id, fields: check.fields, notes: (a.notes ?? (cert ? `${reason}. Attrition score ${p.attrition.score} of 10. ${certOffer(cert.offer)} Offers must stay within the offer rules.` : `Attrition score ${p.attrition.score} of 10: ${reason}.`)).slice(0, 300), priority: 'High', toQueueId: route.queueId, name: `${p.name} (…${p.last4})`, branch: p.branch, to: route.queueName, reason });
           }
           if (!items.length) return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: 'Everyone on that list already has an open follow-up.', skipped } };
           const payload: BatchPayload = { items };
