@@ -298,6 +298,7 @@ export function callReportModule(cr: CallReportService, files: FileStore | null 
       const explanation = /\b(?:use|write|add|record|save)\b[^.?!:]*\bexplanation\b[^:]*:\s*(.{10,400})$/i.exec(text);
       if (lineCode && explanation) return { tool: 'cr_explain_write', args: { code: lineCode, explanation: explanation[1]!.trim() } };
       if (/\b(reconcil\w*|compare|check)\b[^.?!]*\b(prepared|our own|our figures|our numbers|cu amount|workbook)\b|\bwhere (?:do|does) (?:we|di|it) differ\b|\bdifferences? (?:from|with|between)\b/i.test(t)) return { tool: 'cr_reconcile', args: {} };
+      if (/\bby product\b[^.?!]*\b5300\b|\b5300\b[^.?!]*\bby product\b|\bproduct (?:codes?|lines?|mapping)\b/i.test(t)) return { tool: 'cr_product_lines', args: {} };
       if (/\btrial balance\b/i.test(t)) return { tool: 'cr_trial_balance', args: { kind: /\bdeposit|share/i.test(t) ? 'deposit' : 'loan' } };
       const glm = /\bmap\s+(?:gl\s+(?:account\s+)?)?(\d{4})\b[^.?!]*?\bto\s+(?:line\s+)?([A-Z0-9]{3,8})\b/i.exec(text);
       if (glm) return { tool: 'cr_gl_map', args: { gl: glm[1]!, code: glm[2]!.toUpperCase() } };
@@ -318,6 +319,21 @@ export function callReportModule(cr: CallReportService, files: FileStore | null 
       return { tool: 'cr_readiness', args: {} };
     },
     tools: [
+      {
+        name: 'cr_product_lines',
+        description: 'The 5300 loan amount lines as the loan products would report them (each product carries its 5300 line), beside what the 5300 reports today with its category split, and the difference. Informational: the 5300 keeps its current mapping.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const x = await cr.productLines();
+          if (x === null) return { text: 'Loan products aren’t loaded for this institution yet.' };
+          const moved = x.filter((r) => Math.abs(r.difference) >= 1);
+          return {
+            text: `By loan product, the 5300 loan lines would differ from today’s category split on ${moved.length} of ${x.length} lines${moved[0] ? `; the largest is **${moved[0].code}** ${moved[0].name}, ${dollars(Math.abs(moved[0].difference))} ${moved[0].difference > 0 ? 'more' : 'less'}` : ''}. Today’s 5300 splits Auto and Business loans by a fixed share; each product names its own line. Product balances are from the latest build, the 5300 at quarter-end. The 5300 keeps its current mapping until you decide to switch.`,
+            blocks: [moduleTable(spec, '5300 loan lines by product', ctx.runId, 'cr.product_lines', [{ field: 'code', headerName: 'Account', type: 'text' }, { field: 'name', headerName: 'Line', type: 'text' }, { field: 'loans', headerName: 'Loans', type: 'count' }, { field: 'byProduct', headerName: 'By product', type: 'currency' }, { field: 'reported', headerName: 'On the 5300', type: 'currency' }, { field: 'difference', headerName: 'Difference', type: 'currency' }], x as unknown as Record<string, string | number>[])],
+          };
+        },
+      },
       {
         name: 'cr_trial_balance',
         description: 'The loan or deposit trial balance: each product category’s balance and account count from the core, the 5300 lines it feeds, what they report this quarter, and the difference.',

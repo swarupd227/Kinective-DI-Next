@@ -30,6 +30,30 @@ export const CD_INTERVALS = [
 export class PortfolioService {
   constructor(private readonly pool: Pool) {}
 
+  /**
+   * The book by product (ESP's loan and share products): accounts, balances, the balance-weighted rate,
+   * and for loans the average term and the share 60+ days past due. Null where products aren't loaded.
+   */
+  async products(kind: 'loan' | 'deposit', ctx: CoreContext = {}) {
+    const scope = ctx.purviewBranches ? ' AND b.name IN (?)' : '';
+    const params = ctx.purviewBranches ? [ctx.purviewBranches.length ? ctx.purviewBranches : ['']] : [];
+    const sql =
+      kind === 'loan'
+        ? `SELECT p.product_id, p.name, p.loan_category AS category, p.reg_amount_code AS reg, COUNT(*) AS n, SUM(l.balance) AS bal, SUM(l.balance * l.rate) AS wrate, AVG(l.term_months) AS term, SUM(CASE WHEN l.days_delinquent >= 60 THEN l.balance ELSE 0 END) AS dq
+             FROM cdm_account_product ap JOIN cdm_loan_product p ON p.product_id = ap.product_id JOIN cdm_loan l ON l.loan_id = ap.account_id JOIN cdm_location b ON b.int_id = l.branch_id
+            WHERE ap.account_kind = 'loan' AND l.close_date IS NULL AND l.charge_off_date IS NULL AND l.balance > 0${scope} GROUP BY p.product_id, p.name, p.loan_category, p.reg_amount_code ORDER BY bal DESC`
+        : `SELECT p.product_id, p.name, p.deposit_category AS category, NULL AS reg, COUNT(*) AS n, SUM(d.balance) AS bal, SUM(d.balance * d.rate) AS wrate, NULL AS term, 0 AS dq
+             FROM cdm_account_product ap JOIN cdm_deposit_product p ON p.product_id = ap.product_id JOIN cdm_deposit_account d ON d.account_id = ap.account_id JOIN cdm_location b ON b.int_id = d.branch_id
+            WHERE ap.account_kind = 'deposit' AND d.close_date IS NULL${scope} GROUP BY p.product_id, p.name, p.deposit_category ORDER BY bal DESC`;
+    const found = await (this.pool.query(sql, params) as Promise<[Record<string, unknown>[], unknown]>).then((r) => r[0]).catch(() => null);
+    if (found === null) return null;
+    const total = found.reduce((s, r) => s + Number(r.bal), 0);
+    return found.map((r) => {
+      const bal = Number(r.bal);
+      return { productId: r.product_id as string, name: r.name as string, category: r.category as string, regCode: (r.reg as string | null) ?? null, accounts: Number(r.n), balance: Math.round(bal), sharePct: total ? Math.round((bal / total) * 1000) / 10 : 0, ratePct: bal ? Math.round((Number(r.wrate) / bal) * 100) / 100 : null, termMonths: r.term === null ? null : Math.round(Number(r.term)), dq60Pct: kind === 'loan' && bal ? Math.round((Number(r.dq) / bal) * 1000) / 10 : null };
+    });
+  }
+
   private async asOf() {
     const [b] = await rows<{ d: unknown }>(this.pool, "SELECT as_of_date AS d FROM meta_build WHERE state = 'completed' ORDER BY as_of_date DESC LIMIT 1");
     return day(b!.d);

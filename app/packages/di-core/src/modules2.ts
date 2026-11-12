@@ -405,6 +405,21 @@ export class CallReportService {
     return { kind, rows: out, core: out.reduce((s, r) => s + r.balance, 0), reported: out.reduce((s, r) => s + r.reported, 0), difference: out.reduce((s, r) => s + r.difference, 0) };
   }
 
+  /**
+   * The 5300 loan amount lines as the loan products would report them (each product carries its line),
+   * beside what the 5300 reports with today's category split. Informational: the 5300 keeps its mapping.
+   */
+  async productLines() {
+    const found = await rows<{ code: string; n: number; bal: unknown }>(this.pool, "SELECT p.reg_amount_code AS code, COUNT(*) AS n, SUM(l.balance) AS bal FROM cdm_account_product ap JOIN cdm_loan_product p ON p.product_id = ap.product_id JOIN cdm_loan l ON l.loan_id = ap.account_id WHERE ap.account_kind = 'loan' AND p.reg_amount_code IS NOT NULL AND l.close_date IS NULL AND l.charge_off_date IS NULL AND l.balance > 0 GROUP BY p.reg_amount_code").catch(() => null);
+    if (found === null) return null;
+    const all = await this.lines();
+    return found.map((f) => {
+      const line = all.find((l) => l.code === f.code);
+      const byProduct = Math.round(Number(f.bal));
+      return { code: f.code, name: line?.name ?? f.code, loans: Number(f.n), byProduct, reported: Math.round(line?.current ?? 0), difference: Math.round(byProduct - (line?.current ?? 0)) };
+    }).sort((a, b) => b.byProduct - a.byProduct);
+  }
+
   /** A GL account and where it can go: the line named, which must be an input line. */
   async glMapPreview(glNumber: string, code: string) {
     const [g] = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM cr_gl_account WHERE gl_number = ?', [glNumber]).catch(() => []);

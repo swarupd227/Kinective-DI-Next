@@ -28,6 +28,7 @@ import { MEMBER360_EXTRA_DDL, MEMBER360_EXTRA_WRITE_TABLES, generateMember360Ext
 import { ONB_DESK_DDL, ONB_DESK_UPDATES, ONB_DESK_WRITE_TABLES, generateOnboardingDesk } from './onboardingDesk.ts';
 import { CR_EXTRA_DDL, CR_EXTRA_WRITE_TABLES } from './cr5300Extra.ts';
 import { ESP_ORIGINATION_DDL, generateOrigination } from './espOrigination.ts';
+import { ESP_PRODUCT_DDL, generateProducts } from './espProducts.ts';
 import { ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
@@ -108,6 +109,12 @@ async function main() {
     const esp1 = generateOrigination(t.employees as unknown[][], (t.locations as unknown[][]).length, t.loans as unknown[][], t.deposits as unknown[][]);
     await insert(admin, 'cdm_account_origination', ['account_kind', 'account_id', 'opened_by_employee_id', 'originating_branch_id', 'channel'], esp1.origination);
     await insert(admin, 'cdm_credit_score_history', ['party_id', 'as_of', 'score_type', 'score', 'source'], esp1.history);
+    // ESP alignment, step 2: loan and share products, and which product each account is.
+    for (const ddl of ESP_PRODUCT_DDL) await admin.query(ddl);
+    const esp2 = generateProducts(profile.institutionType, t.loans as unknown[][], t.deposits as unknown[][]);
+    await insert(admin, 'cdm_loan_product', ['product_id', 'name', 'loan_category', 'reg_amount_code', 'reg_count_code', 'secured', 'revolving'], esp2.loanProducts);
+    await insert(admin, 'cdm_deposit_product', ['product_id', 'name', 'deposit_category', 'interest_bearing', 'minimum_balance', 'monthly_fee'], esp2.depositProducts);
+    await insert(admin, 'cdm_account_product', ['account_kind', 'account_id', 'product_id'], esp2.accounts);
     // Predictive models: each member at each of the last 12 month-ends, and where models and scores are kept.
     for (const ddl of ML_DDL) await admin.query(ddl);
     await insert(admin, 'hist_member_snapshot', SNAPSHOT_COLUMNS, generateSnapshots(t, rm));
