@@ -19,7 +19,9 @@ const WORDS = {
 type Words = (typeof WORDS)['bank'];
 const money = (v: number) => {
   const a = Math.abs(v);
-  const s = a >= 1e9 ? `$${(a / 1e9).toFixed(2)}B` : a >= 1e6 ? `$${(a / 1e6).toFixed(a >= 1e8 ? 0 : a >= 1e7 ? 1 : 2)}M` : `$${Math.round(a / 1e3)}K`;
+  // Round half up, as the tables do: (32.55).toFixed(1) is 32.5 where the table shows $32.6M.
+  const r = (x: number, d: number) => (Math.round(x * 10 ** d) / 10 ** d).toFixed(d);
+  const s = a >= 1e9 ? `$${r(a / 1e9, 2)}B` : a >= 1e6 ? `$${r(a / 1e6, a >= 1e8 ? 0 : a >= 1e7 ? 1 : 2)}M` : `$${Math.round(a / 1e3)}K`;
   return v < 0 ? `−${s}` : s;
 };
 const pct = (v: number, d = 2) => `${(v * 100).toFixed(d)}%`;
