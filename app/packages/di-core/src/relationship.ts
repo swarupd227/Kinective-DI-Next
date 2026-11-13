@@ -66,6 +66,8 @@ export interface AccountLine {
   opened: string;
   maturity?: string;
   daysPastDue?: number;
+  /** A loan's terms (ESP phase 1), where loaded: what's due and when, APR, fixed or variable, and a line's limit. */
+  terms?: { payment: number; due: string | null; apr: number; rateType: string; structure: string; creditLimit: number | null };
 }
 
 export interface Opportunity {
@@ -138,6 +140,12 @@ export interface MemberProfile {
   sharedAccounts: { kind: 'deposit' | 'loan'; name: string; suffix: string; role: string; primary: string; balance: number }[];
   /** Co-owners and beneficiaries on the person's own accounts, by account suffix. */
   coOwners: { suffix: string; name: string; role: string }[];
+  /**
+   * The person's details from the core (ESP phase 1), where loaded: preferred name, language, whether they
+   * have died or opted out of marketing, and where they live (city, state and ZIP; the street stays in
+   * the data, as email and phone are masked). Undefined where the tables aren't there.
+   */
+  details?: { preferredName: string | null; language: string; deceased: string | null; marketingOptOut: boolean; place: string; householdName: string | null };
   /** Credit score pulls on file (ESP's credit score history), newest first: empty where none are loaded. */
   creditHistory: { date: string; type: string; score: number; source: string }[];
   /** The latest identity verification recorded in DI. */
@@ -484,6 +492,15 @@ export class RelationshipService {
     ).catch(() => []);
     const creditRows = await q<{ as_of: unknown; score_type: string; score: number; source: string }>('SELECT as_of, score_type, score, source FROM cdm_credit_score_history WHERE party_id = ? ORDER BY as_of DESC LIMIT 12', [partyId]).catch(() => []);
     const [verified] = await q<{ verified_at: unknown; channel: string; result: string; by_name: string }>('SELECT verified_at, channel, result, by_name FROM rm_verification WHERE party_id = ? ORDER BY verified_at DESC LIMIT 1', [partyId]).catch(() => []);
+    // ESP phase 1: the person's details, household and loan terms. A build without those tables has none.
+    const [detailRow] = await q<{ preferred_name: string | null; language: string; deceased_date: unknown; marketing_opt_out: number; city: string; state: string; zip: string; household: string | null }>(
+      'SELECT d.preferred_name, d.language, d.deceased_date, d.marketing_opt_out, a.city, a.state, a.zip, h.name AS household FROM cdm_party_detail d JOIN cdm_party_address a ON a.party_id = d.party_id LEFT JOIN cdm_household h ON h.household_id = ? WHERE d.party_id = ?',
+      [base.household_id, partyId],
+    ).catch(() => []);
+    const termRows = loans.length
+      ? await q<{ loan_id: number; structure: string; rate_type: string; apr: number; payment_amount: number; payment_due_date: unknown; credit_limit: number | null }>('SELECT loan_id, structure, rate_type, apr, payment_amount, payment_due_date, credit_limit FROM cdm_loan_terms WHERE loan_id IN (?)', [loans.map((l) => l.loan_id)]).catch(() => [])
+      : [];
+    const termsOf = new Map(termRows.map((t) => [Number(t.loan_id), { payment: Number(t.payment_amount), due: t.payment_due_date ? day10(t.payment_due_date) : null, apr: Number(t.apr), rateType: t.rate_type, structure: t.structure, creditLimit: t.credit_limit === null ? null : Number(t.credit_limit) }]));
     const label = (c: string) => LOAN_LABEL[c] ?? c;
     const line = (kind: 'deposit' | 'loan', id: number, name: string, r: { balance: number; balance_30d: number; fees_30d: number; rate: number; open_date: string }, extra: Partial<AccountLine> = {}): AccountLine => ({
       kind,
@@ -498,7 +515,7 @@ export class RelationshipService {
       ...extra,
     });
     const depositLines = deps.map((d) => line('deposit', d.account_id, d.deposit_category, d, d.maturity_date ? { maturity: d.maturity_date } : {}));
-    const loanLines = loans.map((l) => line('loan', l.loan_id, label(l.loan_category), l, { daysPastDue: l.days_delinquent }));
+    const loanLines = loans.map((l) => line('loan', l.loan_id, label(l.loan_category), l, { daysPastDue: l.days_delinquent, ...(termsOf.has(l.loan_id) ? { terms: termsOf.get(l.loan_id)! } : {}) }));
     const held = new Set([...deps.map((d) => d.deposit_category), ...loans.map((l) => l.loan_category)]);
     const heldLabels = new Set([...held].map((c) => label(c).toLowerCase()));
     const totals = { deposits: depositLines.reduce((s, a) => s + a.balance, 0), loans: loanLines.reduce((s, a) => s + a.balance, 0), accounts: depositLines.length + loanLines.length, products: held.size };
@@ -604,6 +621,9 @@ export class RelationshipService {
       sharedAccounts: shared.map((s) => ({ kind: s.account_kind, name: s.account_kind === 'loan' ? label(s.cat) : s.cat, suffix: String(s.account_id % 10_000).padStart(4, '0'), role: s.role, primary: `${s.first_name} ${s.last_name}`, balance: Number(s.balance) })),
       coOwners: coOwnerRows.map((c) => ({ suffix: String(c.account_id % 10_000).padStart(4, '0'), name: `${c.first_name} ${c.last_name}`, role: c.role })),
       creditHistory: creditRows.map((c) => ({ date: day10(c.as_of), type: c.score_type, score: Number(c.score), source: c.source })),
+      ...(detailRow
+        ? { details: { preferredName: detailRow.preferred_name, language: detailRow.language, deceased: detailRow.deceased_date ? day10(detailRow.deceased_date) : null, marketingOptOut: Number(detailRow.marketing_opt_out) === 1, place: `${detailRow.city}, ${detailRow.state} ${detailRow.zip}`, householdName: detailRow.household } }
+        : {}),
       lastVerification: verified ? { at: String(verified.verified_at instanceof Date ? verified.verified_at.toISOString() : verified.verified_at).slice(0, 16).replace(' ', 'T'), channel: verified.channel, result: verified.result, by: verified.by_name } : null,
     };
   }

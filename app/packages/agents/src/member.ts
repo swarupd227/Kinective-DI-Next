@@ -38,6 +38,9 @@ function header(p: MemberProfile) {
       { label: 'Primary', tone: 'neutral' as const },
       { label: p.segment, tone: 'info' as const },
       ...(p.isMember ? [] : [{ label: 'Non-member', tone: 'warning' as const }]),
+      // Whoever opens the record should know first: no sales conversation with an estate, and no promotion to someone who opted out.
+      ...(p.details?.deceased ? [{ label: 'Deceased', tone: 'danger' as const }] : []),
+      ...(p.details?.marketingOptOut ? [{ label: 'No marketing', tone: 'warning' as const }] : []),
     ],
   };
 }
@@ -118,6 +121,15 @@ export function memberTake(p: MemberProfile, topics: Topic[]): DiTake {
 
 /** The full record, in the Relationship Dashboard's section order [BK p11] (FE-RM-001). */
 /** An account's detail line, with who else is on it (joint owners, co-borrowers, signers, beneficiaries). */
+/** A current loan's next payment, and a line's limit: "Limit $15,000; $120.00 due Nov 3". */
+export function termsDetail(a: MemberProfile['loans'][number]): string | null {
+  const t = a.terms;
+  if (!t || t.payment <= 0 || !t.due) return null;
+  const money = (n: number, cents: boolean) => `$${n.toLocaleString('en-US', { minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: cents ? 2 : 0 })}`;
+  const due = new Date(`${t.due}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return `${t.creditLimit !== null ? `Limit ${money(t.creditLimit, false)}; ` : ''}${money(t.payment, true)} due ${due}`;
+}
+
 function ownersDetail(p: MemberProfile, suffix: string, base: string | null): { detail?: string } {
   const others = p.coOwners.filter((c) => c.suffix === suffix);
   const who = others.length ? others.map((c) => `${c.role === 'Beneficiary' ? 'beneficiary' : c.role === 'Authorized signer' ? 'signer' : 'with'} ${c.name}`).join(', ') : '';
@@ -191,7 +203,7 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
             ...p.sharedAccounts.filter((s) => s.kind === 'deposit').slice(0, Math.max(0, 40 - p.deposits.length)).map((s) => ({ name: s.name, suffix: s.suffix, relationship: s.role === 'Authorized signer' ? ('Authorized' as const) : ('Joint' as const), balance: s.balance, change30d: 0, fees30d: 0, detail: `${s.role}; ${s.primary}’s account`.slice(0, 80) })),
           ],
           loans: [
-            ...p.loans.slice(0, 40).map((a) => ({ name: a.name, suffix: a.suffix, relationship: a.relationship, balance: a.balance, change30d: Math.round((a.balance - a.balance30d) * 100) / 100, fees30d: a.fees30d, rate: a.rate, ...(ownersDetail(p, a.suffix, a.daysPastDue ? `${a.daysPastDue} days past due` : null)) })),
+            ...p.loans.slice(0, 40).map((a) => ({ name: a.name, suffix: a.suffix, relationship: a.relationship, balance: a.balance, change30d: Math.round((a.balance - a.balance30d) * 100) / 100, fees30d: a.fees30d, rate: a.rate, ...(ownersDetail(p, a.suffix, a.daysPastDue ? `${a.daysPastDue} days past due` : termsDetail(a))) })),
             ...p.sharedAccounts.filter((s) => s.kind === 'loan').slice(0, Math.max(0, 40 - p.loans.length)).map((s) => ({ name: s.name, suffix: s.suffix, relationship: 'Joint' as const, balance: s.balance, change30d: 0, fees30d: 0, detail: `Co-borrower; ${s.primary}’s loan`.slice(0, 80) })),
           ],
         },
@@ -254,8 +266,14 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
           : p.rewards === null
             ? { kind: 'rewards', status: 'not_enrolled' }
             : { kind: 'rewards', status: 'enrolled', tier: p.rewards.tier, points: p.rewards.points, enrolled: p.rewards.enrolled, ledger: p.rewards.ledger.slice(0, 12) },
-        { kind: 'contact', preferred: p.contact.preferred, email: p.contact.email, phone: p.contact.phone },
-        { kind: 'household', members: p.household.map((h) => ({ name: h.name, branch: h.branch, maskedNumber: h.last4 ? `…${h.last4}` : null, inPurview: h.inPurview })) },
+        {
+          kind: 'contact',
+          preferred: p.contact.preferred,
+          email: p.contact.email,
+          phone: p.contact.phone,
+          ...(p.details ? { place: p.details.place, language: p.details.language, marketingOptOut: p.details.marketingOptOut, ...(p.details.preferredName ? { preferredName: p.details.preferredName } : {}) } : {}),
+        },
+        { kind: 'household', ...(p.details?.householdName ? { name: p.details.householdName } : {}), members: p.household.map((h) => ({ name: h.name, branch: h.branch, maskedNumber: h.last4 ? `…${h.last4}` : null, inPurview: h.inPurview })) },
       ],
     },
   };

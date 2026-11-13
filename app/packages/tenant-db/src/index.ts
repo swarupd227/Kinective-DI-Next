@@ -42,3 +42,4 @@ export { ESP_PRODUCT_DDL, generateProducts } from './espProducts.ts';
 export { ESP_ORG_DDL, generateOrg } from './espOrg.ts';
 export { ESP_TXN_DDL, TXN_CODES, generateTransactions30 } from './espTransactions.ts';
 export { ESP_OWNER_DDL, generateOwners } from './espOwners.ts';
+export { ESP_ACCOUNT_COLUMNS, ESP_ACCOUNT_DDL, generateAccounts, holdingNumberOf, memberNumberOf } from './espAccounts.ts';

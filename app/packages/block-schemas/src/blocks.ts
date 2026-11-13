@@ -398,9 +398,21 @@ export const member360Section = z.discriminatedUnion('kind', [
     kind: z.literal('notes'),
     items: z.array(z.strictObject({ kind: z.enum(['Comment', 'Warning']), code: z.string().max(10).nullable(), text: z.string().max(200), account: z.string().max(60).nullable(), created: isoDate, by: z.string().max(80) })).max(12),
   }),
-  z.strictObject({ kind: z.literal('contact'), preferred: z.string().max(30), email: z.string().max(120), phone: z.string().max(30) }),
+  z.strictObject({
+    kind: z.literal('contact'),
+    preferred: z.string().max(30),
+    email: z.string().max(120),
+    phone: z.string().max(30),
+    /** Where the person lives: city, state and ZIP, never the street. */
+    place: z.string().max(80).optional(),
+    language: z.string().max(20).optional(),
+    preferredName: z.string().max(40).optional(),
+    /** Opted out of marketing: outreach to them is service, not promotion. */
+    marketingOptOut: z.boolean().optional(),
+  }),
   z.strictObject({
     kind: z.literal('household'),
+    name: z.string().max(80).optional(),
     members: z.array(z.strictObject({ name: z.string().max(80).nullable(), branch: z.string().max(60).nullable(), maskedNumber: z.string().regex(/^…\d{4}$/).nullable(), inPurview: z.boolean() })).max(12),
   }),
 ]);

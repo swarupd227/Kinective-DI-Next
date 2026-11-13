@@ -43,13 +43,14 @@ Run it after any schema change, so the mapping can't drift unnoticed.
 | Third-party feed | 147 | Sources, when a feature needs one. |
 | Work and people | 128 | DI-Next has its own where needed. |
 
-Business layer: 244 covered, 43 partial, 106 missing, 356 not needed. See `mapping.md`.
+Business layer: 256 covered, 40 partial, 97 missing, 356 not needed (after phase 1; 244, 43 and 106 before). See `mapping.md`.
 
 ## Phases
 
 | Phase | Adds | Partial or missing tables |
 |---|---|---|
-| 1 | Accounts (the membership or account number), households, missing customer details (deceased, language, TIN type, opt-out, e-statements, address), loan and share details (account numbers, payment, APR, rate type, credit limit), product flags | 25 |
+| 1 (done) | `cdm_account`, `cdm_account_holding`, `cdm_household`, `cdm_party_detail`, `cdm_party_address`, `cdm_loan_terms`, `cdm_deposit_terms`: accounts and which loans and shares sit under each, households, member number, names, TIN type, language, deceased, marketing opt-out, address, and loan and share terms (payment, due date, APR, rate type, credit limit, opening deposit, certificate term, auto-renew) | 0 |
+| 1b | Phase 1 leftovers: product flags, servicing-branch overrides, dividend tiers, cross-sell groups, miscellaneous accounts, card products, and a few columns (name prefix and suffix, home and work phone, second email, the loan's application and dealer links) | 13 |
 | 2 | Charge-off amounts and recoveries per account; insider and employee loans (Regulation O, NCUA 701.21(d)) | 11 |
 | 3 | FHLB collateral eligibility, lien position, participations | 8 |
 | 4 | Account-level month-end snapshots (loans, shares, people, accounts, households); waits for 1 to 3 | 17 |

@@ -180,7 +180,7 @@ export const RELATIONSHIP_TOOLS = [
   {
     name: 'relationship_profile_get',
     operation: 'relationship.profile.get',
-    description: 'Open a member’s 360 profile: accounts, cards, recent transactions, credit score, charge-offs, digital use, scores, opportunities, loan applications, interactions and household. Opening it shows the record to the user and logs the access.',
+    description: 'Open a member’s 360 profile: accounts (with each loan’s payment, due date, APR, fixed or variable rate and a line’s limit), cards, recent transactions, credit score, charge-offs, digital use, scores, opportunities, loan applications, interactions, household, language, where they live (city), and whether they have died or opted out of marketing. Opening it shows the record to the user and logs the access.',
     input: ProfileInput,
     sideEffect: 'read',
     riskTier: 'none',

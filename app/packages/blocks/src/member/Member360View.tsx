@@ -475,15 +475,24 @@ function Section({ s, m, run }: { s: Member360Section; m: MemberHeader; run: (a:
             { label: 'Preferred', value: s.preferred },
             { label: 'Email', value: s.email },
             { label: 'Phone', value: s.phone },
+            ...(s.place ? [{ label: 'Lives in', value: s.place }] : []),
+            ...(s.language ? [{ label: 'Language', value: s.language }] : []),
+            ...(s.preferredName ? [{ label: 'Goes by', value: s.preferredName }] : []),
+            ...(s.marketingOptOut !== undefined ? [{ label: 'Marketing', value: s.marketingOptOut ? 'Opted out: service contact only' : 'Accepts offers' }] : []),
           ]}
         />
       );
     case 'household': {
       const shown = s.members.filter((h) => h.inPurview);
       const hidden = s.members.length - shown.length;
-      if (!s.members.length) return <p className={styles.empty}>No one else in the household.</p>;
+      if (!s.members.length) return <p className={styles.empty}>{s.name ? `${s.name}: no one else in it.` : 'No one else in the household.'}</p>;
       return (
-        <ul className={styles.rows}>
+        <ul className={styles.rows} aria-label={s.name}>
+          {s.name && (
+            <li className={styles.rowItem}>
+              <span className={styles.rowTitle}>{s.name}</span>
+            </li>
+          )}
           {shown.map((h, i) => (
             <li key={i} className={styles.rowItem}>
               <span className={styles.rowMain}>

@@ -32,6 +32,7 @@ import { ESP_PRODUCT_DDL, generateProducts } from './espProducts.ts';
 import { ESP_ORG_DDL, generateOrg } from './espOrg.ts';
 import { ESP_TXN_DDL, generateTransactions30 } from './espTransactions.ts';
 import { ESP_OWNER_DDL, generateOwners } from './espOwners.ts';
+import { ESP_ACCOUNT_COLUMNS, ESP_ACCOUNT_DDL, generateAccounts } from './espAccounts.ts';
 import { ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
@@ -131,7 +132,19 @@ async function main() {
     await insert(admin, 'cdm_loan_transaction', ['txn_id', 'loan_id', 'party_id', 'posted', 'code', 'amount', 'principal', 'interest', 'channel'], esp4.loan);
     // ESP alignment, step 5: who is on each account and in what role. Totals keep counting the primary owner.
     for (const ddl of ESP_OWNER_DDL) await admin.query(ddl);
-    await insert(admin, 'cdm_account_owner', ['account_kind', 'account_id', 'party_id', 'role'], generateOwners(t.parties as unknown[][], t.deposits as unknown[][], t.loans as unknown[][]));
+    const owners = generateOwners(t.parties as unknown[][], t.deposits as unknown[][], t.loans as unknown[][]);
+    await insert(admin, 'cdm_account_owner', ['account_kind', 'account_id', 'party_id', 'role'], owners);
+    // ESP alignment, phase 1: accounts and what sits under each, households, customer details and
+    // addresses, loan and share terms. Tables of their own; nothing above changes.
+    for (const ddl of ESP_ACCOUNT_DDL) await admin.query(ddl);
+    const esp6 = generateAccounts({ institutionType: profile.institutionType, parties: t.parties as unknown[][], loans: t.loans as unknown[][], deposits: t.deposits as unknown[][], owners, origination: esp1.origination, accountProducts: esp2.accounts, loanProducts: esp2.loanProducts, digital: rm.digital as unknown[][] });
+    await insert(admin, 'cdm_account', [...ESP_ACCOUNT_COLUMNS.cdm_account], esp6.accounts);
+    await insert(admin, 'cdm_account_holding', [...ESP_ACCOUNT_COLUMNS.cdm_account_holding], esp6.holdings);
+    await insert(admin, 'cdm_household', [...ESP_ACCOUNT_COLUMNS.cdm_household], esp6.households);
+    await insert(admin, 'cdm_party_detail', [...ESP_ACCOUNT_COLUMNS.cdm_party_detail], esp6.details);
+    await insert(admin, 'cdm_party_address', [...ESP_ACCOUNT_COLUMNS.cdm_party_address], esp6.addresses);
+    await insert(admin, 'cdm_loan_terms', [...ESP_ACCOUNT_COLUMNS.cdm_loan_terms], esp6.loanTerms);
+    await insert(admin, 'cdm_deposit_terms', [...ESP_ACCOUNT_COLUMNS.cdm_deposit_terms], esp6.depositTerms);
     // Predictive models: each member at each of the last 12 month-ends, and where models and scores are kept.
     for (const ddl of ML_DDL) await admin.query(ddl);
     await insert(admin, 'hist_member_snapshot', SNAPSHOT_COLUMNS, generateSnapshots(t, rm));
