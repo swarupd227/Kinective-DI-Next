@@ -226,7 +226,8 @@ export class RelationshipService {
   async atRisk(ctx: CoreContext, limit = 25): Promise<{ total: number; items: AtRiskMember[] }> {
     const scope = ctx.purviewBranches ? 'AND b.name IN (?)' : '';
     const params = ctx.purviewBranches ? [ctx.purviewBranches] : [];
-    const from = `FROM cdm_attrition_score s JOIN cdm_party p ON p.party_id = s.party_id JOIN cdm_location b ON b.int_id = p.primary_branch_id WHERE s.score >= ${HIGH_ATTRITION} ${scope}`;
+    // Nobody who has died is a retention call: their accounts wait for the estate.
+    const from = `FROM cdm_attrition_score s JOIN cdm_party p ON p.party_id = s.party_id JOIN cdm_location b ON b.int_id = p.primary_branch_id WHERE s.score >= ${HIGH_ATTRITION} AND NOT EXISTS (SELECT 1 FROM cdm_party_detail pd WHERE pd.party_id = s.party_id AND pd.deceased_date IS NOT NULL) ${scope}`;
     const [count] = await this.pool.query(`SELECT COUNT(*) AS n ${from}`, params);
     const [rows] = await this.pool.query(`SELECT s.party_id, s.score, s.factors, p.first_name, p.last_name, b.name AS branch ${from} ORDER BY s.score DESC, s.party_id LIMIT ?`, [...params, limit]);
     return {
@@ -540,8 +541,10 @@ export class RelationshipService {
     const attrition: AttritionScore = { score: base.score, band: attritionBand(base.score), factors: json<ScoreFactor[]>(base.factors), model: base.model_version, runDate: base.run_date };
     const suppressed = new Set(declines.map((d) => d.suggestion_id));
     // Active suggestions at or above the threshold, without products already held or declined [BK p11, CA-30].
+    // Nothing is sold to someone who has died: their accounts wait for the estate.
+    const deceased = Boolean(detailRow?.deceased_date);
     const opportunities = suggestions
-      .filter((s) => s.likelihood >= OPPORTUNITY_THRESHOLD && !suppressed.has(s.suggestion_id) && !heldLabels.has(s.product.toLowerCase()))
+      .filter((s) => !deceased && s.likelihood >= OPPORTUNITY_THRESHOLD && !suppressed.has(s.suggestion_id) && !heldLabels.has(s.product.toLowerCase()))
       .map((s) => ({ suggestionId: s.suggestion_id, product: s.product, likelihood: s.likelihood, reason: s.reason, referralTypeId: s.referral_type_id }));
 
     const alerts: MemberProfile['alerts'] = [];
@@ -638,6 +641,8 @@ export class RelationshipService {
     for (const a of p.applications.items.filter((x) => x.status === 'Pending')) {
       topics.push({ kind: 'pending_application', headline: `${a.product} application is pending`, reason: `Applied ${longDate(a.applied)} for ${usd(a.amount)}; status: ${a.detail.toLowerCase()}` });
     }
+    // For someone who has died, only open business is a topic: no retention or sales pitch, no digital nudges.
+    if (p.details?.deceased) return topics.slice(0, 5).map((t, i) => ({ ...t, id: `T${i + 1}` }));
     if (p.attrition.band !== 'Low') {
       const top = p.attrition.factors.filter((f) => f.weight > 0).slice(0, 2).map((f) => f.label.charAt(0).toLowerCase() + f.label.slice(1));
       topics.push({ kind: 'retention_risk', headline: `${p.attrition.band} attrition risk`, reason: `Attrition score ${p.attrition.score} on a 0–10 scale; reason: ${top.join('; ') || 'model estimate'}` });

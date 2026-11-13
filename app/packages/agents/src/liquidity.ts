@@ -8,6 +8,8 @@ const NO_ACCESS = 'Liquidity isn’t part of your DI access. It is for the finan
 const guard = (ctx: ModuleContext) => {
   if (!ctx.modules.includes('liquidity')) throw new CoreError('NO_ACCESS', NO_ACCESS);
 };
+/** Questions about what borrowers could still draw on their lines (ESP phase 1's credit limits). */
+export const COMMITMENTS_REQUEST = /\bunused (?:credit )?lines?\b|\bunused commitments?\b|\bunfunded commitments?\b|\bundrawn (?:credit )?lines?\b|\bcould (?:still )?draw\b|\bdraw (?:down )?(?:on )?(?:their|the) lines\b/i;
 const m = (n: number) => (Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : `$${(n / 1e6).toFixed(1)}M`);
 const p1 = (n: number) => `${n.toFixed(1)}%`;
 
@@ -59,7 +61,7 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
     id: 'liquidity',
     prefix: 'liq',
     agent: 'Liquidity',
-    request: new RegExp(`${funding ? `${SECURITIES_REQUEST.source}|${LTD_REQUEST.source}|${DEPOSIT_REQUEST.source}|` : ''}${/\blcr\b|\bnsfr\b|\bliquidity coverage\b|\bnet stable funding\b|\bsvb\b|\bsilicon valley\b|\bwithout selling\b|\bsell(?:ing)? (?:assets|securities|bonds|investments) at a loss\b|\bunrealized loss|\buninsured (?:deposits? )?(?:run|runoff|run-off|outflows?|leave|flight)\b|\buninsured deposits?\b[^.?!]*\b(?:leave|left|run|withdraw)|\bliquidity\b|\bborrowing capacity\b|\bhow much (could|can) we borrow\b|\bfhlb\b|\bdiscount window\b|\bcontingency funding\b|\b(deposit|share) (run|runoff|run-off|outflows?)\b|\brun on (deposits|shares)\b|\bclf\b|\bcorporate (credit union )?line\b|\bcash.flow ladder\b|\bliquid assets\b|\bsurvive\b.*\b(run|outflow|leave)/.source}`, 'i'),
+    request: new RegExp(`${COMMITMENTS_REQUEST.source}|${funding ? `${SECURITIES_REQUEST.source}|${LTD_REQUEST.source}|${DEPOSIT_REQUEST.source}|` : ''}${/\blcr\b|\bnsfr\b|\bliquidity coverage\b|\bnet stable funding\b|\bsvb\b|\bsilicon valley\b|\bwithout selling\b|\bsell(?:ing)? (?:assets|securities|bonds|investments) at a loss\b|\bunrealized loss|\buninsured (?:deposits? )?(?:run|runoff|run-off|outflows?|leave|flight)\b|\buninsured deposits?\b[^.?!]*\b(?:leave|left|run|withdraw)|\bliquidity\b|\bborrowing capacity\b|\bhow much (could|can) we borrow\b|\bfhlb\b|\bdiscount window\b|\bcontingency funding\b|\b(deposit|share) (run|runoff|run-off|outflows?)\b|\brun on (deposits|shares)\b|\bclf\b|\bcorporate (credit union )?line\b|\bcash.flow ladder\b|\bliquid assets\b|\bsurvive\b.*\b(run|outflow|leave)/.source}`, 'i'),
     noAccess: NO_ACCESS,
     sources: [{ kind: 'table', label: 'Loans, investments, deposits and borrowings', ref: 'table:cdm_loan' }],
     prompt: ({ tenant, user, title }) => `You are the Liquidity agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) manages liquidity for the ALCO and the contingency funding plan. DI estimates on-balance-sheet liquidity, a 30/90/180/365-day cash-flow ladder, borrowing capacity (FHLB, the Federal Reserve discount window, unpledged securities, the corporate or correspondent line) and survival under share runoff. Capacity uses typical lendable values; the FHLB's and Reserve Bank's own collateral rules set the real figures, so say it is an estimate.
@@ -100,6 +102,7 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
       if (/assumption|haircut|lendable|how (is|does) (this|it|the model)/.test(t)) return { tool: 'liq_assumptions', args: {} };
       if (/ladder|cash.flow|maturit|next (30|90) days/.test(t)) return { tool: 'liq_ladder', args: {} };
       if (/\brun\b|runoff|run-off|outflow|survive|stress|leave/.test(t)) return { tool: 'liq_stress', args: { runoff_pct: runoffFrom(t) ?? 20 } };
+      if (COMMITMENTS_REQUEST.test(t)) return { tool: 'liq_commitments', args: {} };
       if (/borrow|capacity|fhlb|discount window|corporate|correspondent|clf|line/.test(t)) return { tool: 'liq_capacity', args: {} };
       return { tool: 'liq_summary', args: {} };
     },
@@ -116,6 +119,23 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
           return {
             text: `Liquid assets are **${m(a.liquid)}**, ${pctAgainst(la.value, a.policy.liquidToAssetsMinPct)} of total assets (policy: at least ${a.policy.liquidToAssetsMinPct}%${la.value < a.policy.liquidToAssetsMinPct ? ', **below policy**' : ''}). With borrowing capacity of **${m(a.contingent)}**, available liquidity is **${m(a.available)}**, ${p1(a.availableToShares)} of shares (policy: at least ${a.policy.availableToSharesMinPct}%). If 20% of shares left within 30 days, available liquidity would cover it **${s20.coverage.toFixed(1)} times**. Capacity is DI’s estimate from loan and investment data.`,
             blocks: [moduleTable(spec, 'Liquidity ratios', ctx.runId, 'liq.ratios', [{ field: 'name', headerName: 'Ratio', type: 'text' }, { field: 'value', headerName: 'Value', type: 'text' }, { field: 'note', headerName: 'What it shows', type: 'text' }], a.ratios.map((r) => ({ name: r.name, value: r.limit ? pctAgainst(r.value, r.limit) : p1(r.value), note: r.note })))],
+            suggestions: ['How much could we borrow tomorrow?', 'Can we survive a 30% deposit run?'],
+          };
+        },
+      },
+      {
+        name: 'liq_commitments',
+        description: 'Unused credit lines: what borrowers could still draw on open lines of credit, home equity lines and credit cards, by loan category, and what a stress draw would take from liquid assets.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          guard(ctx);
+          const a = await liq.analysis();
+          const c = a.commitments;
+          if (!c) return { text: 'Credit line limits aren’t loaded for this institution yet, so DI can’t say what borrowers could still draw.', blocks: [] };
+          const top = c.byCategory[0]!;
+          return {
+            text: `Borrowers could still draw **${m(c.unused)}** on their open lines: ${m(c.limit)} of limits, ${p1(c.limit ? (c.drawn / c.limit) * 100 : 0)} drawn. The most is on ${top.category === 'HELOC' ? 'home equity lines' : top.category === 'Credit Card' ? 'credit cards' : `${top.category.toLowerCase()} lines`}, ${m(top.unused)}. If ${Math.round((c.draw30 / Math.max(c.unused, 1)) * 100)}% were drawn within 30 days, that's **${m(c.draw30)}**, ${p1(c.draw30ToLiquid)} of liquid assets. This is a need beside the share-runoff test, not part of it.`,
+            blocks: [moduleTable(spec, 'Unused credit lines', ctx.runId, 'liq.commitments', [{ field: 'category', headerName: 'Loan category', type: 'text' }, { field: 'lines', headerName: 'Open lines', type: 'count' }, { field: 'limit', headerName: 'Limits', type: 'currency' }, { field: 'drawn', headerName: 'Drawn', type: 'currency' }, { field: 'unused', headerName: 'Unused', type: 'currency' }], c.byCategory.map((x) => ({ category: x.category, lines: x.lines, limit: Math.round(x.limit), drawn: Math.round(x.drawn), unused: Math.round(x.unused) })))],
             suggestions: ['How much could we borrow tomorrow?', 'Can we survive a 30% deposit run?'],
           };
         },

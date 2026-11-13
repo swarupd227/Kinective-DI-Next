@@ -4,6 +4,7 @@
 import type { Pool } from '@dinext/tenant-db';
 import { carryUp, crParents, CR_LOAN_TYPES } from '@dinext/tenant-db';
 import { CoreError, memberNumber, type CoreContext } from './referrals.ts';
+import { outreachSuppression } from './suppression.ts';
 
 const day = (v: unknown) => String(v instanceof Date ? v.toISOString() : v).slice(0, 10);
 const rows = async <T>(pool: Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
@@ -633,7 +634,6 @@ export class CollectionsService {
 // ---- campaigns --------------------------------------------------------------------------------
 
 /** Removed from every audience by rule, and counted (AI-AGT-201). */
-const suppressed = (partyId: number) => (partyId % 9 === 0 ? 'opt_out' : partyId % 13 === 0 ? 'recent_contact' : null);
 
 /**
  * What a campaign's incremental dollars are worth: the product's contribution per dollar a year (after
@@ -821,9 +821,11 @@ export class CampaignService {
     if (!match) throw new CoreError('NOT_FOUND', `There’s no loan category called ${category}. They are: ${known.map((k) => k.c).join(', ')}.`);
     const scope = ctx.purviewBranches ? ' AND b.name IN (?)' : '';
     const people = await rows<{ party_id: number }>(this.pool, `SELECT p.party_id FROM cdm_party p JOIN cdm_location b ON b.int_id = p.primary_branch_id LEFT JOIN (SELECT DISTINCT party_id FROM cdm_loan WHERE loan_category = ? AND close_date IS NULL) l ON l.party_id = p.party_id WHERE p.is_member = 1 AND l.party_id IS NULL${scope}`, [match.c, ...(ctx.purviewBranches ? [ctx.purviewBranches.length ? ctx.purviewBranches : ['']] : [])]);
+    const suppressed = await outreachSuppression(this.pool);
+    const deceased = people.filter((p) => suppressed(p.party_id) === 'deceased').length;
     const optOut = people.filter((p) => suppressed(p.party_id) === 'opt_out').length;
     const recent = people.filter((p) => suppressed(p.party_id) === 'recent_contact').length;
-    return { category: match.c, found: people.length, optOut, recent, size: people.length - optOut - recent };
+    return { category: match.c, found: people.length, deceased, optOut, recent, size: people.length - deceased - optOut - recent };
   }
 
   /** The audience's members who can be emailed: after suppression, with an email on file, in purview. */
@@ -833,6 +835,7 @@ export class CampaignService {
     if (!match) throw new CoreError('NOT_FOUND', `There’s no loan category called ${category}. They are: ${known.map((k) => k.c).join(', ')}.`);
     const scope = ctx.purviewBranches ? ' AND b.name IN (?)' : '';
     const people = await rows<{ party_id: number; first_name: string; email: string | null }>(this.pool, `SELECT p.party_id, p.first_name, c.email FROM cdm_party p JOIN cdm_location b ON b.int_id = p.primary_branch_id LEFT JOIN cdm_party_contact c ON c.party_id = p.party_id LEFT JOIN (SELECT DISTINCT party_id FROM cdm_loan WHERE loan_category = ? AND close_date IS NULL) l ON l.party_id = p.party_id WHERE p.is_member = 1 AND l.party_id IS NULL${scope} ORDER BY p.party_id`, [match.c, ...(ctx.purviewBranches ? [ctx.purviewBranches.length ? ctx.purviewBranches : ['']] : [])]);
+    const suppressed = await outreachSuppression(this.pool);
     const kept = people.filter((p) => !suppressed(p.party_id));
     const reachable = kept.filter((p) => p.email);
     return { category: match.c, found: people.length, suppressed: people.length - kept.length, noEmail: kept.length - reachable.length, members: reachable.map((p) => ({ partyId: p.party_id, firstName: p.first_name, email: p.email! })) };

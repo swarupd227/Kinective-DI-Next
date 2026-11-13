@@ -84,7 +84,9 @@ export class SemanticService {
     for (const dim of Object.values(model.dimensions)) {
       if (dim.values) dimensionValues[dim.name] = dim.values;
       else if (dim.valuesSql) {
-        const [rows] = (await pool.query(dim.valuesSql)) as unknown as [Record<string, string>[]];
+        // A dimension over a table this build doesn't have yet (a new release before its seed) has no values,
+        // rather than stopping the whole tenant from loading.
+        const [rows] = (await pool.query(dim.valuesSql).catch(() => [[]])) as unknown as [Record<string, string>[]];
         dimensionValues[dim.name] = rows.map((r) => String(Object.values(r)[0]));
       }
     }

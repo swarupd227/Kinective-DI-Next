@@ -99,6 +99,38 @@ function amortizing(balance: number, remaining: number, cpr: number, shockBp: nu
 export class IrrService {
   constructor(private readonly pool: Pool) {}
 
+  /**
+   * Fixed and variable loan balances from each loan's terms (ESP phase 1), beside what the rate-risk model
+   * assumes for that category, and how much reprices by the next quarter. A view of the data; the model's
+   * NII and EVE figures don't change. Null where loan terms aren't loaded.
+   */
+  async rateTypes() {
+    const list = await rows<{ c: string; rate_type: string; b: number; n: number; soon: number }>(
+      this.pool,
+      `SELECT l.loan_category AS c, t.rate_type, SUM(l.balance) AS b, COUNT(*) AS n,
+              SUM(CASE WHEN t.next_rate_change IS NOT NULL AND t.next_rate_change <= DATE_ADD((SELECT MAX(as_of_date) FROM meta_build), INTERVAL 92 DAY) THEN l.balance ELSE 0 END) AS soon
+         FROM cdm_loan l JOIN cdm_loan_terms t ON t.loan_id = l.loan_id
+        WHERE l.close_date IS NULL AND l.charge_off_date IS NULL GROUP BY l.loan_category, t.rate_type`,
+    ).catch(() => null);
+    if (!list?.length) return null;
+    const cats = [...new Set(list.map((r) => r.c))];
+    const byCategory = cats
+      .map((c) => {
+        const at = (t: string) => list.filter((r) => r.c === c && r.rate_type === t);
+        const fixed = at('Fixed').reduce((s, r) => s + Number(r.b), 0);
+        const variable = at('Variable').reduce((s, r) => s + Number(r.b), 0);
+        const [, , k] = LOANS.find(([re]) => re.test(c)) ?? [null, c, { term: 60, variable: false, cpr: 0.1 }];
+        const share = fixed + variable ? (variable / (fixed + variable)) * 100 : 0;
+        // Where the data and the model's assumption part ways by more than a tenth of the balance, say so.
+        const differs = k.variable ? share < 90 : share > 10;
+        return { category: c, fixed, variable, variableShare: share, repricesSoon: list.filter((r) => r.c === c).reduce((s, r) => s + Number(r.soon), 0), modelAssumes: k.variable ? ('Variable' as const) : ('Fixed' as const), differs };
+      })
+      .sort((a, b) => b.fixed + b.variable - (a.fixed + a.variable));
+    const total = byCategory.reduce((s, x) => s + x.fixed + x.variable, 0);
+    const variable = byCategory.reduce((s, x) => s + x.variable, 0);
+    return { total, variable, variableShare: total ? (variable / total) * 100 : 0, repricesSoon: byCategory.reduce((s, x) => s + x.repricesSoon, 0), byCategory };
+  }
+
   /** The rate-sensitive balance sheet: every position with its cash flows, as the IRR and liquidity views use it. */
   async positions() {
     const [build] = await rows<{ as_of: unknown }>(this.pool, 'SELECT MAX(as_of_date) AS as_of FROM meta_build');

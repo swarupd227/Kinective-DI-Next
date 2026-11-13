@@ -8,6 +8,7 @@
 // prescreened firm offer of credit under the FCRA. The criteria still go through fair lending review.
 import type { Pool } from '@dinext/tenant-db';
 import { CoreError, type CoreContext } from './referrals.ts';
+import { outreachSuppression } from './suppression.ts';
 
 const rows = async <T>(pool: Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
 const day = (d: unknown) => (d instanceof Date ? d.toISOString() : String(d)).slice(0, 10);
@@ -34,7 +35,6 @@ const HELOC_RATE = 9.1;
 const AUTO_MONTHS_LEFT = 38;
 /** Qualifying: a HELOC up to 80% of the home's value, at least $25,000 available, and a 700 score; an auto loan with a 700 score and $3,000 a month in direct deposits. */
 export const LG_RULES = { cltvMaxPct: 80, minLine: 25_000, maxLine: 150_000, minScore: 700, minMonthlyPay: 3_000, recurringMonths: 3, stoppedDays: 45 };
-const suppressed = (partyId: number) => (partyId % 9 === 0 ? 'opt_out' : partyId % 13 === 0 ? 'recent_contact' : null);
 /** What an incremental dollar is worth: contribution a year and years on the books, as in Campaigns. */
 const VALUE: Record<'Auto' | 'HELOC', [number, number]> = { Auto: [0.0185, 2.5], HELOC: [0.034, 4] };
 
@@ -113,6 +113,7 @@ export class LoanGrowthService {
     const members = await rows<{ party_id: number; first_name: string; last_name: string; birth_date: unknown; email: string | null }>(this.pool, `SELECT p.party_id, p.first_name, p.last_name, p.birth_date, c.email FROM cdm_party p JOIN cdm_location b ON b.int_id = p.primary_branch_id LEFT JOIN cdm_party_contact c ON c.party_id = p.party_id WHERE p.is_member = 1${scope}`, scopeArgs);
     const who = new Map(members.map((m) => [m.party_id, m]));
     const loans = await rows<{ party_id: number; c: string; balance: number; original_amount: number; ltv: number | null; score: number | null; dpd: number; open_date: unknown }>(this.pool, 'SELECT party_id, loan_category AS c, balance, original_amount, ltv, credit_score AS score, days_delinquent AS dpd, open_date FROM cdm_loan WHERE close_date IS NULL AND charge_off_date IS NULL');
+    const chargedOff = new Set((await rows<{ party_id: number }>(this.pool, 'SELECT DISTINCT party_id FROM cdm_loan WHERE close_date IS NULL AND charge_off_date IS NOT NULL')).map((r) => Number(r.party_id)));
     const byParty = new Map<number, typeof loans>();
     for (const l of loans) byParty.set(l.party_id, [...(byParty.get(l.party_id) ?? []), l]);
     const pay = await rows<{ party_id: number; monthly: number }>(this.pool, `SELECT party_id, SUM(amount) / 3 AS monthly FROM cdm_transaction WHERE txn_type = 'DD' AND post_date > DATE_SUB(?, INTERVAL 3 MONTH) GROUP BY party_id`, [o.asOf]);
@@ -121,7 +122,8 @@ export class LoanGrowthService {
     for (const p of o.payments.filter((x) => !x.stopped)) elsewhere.set(p.partyId, [...(elsewhere.get(p.partyId) ?? []), p]);
 
     const all: LgProspect[] = [];
-    const excluded = { delinquent: 0, optOut: 0, recentContact: 0 };
+    const excluded = { delinquent: 0, deceased: 0, optOut: 0, recentContact: 0 };
+    const suppressed = await outreachSuppression(this.pool);
     const score = (ls: typeof loans) => {
       const s = [...ls].filter((l) => l.score !== null).sort((a, b) => day(b.open_date).localeCompare(day(a.open_date)))[0];
       return s ? Number(s.score) : null;
@@ -159,13 +161,14 @@ export class LoanGrowthService {
       }
       if (!found.length) continue;
       // Members behind on a loan with the credit union, who opted out or were contacted recently, are left out, and counted.
-      if (ls.some((l) => Number(l.dpd) >= 30)) {
+      // A loan with us that was charged off still on the books counts as behind: no new credit offer.
+      if (ls.some((l) => Number(l.dpd) >= 30) || chargedOff.has(partyId)) {
         excluded.delinquent++;
         continue;
       }
       const sup = suppressed(partyId);
       if (sup) {
-        excluded[sup === 'opt_out' ? 'optOut' : 'recentContact']++;
+        excluded[sup === 'deceased' ? 'deceased' : sup === 'opt_out' ? 'optOut' : 'recentContact']++;
         continue;
       }
       // One segment a member: an outside loan they already pay comes before what they could qualify for.

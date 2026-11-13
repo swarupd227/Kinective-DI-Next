@@ -329,7 +329,7 @@ export class NextProductModelService {
       `SELECT s.party_id, p.first_name, p.last_name, b.name AS branch, s.probability, s.expected_months AS lift, s.band, s.drivers, s.month_end,
               COALESCE((SELECT SUM(d.balance) FROM cdm_deposit_account d WHERE d.party_id = s.party_id AND d.close_date IS NULL), 0) AS deposits
          FROM ml_score s JOIN cdm_party p ON p.party_id = s.party_id JOIN cdm_location b ON b.int_id = p.primary_branch_id
-        WHERE s.model_id = ?${scope} ORDER BY s.probability DESC LIMIT ?`,
+        WHERE s.model_id = ? AND NOT EXISTS (SELECT 1 FROM cdm_party_detail pd WHERE pd.party_id = s.party_id AND pd.deceased_date IS NOT NULL)${scope} ORDER BY s.probability DESC LIMIT ?`,
       [m.modelId, ...(opts.purviewBranches ? [opts.purviewBranches.length ? opts.purviewBranches : ['']] : []), opts.limit ?? 20],
     );
     const parse = (v: unknown) => (typeof v === 'string' ? JSON.parse(v) : v) as string[];

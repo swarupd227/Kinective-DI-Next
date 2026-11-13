@@ -63,9 +63,11 @@ describe.skipIf(!up)('a credit union’s loan growth prospects', () => {
       expect(o.payments.filter((p) => p.stopped).length).toBeGreaterThan(50);
       const x = await svc.prospects({} as never);
       for (const s of x.segments) expect(s.members, s.segment).toBeGreaterThan(100);
-      // One segment a member; opt-outs and recent contacts never appear.
+      // One segment a member; the deceased, opt-outs (from the core's customer details) and recent contacts never appear.
       expect(new Set(x.prospects.map((p) => p.partyId)).size).toBe(x.prospects.length);
-      expect(x.prospects.some((p) => p.partyId % 9 === 0 || p.partyId % 13 === 0)).toBe(false);
+      const [blocked] = (await pool.query('SELECT party_id FROM cdm_party_detail WHERE deceased_date IS NOT NULL OR marketing_opt_out = 1')) as unknown as [{ party_id: number }[]];
+      const left = new Set(blocked.map((b) => b.party_id));
+      expect(x.prospects.some((p) => left.has(p.partyId) || p.partyId % 13 === 0)).toBe(false);
       // Members already holding the product with the credit union aren't offered it.
       const [held] = (await pool.query("SELECT DISTINCT party_id FROM cdm_loan WHERE loan_category = 'Auto' AND close_date IS NULL")) as unknown as [{ party_id: number }[]];
       const autoHolders = new Set(held.map((h) => h.party_id));

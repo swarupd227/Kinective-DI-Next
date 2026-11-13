@@ -292,7 +292,7 @@ export class AttritionModelService {
               a.score AS rule_score
          FROM ml_score s JOIN cdm_party p ON p.party_id = s.party_id AND p.is_member = 1 JOIN cdm_location b ON b.int_id = p.primary_branch_id
          LEFT JOIN cdm_attrition_score a ON a.party_id = s.party_id
-        WHERE s.model_id = ? AND s.month_end = ?${scope} ORDER BY s.probability_90d DESC LIMIT ?`,
+        WHERE s.model_id = ? AND s.month_end = ? AND NOT EXISTS (SELECT 1 FROM cdm_party_detail pd WHERE pd.party_id = s.party_id AND pd.deceased_date IS NOT NULL)${scope} ORDER BY s.probability_90d DESC LIMIT ?`,
       [modelId, month, ...(opts.purviewBranches ? [opts.purviewBranches.length ? opts.purviewBranches : ['']] : []), opts.limit ?? 25],
     );
     return { month, items: list.map((r) => ({ partyId: Number(r.party_id), name: `${r.first_name} ${r.last_name}`, branch: String(r.branch), p90: Number(r.probability_90d), months: Number(r.expected_months), band: String(r.band), drivers: (typeof r.drivers === 'string' ? JSON.parse(r.drivers) : r.drivers) as string[], deposits: Number(r.deposits), ruleScore: r.rule_score === null ? null : Number(r.rule_score) })) };

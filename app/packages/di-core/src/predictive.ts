@@ -17,6 +17,8 @@ export const LIKELIHOOD_BANDS = [
   { label: 'Below 6', min: 0, max: 5 },
 ] as const;
 
+// Nobody who has died is suggested a product: their accounts wait for the estate (ESP phase 1's deceased date).
+const NOT_DECEASED = 'NOT EXISTS (SELECT 1 FROM cdm_party_detail pd WHERE pd.party_id = x.party_id AND pd.deceased_date IS NOT NULL)';
 const BAND_SQL = `CASE WHEN COALESCE(d.bal, 0) >= 10000 THEN '$10,000+' WHEN COALESCE(d.bal, 0) >= 1000 THEN '$1,000 to $9,999' WHEN COALESCE(d.bal, 0) >= 100 THEN '$100 to $999' WHEN COALESCE(d.bal, 0) >= 0 THEN '$0 to $99' ELSE 'Below $0' END`;
 const BALANCES = '(SELECT party_id, SUM(balance) AS bal FROM cdm_deposit_account WHERE close_date IS NULL GROUP BY party_id)';
 
@@ -70,7 +72,7 @@ export class PredictiveService {
     const [rows] = await this.pool.query(
       `SELECT x.product, ${BAND_SQL} AS band, COUNT(*) AS n, MAX(x.run_date) AS run, MAX(x.model_version) AS model
          FROM cdm_suggestion x JOIN cdm_party p ON p.party_id = x.party_id JOIN cdm_location b ON b.int_id = p.primary_branch_id LEFT JOIN ${BALANCES} d ON d.party_id = x.party_id
-        WHERE x.likelihood >= ? AND NOT EXISTS (SELECT 1 FROM mod_suggestion_decline m WHERE m.suggestion_id = x.suggestion_id AND m.reversed_at IS NULL AND m.suppressed_until >= CURDATE())${s.sql}
+        WHERE x.likelihood >= ? AND NOT EXISTS (SELECT 1 FROM mod_suggestion_decline m WHERE m.suggestion_id = x.suggestion_id AND m.reversed_at IS NULL AND m.suppressed_until >= CURDATE()) AND ${NOT_DECEASED}${s.sql}
         GROUP BY x.product, band`,
       [minLikelihood, ...s.params],
     );
@@ -90,7 +92,7 @@ export class PredictiveService {
     const [rows] = await this.pool.query(
       `SELECT x.party_id, p.first_name, p.last_name, b.name AS branch, x.likelihood, COALESCE(d.bal, 0) AS bal, x.reason, ${BAND_SQL} AS band
          FROM cdm_suggestion x JOIN cdm_party p ON p.party_id = x.party_id JOIN cdm_location b ON b.int_id = p.primary_branch_id LEFT JOIN ${BALANCES} d ON d.party_id = x.party_id
-        WHERE x.product = ? AND x.likelihood >= ? AND NOT EXISTS (SELECT 1 FROM mod_suggestion_decline m WHERE m.suggestion_id = x.suggestion_id AND m.reversed_at IS NULL AND m.suppressed_until >= CURDATE())${s.sql}
+        WHERE x.product = ? AND x.likelihood >= ? AND NOT EXISTS (SELECT 1 FROM mod_suggestion_decline m WHERE m.suggestion_id = x.suggestion_id AND m.reversed_at IS NULL AND m.suppressed_until >= CURDATE()) AND ${NOT_DECEASED}${s.sql}
         ${band ? 'HAVING band = ?' : ''} ORDER BY x.likelihood DESC, bal DESC, x.party_id`,
       [product, minLikelihood, ...s.params, ...(band ? [band] : [])],
     );

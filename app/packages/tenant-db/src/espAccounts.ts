@@ -11,9 +11,9 @@
 import { AS_OF, unit } from './generate.ts';
 
 export const ESP_ACCOUNT_DDL = [
-  `CREATE TABLE cdm_account (account_number VARCHAR(12) PRIMARY KEY, primary_party_id INT NOT NULL, account_type VARCHAR(20) NOT NULL, branch_id INT NOT NULL, opened_by_employee_id INT NULL, open_date DATE NOT NULL, close_date DATE NULL, estatements TINYINT NOT NULL, e_notice TINYINT NOT NULL, is_rep_payee TINYINT NOT NULL, KEY ix_acct_party (primary_party_id))`,
+  `CREATE TABLE cdm_account (account_number VARCHAR(12) PRIMARY KEY, primary_party_id INT NOT NULL, account_type VARCHAR(20) NOT NULL, branch_id INT NOT NULL, opened_by_employee_id INT NULL, open_date DATE NOT NULL, close_date DATE NULL, estatements TINYINT NOT NULL, e_notice TINYINT NOT NULL, is_rep_payee TINYINT NOT NULL, open_deposits INT NOT NULL, open_loans INT NOT NULL, deposit_balance DECIMAL(16,2) NOT NULL, loan_balance DECIMAL(16,2) NOT NULL, KEY ix_acct_party (primary_party_id))`,
   `CREATE TABLE cdm_account_holding (account_kind VARCHAR(8) NOT NULL, account_id INT NOT NULL, account_number VARCHAR(12) NOT NULL, suffix VARCHAR(4) NOT NULL, holding_number VARCHAR(12) NOT NULL, PRIMARY KEY (account_kind, account_id), KEY ix_holding_account (account_number), UNIQUE KEY ux_holding_number (holding_number))`,
-  `CREATE TABLE cdm_household (household_id INT PRIMARY KEY, name VARCHAR(80) NOT NULL, head_party_id INT NOT NULL, members INT NOT NULL, street VARCHAR(80) NOT NULL, city VARCHAR(40) NOT NULL, state CHAR(2) NOT NULL, zip CHAR(5) NOT NULL, formed_date DATE NOT NULL)`,
+  `CREATE TABLE cdm_household (household_id INT PRIMARY KEY, name VARCHAR(80) NOT NULL, head_party_id INT NOT NULL, members INT NOT NULL, street VARCHAR(80) NOT NULL, city VARCHAR(40) NOT NULL, state CHAR(2) NOT NULL, zip CHAR(5) NOT NULL, formed_date DATE NOT NULL, open_deposits INT NOT NULL, open_loans INT NOT NULL, deposit_balance DECIMAL(16,2) NOT NULL, loan_balance DECIMAL(16,2) NOT NULL, product_count INT NOT NULL)`,
   `CREATE TABLE cdm_party_detail (party_id INT PRIMARY KEY, member_number VARCHAR(12) NOT NULL, middle_name VARCHAR(40) NULL, preferred_name VARCHAR(40) NULL, tin_type VARCHAR(8) NOT NULL, ssn_last4 CHAR(4) NOT NULL, language VARCHAR(20) NOT NULL, deceased_date DATE NULL, marketing_opt_out TINYINT NOT NULL, UNIQUE KEY ux_detail_number (member_number))`,
   `CREATE TABLE cdm_party_address (party_id INT PRIMARY KEY, street VARCHAR(80) NOT NULL, street2 VARCHAR(40) NULL, city VARCHAR(40) NOT NULL, state CHAR(2) NOT NULL, zip CHAR(5) NOT NULL, KEY ix_addr_zip (zip))`,
   `CREATE TABLE cdm_loan_terms (loan_id INT PRIMARY KEY, structure VARCHAR(12) NOT NULL, rate_type VARCHAR(10) NOT NULL, apr DECIMAL(6,3) NOT NULL, payment_amount DECIMAL(12,2) NOT NULL, payment_due_date DATE NULL, next_rate_change DATE NULL, credit_limit DECIMAL(14,2) NULL, dti DECIMAL(4,2) NULL, pmi TINYINT NOT NULL, escrow_balance DECIMAL(12,2) NULL)`,
@@ -21,9 +21,9 @@ export const ESP_ACCOUNT_DDL = [
 ];
 
 export const ESP_ACCOUNT_COLUMNS = {
-  cdm_account: ['account_number', 'primary_party_id', 'account_type', 'branch_id', 'opened_by_employee_id', 'open_date', 'close_date', 'estatements', 'e_notice', 'is_rep_payee'],
+  cdm_account: ['account_number', 'primary_party_id', 'account_type', 'branch_id', 'opened_by_employee_id', 'open_date', 'close_date', 'estatements', 'e_notice', 'is_rep_payee', 'open_deposits', 'open_loans', 'deposit_balance', 'loan_balance'],
   cdm_account_holding: ['account_kind', 'account_id', 'account_number', 'suffix', 'holding_number'],
-  cdm_household: ['household_id', 'name', 'head_party_id', 'members', 'street', 'city', 'state', 'zip', 'formed_date'],
+  cdm_household: ['household_id', 'name', 'head_party_id', 'members', 'street', 'city', 'state', 'zip', 'formed_date', 'open_deposits', 'open_loans', 'deposit_balance', 'loan_balance', 'product_count'],
   cdm_party_detail: ['party_id', 'member_number', 'middle_name', 'preferred_name', 'tin_type', 'ssn_last4', 'language', 'deceased_date', 'marketing_opt_out'],
   cdm_party_address: ['party_id', 'street', 'street2', 'city', 'state', 'zip'],
   cdm_loan_terms: ['loan_id', 'structure', 'rate_type', 'apr', 'payment_amount', 'payment_due_date', 'next_rate_change', 'credit_limit', 'dti', 'pmi', 'escrow_balance'],
@@ -158,10 +158,10 @@ export function generateAccounts(x: AccountInputs) {
   });
 
   // ---- Accounts and holdings -----------------------------------------------------------------------
-  type Holding = { kind: 'loan' | 'deposit'; id: number; party: number; branch: number; open: string; closed: string | null; label: string };
+  type Holding = { kind: 'loan' | 'deposit'; id: number; party: number; branch: number; open: string; closed: string | null; label: string; balance: number };
   const holdings: Holding[] = [
-    ...x.loans.map((l) => ({ kind: 'loan' as const, id: Number(l[0]), party: Number(l[1]), branch: Number(l[2]), open: day(l[6]), closed: l[7] ? day(l[7]) : l[8] ? day(l[8]) : null, label: String(l[4]) })),
-    ...x.deposits.map((d) => ({ kind: 'deposit' as const, id: Number(d[0]), party: Number(d[1]), branch: Number(d[2]), open: day(d[4]), closed: d[5] ? day(d[5]) : null, label: String(d[3]) })),
+    ...x.loans.map((l) => ({ kind: 'loan' as const, id: Number(l[0]), party: Number(l[1]), branch: Number(l[2]), open: day(l[6]), closed: l[7] ? day(l[7]) : l[8] ? day(l[8]) : null, label: String(l[4]), balance: Number(l[10]) })),
+    ...x.deposits.map((d) => ({ kind: 'deposit' as const, id: Number(d[0]), party: Number(d[1]), branch: Number(d[2]), open: day(d[4]), closed: d[5] ? day(d[5]) : null, label: String(d[3]), balance: Number(d[7]) })),
   ];
   // Which account each holding sits under: a business account for commercial loans and business
   // checking, a trust account for some older people's certificates, else the person's own.
@@ -206,7 +206,31 @@ export function generateAccounts(x: AccountInputs) {
     const by = first ? (openedBy.get(`${first.kind}|${first.id}`) ?? null) : null;
     const age = (Date.parse(`${AS_OF}T00:00:00Z`) - Date.parse(`${day(p[3])}T00:00:00Z`)) / (365.25 * DAY);
     const estmt = estatements.has(a.party) ? 1 : 0;
-    accountRows.push([a.number, a.party, type, branch, by, open, close, estmt, estmt && unit(a.party, 2622) < 0.75 ? 1 : 0, own && age >= 75 && unit(a.party, 2623) < 0.04 ? 1 : 0]);
+    const live = a.holdings.filter((h) => !h.closed);
+    const sum = (k: 'loan' | 'deposit') => round2(live.filter((h) => h.kind === k).reduce((t, h) => t + h.balance, 0));
+    accountRows.push([a.number, a.party, type, branch, by, open, close, estmt, estmt && unit(a.party, 2622) < 0.75 ? 1 : 0, own && age >= 75 && unit(a.party, 2623) < 0.04 ? 1 : 0, live.filter((h) => h.kind === 'deposit').length, live.filter((h) => h.kind === 'loan').length, sum('deposit'), sum('loan')]);
+  }
+
+  // Households carry their members' open accounts and balances, as ESP's householddata does.
+  const householdOf = new Map(x.parties.map((p) => [Number(p[0]), Number(p[7])]));
+  const hhTotals = new Map<number, { deposits: number; loans: number; depositBalance: number; loanBalance: number; products: Set<string> }>();
+  for (const h of holdings) {
+    if (h.closed) continue;
+    const hh = householdOf.get(h.party);
+    if (hh === undefined) continue;
+    const t = hhTotals.get(hh) ?? hhTotals.set(hh, { deposits: 0, loans: 0, depositBalance: 0, loanBalance: 0, products: new Set() }).get(hh)!;
+    if (h.kind === 'deposit') {
+      t.deposits++;
+      t.depositBalance += h.balance;
+    } else {
+      t.loans++;
+      t.loanBalance += h.balance;
+    }
+    t.products.add(`${h.kind}|${h.label}`);
+  }
+  for (const row of households) {
+    const t = hhTotals.get(Number(row[0]));
+    row.push(t?.deposits ?? 0, t?.loans ?? 0, round2(t?.depositBalance ?? 0), round2(t?.loanBalance ?? 0), t?.products.size ?? 0);
   }
 
   // ---- Loan terms ----------------------------------------------------------------------------------

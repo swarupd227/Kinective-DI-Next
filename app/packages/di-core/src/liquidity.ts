@@ -25,6 +25,8 @@ const CORPORATE_LINE = 50_000_000;
 const LADDER: [string, number, number][] = [['0–30 days', 0, 1], ['31–90 days', 1, 3], ['91–180 days', 3, 6], ['181–365 days', 6, 12]];
 /** Of maturing certificates, the share that renews rather than leaves. */
 const CERT_RENEWAL = 0.8;
+/** Of unused credit lines, the share borrowers might draw within 30 days in a stress. */
+export const COMMITMENT_DRAW_30D = 0.1;
 
 export class LiquidityService {
   constructor(
@@ -122,9 +124,28 @@ export class LiquidityService {
       return { pct, runoff, available, covered, shortfall: covered ? 0 : runoff - available, days, used: used.filter((u) => u.amount > 0), coverage: available / runoff };
     });
 
+    // ---- unused credit lines: what borrowers could still draw (ESP phase 1's loan terms) ----
+    // A need beside the stress test, not inside it, so the figures above stay as they were.
+    const lines = await rows<{ loan_category: string; line_count: number; credit_limit: number; drawn: number }>(
+      this.pool,
+      `SELECT l.loan_category, COUNT(*) AS line_count, SUM(t.credit_limit) AS credit_limit, SUM(l.balance) AS drawn
+         FROM cdm_loan l JOIN cdm_loan_terms t ON t.loan_id = l.loan_id
+        WHERE l.close_date IS NULL AND l.charge_off_date IS NULL AND t.structure = 'Line'
+        GROUP BY l.loan_category ORDER BY SUM(t.credit_limit) - SUM(l.balance) DESC`,
+    ).catch(() => null);
+    const commitments = lines?.length
+      ? (() => {
+          const byCategory = lines.map((r) => ({ category: r.loan_category, lines: Number(r.line_count), limit: Number(r.credit_limit), drawn: Number(r.drawn), unused: Math.max(0, Number(r.credit_limit) - Number(r.drawn)) }));
+          const unused = byCategory.reduce((s, x) => s + x.unused, 0);
+          const draw30 = unused * COMMITMENT_DRAW_30D;
+          return { unused, limit: byCategory.reduce((s, x) => s + x.limit, 0), drawn: byCategory.reduce((s, x) => s + x.drawn, 0), draw30, draw30ToLiquid: liquid ? (draw30 / liquid) * 100 : 0, byCategory };
+        })()
+      : null;
+
     return {
       asOf,
       fromCallReport,
+      commitments,
       totalAssets: A,
       shares,
       borrowings,
@@ -146,6 +167,7 @@ export class LiquidityService {
         ['Securities', `Investments beyond a year at ${LENDABLE.securities * 100}% of value, for repo or sale.`],
         [bank ? 'Correspondent line' : 'Corporate line and CLF', bank ? `A committed $${CORPORATE_LINE / 1e6}M correspondent bank line.` : `A committed $${CORPORATE_LINE / 1e6}M corporate line; CLF access through the corporate credit union, not counted as capacity.`],
         ['Stress', `Shares leave evenly over 30 days; sources are used in order: liquid assets, securities, FHLB, discount window, then the ${bank ? 'correspondent' : 'corporate'} line.`],
+        ['Unused credit lines', `Limits less balances on open lines of credit, home equity lines and credit cards; ${COMMITMENT_DRAW_30D * 100}% assumed drawn within 30 days in a stress, shown beside the share-runoff test rather than in it.`],
         ['Model of record', 'DI’s estimate from core data. Collateral rules and actual pledges with the FHLB and the Reserve Bank set the real capacity.'],
       ] as [string, string][],
     };

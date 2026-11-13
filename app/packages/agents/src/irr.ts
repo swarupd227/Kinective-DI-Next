@@ -44,6 +44,10 @@ export function shockFrom(text: string): number | null {
   return SHOCKS_BP.filter((s) => s).reduce((best, s) => (Math.abs(s - v) < Math.abs(best - v) ? s : best), 300);
 }
 
+/** Fixed or variable loans and what reprices soon, from each loan's terms (ESP phase 1). */
+export const RATE_TYPE_REQUEST = /\bfixed (?:vs\.?|versus|or|and) variable\b|\bvariable[- ]rate (?:loans?|share|balances?)\b|\bhow much (?:of our loans )?(?:is|are) (?:variable|floating|adjustable)\b|\bfloating[- ]rate loans?\b|\badjustable[- ]rate loans?\b|\b(?:next|upcoming) rate changes?\b|\breprice (?:by|next|this) (?:the )?quarter\b/i;
+const pct1 = (n: number) => `${n.toFixed(1)}%`;
+
 /** Deposit pricing through the rate cycle, from the ALCO service: betas and new-loan yield. */
 type Pricing = () => ReturnType<AlcoService['pricing']>;
 
@@ -56,7 +60,7 @@ export function irrModule(irr: IrrService, pricing?: Pricing, perShare?: PerShar
     id: 'irr',
     prefix: 'irr',
     agent: 'Interest Rate Risk',
-    request: /^(?![\s\S]*\b(?:leave|leaving|left|outflows?|run ?off|runoff|flight|uninsured|deposit mix|unrealized|aoci|accumulated other comprehensive|underwater|bond portfolio|securities portfolio|fee income|non-?interest income|noninterest income|mortgage banking|diversif\w*)\b)[\s\S]*(?:\bdeposit betas?\b|\bbetas? on (deposits|shares)\b|\bdeposit pricing\b|\bpassed on (the|rate)|\byield on new loans\b|\bnew loan yield\b|\binterest rate risk\b|\birr\b|\bnev\b|\beve\b|economic value of equity|net economic value|\bnii at risk\b|net interest income at risk|rate shocks?|\bif rates (rise|fall|go up|go down|drop|increase|decrease)|repricing gap|\brate sensitivity\b|\b(alm|asset.liability)\b|\bthe fed\b[^.?!]*\b(?:hikes?|hiking|raises?|raising|cuts?|cutting|lowers?|eases?|moves?)\b|\bfed (?:hikes?|raises?|cuts?|lowers?|eases?)\b|\brate (?:hikes?|cuts?|ramps?)\b|\brates? (?:go|goes|went|move|moves|moved) (?:up|down)\b|\b(?:nii|eve|nev|earnings) sensitivity\b|\bwhat happens to (?:our|the bank'?s?|the credit union'?s?) value\b|\brate risk\b)/i,
+    request: /^(?![\s\S]*\b(?:leave|leaving|left|outflows?|run ?off|runoff|flight|uninsured|deposit mix|unrealized|aoci|accumulated other comprehensive|underwater|bond portfolio|securities portfolio|fee income|non-?interest income|noninterest income|mortgage banking|diversif\w*)\b)[\s\S]*(?:\bfixed (?:vs\.?|versus|or|and) variable\b|\bvariable[- ]rate (?:loans?|share|balances?)\b|\bfloating[- ]rate loans?\b|\badjustable[- ]rate loans?\b|\b(?:next|upcoming) rate changes?\b|\bdeposit betas?\b|\bbetas? on (deposits|shares)\b|\bdeposit pricing\b|\bpassed on (the|rate)|\byield on new loans\b|\bnew loan yield\b|\binterest rate risk\b|\birr\b|\bnev\b|\beve\b|economic value of equity|net economic value|\bnii at risk\b|net interest income at risk|rate shocks?|\bif rates (rise|fall|go up|go down|drop|increase|decrease)|repricing gap|\brate sensitivity\b|\b(alm|asset.liability)\b|\bthe fed\b[^.?!]*\b(?:hikes?|hiking|raises?|raising|cuts?|cutting|lowers?|eases?|moves?)\b|\bfed (?:hikes?|raises?|cuts?|lowers?|eases?)\b|\brate (?:hikes?|cuts?|ramps?)\b|\brates? (?:go|goes|went|move|moves|moved) (?:up|down)\b|\b(?:nii|eve|nev|earnings) sensitivity\b|\bwhat happens to (?:our|the bank'?s?|the credit union'?s?) value\b|\brate risk\b)/i,
     noAccess: NO_ACCESS,
     sources: [{ kind: 'table', label: 'Loans, deposits and certificates', ref: 'table:cdm_loan' }],
     prompt: ({ tenant, user, title }) => `You are the Interest Rate Risk agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) reviews interest rate risk for the ALCO. DI estimates it from core data: 12-month net interest income (NII) at risk and economic value under parallel shocks of ${SHOCKS_BP.filter((s) => s).join(', ')} bp, gradual ramps over 12 months with NII for two years, and the repricing gap. A bank's economic value is EVE (economic value of equity), judged against a limit for each shock; a credit union's is NEV (net economic value) with the NEV ratio. The ALM vendor's model remains the one of record; say so when asked about filing or exams.
@@ -65,6 +69,7 @@ export function irrModule(irr: IrrService, pricing?: Pricing, perShare?: PerShar
 - "What happens to our value if the Fed hikes 200 bp?", "NII if rates rise 200 bp?", "EVE at minus 100?": irr_scenario with shock_bp; ramp true when the move is gradual ("over a year").
 - "What drives our rate risk?", "why does EVE fall?": irr_drivers with shock_bp (default 300).
 - "Show the repricing gap": irr_gap.
+- "How much of our loans are fixed vs variable?", "which loans reprice next quarter?": irr_rate_types.
 - "What assumptions does the model use?": irr_assumptions.
 - "What's our deposit beta?", "how much of the rate cuts did we pass on?", "what do new loans yield against the book?": irr_pricing.
 - You are read-only and do not give investment or hedging advice; describe the exposure and let the ALCO decide.`,
@@ -72,6 +77,7 @@ export function irrModule(irr: IrrService, pricing?: Pricing, perShare?: PerShar
       const t = text.toLowerCase();
       if (pricing && !/assum|model/.test(t) && /\bbetas?\b|deposit pricing|passed on|pass[- ]through|cost of (deposits|shares)|new loan yield|yield on new loans|new loans (yield|price)/.test(t)) return { tool: 'irr_pricing', args: {} };
       if (/assumption|how (is|does) (this|it|the model)|prepay|beta|decay/.test(t)) return { tool: 'irr_assumptions', args: {} };
+      if (RATE_TYPE_REQUEST.test(t)) return { tool: 'irr_rate_types', args: {} };
       if (/\bgap\b|reprice|repricing|maturit/.test(t)) return { tool: 'irr_gap', args: {} };
       if (/drive|driver|\bwhy\b|which products|what causes/.test(t)) return { tool: 'irr_drivers', args: { shock_bp: shockFrom(t) ?? 300 } };
       const s = shockFrom(t);
@@ -225,6 +231,23 @@ export function irrModule(irr: IrrService, pricing?: Pricing, perShare?: PerShar
           return {
             text: `Within a year, **${m(a.gap[0]!.assets + year.assets)}** of assets and **${m(a.gap[0]!.liabilities + year.liabilities)}** of liabilities reprice or mature, a cumulative gap of **${m(year.cumulative)}** (${year.cumulativePct.toFixed(1)}% of assets). ${year.cumulative < 0 ? 'More liabilities than assets reprice in the year, so rising rates squeeze income.' : 'More assets than liabilities reprice in the year, so income benefits a little from rising rates, before NEV is considered.'}`,
             blocks: [moduleTable(spec, 'Repricing gap', ctx.runId, 'irr.gap', [{ field: 'band', headerName: 'Reprices or matures in', type: 'text' }, { field: 'assets', headerName: 'Assets', type: 'currency' }, { field: 'liabilities', headerName: 'Liabilities', type: 'currency' }, { field: 'gap', headerName: 'Gap', type: 'currency' }, { field: 'pct', headerName: 'Cumulative, % of assets', type: 'text' }], a.gap.map((g) => ({ band: g.label, assets: Math.round(g.assets), liabilities: Math.round(g.liabilities), gap: Math.round(g.gap), pct: `${g.cumulativePct.toFixed(1)}%` })))],
+          };
+        },
+      },
+      {
+        name: 'irr_rate_types',
+        description: 'Fixed and variable loan balances by category from each loan’s terms, what reprices by the next quarter, and where that differs from what the rate-risk model assumes.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          guard(ctx);
+          const r = await irr.rateTypes();
+          if (!r) return { text: 'Loan terms aren’t loaded for this institution yet, so DI can’t split loans into fixed and variable.', blocks: [] };
+          const off = r.byCategory.filter((x) => x.differs);
+          const lower = (c: string) => (c === 'HELOC' ? 'home equity lines' : c === 'Credit Card' ? 'credit cards' : c.toLowerCase());
+          return {
+            text: `**${pct1(r.variableShare)}** of open loans, ${m(r.variable)} of ${m(r.total)}, carry a variable rate; **${m(r.repricesSoon)}** has a rate change due by the next quarter.${off.length ? ` The rate-risk model treats ${off.map((x) => `${lower(x.category)} as ${x.modelAssumes.toLowerCase()} (${pct1(x.variableShare)} are variable)`).join(' and ')}, so its income sensitivity ${off.some((x) => x.modelAssumes === 'Fixed') ? 'understates how fast those loans reprice' : 'overstates how fast those loans reprice'}. Changing the model is the ALCO’s call.` : ' That matches what the rate-risk model assumes for each category.'}`,
+            blocks: [moduleTable(spec, 'Fixed and variable loans', ctx.runId, 'irr.ratetypes', [{ field: 'category', headerName: 'Loan category', type: 'text' }, { field: 'fixed', headerName: 'Fixed', type: 'currency' }, { field: 'variable', headerName: 'Variable', type: 'currency' }, { field: 'share', headerName: 'Variable share', type: 'text' }, { field: 'soon', headerName: 'Rate changes by next quarter', type: 'currency' }, { field: 'model', headerName: 'Model assumes', type: 'text' }], r.byCategory.map((x) => ({ category: x.category, fixed: Math.round(x.fixed), variable: Math.round(x.variable), share: pct1(x.variableShare), soon: Math.round(x.repricesSoon), model: x.modelAssumes })))],
+            suggestions: ['What’s our interest rate risk?', 'Show the repricing gap'],
           };
         },
       },

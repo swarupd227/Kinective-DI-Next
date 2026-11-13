@@ -84,7 +84,7 @@ export function loanGrowthModule(svc: LoanGrowthService, api: ApiService | null 
     }
     return bits.length > 1 ? `${bits.slice(0, -1).join(', ')} and ${bits.at(-1)}` : (bits[0] ?? '');
   };
-  const left = (x: Awaited<ReturnType<LoanGrowthService['prospects']>>) => `Left out: ${count(x.excluded.delinquent)} behind on a loan with us, ${count(x.excluded.optOut)} who opted out of marketing and ${count(x.excluded.recentContact)} contacted in the last 30 days.`;
+  const left = (x: Awaited<ReturnType<LoanGrowthService['prospects']>>) => `Left out: ${count(x.excluded.delinquent)} behind on a loan with us, ${x.excluded.deceased ? `${count(x.excluded.deceased)} who have died, ` : ''}${count(x.excluded.optOut)} who opted out of marketing and ${count(x.excluded.recentContact)} contacted in the last 30 days.`;
   const lastResult = async () => {
     const sent = (await svc.campaigns()).filter((c) => c.status === 'Sent').at(-1);
     if (!sent) return null;
@@ -174,7 +174,7 @@ export function loanGrowthModule(svc: LoanGrowthService, api: ApiService | null 
               changes: [
                 ...segs.map((s) => ({ label: LG_SEGMENTS[s].label, before: '—', after: `${count(arm(s, 'treatment'))} contacted, ${count(arm(s, 'control'))} held back` })),
                 { label: 'Control group', before: '—', after: `${holdout}% of each segment, chosen at random, never contacted` },
-                { label: 'Left out first', before: '—', after: `${count(x.excluded.delinquent)} behind on a loan, ${count(x.excluded.optOut)} opted out, ${count(x.excluded.recentContact)} contacted recently` },
+                { label: 'Left out first', before: '—', after: `${count(x.excluded.delinquent)} behind on a loan, ${x.excluded.deceased ? `${count(x.excluded.deceased)} who have died, ` : ''}${count(x.excluded.optOut)} opted out, ${count(x.excluded.recentContact)} contacted recently` },
                 { label: 'Sent', before: '—', after: 'Nothing yet. Sending the contacted group to the marketing platform is a separate approval.' },
               ],
               text: `**${count(chosen.length)} members** could borrow from us: ${describe(x, segs)}. ${left(x)} I’ll hold back a random **${holdout}%** of each segment as a control group, never contacted, and contact the other **${count(treatment)}**, so in 60 to 90 days DI can say what the outreach caused: new loans with us, and payments to the other lender that stop.${small.length ? ` ${small.map((s) => LG_SEGMENTS[s].short).join(' and ')} ${small.length === 1 ? 'has' : 'have'} under 100 in the control group, so a small lift there may not be clear.` : ''}${r ? ` For comparison, ${resultLine(r)}.` : ''} Built from our own transaction data, not a credit report, so it isn’t a prescreened offer under the FCRA; the criteria should still go through fair lending review.`,

@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { AS_OF, holdingNumberOf, memberNumberOf, tenantPool, warehouseAvailable } from '@dinext/tenant-db';
 import { blockSchema } from '@dinext/block-schemas';
 import { memberNumber, RelationshipService } from '@dinext/di-core';
+import { SemanticService } from '@dinext/semantic';
 import { member360 } from '../src/index.ts';
 import { termsDetail } from '../src/member.ts';
 
@@ -91,6 +92,25 @@ for (const DB of ['dinext_t_test_cu', 'dinext_t_test_bank']) {
         const deceased = await pickOne('SELECT party_id AS id FROM cdm_party_detail WHERE deceased_date IS NOT NULL ORDER BY party_id LIMIT 1');
         expect(member360(await svc.profile(deceased, {}), 'r').data.badges.map((b) => b.label)).toContain('Deceased');
       }
+    });
+
+    it('answers the new questions, and they tie to the figures DI already shows', async () => {
+      const svc = await SemanticService.create(pool, DB.replace('dinext_t_', ''), DB.endsWith('bank') ? 'bank' : 'credit_union');
+      const one = async (metric: string) => Number((await svc.query({ metrics: [metric] }, { canViewSql: true })).rows[0]![metric]);
+      for (const m of ['household_count', 'products_per_household', 'average_household_deposits', 'account_count', 'scheduled_loan_payments', 'credit_line_limits', 'unused_commitments', 'line_utilization', 'variable_rate_share', 'marketing_opt_out_rate']) expect(await one(m), m).toBeGreaterThan(0);
+      const deposits = await one('deposit_balance');
+      const loans = await one('loan_balance');
+      expect(await one('account_deposit_balance')).toBeCloseTo(deposits, 0);
+      expect(await one('account_loan_balance')).toBeCloseTo(loans, 0);
+      expect((await one('average_household_deposits')) * (await one('household_count'))).toBeCloseTo(deposits, -1);
+      const byRate = await svc.query({ metrics: ['loan_balance'], dimensions: ['rate_type'] }, { canViewSql: true });
+      expect(byRate.rows.reduce((t, r) => t + Number(r.loan_balance), 0)).toBeCloseTo(loans, 0);
+      const byLanguage = await svc.query({ metrics: ['member_count'], dimensions: ['language'] }, { canViewSql: true });
+      expect(byLanguage.rows.reduce((t, r) => t + Number(r.member_count), 0)).toBe(await one('member_count'));
+      expect(await one('line_utilization')).toBeLessThanOrEqual(100);
+      // Existing questions still read the tables they did: no new join.
+      const plain = await svc.query({ metrics: ['loan_balance', 'deposit_balance', 'member_count'], dimensions: ['branch'] }, { canViewSql: true });
+      expect(plain.lineage.flatMap((l) => l.tables).filter((t) => /terms|detail|address|household|cdm_account$/.test(t))).toEqual([]);
     });
 
     it('gives every share its terms, with certificate terms and opening deposits that make sense', async () => {

@@ -288,8 +288,9 @@ describe.skipIf(!up)('more modules against the warehouse', () => {
       const { out, r } = await run(cmp, turn('Build an audience of members with no auto loan', 'thr_m2'));
       expect(r.texts[0]).toMatch(/after removing .* opt-outs/);
       const changes = out.approval!.card.data.preview.kind === 'diff' ? out.approval!.card.data.preview.changes : [];
-      const num = (l: string) => Number(changes.find((c) => c.label.startsWith(l))!.after.replace(/,/g, ''));
-      expect(num('Matched') - num('Marketing') - num('Recent')).toBe(num('Audience'));
+      const num = (l: string) => Number(changes.find((c) => c.label.startsWith(l))?.after.replace(/,/g, '') ?? 0);
+      expect(num('Matched') - num('Deceased') - num('Marketing') - num('Recent')).toBe(num('Audience'));
+      expect(num('Deceased')).toBeGreaterThan(0);
     });
   });
 

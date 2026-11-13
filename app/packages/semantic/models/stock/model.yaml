@@ -121,6 +121,53 @@ sources:
     purview_column: '0'
     institution_types: [bank]
     lineage: [cr_value, cr_line]
+  # ESP alignment, phase 1. Listed after the sources above so every existing question still compiles to
+  # the same source and SQL; these answer only what needs the new tables.
+  loan_terms_current:
+    # Open loans with their terms: rate type, structure, payment, due date and a line's limit.
+    kind: current
+    table: cdm_loan
+    alias: l
+    joins: ['JOIN cdm_location AS loc ON loc.int_id = l.branch_id', 'JOIN cdm_loan_terms AS lt ON lt.loan_id = l.loan_id']
+    filters: ['l.close_date IS NULL', 'l.charge_off_date IS NULL']
+    purview_column: l.branch_id
+    lineage: [cdm_loan, cdm_loan_terms, cdm_location]
+  deposit_terms_current:
+    # Open deposit accounts with their terms: certificate term and renewal.
+    kind: current
+    table: cdm_deposit_account
+    alias: d
+    joins: ['JOIN cdm_location AS loc ON loc.int_id = d.branch_id', 'JOIN cdm_deposit_terms AS dt ON dt.account_id = d.account_id']
+    filters: ['d.close_date IS NULL']
+    purview_column: d.branch_id
+    lineage: [cdm_deposit_account, cdm_deposit_terms, cdm_location]
+  party_detail_current:
+    # Members with their details and address: language, marketing preference, city and ZIP.
+    kind: current
+    table: cdm_party
+    alias: p
+    joins: ['JOIN cdm_location AS loc ON loc.int_id = p.primary_branch_id', 'JOIN cdm_party_detail AS pd ON pd.party_id = p.party_id', 'JOIN cdm_party_address AS pa ON pa.party_id = p.party_id']
+    filters: ['p.is_member = 1']
+    purview_column: p.primary_branch_id
+    lineage: [cdm_party, cdm_party_detail, cdm_party_address, cdm_location]
+  household_current:
+    # Households with at least one open account, at the head of household's branch.
+    kind: current
+    table: cdm_household
+    alias: hh
+    joins: ['JOIN cdm_party AS hhp ON hhp.party_id = hh.head_party_id', 'JOIN cdm_location AS loc ON loc.int_id = hhp.primary_branch_id']
+    filters: ['hh.open_deposits + hh.open_loans > 0']
+    purview_column: hhp.primary_branch_id
+    lineage: [cdm_household, cdm_party, cdm_location]
+  account_current:
+    # Open accounts (membership or customer numbers) with their open balances.
+    kind: current
+    table: cdm_account
+    alias: ac
+    joins: ['JOIN cdm_location AS loc ON loc.int_id = ac.branch_id']
+    filters: ['ac.close_date IS NULL']
+    purview_column: ac.branch_id
+    lineage: [cdm_account, cdm_account_holding, cdm_location]
 
 dimensions:
   branch:
@@ -138,6 +185,11 @@ dimensions:
       party_history: loc.name
       member_history: loc.name
       application_history: loc.name
+      loan_terms_current: loc.name
+      deposit_terms_current: loc.name
+      party_detail_current: loc.name
+      household_current: loc.name
+      account_current: loc.name
     values_sql: SELECT name FROM cdm_location ORDER BY int_id
   region:
     label: Region
@@ -153,6 +205,11 @@ dimensions:
       party_history: loc.region
       member_history: loc.region
       application_history: loc.region
+      loan_terms_current: loc.region
+      deposit_terms_current: loc.region
+      party_detail_current: loc.region
+      household_current: loc.region
+      account_current: loc.region
     values_sql: SELECT DISTINCT region FROM cdm_location ORDER BY region
   loan_category:
     label: Loan category
@@ -163,6 +220,7 @@ dimensions:
       loan_history: h.loan_category
       loan_dq_history: hq.loan_category
       application_history: ha.loan_category
+      loan_terms_current: l.loan_category
     values_sql: SELECT DISTINCT loan_category FROM cdm_loan ORDER BY loan_category
   origination_channel:
     label: Origination channel
@@ -172,6 +230,7 @@ dimensions:
       loan_current: "CASE WHEN l.is_indirect = 1 THEN 'Indirect' ELSE 'Direct' END"
       loan_history: "CASE WHEN h.is_indirect = 1 THEN 'Indirect' ELSE 'Direct' END"
       loan_dq_history: "CASE WHEN hq.is_indirect = 1 THEN 'Indirect' ELSE 'Direct' END"
+      loan_terms_current: "CASE WHEN l.is_indirect = 1 THEN 'Indirect' ELSE 'Direct' END"
     values: [Direct, Indirect]
   delinquency_bucket:
     label: Days past due
@@ -197,6 +256,7 @@ dimensions:
     exprs:
       deposit_current: d.deposit_category
       deposit_history: hd.deposit_category
+      deposit_terms_current: d.deposit_category
     values_sql: SELECT DISTINCT deposit_category FROM cdm_deposit_account ORDER BY deposit_category
   segment:
     label: Member segment
@@ -205,6 +265,7 @@ dimensions:
     synonyms: [segment, member type, customer type]
     exprs:
       party_current: p.segment_code
+      party_detail_current: p.segment_code
     values_sql: SELECT DISTINCT segment_code FROM cdm_party ORDER BY segment_code
   age_band:
     label: Age band
@@ -249,6 +310,78 @@ dimensions:
     exprs:
       loan_current: "COALESCE(l.source, 'Core')"
     values_sql: SELECT DISTINCT COALESCE(source, 'Core') FROM cdm_loan ORDER BY 1
+
+  # ESP alignment, phase 1.
+  rate_type:
+    label: Rate type
+    description: Whether a loan's rate is fixed or variable (it moves with an index). Lines of credit and credit cards are variable.
+    synonyms: [rate type, fixed or variable, fixed rate, variable rate, adjustable rate, floating rate, arm, adjustable]
+    exprs:
+      loan_terms_current: lt.rate_type
+    values: [Fixed, Variable]
+  loan_structure:
+    label: Loan structure
+    description: Whether a loan pays down on a schedule (amortizing) or is a line the borrower draws on (lines of credit, home equity lines, credit cards).
+    synonyms: [loan structure, amortizing, installment loans, lines of credit, credit lines, revolving lines]
+    exprs:
+      loan_terms_current: lt.structure
+    values: [Amortizing, Line]
+  payment_due:
+    label: Next payment due
+    description: When each open loan's next payment falls, counted from the build date. Late loans are due from the payment they missed.
+    synonyms: [payment due, payments due, due date, due this week, due next week, coming due, upcoming payments, next payment]
+    exprs:
+      loan_terms_current: "CASE WHEN lt.payment_due_date IS NULL THEN 'Nothing due' WHEN l.days_delinquent > 0 THEN 'Late' WHEN lt.payment_due_date <= DATE_ADD((SELECT MAX(mb.as_of_date) FROM meta_build AS mb), INTERVAL 7 DAY) THEN 'In the next 7 days' WHEN lt.payment_due_date <= DATE_ADD((SELECT MAX(mb.as_of_date) FROM meta_build AS mb), INTERVAL 30 DAY) THEN 'In 8 to 30 days' ELSE 'Later' END"
+    values: [Late, In the next 7 days, In 8 to 30 days, Later, Nothing due]
+  renewal:
+    label: Certificate renewal
+    description: Whether a certificate renews automatically at maturity or pays out. Other accounts don't mature.
+    synonyms: [auto renew, auto-renew, automatic renewal, renews automatically, rollover, roll over, pays out at maturity, renewal]
+    exprs:
+      deposit_terms_current: "CASE WHEN dt.auto_renew = 1 THEN 'Renews automatically' WHEN dt.auto_renew = 0 THEN 'Pays out at maturity' ELSE 'Not a certificate' END"
+    values: [Renews automatically, Pays out at maturity, Not a certificate]
+  certificate_term:
+    label: Certificate term
+    description: A certificate's term in months. Accounts without a term (savings, checking, money market, IRAs) show no term.
+    synonyms: [certificate term, cd term, term of the certificate, 12 month, 24 month, 60 month, 12-month, 24-month, 60-month]
+    exprs:
+      deposit_terms_current: "CASE WHEN dt.term_months IS NULL THEN 'No term' ELSE CONCAT(dt.term_months, ' months') END"
+    values: [12 months, 24 months, 60 months, No term]
+  language:
+    label: Preferred language
+    description: The language the member prefers to be served in, from the core.
+    synonyms: [language, preferred language, spanish, spanish-speaking, speaks spanish, vietnamese, chinese, non-english]
+    exprs:
+      party_detail_current: pd.language
+    values: [English, Spanish, Vietnamese, Chinese, Russian, Tagalog, Korean]
+  city:
+    label: City
+    description: The city on the member's address.
+    synonyms: [city, town, by city, which city, where members live, where they live, hometown]
+    exprs:
+      party_detail_current: pa.city
+    values_sql: SELECT DISTINCT city FROM cdm_party_address ORDER BY city
+  zip_code:
+    label: ZIP code
+    description: The ZIP code on the member's address.
+    synonyms: [zip, zip code, zipcode, postal code, by zip]
+    exprs:
+      party_detail_current: pa.zip
+    values_sql: SELECT DISTINCT zip FROM cdm_party_address ORDER BY zip
+  marketing_preference:
+    label: Marketing preference
+    description: Whether the member accepts marketing offers or opted out (they still get service messages).
+    synonyms: [marketing preference, opted out, opt out, opt-out, do not market, accepts offers, unsubscribed]
+    exprs:
+      party_detail_current: "CASE WHEN pd.marketing_opt_out = 1 THEN 'Opted out' ELSE 'Accepts offers' END"
+    values: [Accepts offers, Opted out]
+  account_ownership:
+    label: Account ownership
+    description: Whose account it is - an individual's, joint, a trust's or a business's. Each member's own account is individual or joint; business accounts hold commercial loans and business checking.
+    synonyms: [account ownership, ownership, joint accounts, trust accounts, individual accounts, joint or individual]
+    exprs:
+      account_current: ac.account_type
+    values: [Individual, Joint, Trust, Business]
 
 # Aggregations per source. {{ setting.x }} reads a tenant setting; values are never user input.
 measures:
@@ -354,6 +487,7 @@ measures:
       loan_current: SUM(l.balance)
       loan_history: SUM(h.balance)
       loan_dq_history: SUM(hq.balance)
+      loan_terms_current: SUM(l.balance)
   delinquent_30_balance_sum:
     unit: usd
     exprs:
@@ -371,6 +505,7 @@ measures:
       loan_current: COUNT(*)
       loan_history: SUM(h.loan_count)
       loan_dq_history: SUM(hq.loan_count)
+      loan_terms_current: COUNT(*)
   loan_rate_weighted:
     unit: number
     exprs:
@@ -430,6 +565,7 @@ measures:
     exprs:
       deposit_current: SUM(d.balance)
       deposit_history: SUM(hd.balance)
+      deposit_terms_current: SUM(d.balance)
   deposit_rate_weighted:
     unit: number
     exprs:
@@ -571,6 +707,7 @@ measures:
       party_current: COUNT(*)
       party_history: SUM(hp.member_count)
       member_history: SUM(hm.member_count)
+      party_detail_current: COUNT(*)
   member_month_sum:
     unit: count
     flow: true
@@ -635,6 +772,63 @@ measures:
     flow: true
     exprs:
       application_history: SUM(ha.decided_count)
+  # ESP alignment, phase 1.
+  terms_loan_balance_sum:
+    unit: usd
+    exprs:
+      loan_terms_current: SUM(l.balance)
+  variable_rate_balance_sum:
+    unit: usd
+    exprs:
+      loan_terms_current: "SUM(CASE WHEN lt.rate_type = 'Variable' THEN l.balance ELSE 0 END)"
+  credit_line_limit_sum:
+    unit: usd
+    exprs:
+      loan_terms_current: "SUM(CASE WHEN lt.structure = 'Line' THEN lt.credit_limit ELSE 0 END)"
+  credit_line_balance_sum:
+    unit: usd
+    exprs:
+      loan_terms_current: "SUM(CASE WHEN lt.structure = 'Line' THEN l.balance ELSE 0 END)"
+  unused_commitment_sum:
+    unit: usd
+    exprs:
+      loan_terms_current: "SUM(CASE WHEN lt.structure = 'Line' THEN GREATEST(lt.credit_limit - l.balance, 0) ELSE 0 END)"
+  scheduled_payment_sum:
+    unit: usd
+    exprs:
+      loan_terms_current: SUM(lt.payment_amount)
+  detail_member_sum:
+    unit: count
+    exprs:
+      party_detail_current: COUNT(*)
+  opted_out_member_sum:
+    unit: count
+    exprs:
+      party_detail_current: SUM(pd.marketing_opt_out = 1)
+  household_count_sum:
+    unit: count
+    exprs:
+      household_current: COUNT(*)
+  household_product_sum:
+    unit: count
+    exprs:
+      household_current: SUM(hh.product_count)
+  household_deposit_sum:
+    unit: usd
+    exprs:
+      household_current: SUM(hh.deposit_balance)
+  account_count_sum:
+    unit: count
+    exprs:
+      account_current: COUNT(*)
+  account_deposit_sum:
+    unit: usd
+    exprs:
+      account_current: SUM(ac.deposit_balance)
+  account_loan_sum:
+    unit: usd
+    exprs:
+      account_current: SUM(ac.loan_balance)
 
 metrics:
   loan_balance:
@@ -645,7 +839,7 @@ metrics:
     description: Sum of the current balance of every open loan. Closed and charged-off loans are excluded.
     synonyms: [loans, total loans, loans outstanding, loan portfolio, loan book, lending, loan growth, loan balances]
     owner: Finance data team
-    dimensions_allowed: [branch, region, loan_category, origination_channel, delinquency_bucket, vintage, credit_score_band, ltv_band, term_band, risk_rating, loan_source]
+    dimensions_allowed: [branch, region, loan_category, origination_channel, delinquency_bucket, vintage, credit_score_band, ltv_band, term_band, risk_rating, loan_source, rate_type, loan_structure, payment_due]
   loan_count:
     label: Number of open loans
     type: simple
@@ -654,7 +848,7 @@ metrics:
     description: Count of open loans. Closed and charged-off loans are excluded.
     synonyms: [loan count, how many loans, number of loans, loans open]
     owner: Finance data team
-    dimensions_allowed: [branch, region, loan_category, origination_channel, delinquency_bucket, vintage, loan_source]
+    dimensions_allowed: [branch, region, loan_category, origination_channel, delinquency_bucket, vintage, loan_source, rate_type, loan_structure, payment_due]
   delinquency_ratio_60_plus:
     label: Delinquency ratio (60+ days)
     type: ratio
@@ -790,7 +984,7 @@ metrics:
     description: Sum of the balance of every open deposit account.
     synonyms: [deposits, shares, total shares, total deposits, deposit balances, savings, funding]
     owner: Finance data team
-    dimensions_allowed: [branch, region, deposit_category]
+    dimensions_allowed: [branch, region, deposit_category, renewal, certificate_term]
   deposit_account_count:
     label: Number of deposit accounts
     labels_by_type: { credit_union: Number of share accounts }
@@ -1296,7 +1490,7 @@ metrics:
     description: People who hold an open primary relationship with the institution.
     synonyms: [members, customers, membership, how many members, member base, customer base]
     owner: Member experience team
-    dimensions_allowed: [branch, region, segment, age_band]
+    dimensions_allowed: [branch, region, segment, age_band, language, city, zip_code, marketing_preference]
   approval_rate:
     label: Loan application approval rate
     type: ratio
@@ -1412,3 +1606,124 @@ metrics:
     synonyms: [products per member, product penetration, cross-sell ratio, cross sell, products per customer, depth of relationship, relationship depth]
     owner: Member experience team
     dimensions_allowed: [branch, region, age_band]
+  # ESP alignment, phase 1.
+  household_count:
+    label: Households
+    type: simple
+    measure: household_count_sum
+    format: count
+    description: Households with at least one open account, counted at the head of household's branch.
+    synonyms: [households, number of households, how many households, household count, families]
+    owner: Member experience team
+    dimensions_allowed: [branch, region]
+  products_per_household:
+    label: Products per household
+    type: ratio
+    numerator: household_product_sum
+    denominator: household_count_sum
+    format: decimal
+    description: Kinds of products a household holds (each loan and deposit category counts once), averaged over households with an open account.
+    synonyms: [products per household, household products, cross-sell per household, household penetration, products held per household]
+    owner: Member experience team
+    dimensions_allowed: [branch, region]
+  average_household_deposits:
+    label: Average deposits per household
+    labels_by_type: { credit_union: Average shares per household }
+    type: ratio
+    numerator: household_deposit_sum
+    denominator: household_count_sum
+    format: currency
+    description: Open deposit balances of a household's members, averaged over households with an open account.
+    synonyms: [average deposits per household, deposits per household, household deposits, average household balance, shares per household]
+    owner: Member experience team
+    dimensions_allowed: [branch, region]
+  account_count:
+    label: Accounts
+    type: simple
+    measure: account_count_sum
+    format: count
+    description: Open accounts - membership or customer numbers - each holding the person's loans and shares. Most members have one; business and trust accounts are separate.
+    synonyms: [membership accounts, account numbers, relationship accounts, joint accounts, trust accounts, business accounts, accounts by ownership]
+    owner: Member experience team
+    dimensions_allowed: [branch, region, account_ownership]
+  account_deposit_balance:
+    label: Deposits by account ownership
+    labels_by_type: { credit_union: Shares by account ownership }
+    type: simple
+    measure: account_deposit_sum
+    format: currency
+    description: Open deposit balances, by the account they sit under - individual, joint, trust or business.
+    synonyms: [deposits in joint accounts, deposits by ownership, trust account deposits, business account deposits, shares by ownership]
+    owner: Finance data team
+    dimensions_allowed: [branch, region, account_ownership]
+  account_loan_balance:
+    label: Loans by account ownership
+    type: simple
+    measure: account_loan_sum
+    format: currency
+    description: Open loan balances, by the account they sit under - individual, joint, trust or business.
+    synonyms: [loans by ownership, loans in business accounts, loans in joint accounts, trust account loans]
+    owner: Finance data team
+    dimensions_allowed: [branch, region, account_ownership]
+  scheduled_loan_payments:
+    label: Scheduled loan payments
+    type: simple
+    measure: scheduled_payment_sum
+    format: currency
+    description: The next scheduled payment on every open loan, added up. By when it's due, it shows what is coming in this week and this month.
+    synonyms: [scheduled payments, loan payments due, payments due, payments coming due, monthly payments, payments due this week, expected payments]
+    owner: Finance data team
+    dimensions_allowed: [branch, region, loan_category, payment_due, loan_structure, rate_type]
+    current_only: true
+  credit_line_limits:
+    label: Credit line limits
+    type: simple
+    measure: credit_line_limit_sum
+    format: currency
+    description: Approved limits on open lines of credit, home equity lines and credit cards.
+    synonyms: [credit limits, credit line limits, line limits, approved lines, total credit lines]
+    owner: Finance data team
+    dimensions_allowed: [branch, region, loan_category]
+    current_only: true
+  unused_commitments:
+    label: Unused credit lines
+    type: simple
+    measure: unused_commitment_sum
+    format: currency
+    description: What borrowers could still draw on their open lines of credit, home equity lines and credit cards - the limit less the balance. A liquidity need if they draw, and reported as unused commitments on the Call Report.
+    synonyms: [unused commitments, unfunded commitments, undrawn lines, unused lines, unused credit lines, available credit, open to buy, untapped lines]
+    owner: Finance data team
+    dimensions_allowed: [branch, region, loan_category]
+    current_only: true
+  line_utilization:
+    label: Credit line utilization
+    type: ratio
+    numerator: credit_line_balance_sum
+    denominator: credit_line_limit_sum
+    format: percent_1
+    description: Balances drawn on open lines of credit, home equity lines and credit cards, as a share of their limits.
+    synonyms: [line utilization, credit utilization, utilization, how much of their lines, drawn share, usage of credit lines]
+    owner: Credit risk team
+    dimensions_allowed: [branch, region, loan_category]
+    current_only: true
+  variable_rate_share:
+    label: Variable-rate share of loans
+    type: ratio
+    numerator: variable_rate_balance_sum
+    denominator: terms_loan_balance_sum
+    format: percent_1
+    description: Open loan balances whose rate moves with an index, as a share of all open loans. These reprice when rates change.
+    synonyms: [variable rate share, share of variable rate loans, floating rate share, adjustable rate share, how much of our loans are variable, variable loans, fixed vs variable]
+    owner: Finance data team
+    dimensions_allowed: [branch, region, loan_category]
+    current_only: true
+  marketing_opt_out_rate:
+    label: Marketing opt-out rate
+    type: ratio
+    numerator: opted_out_member_sum
+    denominator: detail_member_sum
+    format: percent_1
+    description: Members who opted out of marketing, as a share of all members. They still get service messages; campaigns leave them out.
+    synonyms: [opt-out rate, marketing opt-out rate, opted out of marketing, how many opted out, do not market rate]
+    owner: Member experience team
+    dimensions_allowed: [branch, region, segment, language]
