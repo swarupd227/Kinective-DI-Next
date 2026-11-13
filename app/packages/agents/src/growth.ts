@@ -7,6 +7,8 @@ import { money } from './pipelineAgent.ts';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 const clean = (t: string) => t.trim().replace(/[.!?]+$/, '').replace(/’/g, "'");
+/** How dealers' loans perform, from each indirect loan's dealer (ESP phase 1b). */
+export const DEALER_QUALITY = /\bdelinquen\w*|\bpast due\b|\bcharge[ds]?[- ]?offs?\b|\bcharged off\b|\bgoing bad\b|\bloan (?:quality|performance)\b|\bcredit quality\b|\bperforming loans?\b|\bloans? (?:go|went|going) bad\b/i;
 const pct = (now: number, before: number) => (before ? Math.round(((now - before) / before) * 1000) / 10 : 0);
 const change = (now: number, before: number) => (before ? `${now >= before ? 'up' : 'down'} ${Math.abs(pct(now, before))}%` : 'new this period');
 
@@ -32,7 +34,8 @@ export function indirectModule(ind: IndirectService, dealerNames: string[], toda
 - "Plan visits for my top ten dealers near Westport": ind_visit_plan.
 - "Log a visit to Smith Ford: met the finance manager": ind_visit_log with their words as note.
 - "Make Tom Walsh the rep for Smith Ford": ind_rep_change.
-- "How many indirect borrowers became direct members this year?": ind_direct_conversion.`,
+- "How many indirect borrowers became direct members this year?": ind_direct_conversion.
+- "Which dealers' loans are going bad?", "delinquency by dealer": ind_loan_quality.`,
     plan: (text) => {
       const t = clean(text);
       const dealer = dealerIn(t);
@@ -42,6 +45,7 @@ export function indirectModule(ind: IndirectService, dealerNames: string[], toda
       const rep = /\b[Mm]ake ((?:[A-Z][\w'-]*\s?){1,3}?)\s+the rep\b/.exec(t)?.[1];
       if (rep) return dealer ? { tool: 'ind_rep_change', args: { dealer, rep: rep.trim() } } : { say: 'Which dealer?' };
       if (/\bplan\b.*\bvisits?\b/i.test(t)) return { tool: 'ind_visit_plan', args: { count: Number(/\btop (\d+)\b/i.exec(t)?.[1] ?? (/\bten\b/i.test(t) ? 10 : 5)), near: /\bnear ([A-Z][a-z]+)/.exec(t)?.[1] ?? '' } };
+      if (DEALER_QUALITY.test(t)) return { tool: 'ind_loan_quality', args: {} };
       return { tool: 'ind_performance', args: { period, ...(dealer ? { dealer } : {}) } };
     },
     tools: [
@@ -60,6 +64,23 @@ export function indirectModule(ind: IndirectService, dealerNames: string[], toda
           const drops = p.dealers.filter((d) => d.prior.funded > d.funded).sort((x, y) => (x.funded - x.prior.funded) - (y.funded - y.prior.funded));
           const top = p.dealers[0];
           return { text: `${p.dealers.length} dealers in ${p.label}. ${top ? `**${top.name}** sent the most applications (${top.received}).` : ''} ${drops.length ? `The biggest drop in funded loans is **${drops[0]!.name}**: ${drops[0]!.funded}, down from ${drops[0]!.prior.funded} in ${p.priorLabel}.` : `No dealer funded fewer loans than in ${p.priorLabel}.`}${p.partial ? ` ${p.label.replace(' to date', '')} isn’t over yet, so it’s set against a whole ${p.priorLabel}.` : ''}`, blocks: [moduleTable(spec, `Dealers, ${p.label}`, ctx.runId, 'indirect.dealer.performance', [{ field: 'name', headerName: 'Dealer', type: 'text' }, { field: 'received', headerName: 'Received', type: 'count' }, { field: 'approved', headerName: 'Approved', type: 'count' }, { field: 'funded', headerName: 'Funded', type: 'count' }, { field: 'amount', headerName: 'Funded $', type: 'currency' }, { field: 'change', headerName: `vs ${p.priorLabel}`, type: 'text' }, { field: 'fico', headerName: 'Avg FICO', type: 'number' }], p.dealers.map((d) => ({ name: d.name, received: d.received, approved: d.approved, funded: d.funded, amount: d.fundedAmount, change: change(d.funded, d.prior.funded), fico: d.avgFico })))] };
+        },
+      },
+      {
+        name: 'ind_loan_quality',
+        description: 'How each dealer’s loans are performing: open balance, the share 30 and 60+ days late, loans charged off and the average credit score, worst first.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const q = await ind.loanQuality(ctx);
+          if (!q || !q.dealers.length) return { text: 'DI doesn’t have each indirect loan’s dealer for this institution yet, so it can’t show loan performance by dealer.' };
+          const worst = q.dealers[0]!;
+          const pct = (n: number) => `${n.toFixed(2)}%`;
+          return {
+            text: `Indirect loans with a dealer: **${money(q.balance)}** open, ${pct(q.dq60Pct)} 60 or more days late. **${worst.name}** has the highest share late, ${pct(worst.dq60Pct)} of ${money(worst.balance)}${worst.chargedOff ? `, and ${worst.chargedOff} of its loans have been charged off` : ''}. Credit quality reflects underwriting at the time; talk with the dealer about the mix it sends, not individual borrowers.`,
+            blocks: [moduleTable(spec, 'Indirect loans by dealer', ctx.runId, 'indirect.dealer.quality', [{ field: 'name', headerName: 'Dealer', type: 'text' }, { field: 'branch', headerName: 'Branch', type: 'text' }, { field: 'loans', headerName: 'Open loans', type: 'count' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'dq30', headerName: '30+ days', type: 'text' }, { field: 'dq60', headerName: '60+ days', type: 'text' }, { field: 'chargedOff', headerName: 'Charged off', type: 'count' }, { field: 'score', headerName: 'Avg score', type: 'number' }], q.dealers.map((d) => ({ name: d.name, branch: d.branch, loans: d.openLoans, balance: Math.round(d.balance), dq30: pct(d.dq30Pct), dq60: pct(d.dq60Pct), chargedOff: d.chargedOff, score: d.avgScore ?? 0 })))],
+            suggestions: ['Which dealers had the biggest drop in funded loans this month?'],
+          };
         },
       },
       {

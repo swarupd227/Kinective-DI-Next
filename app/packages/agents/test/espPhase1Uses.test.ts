@@ -3,10 +3,10 @@
 // campaigns leave out the deceased and those who opted out of marketing; liquidity shows what borrowers
 // could still draw on their lines; rate risk shows fixed and variable loans against the model.
 import { describe, expect, it } from 'vitest';
-import { CampaignService, IrrService, LiquidityService, LoanGrowthService, PredictiveService, RelationshipService } from '@dinext/di-core';
+import { CampaignService, IndirectService, IrrService, LiquidityService, LoanGrowthService, PredictiveService, RelationshipService } from '@dinext/di-core';
 import { SemanticService } from '@dinext/semantic';
 import { tenantPool, warehouseAvailable } from '@dinext/tenant-db';
-import { irrModule, liquidityModule } from '../src/index.ts';
+import { indirectModule, irrModule, liquidityModule } from '../src/index.ts';
 
 describe('routing', () => {
   it('sends unused lines to Liquidity and fixed or variable to Interest Rate Risk, without taking their old questions', () => {
@@ -21,6 +21,11 @@ describe('routing', () => {
     expect(irr.request.test('How much of our loans are fixed vs variable?')).toBe(true);
     expect((irr.plan('How much of our loans are fixed vs variable?', {} as never) as { tool?: string }).tool).toBe('irr_rate_types');
     expect((irr.plan('Show the repricing gap', {} as never) as { tool?: string }).tool).toBe('irr_gap');
+    const ind = indirectModule({} as IndirectService, ['Smith Ford'], () => '2026-10-25');
+    expect(ind.request.test('Which dealers’ loans are going bad?')).toBe(true);
+    expect((ind.plan('Which dealers’ loans are going bad?', {} as never) as { tool?: string }).tool).toBe('ind_loan_quality');
+    expect((ind.plan('Show delinquency by dealer', {} as never) as { tool?: string }).tool).toBe('ind_loan_quality');
+    expect((ind.plan('Which dealers had the biggest drop in funded loans this month?', {} as never) as { tool?: string }).tool).toBe('ind_performance');
   });
 });
 
@@ -62,6 +67,17 @@ for (const DB of ['dinext_t_test_cu', 'dinext_t_test_bank']) {
         expect(lg.excluded.optOut).toBeGreaterThan(0);
         expect(lg.prospects.filter((x) => blocked.has(x.partyId))).toEqual([]);
       }
+    });
+
+    it('shows how each dealer’s loans perform, and the dealers add up to the indirect book', async () => {
+      const q = (await new IndirectService(pool).loanQuality({}))!;
+      expect(q.dealers.length).toBeGreaterThan(0);
+      const [[r]] = (await pool.query('SELECT SUM(balance) AS b FROM cdm_loan WHERE is_indirect = 1 AND close_date IS NULL AND charge_off_date IS NULL')) as unknown as [{ b: number }[]];
+      expect(q.balance).toBeCloseTo(Number(r!.b), 0);
+      expect(q.dealers[0]!.dq60Pct).toBeGreaterThanOrEqual(q.dealers.at(-1)!.dq60Pct);
+      // Purview narrows it to the branch's own dealers.
+      const branch = q.dealers[0]!.branch;
+      expect((await new IndirectService(pool).loanQuality({ purviewBranches: [branch] }))!.dealers.every((d) => d.branch === branch)).toBe(true);
     });
 
     it('shows what borrowers could still draw, matching the semantic figure, beside the stress test', async () => {

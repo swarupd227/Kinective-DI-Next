@@ -106,6 +106,37 @@ export class IndirectService {
     return { ...p, dealers };
   }
 
+  /**
+   * How each dealer's loans are performing, from each indirect loan's dealer (ESP phase 1b): open balance,
+   * the share 30 and 60+ days late, loans charged off and the average credit score at origination. Worst
+   * 60+ share first. Null where loan terms aren't loaded.
+   */
+  async loanQuality(ctx: CoreContext) {
+    const s = scope(ctx, 'd.branch');
+    const list = await rows<Record<string, unknown>>(
+      this.pool,
+      `SELECT d.dealer_id, d.name, d.branch, d.status,
+              SUM(l.close_date IS NULL AND l.charge_off_date IS NULL) AS open_loans,
+              SUM(CASE WHEN l.close_date IS NULL AND l.charge_off_date IS NULL THEN l.balance ELSE 0 END) AS balance,
+              SUM(CASE WHEN l.close_date IS NULL AND l.charge_off_date IS NULL AND l.days_delinquent >= 30 THEN l.balance ELSE 0 END) AS dq30,
+              SUM(CASE WHEN l.close_date IS NULL AND l.charge_off_date IS NULL AND l.days_delinquent >= 60 THEN l.balance ELSE 0 END) AS dq60,
+              SUM(l.charge_off_date IS NOT NULL) AS charged_off, ROUND(AVG(l.credit_score)) AS score
+         FROM ind_dealer d JOIN cdm_loan_terms t ON t.dealer_id = d.dealer_id JOIN cdm_loan l ON l.loan_id = t.loan_id
+        WHERE l.is_indirect = 1${s.sql} GROUP BY d.dealer_id`,
+      s.params,
+    ).catch(() => null);
+    if (!list) return null;
+    const dealers = list
+      .map((r) => {
+        const balance = Number(r.balance);
+        return { dealerId: Number(r.dealer_id), name: String(r.name), branch: String(r.branch), status: String(r.status), openLoans: Number(r.open_loans), balance, dq30Pct: balance ? (Number(r.dq30) / balance) * 100 : 0, dq60Pct: balance ? (Number(r.dq60) / balance) * 100 : 0, chargedOff: Number(r.charged_off), avgScore: r.score === null ? null : Number(r.score) };
+      })
+      .sort((a, b) => b.dq60Pct - a.dq60Pct || b.balance - a.balance);
+    const total = dealers.reduce((t, d) => t + d.balance, 0);
+    const dq60 = dealers.reduce((t, d) => t + (d.dq60Pct / 100) * d.balance, 0);
+    return { dealers, balance: total, dq60Pct: total ? (dq60 / total) * 100 : 0 };
+  }
+
   async dealer(name: string, ctx: CoreContext) {
     const s = scope(ctx, 'branch');
     const words = name.toLowerCase().split(/\s+/).filter(Boolean);

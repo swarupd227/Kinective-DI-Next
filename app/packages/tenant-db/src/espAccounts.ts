@@ -11,23 +11,23 @@
 import { AS_OF, unit } from './generate.ts';
 
 export const ESP_ACCOUNT_DDL = [
-  `CREATE TABLE cdm_account (account_number VARCHAR(12) PRIMARY KEY, primary_party_id INT NOT NULL, account_type VARCHAR(20) NOT NULL, branch_id INT NOT NULL, opened_by_employee_id INT NULL, open_date DATE NOT NULL, close_date DATE NULL, estatements TINYINT NOT NULL, e_notice TINYINT NOT NULL, is_rep_payee TINYINT NOT NULL, open_deposits INT NOT NULL, open_loans INT NOT NULL, deposit_balance DECIMAL(16,2) NOT NULL, loan_balance DECIMAL(16,2) NOT NULL, KEY ix_acct_party (primary_party_id))`,
-  `CREATE TABLE cdm_account_holding (account_kind VARCHAR(8) NOT NULL, account_id INT NOT NULL, account_number VARCHAR(12) NOT NULL, suffix VARCHAR(4) NOT NULL, holding_number VARCHAR(12) NOT NULL, PRIMARY KEY (account_kind, account_id), KEY ix_holding_account (account_number), UNIQUE KEY ux_holding_number (holding_number))`,
+  `CREATE TABLE cdm_account (account_number VARCHAR(12) PRIMARY KEY, primary_party_id INT NOT NULL, account_type VARCHAR(20) NOT NULL, branch_id INT NOT NULL, opened_by_employee_id INT NULL, open_date DATE NOT NULL, close_date DATE NULL, estatements TINYINT NOT NULL, e_notice TINYINT NOT NULL, is_rep_payee TINYINT NOT NULL, open_deposits INT NOT NULL, open_loans INT NOT NULL, deposit_balance DECIMAL(16,2) NOT NULL, loan_balance DECIMAL(16,2) NOT NULL, title VARCHAR(90) NOT NULL, relationship_code VARCHAR(4) NOT NULL, estatements_eligible TINYINT NOT NULL, KEY ix_acct_party (primary_party_id))`,
+  `CREATE TABLE cdm_account_holding (account_kind VARCHAR(8) NOT NULL, account_id INT NOT NULL, account_number VARCHAR(12) NOT NULL, suffix VARCHAR(4) NOT NULL, holding_number VARCHAR(12) NOT NULL, servicing_branch_id INT NULL, PRIMARY KEY (account_kind, account_id), KEY ix_holding_account (account_number), UNIQUE KEY ux_holding_number (holding_number))`,
   `CREATE TABLE cdm_household (household_id INT PRIMARY KEY, name VARCHAR(80) NOT NULL, head_party_id INT NOT NULL, members INT NOT NULL, street VARCHAR(80) NOT NULL, city VARCHAR(40) NOT NULL, state CHAR(2) NOT NULL, zip CHAR(5) NOT NULL, formed_date DATE NOT NULL, open_deposits INT NOT NULL, open_loans INT NOT NULL, deposit_balance DECIMAL(16,2) NOT NULL, loan_balance DECIMAL(16,2) NOT NULL, product_count INT NOT NULL)`,
-  `CREATE TABLE cdm_party_detail (party_id INT PRIMARY KEY, member_number VARCHAR(12) NOT NULL, middle_name VARCHAR(40) NULL, preferred_name VARCHAR(40) NULL, tin_type VARCHAR(8) NOT NULL, ssn_last4 CHAR(4) NOT NULL, language VARCHAR(20) NOT NULL, deceased_date DATE NULL, marketing_opt_out TINYINT NOT NULL, UNIQUE KEY ux_detail_number (member_number))`,
+  `CREATE TABLE cdm_party_detail (party_id INT PRIMARY KEY, member_number VARCHAR(12) NOT NULL, middle_name VARCHAR(40) NULL, preferred_name VARCHAR(40) NULL, tin_type VARCHAR(8) NOT NULL, ssn_last4 CHAR(4) NOT NULL, language VARCHAR(20) NOT NULL, deceased_date DATE NULL, marketing_opt_out TINYINT NOT NULL, name_prefix VARCHAR(8) NULL, name_suffix VARCHAR(8) NULL, home_phone CHAR(10) NULL, work_phone CHAR(10) NULL, work_phone_ext VARCHAR(6) NULL, alt_email VARCHAR(120) NULL, UNIQUE KEY ux_detail_number (member_number))`,
   `CREATE TABLE cdm_party_address (party_id INT PRIMARY KEY, street VARCHAR(80) NOT NULL, street2 VARCHAR(40) NULL, city VARCHAR(40) NOT NULL, state CHAR(2) NOT NULL, zip CHAR(5) NOT NULL, KEY ix_addr_zip (zip))`,
-  `CREATE TABLE cdm_loan_terms (loan_id INT PRIMARY KEY, structure VARCHAR(12) NOT NULL, rate_type VARCHAR(10) NOT NULL, apr DECIMAL(6,3) NOT NULL, payment_amount DECIMAL(12,2) NOT NULL, payment_due_date DATE NULL, next_rate_change DATE NULL, credit_limit DECIMAL(14,2) NULL, dti DECIMAL(4,2) NULL, pmi TINYINT NOT NULL, escrow_balance DECIMAL(12,2) NULL)`,
-  `CREATE TABLE cdm_deposit_terms (account_id INT PRIMARY KEY, original_amount DECIMAL(14,2) NOT NULL, term_months SMALLINT NULL, auto_renew TINYINT NULL)`,
+  `CREATE TABLE cdm_loan_terms (loan_id INT PRIMARY KEY, structure VARCHAR(12) NOT NULL, rate_type VARCHAR(10) NOT NULL, apr DECIMAL(6,3) NOT NULL, payment_amount DECIMAL(12,2) NOT NULL, payment_due_date DATE NULL, next_rate_change DATE NULL, credit_limit DECIMAL(14,2) NULL, dti DECIMAL(4,2) NULL, pmi TINYINT NOT NULL, escrow_balance DECIMAL(12,2) NULL, maturity_date DATE NULL, dealer_id INT NULL, KEY ix_terms_dealer (dealer_id))`,
+  `CREATE TABLE cdm_deposit_terms (account_id INT PRIMARY KEY, original_amount DECIMAL(14,2) NOT NULL, term_months SMALLINT NULL, auto_renew TINYINT NULL, auto_renew_amount DECIMAL(14,2) NULL)`,
 ];
 
 export const ESP_ACCOUNT_COLUMNS = {
-  cdm_account: ['account_number', 'primary_party_id', 'account_type', 'branch_id', 'opened_by_employee_id', 'open_date', 'close_date', 'estatements', 'e_notice', 'is_rep_payee', 'open_deposits', 'open_loans', 'deposit_balance', 'loan_balance'],
-  cdm_account_holding: ['account_kind', 'account_id', 'account_number', 'suffix', 'holding_number'],
+  cdm_account: ['account_number', 'primary_party_id', 'account_type', 'branch_id', 'opened_by_employee_id', 'open_date', 'close_date', 'estatements', 'e_notice', 'is_rep_payee', 'open_deposits', 'open_loans', 'deposit_balance', 'loan_balance', 'title', 'relationship_code', 'estatements_eligible'],
+  cdm_account_holding: ['account_kind', 'account_id', 'account_number', 'suffix', 'holding_number', 'servicing_branch_id'],
   cdm_household: ['household_id', 'name', 'head_party_id', 'members', 'street', 'city', 'state', 'zip', 'formed_date', 'open_deposits', 'open_loans', 'deposit_balance', 'loan_balance', 'product_count'],
-  cdm_party_detail: ['party_id', 'member_number', 'middle_name', 'preferred_name', 'tin_type', 'ssn_last4', 'language', 'deceased_date', 'marketing_opt_out'],
+  cdm_party_detail: ['party_id', 'member_number', 'middle_name', 'preferred_name', 'tin_type', 'ssn_last4', 'language', 'deceased_date', 'marketing_opt_out', 'name_prefix', 'name_suffix', 'home_phone', 'work_phone', 'work_phone_ext', 'alt_email'],
   cdm_party_address: ['party_id', 'street', 'street2', 'city', 'state', 'zip'],
-  cdm_loan_terms: ['loan_id', 'structure', 'rate_type', 'apr', 'payment_amount', 'payment_due_date', 'next_rate_change', 'credit_limit', 'dti', 'pmi', 'escrow_balance'],
-  cdm_deposit_terms: ['account_id', 'original_amount', 'term_months', 'auto_renew'],
+  cdm_loan_terms: ['loan_id', 'structure', 'rate_type', 'apr', 'payment_amount', 'payment_due_date', 'next_rate_change', 'credit_limit', 'dti', 'pmi', 'escrow_balance', 'maturity_date', 'dealer_id'],
+  cdm_deposit_terms: ['account_id', 'original_amount', 'term_months', 'auto_renew', 'auto_renew_amount'],
 } as const;
 
 /** The member or customer number; the same formula as di-core's memberNumber, which every screen shows. */
@@ -65,6 +65,10 @@ const MIDDLE = ['A.', 'B.', 'C.', 'D.', 'E.', 'F.', 'G.', 'H.', 'J.', 'K.', 'L.'
 const NICKNAMES: Record<string, string> = { William: 'Bill', Robert: 'Bob', Richard: 'Rick', James: 'Jim', Michael: 'Mike', Elizabeth: 'Liz', Katherine: 'Kate', Margaret: 'Maggie', Jennifer: 'Jen', Christopher: 'Chris', Daniel: 'Dan', Matthew: 'Matt', Anthony: 'Tony', Joseph: 'Joe', Thomas: 'Tom', Patricia: 'Pat', Susan: 'Sue', Samuel: 'Sam', Benjamin: 'Ben', Alexander: 'Alex', Nicholas: 'Nick', Jonathan: 'Jon', Rebecca: 'Becky', Deborah: 'Debbie', Victoria: 'Tori', Suzanne: 'Suzy' };
 const LANGUAGES: [string, number][] = [['English', 0.885], ['Spanish', 0.08], ['Vietnamese', 0.012], ['Chinese', 0.01], ['Russian', 0.006], ['Tagalog', 0.004], ['Korean', 0.003]];
 const COMMERCIAL = new Set(['Commercial Real Estate', 'Commercial & Industrial', 'Business']);
+const PHONE_AREA: Record<'credit_union' | 'bank', string> = { credit_union: '503', bank: '360' };
+const BUSINESS_NAMES = ['HOLDINGS LLC', 'ENTERPRISES LLC', 'PROPERTIES LLC', '& SONS INC', 'CONSTRUCTION LLC', 'GROUP INC'];
+/** Indirect dealers: the 30 in ind_dealer, assigned as Indirect's dealer figures assign them. */
+export const DEALER_COUNT = 30;
 
 const DAY = 86_400_000;
 const day = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10);
@@ -105,6 +109,10 @@ export function generateAccounts(x: AccountInputs) {
   const estatements = new Set(x.digital.filter((d) => d[4] !== null && d[4] !== undefined).map((d) => Number(d[0])));
   const openedBy = new Map(x.origination.map((o) => [`${o[0]}|${o[1]}`, o[2] === null ? null : Number(o[2])]));
   const jointOn = new Set(x.owners.filter((o) => o[0] === 'deposit' && o[3] === 'Joint').map((o) => Number(o[1])));
+  // Whose name sits beside the primary's on a joint account: the joint owner of their first joint share.
+  const depositParty = new Map(x.deposits.map((d) => [Number(d[0]), Number(d[1])]));
+  const jointPartner = new Map<number, number>();
+  for (const o of x.owners) if (o[0] === 'deposit' && o[3] === 'Joint') { const primary = depositParty.get(Number(o[1])); if (primary !== undefined && !jointPartner.has(primary)) jointPartner.set(primary, Number(o[2])); }
   const partyById = new Map(x.parties.map((p) => [Number(p[0]), p]));
 
   // ---- Addresses and households --------------------------------------------------------------------
@@ -144,6 +152,9 @@ export function generateAccounts(x: AccountInputs) {
     const age = (Date.parse(`${AS_OF}T00:00:00Z`) - Date.parse(`${day(p[3])}T00:00:00Z`)) / (365.25 * DAY);
     // About one in a hundred people over 70 died in the last 18 months; their accounts stay open until the estate settles.
     const deceased = age >= 70 && unit(id, 2611) < 0.012 ? addDays(AS_OF, -Math.floor(unit(id, 2612) * 540) - 1) : null;
+    const last = String(p[2]);
+    const phone = (salt: number) => `${PHONE_AREA[x.institutionType]}${String(2_000_000 + Math.floor(unit(id, salt) * 7_999_999)).padStart(7, '0')}`;
+    const work = unit(id, 2652) < 0.3 && age < 67;
     return [
       id,
       memberNumberOf(id),
@@ -154,6 +165,12 @@ export function generateAccounts(x: AccountInputs) {
       weighted(LANGUAGES, unit(id, 2618)),
       deceased,
       unit(id, 2619) < 0.11 ? 1 : 0,
+      unit(id, 2650) < 0.02 ? 'Dr.' : unit(id, 2650) < 0.22 ? pick(['Mr.', 'Ms.', 'Mrs.'], unit(id, 2651)) : null,
+      unit(id, 2653) < 0.03 ? pick(['Jr.', 'Sr.', 'II', 'III'], unit(id, 2654)) : null,
+      unit(id, 2655) < 0.35 ? phone(2656) : null,
+      work ? phone(2657) : null,
+      work && unit(id, 2658) < 0.3 ? String(100 + Math.floor(unit(id, 2659) * 900)) : null,
+      unit(id, 2660) < 0.15 ? `${first.toLowerCase()}.${last.toLowerCase().replace(/[^a-z]/g, '')}${Math.floor(unit(id, 2661) * 90) + 10}@mail.example` : null,
     ];
   });
 
@@ -194,7 +211,10 @@ export function generateAccounts(x: AccountInputs) {
     let l = 1;
     for (const h of sorted) {
       const suffix = h.kind === 'deposit' ? `S${String(s++).padStart(2, '0')}` : `L${String(l++).padStart(2, '0')}`;
-      holdingRows.push([h.kind, h.id, a.number, suffix, holdingNumberOf(h.kind, h.branch, h.id)]);
+      // A few accounts are serviced at a branch other than the one that opened them (the member moved).
+      const branches = places.branches.length;
+      const override = branches > 1 && unit(h.id + (h.kind === 'loan' ? 5_000_000 : 0), 2662) < 0.02 ? ((h.branch + Math.floor(unit(h.id, 2663) * (branches - 1))) % branches) + 1 : null;
+      holdingRows.push([h.kind, h.id, a.number, suffix, holdingNumberOf(h.kind, h.branch, h.id), override]);
     }
     const own = a.type === 'Own';
     const first = sorted[0];
@@ -208,7 +228,14 @@ export function generateAccounts(x: AccountInputs) {
     const estmt = estatements.has(a.party) ? 1 : 0;
     const live = a.holdings.filter((h) => !h.closed);
     const sum = (k: 'loan' | 'deposit') => round2(live.filter((h) => h.kind === k).reduce((t, h) => t + h.balance, 0));
-    accountRows.push([a.number, a.party, type, branch, by, open, close, estmt, estmt && unit(a.party, 2622) < 0.75 ? 1 : 0, own && age >= 75 && unit(a.party, 2623) < 0.04 ? 1 : 0, live.filter((h) => h.kind === 'deposit').length, live.filter((h) => h.kind === 'loan').length, sum('deposit'), sum('loan')]);
+    const repPayee = own && age >= 75 && unit(a.party, 2623) < 0.04 ? 1 : 0;
+    const upper = (q: unknown[] | undefined) => (q ? `${String(q[1])} ${String(q[2])}`.toUpperCase() : '');
+    const joint = type === 'Joint' ? partyById.get(jointPartner.get(a.party) ?? -1) : undefined;
+    const title = type === 'Business' ? `${String(p[2]).toUpperCase()} ${pick(BUSINESS_NAMES, unit(a.party, 2664))}` : type === 'Trust' ? `${String(p[2]).toUpperCase()} FAMILY TRUST` : joint ? `${upper(p)} OR ${upper(joint)}` : repPayee ? `${upper(p)} REP PAYEE` : upper(p);
+    const code = type === 'Business' ? 'BUS' : type === 'Trust' ? 'TRS' : repPayee ? 'REP' : type === 'Joint' ? 'JNT' : 'IND';
+    // Statements go out on savings, checking and money market accounts; loans and certificates alone don't get one.
+    const eligible = live.some((h) => h.kind === 'deposit' && !/^Certificates|^IRA/.test(h.label)) ? 1 : 0;
+    accountRows.push([a.number, a.party, type, branch, by, open, close, estmt, estmt && unit(a.party, 2622) < 0.75 ? 1 : 0, repPayee, live.filter((h) => h.kind === 'deposit').length, live.filter((h) => h.kind === 'loan').length, sum('deposit'), sum('loan'), title, code, eligible]);
   }
 
   // Households carry their members' open accounts and balances, as ESP's householddata does.
@@ -285,7 +312,12 @@ export function generateAccounts(x: AccountInputs) {
     const due = done || payment === 0 ? null : late > 0 ? addDays(AS_OF, -late) : nextDue;
     const dti = commercial || score === null ? null : Math.round(Math.min(0.5, Math.max(0.08, 0.45 - ((score - 580) / 270) * 0.25 + (unit(id, 2633) - 0.5) * 0.12)) * 100) / 100;
     const escrow = cat === 'Mortgage' && !done && unit(id, 2634) < 0.85 ? round2(((original * 0.015) / 12) * (2 + 4 * unit(id, 2635))) : null;
-    return [id, line ? 'Line' : 'Amortizing', rateType, apr, round2(payment), due, rateType === 'Variable' && !card && !done ? nextQuarter : null, limit, dti, cat === 'Mortgage' && ltv !== null && ltv > 80 ? 1 : 0, escrow];
+    // Amortizing loans mature at the end of their term; lines and cards don't mature.
+    // Adding months clamps to the month's end (Jan 31 plus a month is Feb 28), as banks and MySQL count it.
+    const maturity = line || term === null ? null : (() => { const [y, m, d] = open.split('-').map(Number) as [number, number, number]; const last = new Date(Date.UTC(y, m - 1 + term + 1, 0)).getUTCDate(); return new Date(Date.UTC(y, m - 1 + term, Math.min(d, last))).toISOString().slice(0, 10); })();
+    // An indirect loan's dealer: the same assignment Indirect's dealer figures already use (loan id mod the dealer count).
+    const dealer = Number(row[5]) === 1 ? (id % DEALER_COUNT) + 1 : null;
+    return [id, line ? 'Line' : 'Amortizing', rateType, apr, round2(payment), due, rateType === 'Variable' && !card && !done ? nextQuarter : null, limit, dti, cat === 'Mortgage' && ltv !== null && ltv > 80 ? 1 : 0, escrow, maturity, dealer];
   });
 
   // ---- Deposit terms -------------------------------------------------------------------------------
@@ -305,7 +337,10 @@ export function generateAccounts(x: AccountInputs) {
         : cat === 'Money Market'
           ? Math.min(Math.max(balance, 2_500), 2_500 + unit(id, 2642) * 22_500)
           : 25 + unit(id, 2643) * 975;
-    return [id, round2(original), certificate && term ? Number(term) : null, certificate ? (unit(id, 2644) < 0.72 ? 1 : 0) : null];
+    const renews = certificate ? (unit(id, 2644) < 0.72 ? 1 : 0) : null;
+    // Most renew in full; some members take part of it out at maturity.
+    const renewAmount = renews ? round2(unit(id, 2645) < 0.85 ? balance : balance * (0.5 + unit(id, 2646) * 0.4)) : null;
+    return [id, round2(original), certificate && term ? Number(term) : null, renews, renewAmount];
   });
 
   return { accounts: accountRows, holdings: holdingRows, households, details, addresses: partyAddresses, loanTerms, depositTerms };

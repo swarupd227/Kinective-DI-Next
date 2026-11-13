@@ -33,6 +33,7 @@ import { ESP_ORG_DDL, generateOrg } from './espOrg.ts';
 import { ESP_TXN_DDL, generateTransactions30 } from './espTransactions.ts';
 import { ESP_OWNER_DDL, generateOwners } from './espOwners.ts';
 import { ESP_ACCOUNT_COLUMNS, ESP_ACCOUNT_DDL, generateAccounts } from './espAccounts.ts';
+import { ESP_DETAIL_COLUMNS, ESP_DETAIL_DDL, generateDetails } from './espDetails.ts';
 import { ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
@@ -145,6 +146,16 @@ async function main() {
     await insert(admin, 'cdm_party_address', [...ESP_ACCOUNT_COLUMNS.cdm_party_address], esp6.addresses);
     await insert(admin, 'cdm_loan_terms', [...ESP_ACCOUNT_COLUMNS.cdm_loan_terms], esp6.loanTerms);
     await insert(admin, 'cdm_deposit_terms', [...ESP_ACCOUNT_COLUMNS.cdm_deposit_terms], esp6.depositTerms);
+    // ESP alignment, phase 1b: product details, cross-sell groups, rate tiers, card products and terms, safe deposit boxes.
+    for (const ddl of ESP_DETAIL_DDL) await admin.query(ddl);
+    const esp7 = generateDetails({ institutionType: profile.institutionType, loanProducts: esp2.loanProducts, depositProducts: esp2.depositProducts, accountProducts: esp2.accounts, deposits: t.deposits as unknown[][], cards: rm.cards as unknown[][], parties: t.parties as unknown[][] });
+    await insert(admin, 'cdm_cross_sell_group', [...ESP_DETAIL_COLUMNS.cdm_cross_sell_group], esp7.groups);
+    await insert(admin, 'cdm_product_detail', [...ESP_DETAIL_COLUMNS.cdm_product_detail], esp7.products);
+    await insert(admin, 'cdm_dividend_tier', [...ESP_DETAIL_COLUMNS.cdm_dividend_tier], esp7.tiers);
+    await insert(admin, 'cdm_card_product', [...ESP_DETAIL_COLUMNS.cdm_card_product], esp7.cardProducts);
+    await insert(admin, 'cdm_card_terms', [...ESP_DETAIL_COLUMNS.cdm_card_terms], esp7.cardTerms);
+    await insert(admin, 'cdm_misc_product', [...ESP_DETAIL_COLUMNS.cdm_misc_product], esp7.miscProducts);
+    if (esp7.misc.length) await insert(admin, 'cdm_misc_account', [...ESP_DETAIL_COLUMNS.cdm_misc_account], esp7.misc);
     // Predictive models: each member at each of the last 12 month-ends, and where models and scores are kept.
     for (const ddl of ML_DDL) await admin.query(ddl);
     await insert(admin, 'hist_member_snapshot', SNAPSHOT_COLUMNS, generateSnapshots(t, rm));

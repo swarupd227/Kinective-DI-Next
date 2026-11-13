@@ -43,14 +43,14 @@ Run it after any schema change, so the mapping can't drift unnoticed.
 | Third-party feed | 147 | Sources, when a feature needs one. |
 | Work and people | 128 | DI-Next has its own where needed. |
 
-Business layer: 256 covered, 40 partial, 97 missing, 356 not needed (after phase 1; 244, 43 and 106 before). See `mapping.md`.
+Business layer: 269 covered, 33 partial, 91 missing, 356 not needed (after phase 1b; 244, 43 and 106 before phase 1). See `mapping.md`.
 
 ## Phases
 
 | Phase | Adds | Partial or missing tables |
 |---|---|---|
 | 1 (done) | `cdm_account`, `cdm_account_holding`, `cdm_household`, `cdm_party_detail`, `cdm_party_address`, `cdm_loan_terms`, `cdm_deposit_terms`: accounts and which loans and shares sit under each, households, member number, names, TIN type, language, deceased, marketing opt-out, address, and loan and share terms (payment, due date, APR, rate type, credit limit, opening deposit, certificate term, auto-renew) | 0 |
-| 1b | Phase 1 leftovers: product flags, servicing-branch overrides, dividend tiers, cross-sell groups, miscellaneous accounts, card products, and a few columns (name prefix and suffix, home and work phone, second email, the loan's application and dealer links) | 13 |
+| 1b (done) | `cdm_product_detail`, `cdm_cross_sell_group`, `cdm_dividend_tier`, `cdm_card_product`, `cdm_card_terms`, `cdm_misc_product`, `cdm_misc_account`, and columns on phase 1's tables: product details and cross-sell groups, rate tiers by balance, card products and expiry, safe deposit boxes, servicing-branch overrides, each indirect loan's dealer (as Indirect's dealer figures assign it), loan maturity, the renewing amount, account titles and relationship codes, name prefix and suffix, phones and a second email. The loan's application link and who decided it stay out: the demo seed builds applications apart from the loan book. | 0 |
 | 2 | Charge-off amounts and recoveries per account; insider and employee loans (Regulation O, NCUA 701.21(d)) | 11 |
 | 3 | FHLB collateral eligibility, lien position, participations | 8 |
 | 4 | Account-level month-end snapshots (loans, shares, people, accounts, households); waits for 1 to 3 | 17 |

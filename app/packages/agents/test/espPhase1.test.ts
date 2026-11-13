@@ -113,6 +113,32 @@ for (const DB of ['dinext_t_test_cu', 'dinext_t_test_bank']) {
       expect(plain.lineage.flatMap((l) => l.tables).filter((t) => /terms|detail|address|household|cdm_account$/.test(t))).toEqual([]);
     });
 
+    it('fills phase 1b: dealers as Indirect counts them, maturities, products, tiers, cards, boxes and account titles', async () => {
+      // Every indirect loan has the dealer Indirect's monthly figures already credit it to; direct loans have none.
+      expect(await n('SELECT COUNT(*) AS n FROM cdm_loan l JOIN cdm_loan_terms t ON t.loan_id = l.loan_id WHERE (l.is_indirect = 1 AND (t.dealer_id IS NULL OR t.dealer_id <> MOD(l.loan_id, 30) + 1)) OR (l.is_indirect = 0 AND t.dealer_id IS NOT NULL)')).toBe(0);
+      expect(await n('SELECT COUNT(*) AS n FROM cdm_loan_terms t LEFT JOIN ind_dealer d ON d.dealer_id = t.dealer_id WHERE t.dealer_id IS NOT NULL AND d.dealer_id IS NULL')).toBe(0);
+      // Amortizing loans mature at the end of their term; lines don't.
+      expect(await n("SELECT COUNT(*) AS n FROM cdm_loan l JOIN cdm_loan_terms t ON t.loan_id = l.loan_id WHERE t.structure = 'Amortizing' AND l.term_months IS NOT NULL AND t.maturity_date <> DATE_ADD(l.open_date, INTERVAL l.term_months MONTH)")).toBe(0);
+      expect(await n("SELECT COUNT(*) AS n FROM cdm_loan_terms WHERE structure = 'Line' AND maturity_date IS NOT NULL")).toBe(0);
+      // Every product has its details and a cross-sell group that exists.
+      expect(await n("SELECT (SELECT COUNT(*) FROM cdm_loan_product p LEFT JOIN cdm_product_detail d ON d.account_kind = 'loan' AND d.product_id = p.product_id WHERE d.product_id IS NULL) + (SELECT COUNT(*) FROM cdm_deposit_product p LEFT JOIN cdm_product_detail d ON d.account_kind = 'deposit' AND d.product_id = p.product_id WHERE d.product_id IS NULL) AS n")).toBe(0);
+      expect(await n('SELECT COUNT(*) AS n FROM cdm_product_detail d LEFT JOIN cdm_cross_sell_group g ON g.group_id = d.cross_sell_group WHERE g.group_id IS NULL')).toBe(0);
+      // Rates never step down as the balance rises.
+      expect(await n('SELECT COUNT(*) AS n FROM cdm_dividend_tier a JOIN cdm_dividend_tier b ON b.product_id = a.product_id AND b.tier = a.tier + 1 WHERE b.rate < a.rate OR b.min_balance <= a.min_balance')).toBe(0);
+      expect(await n('SELECT COUNT(*) AS n FROM cdm_dividend_tier')).toBeGreaterThan(0);
+      // Every card has a product and an expiry; an open card hasn't expired.
+      expect(await n('SELECT COUNT(*) AS n FROM cdm_card c LEFT JOIN cdm_card_terms t ON t.card_id = c.card_id LEFT JOIN cdm_card_product p ON p.card_product_id = t.card_product_id WHERE p.card_product_id IS NULL')).toBe(0);
+      expect(await n(`SELECT COUNT(*) AS n FROM cdm_card c JOIN cdm_card_terms t ON t.card_id = c.card_id WHERE c.closed IS NULL AND t.expires <= '${AS_OF}'`)).toBe(0);
+      // Safe deposit boxes sit under the member's own account.
+      expect(await n('SELECT COUNT(*) AS n FROM cdm_misc_account m LEFT JOIN cdm_account a ON a.account_number = m.account_number AND a.primary_party_id = m.party_id WHERE a.account_number IS NULL')).toBe(0);
+      expect(await n('SELECT COUNT(*) AS n FROM cdm_misc_account')).toBeGreaterThan(0);
+      // Titles and relationship codes agree with the account type; a servicing override is another branch.
+      expect(await n("SELECT COUNT(*) AS n FROM cdm_account WHERE title = '' OR (account_type = 'Business' AND relationship_code <> 'BUS') OR (account_type = 'Trust' AND relationship_code <> 'TRS') OR (account_type = 'Joint' AND relationship_code NOT IN ('JNT', 'REP') ) OR (account_type = 'Joint' AND title NOT LIKE '% OR %')")).toBe(0);
+      expect(await n("SELECT COUNT(*) AS n FROM cdm_account_holding h JOIN cdm_loan l ON h.account_kind = 'loan' AND l.loan_id = h.account_id WHERE h.servicing_branch_id = l.branch_id")).toBe(0);
+      // Only certificates that renew have an amount that renews, and never more than the balance.
+      expect(await n('SELECT COUNT(*) AS n FROM cdm_deposit_terms t JOIN cdm_deposit_account d ON d.account_id = t.account_id WHERE (t.auto_renew_amount IS NOT NULL AND (t.auto_renew <> 1 OR t.auto_renew_amount > d.balance + 0.01)) OR (t.auto_renew = 1 AND t.auto_renew_amount IS NULL)')).toBe(0);
+    });
+
     it('gives every share its terms, with certificate terms and opening deposits that make sense', async () => {
       expect(await n('SELECT COUNT(*) AS n FROM cdm_deposit_account d LEFT JOIN cdm_deposit_terms t ON t.account_id = d.account_id WHERE t.account_id IS NULL')).toBe(0);
       expect(await n("SELECT COUNT(*) AS n FROM cdm_deposit_account d JOIN cdm_deposit_terms t ON t.account_id = d.account_id WHERE d.deposit_category LIKE 'Certificates%' AND (t.term_months IS NULL OR t.auto_renew IS NULL OR t.original_amount > d.balance + 0.01)")).toBe(0);
