@@ -75,7 +75,22 @@ export interface Position {
   discount: number;
   /** Its rate floats with the market (variable loans, cash, non-maturity shares); fixed ones keep their coupon. */
   floating: boolean;
+  /**
+   * For a loan category that is partly variable: the share of its balance whose rate floats, from each
+   * loan's terms. That share reprices at once and is valued as floating; the rest as fixed. Absent where
+   * a position is wholly one or the other.
+   */
+  variableShare?: number;
 }
+
+/** What the model treats as variable: wholly variable loan categories, and the variable part of mixed ones. */
+const variableText = (ps: Position[]) => {
+  const loans = ps.filter((p) => p.side === 'asset' && !['Cash and overnight funds', 'Investments'].includes(p.name));
+  const whole = loans.filter((p) => p.floating).map((p) => p.name.toLowerCase());
+  const partly = loans.filter((p) => p.variableShare !== undefined).map((p) => `${p.name.toLowerCase()} ${Math.round(p.variableShare! * 100)}% variable`);
+  const list = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}` : xs[0] ?? '');
+  return `${whole.length ? `${list(whole).replace(/^./, (c) => c.toUpperCase())} reprice monthly` : 'No loan category is wholly variable'}${partly.length ? `; ${list(partly)}, from each loan's terms: the variable part reprices monthly, the rest as principal comes back` : ''}.`;
+};
 
 /** A position grown or shrunk in proportion: the same rate, terms and behaviour on a larger or smaller balance. */
 export const scalePosition = (p: Position, k: number): Position => (k === 1 ? p : { ...p, balance: p.balance * k, flows: (s) => p.flows(s).map((x) => x * k) });
@@ -100,9 +115,8 @@ export class IrrService {
   constructor(private readonly pool: Pool) {}
 
   /**
-   * Fixed and variable loan balances from each loan's terms (ESP phase 1), beside what the rate-risk model
-   * assumes for that category, and how much reprices by the next quarter. A view of the data; the model's
-   * NII and EVE figures don't change. Null where loan terms aren't loaded.
+   * Fixed and variable loan balances from each loan's terms (ESP phase 1), and how much reprices by the
+   * next quarter. The rate-risk model uses the same split. Null where loan terms aren't loaded.
    */
   async rateTypes() {
     const list = await rows<{ c: string; rate_type: string; b: number; n: number; soon: number }>(
@@ -119,11 +133,8 @@ export class IrrService {
         const at = (t: string) => list.filter((r) => r.c === c && r.rate_type === t);
         const fixed = at('Fixed').reduce((s, r) => s + Number(r.b), 0);
         const variable = at('Variable').reduce((s, r) => s + Number(r.b), 0);
-        const [, , k] = LOANS.find(([re]) => re.test(c)) ?? [null, c, { term: 60, variable: false, cpr: 0.1 }];
         const share = fixed + variable ? (variable / (fixed + variable)) * 100 : 0;
-        // Where the data and the model's assumption part ways by more than a tenth of the balance, say so.
-        const differs = k.variable ? share < 90 : share > 10;
-        return { category: c, fixed, variable, variableShare: share, repricesSoon: list.filter((r) => r.c === c).reduce((s, r) => s + Number(r.soon), 0), modelAssumes: k.variable ? ('Variable' as const) : ('Fixed' as const), differs };
+        return { category: c, fixed, variable, variableShare: share, repricesSoon: list.filter((r) => r.c === c).reduce((s, r) => s + Number(r.soon), 0) };
       })
       .sort((a, b) => b.fixed + b.variable - (a.fixed + a.variable));
     const total = byCategory.reduce((s, x) => s + x.fixed + x.variable, 0);
@@ -139,22 +150,34 @@ export class IrrService {
 
     // Loans by product: balance-weighted rate and remaining term from each loan's age.
     const loans = await rows<{ c: string; b: number; r: number; age: number }>(this.pool, `SELECT loan_category AS c, SUM(balance) AS b, SUM(balance * rate) / NULLIF(SUM(balance), 0) AS r, SUM(balance * TIMESTAMPDIFF(MONTH, open_date, ?)) / NULLIF(SUM(balance), 0) AS age FROM cdm_loan WHERE close_date IS NULL AND charge_off_date IS NULL GROUP BY loan_category`, [asOf]);
+    // How much of each category floats, from each loan's own terms where they're loaded (ESP phase 1);
+    // otherwise the category's usual rate type stands in.
+    const floatRows = await rows<{ c: string; v: number }>(
+      this.pool,
+      "SELECT l.loan_category AS c, SUM(CASE WHEN t.rate_type = 'Variable' THEN l.balance ELSE 0 END) / NULLIF(SUM(l.balance), 0) AS v FROM cdm_loan l JOIN cdm_loan_terms t ON t.loan_id = l.loan_id WHERE l.close_date IS NULL AND l.charge_off_date IS NULL GROUP BY l.loan_category",
+    ).catch(() => []);
+    const floatShare = new Map(floatRows.map((r) => [r.c, Number(r.v ?? 0)]));
     for (const l of loans) {
       const [, name, k] = LOANS.find(([re]) => re.test(l.c)) ?? [null, l.c, { term: 60, variable: false, cpr: 0.1 }];
       const balance = Number(l.b);
       const rate = Number(l.r) / 100;
       const remaining = Math.max(6, k.term - Number(l.age));
       const base = amortizing(balance, remaining, k.cpr, 0);
+      const fixedRepriced = (m: number) => base.slice(0, m).reduce((a, b) => a + b, 0) / balance;
+      // Wholly variable or wholly fixed categories (cards, home equity lines; mortgages, auto) are as before.
+      const share = Math.min(1, Math.max(0, floatShare.get(l.c) ?? (k.variable ? 1 : 0)));
+      const whole = share >= 0.999 ? 1 : share <= 0.001 ? 0 : null;
       out.push({
         name: `${name}`,
         side: 'asset',
         balance,
         rate,
         flows: (s) => amortizing(balance, remaining, k.cpr, s),
-        repriced: (m) => (k.variable ? 1 : base.slice(0, m).reduce((a, b) => a + b, 0) / balance),
+        repriced: (m) => (whole === 1 ? 1 : whole === 0 ? fixedRepriced(m) : share + (1 - share) * fixedRepriced(m)),
         beta: 1,
         discount: rate,
-        floating: k.variable,
+        floating: whole === 1,
+        ...(whole === null ? { variableShare: share } : {}),
       });
     }
 
@@ -250,10 +273,12 @@ export class IrrService {
   /** Present value of each position's cash flows plus interest, discounted at its rate plus the shock. */
   private nev(ps: Position[], shockBp: number) {
     const d = shockBp / 10_000;
-    const pv = (p: Position) => {
+    // A partly variable category is valued as its floating share plus its fixed share.
+    const pv = (p: Position): number => (p.variableShare === undefined ? pvAt(p, p.floating) : p.variableShare * pvAt(p, true) + (1 - p.variableShare) * pvAt(p, false));
+    const pvAt = (p: Position, floating: boolean) => {
       const flows = p.flows(shockBp);
       // A fixed-rate position keeps its coupon while the discount rate moves; that is what changes its value.
-      const monthlyRate = Math.max(0, p.rate + (p.floating ? d * p.beta : 0)) / 12;
+      const monthlyRate = Math.max(0, p.rate + (floating ? d * p.beta : 0)) / 12;
       const disc = Math.max(0.0005, p.discount + d) / 12;
       let left = p.balance;
       let value = 0;
@@ -339,7 +364,9 @@ export class IrrService {
     // The repricing gap: what reprices or matures in each band, assets against liabilities.
     const gap = BUCKETS.map(([label, from, to]) => {
       // Variable-rate products and cash reprice in the first band; the rest as their cash flows come back.
-      const inBand = (p: Position) => (p.repriced(1) === 1 ? (from === 0 ? p.balance : 0) : p.flows(0).slice(from, Math.min(to, HORIZON)).reduce((a, b) => a + b, 0));
+      const byFlows = (p: Position) => p.flows(0).slice(from, Math.min(to, HORIZON)).reduce((a, b) => a + b, 0);
+      // A partly variable category: its floating share reprices in the first band, the rest as cash comes back.
+      const inBand = (p: Position) => (p.variableShare !== undefined ? p.variableShare * (from === 0 ? p.balance : 0) + (1 - p.variableShare) * byFlows(p) : p.repriced(1) === 1 ? (from === 0 ? p.balance : 0) : byFlows(p));
       const assets = positions.filter((p) => p.side === 'asset').reduce((s, p) => s + inBand(p), 0);
       const liabilities = positions.filter((p) => p.side === 'liability').reduce((s, p) => s + inBand(p), 0);
       return { label, assets, liabilities, gap: assets - liabilities };
@@ -388,7 +415,7 @@ export class IrrService {
         ['Yield curve', 'Every move is parallel. Steeper or flatter curves (short and long rates moving apart) aren’t modeled.'],
         ['Market rate', `${(MARKET_RATE * 100).toFixed(2)}% for new money and for discounting ${bank ? 'deposits' : 'deposits and shares'}.`],
         ['Loan prepayments', 'Auto 18%, consumer 12%, mortgages 8%, commercial 5–6% a year (CPR); 12% faster per 100 bp fall, slower when rates rise.'],
-        ['Variable-rate loans', 'Credit cards and home equity lines reprice monthly.'],
+        ['Variable-rate loans', variableText(positions)],
         [bank ? 'Deposit decay and betas' : 'Share decay and betas', `Savings 12% a year, beta 0.20; checking 10%, 0.05; money market 25%, 0.55; IRAs 8%, 0.40, reaching three quarters of the beta in the first year and all of it in the second. ${bank ? 'Time deposits' : 'Certificates'} reprice at maturity.`],
         ['Investments and borrowings', form === 'FFIEC 051' ? 'From the latest Call Report: securities (RC-B, held to maturity and available for sale) on a typical ladder, yielding 3.05%, and FHLB advances (RCON3190) over 1–3 years at 4.6%.' : fromCallReport ? 'From the latest 5300: Schedule B’s maturity distribution, yielding 3.05%, and FHLB borrowings over 1–3 years at 4.6%.' : 'Estimated from the balance sheet: a 24% investment ladder at 3.05% and borrowings of 1.5% of deposits.'],
         ...(bank ? [['Limits', `The board’s limits for each shock, up or down: NII no worse than ${Object.entries(IRR_LIMITS_BANK.niiDeclinePct).map(([s, v]) => `−${v}% at ${s} bp`).join(', ')}; EVE no worse than ${Object.entries(IRR_LIMITS_BANK.eveDeclinePct).map(([s, v]) => `−${v}% at ${s} bp`).join(', ')}. A change using ${IRR_WATCH_SHARE * 100}% of a limit is watched.`] as [string, string]] : []),

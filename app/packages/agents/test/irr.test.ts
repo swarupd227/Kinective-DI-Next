@@ -51,11 +51,14 @@ describe.skipIf(!(await warehouseAvailable('dinext_t_test_bank')))('a bank’s E
         const used = Math.max(-s.niiPct / s.niiLimitPct, -s.nevPct / s.nevLimitPct);
         expect(s.status).toBe(used > 1 ? 'Breach' : used >= 0.85 ? 'Watch' : 'Within');
       }
-      expect(a.scenarios.find((x) => x.shockBp === 400)!.status).toBe('Breach');
-      // A gradual rise hurts the first year less than an immediate one; by the second year rates are the same either way.
+      // With variable commercial lines repricing (each loan's own rate type), +400 bp comes close to the limit without breaching it.
+      expect(a.scenarios.find((x) => x.shockBp === 400)!.status).toBe('Watch');
+      // A gradual rise takes a different first year from an immediate one (which way depends on how much reprices at
+      // once: with variable commercial lines, an immediate rise lifts their income sooner); by the second year rates
+      // are the same either way.
       const at = (s: number, ramp: boolean) => a.ramps.find((r) => r.shockBp === s && r.ramp === ramp)!;
       expect(at(200, true).year1Pct).toBeLessThan(0);
-      expect(at(200, true).year1Pct).toBeGreaterThan(at(200, false).year1Pct);
+      expect(at(200, true).year1Pct).not.toBeCloseTo(at(200, false).year1Pct, 2);
       expect(at(200, true).year2Pct).toBeCloseTo(at(200, false).year2Pct, 6);
       // The instant first year matches the 12-month shock.
       expect(at(200, false).year1Pct).toBeCloseTo(a.scenarios.find((x) => x.shockBp === 200)!.niiPct, 0);

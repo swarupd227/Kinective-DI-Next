@@ -105,7 +105,12 @@ export function acquisitionCase(pool: Pool): DecisionCase<DealLevers, DealFigure
     const issues = (r: Result) => critique(r.option, r.figures);
     const clear = results.filter((r) => !issues(r).some((x) => x.severity === 'breach'));
     const t = model().today;
-    if (!clear.length) return { key: [...results].sort((a, b) => issues(a).length - issues(b).length)[0]!.option.key, why: `No structure considered holds every limit, even for a ${mm(MIN_TARGET)} bank: with leverage at ${p2(t.levPct)} against a ${p2(t.levFloor)} floor, goodwill takes the bank below its floor.` };
+    if (!clear.length)
+      return {
+        key: [...results].sort((a, b) => issues(a).length - issues(b).length)[0]!.option.key,
+        headline: 'Not now',
+        why: `No structure considered holds every limit, even for a ${mm(MIN_TARGET)} bank: with leverage at ${p2(t.levPct)} against a ${p2(t.levFloor)} floor, goodwill takes the bank below its floor. Build capital first; ${[...results].sort((a, b) => issues(a).length - issues(b).length)[0]!.option.name.toLowerCase()} comes closest when it's time.`,
+      };
     // The largest bank that holds every limit, then the fewest thin spots, then the best earnings.
     const pick = [...clear].sort((a, b) => b.figures.levers.targetAssets - a.figures.levers.targetAssets || issues(a).length - issues(b).length || b.figures.epsRun - a.figures.epsRun)[0]!;
     const others = clear.filter((r) => r !== pick);

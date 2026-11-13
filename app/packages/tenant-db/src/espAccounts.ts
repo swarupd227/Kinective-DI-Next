@@ -256,7 +256,10 @@ export function generateAccounts(x: AccountInputs) {
     const line = cat === 'Credit Card' || cat === 'HELOC' || revolvingProduct.has(product);
     const card = cat === 'Credit Card';
     const commercial = COMMERCIAL.has(cat);
-    const rateType = line || (commercial && unit(id, 2631) < 0.4) ? 'Variable' : 'Fixed';
+    // As at a community bank or credit union: lines float with prime; commercial real estate is mostly
+    // fixed or fixed for years at a time (about one in eight floats); business term loans about three in ten.
+    const floatShare = cat === 'Commercial & Industrial' ? 0.3 : commercial ? 0.12 : 0;
+    const rateType = line || unit(id, 2631) < floatShare ? 'Variable' : 'Fixed';
     const apr = Math.round((rate + (cat === 'Mortgage' ? 0.11 : cat === 'Auto' ? 0.04 : 0)) * 1000) / 1000;
     const util = 0.25 + unit(id, 2632) * 0.6;
     // Lines are set in round amounts: the amount first approved, rounded up to $500, or more if drawn further.

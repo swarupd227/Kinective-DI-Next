@@ -94,7 +94,8 @@ export interface DecisionCase<L, F> {
   stuck?: (option: DecisionOption<L>, challenge: Challenge) => string;
   /** Revisions within a round go in this order of checks, so a later one sees the earlier ones. */
   order: string[];
-  recommend: (results: Evaluated<L, F>[], replies: Reply[]) => { key: string; why: string };
+  /** headline, when set, replaces the option's name in "Recommendation: …" (as "Not now" when no option holds every limit). */
+  recommend: (results: Evaluated<L, F>[], replies: Reply[]) => { key: string; why: string; headline?: string };
   /** The comparison and anything else shown with the recommendation. */
   blocks: (results: Evaluated<L, F>[], runId: string) => Block[];
   /** The memo's tool call, recomputed from the levers when the tool runs. */
@@ -327,8 +328,9 @@ export async function runDecision<L, F>(spec: ModuleSpec, c: DecisionCase<L, F>,
   const why = picked && chosenKey === picked.option ? check(picked.why, rec.why) : rec.why;
   const chosen = final.find((r) => r.option.key === chosenKey)!;
   for (const b of c.blocks(final, input.runId)) await sink.block(b);
-  await say(`**Recommendation: ${chosen.option.name}.** ${why}`, PLANNER);
-  step('recommend', 'done', chosen.option.name);
+  const headline = chosenKey === rec.key && rec.headline ? rec.headline : chosen.option.name;
+  await say(`**Recommendation: ${headline}.** ${why}`, PLANNER);
+  step('recommend', 'done', headline);
 
   // ---- the board memo, behind an approval card ------------------------------------------------------
   step('memo', 'running');

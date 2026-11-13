@@ -45,14 +45,14 @@ describe.skipIf(!up)('funding a bank’s loan growth', () => {
       const out = await spec.run!({ runId: 'run_f1', threadId: 'thr_f1', text: 'How do we fund next year’s loan growth?', user: { id: 'user:7001', name: 'Elena Ortiz', title: 'Chief Financial Officer' }, tenant: { name: 'Coastal Community Bank' }, modules: ['capactions'] }, { model: null, gateway: new ModuleGateway(new ApprovalStore(pool), [spec]) }, sink);
       expect(out.outcome).toBe('approval');
       for (const b of blocks) expect(blockSchema.safeParse(b).success).toBe(true);
-      expect(texts.find((t) => t.startsWith('**Chief Risk Officer:**'))).toMatch(/EVE at \+400 bp is already over its −35% limit, and this funding takes it further/);
-      // Each option is revised within its own source, so the three stay distinct.
+      // EVE is inside its limits, so no source needs revising and the three stay as first drawn.
       const table = blocks.find((b) => b.title === 'Three ways to fund next year’s loan growth')!;
-      const funding = table.type === 'table' ? table.data.rows!.find((r) => r.item === 'Funding')! : {};
-      expect(funding).toMatchObject({ deposits: expect.stringMatching(/certificate special/), fhlb: expect.stringMatching(/FHLB/), brokered: expect.stringMatching(/brokered/) });
+      const rows = table.type === 'table' ? table.data.rows! : [];
+      expect(rows.find((r) => r.item === 'Funding')).toMatchObject({ deposits: expect.stringMatching(/special/), fhlb: expect.stringMatching(/FHLB/), brokered: expect.stringMatching(/brokered/) });
+      expect(rows.find((r) => r.item === 'Limits')).toMatchObject({ deposits: 'Clear', fhlb: 'Clear', brokered: 'Clear' });
       expect(texts.find((t) => t.startsWith('**Recommendation:'))).toMatch(/^\*\*Recommendation: FHLB advances\.\*\* It funds the \$\d+\.\dM of loan growth at \d\.\d\d% all in/);
       const preview = out.approval!.card.data.preview;
-      expect(preview.kind === 'message' && preview.body).toMatch(/Recommendation: FHLB advances: \$\d+\.\dM of 5-year FHLB advances/);
+      expect(preview.kind === 'message' && preview.body).toMatch(/Recommendation: FHLB advances: \$\d+\.\dM of \d-year FHLB advances/);
       expect(out.approval!.record.operation).toBe('funding.fund_memo');
     } finally {
       await pool.end();
@@ -130,10 +130,11 @@ describe.skipIf(!up)('an acquisition the bank could afford', () => {
       // A structure ruled out is not challenged again in the second round.
       expect(texts.find((t) => t.startsWith('**Chief Risk Officer, second round:**')) ?? '').not.toMatch(/All cash|Half cash/);
       const rec = texts.find((t) => t.startsWith('**Recommendation:'))!;
-      expect(rec).toMatch(/^\*\*Recommendation: All stock\.\*\* The bank can afford about \$\d+\.\dM in assets/);
+      // With leverage this close to its stress-based floor, no structure fits even a small bank: not now, and why.
+      expect(rec).toMatch(/^\*\*Recommendation: Not now\.\*\* No structure considered holds every limit, even for a \$50\.0M bank.* Build capital first; all stock comes closest/);
       const table = blocks.find((b) => b.title === 'Three ways to pay for the acquisition')!;
       const limits = table.type === 'table' ? table.data.rows!.find((r) => r.item === 'Limits')! : {};
-      expect((limits as Record<string, string>).stock).not.toMatch(/breach/);
+      for (const k of ['cash', 'mixed', 'stock']) expect((limits as Record<string, string>)[k]).toMatch(/breach/);
       const preview = out.approval!.card.data.preview;
       expect(preview.kind === 'message' && preview.body).toMatch(/DI holds no data on a specific target/);
 
@@ -188,7 +189,9 @@ describe.skipIf(!up)('next year’s budget under stress', () => {
       expect(texts.find((t) => t.startsWith('**Planner:**'))).toMatch(/stands on the dividend in a severe year: Keep the dividend in the budget; the board commits now to cut it/);
       const table = blocks.find((b) => b.title === 'Three budgets for 2027, and each under severe stress')!;
       const limits = table.type === 'table' ? table.data.rows!.find((r) => r.item === 'Limits')! : {};
-      for (const k of ['plan', 'growth', 'defensive']) expect((limits as Record<string, string>)[k]).not.toMatch(/breach/);
+      // The plan and the defensive budget clear the trough once revised; the growth budget can't within its levers, so it isn't recommended.
+      for (const k of ['plan', 'defensive']) expect((limits as Record<string, string>)[k]).not.toMatch(/breach/);
+      expect(texts.find((t) => t.startsWith('**Recommendation:'))).not.toMatch(/^\*\*Recommendation: Growth budget/);
       expect(out.approval!.record.operation).toBe('budstress.budget_memo');
     } finally {
       await pool.end();

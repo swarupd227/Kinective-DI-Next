@@ -47,8 +47,8 @@ for (const [schema, tenant, type] of [['dinext_t_test_cu', 'test_cu', 'credit_un
         const policy = canvas.data.widgets[0]!.view;
         expect(policy.type).toBe('table');
         if (type === 'bank') {
-          // With capital from the Call Report, the bank's one breach is EVE at +400 bp against that shock's limit, and the pack says so first.
-          expect(canvas.data.take?.headline).toMatch(/^1 of \d+ policy limits is breached\. EVE at \+400 bp is −\d+\.\d% \(limit −35%\)/);
+          // With each loan's own rate type, EVE at +400 bp is inside its −35% limit, so every limit is met and the pack names the closest first.
+          expect(canvas.data.take?.headline).toMatch(/^All \d+ policy limits are met\. Closest:/);
         } else {
           expect(canvas.data.take?.headline).toMatch(/^All \d+ policy limits are met/);
         }

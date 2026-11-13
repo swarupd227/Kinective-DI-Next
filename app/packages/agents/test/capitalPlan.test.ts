@@ -50,7 +50,7 @@ describe.skipIf(!up)('a bank’s capital plan', () => {
       expect(a.atCapacity.levStressed).toBeCloseTo(8, 6);
       expect(a.capacity.buybackRoom).toBeCloseTo(a.capacity.total - a.capacity.dividends, 2);
       // Buying above tangible book lifts EPS and dilutes tangible book value a share.
-      const b = a.buyback(10_000_000)!;
+      const b = a.buyback(5_000_000)!;
       expect(b.epsAfter).toBeGreaterThan(b.epsBefore);
       expect(b.tbvAfter).toBeLessThan(b.tbvBefore);
       expect(b.levOk).toBe(true);
@@ -61,8 +61,11 @@ describe.skipIf(!up)('a bank’s capital plan', () => {
       const tool = (n: string) => spec.tools.find((t) => t.name === n)!;
       const o = (await tool('cap_view').run({} as never, ctx)) as { text: string; blocks: unknown[] };
       expect(o.text).toMatch(/^Over the next four quarters the bank can return about \*\*\$\d+\.\dM\*\* without its leverage ratio falling below \*\*\d+\.\d\d%\*\*/);
-      const x = (await tool('cap_buyback').run({ amount: 10_000_000 } as never, ctx)) as { text: string };
+      // Room for buybacks is $8.6M after dividends: $5M fits, $10M doesn't.
+      const x = (await tool('cap_buyback').run({ amount: 5_000_000 } as never, ctx)) as { text: string };
       expect(x.text).toMatch(/\*\*within the floors\*\*/);
+      const over = (await tool('cap_buyback').run({ amount: 10_000_000 } as never, ctx)) as { text: string };
+      expect(over.text).not.toMatch(/\*\*within the floors\*\*/);
       const set = (await tool('cap_set').run({ cet1_target: 10.5 } as never, ctx)) as { change: { apply: unknown } };
       expect(set.change.apply).toEqual({ cet1Target: 10.5 });
       expect((await svc.settings()).cet1Target).toBe(10);

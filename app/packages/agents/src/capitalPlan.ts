@@ -67,7 +67,9 @@ const SOURCES: ModuleSpec['sources'] = [
 function tables(who: Who, runId: string, a: Analysis) {
   const t = (title: string, op: string, cols: ReturnType<typeof text>[], rows: Record<string, string>[], subtitle?: string) => ({ ...moduleTable(who, title, runId, op, cols, rows), ...(subtitle ? { subtitle } : {}) }) as Block;
   const c = a.capacity;
-  const sizes = [...new Set([5e6, 10e6, Math.floor(c.buybackRoom / 1e5) * 1e5].filter((x) => x > 0))].sort((x, y) => x - y);
+  // Sizes the floors allow: round amounts up to the room after dividends, and the room itself.
+  const room = Math.floor(c.buybackRoom / 1e5) * 1e5;
+  const sizes = [...new Set([5e6, 10e6, room].filter((x) => x > 0 && x <= room))].sort((x, y) => x - y);
   return {
     capacity: t('What the bank can return over the next four quarters', 'cap.capacity', [text('item', ''), text('cet1', 'CET1'), text('lev', 'Leverage ratio')], [
       { item: 'Today', cet1: p2(a.now.cet1Pct), lev: p2(a.now.levPct) },

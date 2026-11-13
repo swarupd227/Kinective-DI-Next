@@ -73,15 +73,22 @@ for (const DB of ['dinext_t_test_cu', 'dinext_t_test_bank']) {
       expect(a.commitments!.draw30).toBeCloseTo(unused * 0.1, 0);
     });
 
-    it('splits loans into fixed and variable, totals to the book, and flags where the model assumes otherwise', async () => {
-      const r = (await new IrrService(pool).rateTypes())!;
+    it('splits loans into fixed and variable, totals to the book, and the rate-risk model uses the same split', async () => {
+      const irr = new IrrService(pool);
+      const r = (await irr.rateTypes())!;
       const svc = await SemanticService.create(pool, DB.replace('dinext_t_', ''), type);
       const loans = Number((await svc.query({ metrics: ['loan_balance'] }, { canViewSql: false })).rows[0]!.loan_balance);
       expect(r.total).toBeCloseTo(loans, 0);
-      // Commercial loans are partly variable, which the model treats as fixed.
-      expect(r.byCategory.some((x) => x.differs && x.modelAssumes === 'Fixed')).toBe(true);
-      // Cards and home equity lines are variable, as the model assumes.
-      expect(r.byCategory.filter((x) => /Credit Card|HELOC/.test(x.category)).every((x) => !x.differs)).toBe(true);
+      const { positions } = await irr.positions();
+      const loanPositions = positions.filter((p) => p.side === 'asset' && !['Cash and overnight funds', 'Investments'].includes(p.name));
+      // Commercial loans are partly variable, and the model carries that share.
+      const mixed = r.byCategory.filter((x) => x.variableShare > 0.1 && x.variableShare < 99.9);
+      expect(mixed.length).toBeGreaterThan(0);
+      const carried = loanPositions.filter((p) => p.variableShare !== undefined).map((p) => Math.round(p.variableShare! * 1000) / 10).sort();
+      expect(carried).toEqual(mixed.map((x) => Math.round(x.variableShare * 10) / 10).sort());
+      // Wholly variable (cards, home equity lines) and wholly fixed categories are as the model always had them.
+      expect(loanPositions.filter((p) => /Credit cards|Home equity/.test(p.name)).every((p) => p.floating && p.repriced(1) === 1)).toBe(true);
+      expect(loanPositions.filter((p) => /First mortgages|Auto/.test(p.name)).every((p) => !p.floating && p.variableShare === undefined)).toBe(true);
     });
   });
 }

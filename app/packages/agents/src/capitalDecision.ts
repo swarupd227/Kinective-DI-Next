@@ -521,11 +521,15 @@ export function securitiesCase(pool: Pool): DecisionCase<CapitalLevers, PlanFigu
     const t = m.today;
     const loans = Object.entries(t.loanBalance).filter(([k]) => ['First mortgages', 'Commercial loans', 'Consumer loans', 'Commercial real estate', 'Auto loans'].includes(k)).reduce((s, [, v]) => s + v, 0);
     const base = m.levers({ growth: mixOf(down1m(loans * (t.cap.settings.rwaGrowth / 100)), MIX.balanced) });
-    const targeted = Math.min(t.afs.book, up5m(m.afsToClear(base, 'eve400', { cushion: true }) ?? t.afs.book));
+    // With EVE over its limit, the targeted sale is the one that brings it inside; with no limit to fix, it is a
+    // classic repositioning of the lowest-yielding tenth of the portfolio, so holding is weighed against a real sale.
+    const need = m.afsToClear(base, 'eve400', { cushion: true }) ?? t.afs.book;
+    const repositioning = need <= 0;
+    const targeted = Math.min(t.afs.book, up5m(repositioning ? t.afs.book * 0.1 : need));
     const broad = Math.min(t.afs.book, Math.ceil((targeted * 2) / 5e6) * 5e6);
     return [
       { key: 'hold', name: 'Hold', stance: 'Keep the securities and their losses unrealized.', levers: base },
-      { key: 'targeted', name: 'Targeted sale', stance: 'Sell enough to bring EVE at +400 bp inside its limit with room.', levers: { ...base, afsSale: targeted } },
+      { key: 'targeted', name: 'Targeted sale', stance: repositioning ? 'Sell the lowest-yielding tenth of the portfolio and reinvest at today’s rates.' : 'Sell enough to bring EVE at +400 bp inside its limit with room.', levers: { ...base, afsSale: targeted } },
       { key: 'broad', name: 'Broad sale', stance: 'Sell twice that, for more yield pickup and rate protection.', levers: { ...base, afsSale: broad } },
     ];
   };
@@ -560,7 +564,12 @@ export function securitiesCase(pool: Pool): DecisionCase<CapitalLevers, PlanFigu
     const pick = [...(clear.length ? clear : results)].sort((a, b) => issues(a).length - issues(b).length || a.figures.afsLoss - b.figures.afsLoss)[0]!;
     const f = pick.figures;
     const hold = results.find((r) => r.option.key === 'hold')!.figures;
-    if (!f.levers.afsSale) return { key: pick.option.key, why: 'Every limit holds without a sale, so there is no reason to realize the loss.' };
+    if (!f.levers.afsSale) {
+      // Say what a sale would have cost and earned, so holding is a choice, not a default.
+      const sale = results.find((r) => r.option.key === 'targeted')?.figures;
+      const alt = sale && sale.levers.afsSale ? ` A targeted sale of ${mm(sale.levers.afsSale)} would realize a ${mm(sale.afsLoss)} loss (${mm(sale.afsLossAfterTax)} after tax) and earn it back in ${sale.afsEarnbackYears?.toFixed(1)} years, lifting the run-rate EPS to ${usd(sale.epsRun)} against ${usd(hold.epsRun)}; with no limit to fix, holding keeps that capital.` : '';
+      return { key: pick.option.key, why: `Every limit holds without a sale, so there is no reason to realize the loss.${alt}` };
+    }
     return {
       key: pick.option.key,
       why: [

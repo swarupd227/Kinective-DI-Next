@@ -236,17 +236,17 @@ export function irrModule(irr: IrrService, pricing?: Pricing, perShare?: PerShar
       },
       {
         name: 'irr_rate_types',
-        description: 'Fixed and variable loan balances by category from each loan’s terms, what reprices by the next quarter, and where that differs from what the rate-risk model assumes.',
+        description: 'Fixed and variable loan balances by category from each loan’s terms, and what reprices by the next quarter. The rate-risk model uses the same split.',
         input: z.object({}).strict(),
         run: async (_: unknown, ctx) => {
           guard(ctx);
           const r = await irr.rateTypes();
           if (!r) return { text: 'Loan terms aren’t loaded for this institution yet, so DI can’t split loans into fixed and variable.', blocks: [] };
-          const off = r.byCategory.filter((x) => x.differs);
           const lower = (c: string) => (c === 'HELOC' ? 'home equity lines' : c === 'Credit Card' ? 'credit cards' : c.toLowerCase());
+          const mixed = r.byCategory.filter((x) => x.variableShare > 0.5 && x.variableShare < 99.5);
           return {
-            text: `**${pct1(r.variableShare)}** of open loans, ${m(r.variable)} of ${m(r.total)}, carry a variable rate; **${m(r.repricesSoon)}** has a rate change due by the next quarter.${off.length ? ` The rate-risk model treats ${off.map((x) => `${lower(x.category)} as ${x.modelAssumes.toLowerCase()} (${pct1(x.variableShare)} are variable)`).join(' and ')}, so its income sensitivity ${off.some((x) => x.modelAssumes === 'Fixed') ? 'understates how fast those loans reprice' : 'overstates how fast those loans reprice'}. Changing the model is the ALCO’s call.` : ' That matches what the rate-risk model assumes for each category.'}`,
-            blocks: [moduleTable(spec, 'Fixed and variable loans', ctx.runId, 'irr.ratetypes', [{ field: 'category', headerName: 'Loan category', type: 'text' }, { field: 'fixed', headerName: 'Fixed', type: 'currency' }, { field: 'variable', headerName: 'Variable', type: 'currency' }, { field: 'share', headerName: 'Variable share', type: 'text' }, { field: 'soon', headerName: 'Rate changes by next quarter', type: 'currency' }, { field: 'model', headerName: 'Model assumes', type: 'text' }], r.byCategory.map((x) => ({ category: x.category, fixed: Math.round(x.fixed), variable: Math.round(x.variable), share: pct1(x.variableShare), soon: Math.round(x.repricesSoon), model: x.modelAssumes })))],
+            text: `**${pct1(r.variableShare)}** of open loans, ${m(r.variable)} of ${m(r.total)}, carry a variable rate; **${m(r.repricesSoon)}** has a rate change due by the next quarter.${mixed.length ? ` ${mixed.map((x) => `${lower(x.category).replace(/^./, (c) => c.toUpperCase())} ${x.variableShare >= 50 ? 'are mostly' : 'are partly'} variable (${pct1(x.variableShare)})`).join('; ')}.` : ''} The rate-risk model uses each loan’s own rate type, so its income and value sensitivity reflect this split.`,
+            blocks: [moduleTable(spec, 'Fixed and variable loans', ctx.runId, 'irr.ratetypes', [{ field: 'category', headerName: 'Loan category', type: 'text' }, { field: 'fixed', headerName: 'Fixed', type: 'currency' }, { field: 'variable', headerName: 'Variable', type: 'currency' }, { field: 'share', headerName: 'Variable share', type: 'text' }, { field: 'soon', headerName: 'Rate changes by next quarter', type: 'currency' }], r.byCategory.map((x) => ({ category: x.category, fixed: Math.round(x.fixed), variable: Math.round(x.variable), share: pct1(x.variableShare), soon: Math.round(x.repricesSoon) })))],
             suggestions: ['What’s our interest rate risk?', 'Show the repricing gap'],
           };
         },

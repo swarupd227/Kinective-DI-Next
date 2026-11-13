@@ -110,11 +110,12 @@ describe.skipIf(!up)('capital actions for a bank', () => {
       for (const bp of [200, 300, 400]) expect(w.shocks.find((s) => s.shockBp === bp)!.evPct).toBeCloseTo(a.scenarios.find((s) => s.shockBp === bp)!.nevPct, 9);
       const m = (await new CapitalActionsService(pool).model())!;
       const t = m.today;
-      // The demo bank: leverage binds at its floor, capacity $15.7M, the allowance $0.56M short, EVE −18.1% at +200 bp, office 47% against 50%.
+      // The demo bank: leverage binds at its floor, capacity $12.9M, the allowance $0.56M short, EVE −14.9% at +200 bp, office 47% against 50%.
+      // (Each loan's own rate type, from its terms: variable commercial lines lower EVE risk and deepen the severe-stress decline.)
       expect(t.cap.capacity.binding).toBe('leverage');
-      expect(t.cap.capacity.total / 1e6).toBeCloseTo(15.7, 1);
+      expect(t.cap.capacity.total / 1e6).toBeCloseTo(12.9, 1);
       expect(t.ceclGap / 1e6).toBeCloseTo(0.56, 2);
-      expect(t.eve[200]).toBeCloseTo(-18.1, 1);
+      expect(t.eve[200]).toBeCloseTo(-14.9, 1);
       expect(Math.round(t.officePct)).toBe(47);
       // Paying out the capital plan's capacity with nothing else lands leverage on the capital plan's floor.
       const atCap = m.evaluate(m.levers({ buyback: t.cap.capacity.buybackRoom }));
@@ -152,12 +153,14 @@ describe.skipIf(!up)('capital actions for a bank', () => {
       for (const id of ['capital', 'cecl', 'irr', 'concentration', 'liquidity', 'stress']) expect(r.last(`spec_${id}`), id).toBe('done');
       const findings = r.blocks.find((b) => b.title === 'What each specialist says binds')!;
       expect(findings.type === 'table' && findings.data.rows?.map((x) => x.agent)).toEqual(['Capital Plan', 'CECL', 'Interest Rate Risk', 'Concentration', 'Liquidity', 'CAMELS and stress test']);
-      expect(r.steps.find((s) => s.id === 'spec_capital' && s.state === 'done')?.resultSummary).toMatch(/Leverage ratio floor: 10\.44% against 9\.93%; \$15\.7M capacity; dividends take \$4\.3M, leaving \$11\.4M/);
+      expect(r.steps.find((s) => s.id === 'spec_capital' && s.state === 'done')?.resultSummary).toMatch(/Leverage ratio floor: 10\.44% against 10\.12%; \$12\.9M capacity; dividends take \$4\.3M, leaving \$8\.6M/);
       // Three plans in a table, the critic's challenges, the planner's answers, and a recommendation.
       const table = r.blocks.find((b) => b.title === 'Three capital plans for the next four quarters')!;
       expect(table.type === 'table' && table.data.columns.map((c) => c.headerName)).toEqual(['', 'Today', 'Conservative', 'Balanced', 'Shareholder return']);
       const critic = r.texts.find((t) => t.startsWith('**Chief Risk Officer:**'))!;
-      expect(critic).toMatch(/Shareholder return:\* .*EVE at \+400 bp is over its −35% limit today \(−37\.2%\)/);
+      // EVE is inside its limits now; the shareholder plan is challenged on the leverage floor, office concentration and the allowance.
+      expect(critic).toMatch(/Shareholder return:\* Leverage ends at \d+\.\d\d% against a \d+\.\d\d% floor/);
+      expect(critic).toMatch(/Shareholder return:\* Office CRE reaches/);
       expect(critic).toMatch(/allowance \$0\.56M short/);
       expect(r.texts.find((t) => t.startsWith('**Planner:**'))).toMatch(/Shareholder return\* (revised|stands)/);
       expect(r.texts.find((t) => t.startsWith('**Recommendation:'))).toMatch(/^\*\*Recommendation: Balanced\.\*\* It returns \$\d+\.\dM to shareholders/);
@@ -188,7 +191,7 @@ describe.skipIf(!up)('capital actions for a bank', () => {
     }
   }, 60_000);
 
-  it('weighs a securities sale on the same framework: hold breaches, the smallest sale that clears is recommended', async () => {
+  it('weighs a securities sale on the same framework: with every limit holding, it holds and says what a repositioning would cost', async () => {
     const pool = tenantPool('dinext_t_test_bank');
     try {
       const spec = securitiesSaleModule({ pool });
@@ -197,11 +200,15 @@ describe.skipIf(!up)('capital actions for a bank', () => {
       expect(out.outcome).toBe('approval');
       for (const b of r.blocks) expect(blockSchema.safeParse(b).success).toBe(true);
       for (const id of ['irr', 'capital', 'liquidity', 'stress']) expect(r.last(`spec_${id}`), id).toBe('done');
-      expect(r.texts.find((t) => t.startsWith('**Chief Risk Officer:**'))).toMatch(/Hold:\* Holding leaves EVE at \+400 bp at −\d+\.\d% against its −35% limit/);
-      expect(r.texts.find((t) => t.startsWith('**Recommendation:'))).toMatch(/^\*\*Recommendation: Targeted sale\.\*\* Selling \$\d+\.0M realizes a \$\d+\.\dM loss/);
+      // EVE at +400 bp is inside its limit, so holding is recommended, against a real repositioning of the lowest-yielding tenth.
+      expect(r.texts.find((t) => t.startsWith('**Recommendation:'))).toMatch(/^\*\*Recommendation: Hold\.\*\* Every limit holds without a sale.* A targeted sale of \$\d+\.0M would realize a \$\d+\.\dM loss .* earn it back in \d+\.\d years/);
       const table = r.blocks.find((b) => b.title === 'Hold or sell the low-yield securities')!;
       const rows = table.type === 'table' ? table.data.rows! : [];
-      expect(rows.find((x) => x.item === 'Limits')).toMatchObject({ hold: '1 breach', targeted: 'Clear' });
+      expect(rows.find((x) => x.item === 'Limits')).toMatchObject({ hold: 'Clear', targeted: 'Clear' });
+      const sold = rows.find((x) => x.item === 'Low-yield securities sold')!;
+      expect(sold.hold).toBe('None');
+      expect(sold.targeted).toMatch(/^\$\d+\.0M$/);
+      expect(sold.broad).toMatch(/^\$\d+\.0M$/);
       const preview = out.approval!.card.data.preview;
       expect(preview.kind === 'message' && preview.to).toEqual(['Board of Directors', 'ALCO']);
       expect(out.approval!.record.operation).toBe('secsale.sec_memo');
