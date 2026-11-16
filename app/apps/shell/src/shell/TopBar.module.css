@@ -1,9 +1,10 @@
+/* Under a notch or a status bar the bar grows by the inset (env() is 0 everywhere else). */
 .bar {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  height: 52px;
-  padding: 0 var(--space-4);
+  height: calc(52px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) var(--space-4) 0;
   border-bottom: 1px solid var(--color-border-subtle);
   background: var(--color-bg-surface);
   outline: none;
@@ -247,7 +248,8 @@
   display: grid;
   gap: var(--space-3);
   width: 320px;
-  max-height: min(70vh, 560px);
+  max-width: calc(100vw - 2 * var(--space-4));
+  max-height: min(70vh, 560px, var(--radix-popover-content-available-height, 70vh));
   padding: var(--space-3);
   overflow-y: auto;
   border: 1px solid var(--color-border-subtle);
@@ -371,5 +373,46 @@
 
   .search {
     margin-right: 0;
+  }
+}
+
+/* Phones: the brand and divider give their room to the page name (Home is the drawer's first
+   item), and the controls sit edge to edge. */
+@media (width < 768px) {
+  .bar {
+    gap: var(--space-2);
+    padding-right: var(--space-2);
+    padding-left: var(--space-2);
+  }
+
+  .bar .brand,
+  .bar .divider {
+    display: none;
+  }
+
+  .crumb {
+    padding-left: var(--space-2);
+  }
+
+  .bar .tools {
+    gap: 0;
+  }
+
+  .bar .user {
+    justify-content: center;
+    min-width: var(--target-min);
+    margin-left: 0;
+  }
+
+  .bar .user > svg {
+    display: none;
+  }
+
+  .popover {
+    width: min(320px, calc(100vw - 2 * var(--space-4)));
+  }
+
+  .popover .item {
+    min-height: var(--target-min);
   }
 }

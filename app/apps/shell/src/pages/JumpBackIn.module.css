@@ -184,3 +184,11 @@
 .action:hover {
   background: var(--color-accent-subtle);
 }
+
+/* Phones: the dashboard links and actions are full touch targets. */
+@media (width < 768px) {
+  .all,
+  .action {
+    min-height: var(--target-min);
+  }
+}

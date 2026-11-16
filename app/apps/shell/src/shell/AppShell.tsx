@@ -10,6 +10,7 @@ import { WorkspacePane } from './WorkspacePane.tsx';
 import { IdleTimeout } from '../session/IdleTimeout.tsx';
 import { useUi } from './uiStore.ts';
 import { useBreakpoint } from './useBreakpoint.ts';
+import { useKeyboardInset } from './useKeyboardInset.ts';
 import styles from './AppShell.module.css';
 
 // The palette (cmdk and its dialog) loads the first time it opens.
@@ -30,6 +31,7 @@ export function AppShell() {
   const [paletteUsed, setPaletteUsed] = useState(false);
   if (paletteOpen && !paletteUsed) setPaletteUsed(true);
   const canvasRef = useRef<HTMLDivElement>(null);
+  useKeyboardInset(bp === 'phone');
 
   // Global shortcuts (spec 10.7): Ctrl/Cmd+K palette from anywhere, F6 cycles regions.
   useEffect(() => {

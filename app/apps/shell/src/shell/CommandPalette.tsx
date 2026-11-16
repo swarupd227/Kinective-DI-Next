@@ -12,6 +12,7 @@ import { APP_META, appLabel } from './apps.tsx';
 import { SLASH_HELP } from './commands.ts';
 import { looksLikeQuestion, startsWords } from './searchMatch.ts';
 import { useUi } from './uiStore.ts';
+import { useBreakpoint } from './useBreakpoint.ts';
 import styles from './CommandPalette.module.css';
 
 const kindIcon: Record<SearchResultKind, ReactNode> = {
@@ -82,6 +83,7 @@ export function CommandPalette() {
     };
   }, [query, api]);
 
+  const phone = useBreakpoint() === 'phone';
   const setOpen = (open: boolean) => {
     setPalette(open);
     if (!open) setQuery('');
@@ -166,7 +168,7 @@ export function CommandPalette() {
         }}
         onKeyDown={(e) => {
           if (['ArrowDown', 'ArrowUp', 'Home', 'End', 'PageDown', 'PageUp'].includes(e.key)) setMoved(true);
-        }} placeholder={`Search reports, tables, ${terms.persons}, branches… or ask a question`} className={styles.input} />
+        }} placeholder={phone ? 'Search or ask DI' : `Search reports, tables, ${terms.persons}, branches… or ask a question`} className={styles.input} />
       <Command.List className={styles.list} onPointerMove={() => setMoved(true)}>
         {q && goTo}
         {loading && results.length === 0 && <Command.Loading className={styles.empty}>Searching…</Command.Loading>}
@@ -243,6 +245,10 @@ export function CommandPalette() {
         <span>
           <kbd>Esc</kbd> close
         </span>
+        {/* A phone has no Esc key, and the dialog leaves little backdrop to tap. */}
+        <button type="button" className={styles.close} onClick={close}>
+          Close
+        </button>
       </footer>
     </Command.Dialog>
   );

@@ -21,10 +21,14 @@
   animation: pane-in var(--motion-duration-panel) var(--motion-easing-standard);
 }
 
+/* Tablets and phones: the sheet covers the page, not the whole screen. It shares the canvas's grid
+   cell, so the ask box stays below it and "Ask about this" goes straight into it. */
 .sheet {
-  left: 0;
-  bottom: 0;
-  z-index: var(--z-overlay);
+  position: relative;
+  inset: auto;
+  grid-row: 1;
+  grid-column: 1;
+  z-index: var(--z-sticky);
   border-left: 0;
 }
 
@@ -216,5 +220,28 @@
   from {
     opacity: 0;
     transform: translateX(16px);
+  }
+}
+
+/* On a phone the sheet's controls are full touch targets. */
+@media (width < 768px) {
+  .sheet .header {
+    padding-left: var(--space-2);
+  }
+
+  .sheet .fullLink,
+  .sheet .ask {
+    min-width: var(--target-min);
+    height: var(--target-min);
+    justify-content: center;
+  }
+
+  .sheet .crumbs {
+    padding-right: var(--space-4);
+    padding-left: var(--space-4);
+  }
+
+  .sheet .crumbs button {
+    min-height: var(--target-min);
   }
 }

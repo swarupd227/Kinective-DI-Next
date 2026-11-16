@@ -35,6 +35,13 @@
   height: 520px;
 }
 
+/* On a phone the grid leaves room above and below it, so the page still scrolls past it. */
+@media (width < 768px) {
+  .fixed {
+    height: min(520px, 60dvh);
+  }
+}
+
 .stack {
   display: grid;
   gap: var(--space-2);

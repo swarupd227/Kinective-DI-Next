@@ -180,3 +180,12 @@
   color: var(--color-text-muted);
   text-align: center;
 }
+
+/* Phones: the group tabs are full touch targets. */
+@media (width < 768px) {
+  .tab {
+    min-width: var(--target-min);
+    min-height: var(--target-min);
+    justify-content: center;
+  }
+}

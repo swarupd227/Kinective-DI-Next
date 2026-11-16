@@ -3,6 +3,9 @@
   --tier-subtle: var(--color-status-info-subtle);
 
   display: grid;
+
+  /* One column that may shrink: a wide sample table must not push the card past a phone's edge. */
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .medium {
@@ -37,6 +40,7 @@
 
 .main {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
   padding: var(--density-block-padding);
 }
@@ -62,11 +66,13 @@
 
 .section {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
 }
 
 .compact {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
 }
 
@@ -151,6 +157,7 @@
 
 .bulk {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
 }
 
@@ -338,4 +345,34 @@
   color: var(--color-accent-text);
   font-size: var(--type-caption-size);
   line-height: var(--type-caption-line);
+}
+
+/* On a phone the sample and diff tables scroll sideways inside the card when they can't wrap, and the
+   band's badge drops under the eyebrow instead of squeezing it. */
+@media (width < 768px) {
+  .diff,
+  .sample {
+    display: block;
+    overflow-x: auto;
+  }
+
+  .diff th,
+  .diff td,
+  .sample th,
+  .sample td {
+    padding: var(--space-3);
+  }
+
+  .band {
+    flex-wrap: wrap;
+  }
+
+  .fieldRow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
+
+  .meta {
+    margin-left: 0;
+  }
 }

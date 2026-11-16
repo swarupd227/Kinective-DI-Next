@@ -189,3 +189,12 @@ a.main:hover {
   outline: 2px solid var(--color-accent-default);
   outline-offset: 1px;
 }
+
+/* Phones: row actions are full touch targets. */
+@media (width < 768px) {
+  .action {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--target-min);
+  }
+}

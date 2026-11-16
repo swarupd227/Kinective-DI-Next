@@ -83,7 +83,14 @@
 }
 
 @media (width < 768px) {
+  /* One column that may shrink, so a wide control scrolls in its own box instead of the page. */
   .page {
+    grid-template-columns: minmax(0, 1fr);
     padding: var(--space-6) var(--space-4) var(--space-9);
+  }
+
+  .prompt {
+    min-height: var(--target-min);
+    padding: var(--space-2) var(--space-5);
   }
 }

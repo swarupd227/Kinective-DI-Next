@@ -227,8 +227,63 @@
   line-height: var(--type-caption-line);
 }
 
+/* Below a laptop the box sits under an open sheet; its suggestions open above the sheet. */
+@media (width < 1024px) {
+  .wrap {
+    position: relative;
+    z-index: var(--z-sticky);
+  }
+}
+
+/* The home indicator on a phone without a home button keeps its strip below the box. */
+.wrap:not(.hero) {
+  padding-bottom: calc(var(--space-5) + env(safe-area-inset-bottom));
+}
+
 @media (width < 768px) {
   .wrap {
     padding: var(--space-2) var(--space-3) var(--space-3);
+  }
+
+  .wrap:not(.hero) {
+    padding-bottom: calc(var(--space-3) + env(safe-area-inset-bottom));
+  }
+
+  /* The attach button is disabled until uploads come to the box (use the Files page), so on a
+     phone its room goes to the question instead. */
+  .inputRow > :first-child:disabled {
+    display: none;
+  }
+
+  .input {
+    padding-right: var(--space-1);
+    padding-left: var(--space-3);
+  }
+
+  .collapsed {
+    min-height: var(--target-min);
+  }
+
+  .collapsed .kbd {
+    display: none;
+  }
+
+  /* On Home and a new task the question gets the box's full width, with talk and send beneath. */
+  .hero .bar {
+    padding: var(--space-3);
+  }
+
+  .hero .inputRow {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .hero .input {
+    flex-basis: 100%;
+    min-height: var(--target-min);
+  }
+
+  .suggest {
+    max-height: min(300px, 40dvh);
   }
 }

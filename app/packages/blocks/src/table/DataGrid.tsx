@@ -8,6 +8,7 @@ import clsx from 'clsx';
 import { AgGridReact } from 'ag-grid-react';
 import {
   CellStyleModule,
+  ClientSideRowModelApiModule,
   ClientSideRowModelModule,
   ModuleRegistry,
   QuickFilterModule,
@@ -23,6 +24,8 @@ import styles from './DataGrid.module.css';
 
 ModuleRegistry.registerModules([
   ClientSideRowModelModule,
+  // resetRowHeights, which re-measures wrapped rows after a column resize (a phone's narrow grid).
+  ClientSideRowModelApiModule,
   CellStyleModule,
   QuickFilterModule,
   RowAutoHeightModule,

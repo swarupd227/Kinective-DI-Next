@@ -68,6 +68,27 @@ select {
   border: 0;
 }
 
+/* Phones: every control is a 44 px touch target (Apple HIG, WCAG 2.5.5), and fields use 16 px text
+   so iOS Safari doesn't zoom the page when one takes focus. Wider screens keep their sizes. */
+@media (width < 768px) {
+  :root,
+  :root[data-density='compact'] {
+    --target-min: var(--target-touch);
+    --density-control-height: var(--target-touch);
+  }
+
+  input:not([type='checkbox'], [type='radio'], [type='range']),
+  textarea,
+  select {
+    font-size: var(--type-input-touch-size) !important;
+  }
+
+  /* No grey flash on tap; the hover and pressed styles already show the touch. */
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
 /* Spec 10.2 motion: all non-essential motion off when the user asks for reduced motion. */
 @media (prefers-reduced-motion: reduce) {
   *,

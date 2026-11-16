@@ -11,6 +11,7 @@
   top: 12vh;
   left: 50%;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   width: min(640px, calc(100vw - 24px));
   max-height: min(560px, 76vh);
@@ -121,6 +122,10 @@
   line-height: var(--type-caption-line);
 }
 
+.close {
+  display: none;
+}
+
 .footer kbd {
   margin-right: var(--space-1);
   padding: 0 var(--space-2);
@@ -144,7 +149,50 @@
 }
 
 @media (width < 768px) {
+  /* Clear of the status bar, and short enough that the keyboard never covers its results. */
   .dialog {
-    top: var(--space-4);
+    top: calc(var(--space-4) + env(safe-area-inset-top));
+    max-height: calc(var(--app-height, 100dvh) - 2 * var(--space-4) - env(safe-area-inset-top));
+
+    /* cmdk wraps the input, list and footer in one root: it takes the dialog's height so the list
+       scrolls between a fixed search box and the Close button. */
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .dialog > [cmdk-root] {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    min-height: 0;
+  }
+
+  .input {
+    padding: 0 var(--space-5);
+  }
+
+  .item {
+    min-height: var(--target-min);
+  }
+
+  /* Touch has no arrow keys: the footer's hints give way to a Close button. */
+  .footer {
+    justify-content: flex-end;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .footer > span {
+    display: none;
+  }
+
+  .close {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--target-min);
+    padding: 0 var(--space-5);
+    border: 1px solid var(--color-border-default);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    font-weight: var(--weight-medium);
+    cursor: pointer;
   }
 }

@@ -195,49 +195,53 @@ function Payouts({ data }: { data: GoalsIndex }) {
       <h2 id="gi-payouts" className={styles.panelHead}>
         Payouts to approve
       </h2>
-      <table className={styles.table}>
-        <thead>
-          <tr>
-            <th scope="col">Branch</th>
-            <th scope="col" className={styles.num}>
-              People
-            </th>
-            <th scope="col" className={styles.num}>
-              Amount
-            </th>
-            <th scope="col">Flagged</th>
-            <th scope="col">
-              <span className="dn-visually-hidden">Action</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.batches!.map((b) => (
-            <tr key={b.branch}>
-              <th scope="row">{b.branch}</th>
-              <td className={styles.num}>{b.waiting || '—'}</td>
-              <td className={styles.num}>{b.waiting ? money(b.total) : '—'}</td>
-              <td>
-                {b.flagged > 0 ? (
-                  <span className={styles.flag}>
-                    <CircleAlert size={12} aria-hidden />
-                    {b.flagged}
-                  </span>
-                ) : (
-                  <span className={styles.sub}>None</span>
-                )}
-              </td>
-              <td className={styles.action}>
-                {b.waiting > 0 && (
-                  <Button size="sm" onClick={() => void startThread(`Show the ${b.period.split(' ')[0]} payouts for ${b.branch} for approval`).then((t) => navigate(`/c/${t}`))}>
-                    Review
-                  </Button>
-                )}
-              </td>
+      {/* Scrolls sideways on a phone instead of cutting off the Review buttons. */}
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+      <div className={styles.tableWrap} tabIndex={0} role="region" aria-label="Payouts to approve">
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th scope="col">Branch</th>
+              <th scope="col" className={styles.num}>
+                People
+              </th>
+              <th scope="col" className={styles.num}>
+                Amount
+              </th>
+              <th scope="col">Flagged</th>
+              <th scope="col">
+                <span className="dn-visually-hidden">Action</span>
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {data.batches!.map((b) => (
+              <tr key={b.branch}>
+                <th scope="row">{b.branch}</th>
+                <td className={styles.num}>{b.waiting || '—'}</td>
+                <td className={styles.num}>{b.waiting ? money(b.total) : '—'}</td>
+                <td>
+                  {b.flagged > 0 ? (
+                    <span className={styles.flag}>
+                      <CircleAlert size={12} aria-hidden />
+                      {b.flagged}
+                    </span>
+                  ) : (
+                    <span className={styles.sub}>None</span>
+                  )}
+                </td>
+                <td className={styles.action}>
+                  {b.waiting > 0 && (
+                    <Button size="sm" onClick={() => void startThread(`Show the ${b.period.split(' ')[0]} payouts for ${b.branch} for approval`).then((t) => navigate(`/c/${t}`))}>
+                      Review
+                    </Button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

@@ -2,6 +2,9 @@
 
 .report {
   display: grid;
+
+  /* One column that may shrink, so a wide section scrolls in its own box on a phone. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
   container-type: inline-size;
 }

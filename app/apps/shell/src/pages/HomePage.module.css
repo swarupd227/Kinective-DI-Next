@@ -277,7 +277,14 @@
   }
 
   .hero {
-    padding: var(--space-6) var(--space-5);
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--space-6) var(--space-4);
+  }
+
+  .prompt {
+    min-height: var(--target-min);
+    padding: var(--space-2) var(--space-4);
+    text-align: left;
   }
 
   .greeting {

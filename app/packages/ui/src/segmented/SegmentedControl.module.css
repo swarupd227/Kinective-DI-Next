@@ -37,3 +37,18 @@
   color: var(--color-text-primary);
   box-shadow: var(--elevation-1);
 }
+
+/* On a phone a long set of segments scrolls sideways in its own box instead of widening the page. */
+@media (width < 768px) {
+  .group {
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .segment {
+    flex: none;
+    white-space: nowrap;
+  }
+}

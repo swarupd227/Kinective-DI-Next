@@ -186,8 +186,24 @@
 }
 
 @media (width < 768px) {
+  /* One column that may shrink: the tabs and actions scroll or wrap inside it, never the page. */
   .full,
   .fullBench {
+    grid-template-columns: minmax(0, 1fr);
     padding: var(--space-4) var(--space-4) 0;
+  }
+
+  .fullHeader {
+    min-width: 0;
+  }
+
+  .fullTitle {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .bar > * {
+    max-width: 100%;
   }
 }
