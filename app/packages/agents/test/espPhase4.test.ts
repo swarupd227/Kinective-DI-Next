@@ -85,6 +85,24 @@ for (const DB of ['dinext_t_test_cu', 'dinext_t_test_bank']) {
       expect(deposits.value).toMatch(/^\$[\d,]+ to \$[\d,]+ \([+−]\d+%\), Sep 2025 to Sep 2026$/);
     });
 
+    it('lets both attrition scores see money that really left over the quarter', async () => {
+      // Members whose month-end deposits fell by half or more from three month-ends back.
+      const fell = `SELECT a.party_id FROM hist_person_month a JOIN hist_person_month z ON z.party_id = a.party_id AND z.month_end = (SELECT MAX(month_end) FROM hist_person_month)
+        JOIN cdm_party p ON p.party_id = a.party_id AND p.is_member = 1
+        WHERE a.month_end = (SELECT DISTINCT month_end FROM hist_person_month ORDER BY month_end DESC LIMIT 1 OFFSET 3) AND a.deposit_balance >= 1000 AND z.deposit_balance <= a.deposit_balance * 0.5`;
+      const n = await one(`SELECT COUNT(*) AS n FROM (${fell}) f`);
+      expect(n).toBeGreaterThan(20);
+      // Member 360's score names the fall (one demo member keeps the score its story was written for)...
+      const named = await one(`SELECT COUNT(*) AS n FROM (${fell}) f JOIN cdm_attrition_score s ON s.party_id = f.party_id WHERE JSON_SEARCH(s.factors, 'one', 'balance_drop_3m') IS NOT NULL`);
+      expect(named).toBeGreaterThanOrEqual(n - 1);
+      // ...and the model's latest snapshot shows it, for every member it scores.
+      const shown = await one(`SELECT COUNT(*) AS n FROM (${fell}) f JOIN hist_member_snapshot m ON m.party_id = f.party_id AND m.month_end = (SELECT MAX(month_end) FROM hist_member_snapshot) WHERE m.balance_change_3m <= -0.25`);
+      const snapped = await one(`SELECT COUNT(*) AS n FROM (${fell}) f JOIN hist_member_snapshot m ON m.party_id = f.party_id AND m.month_end = (SELECT MAX(month_end) FROM hist_member_snapshot)`);
+      expect(shown).toBe(snapped);
+      // Small moves aren't flagged: the score names no quarter's fall under a quarter.
+      expect(await one("SELECT COUNT(*) AS n FROM cdm_attrition_score s, JSON_TABLE(s.factors, '$[*]' COLUMNS (code VARCHAR(40) PATH '$.code', label VARCHAR(200) PATH '$.label')) f WHERE f.code = 'balance_drop_3m' AND CAST(REGEXP_SUBSTR(f.label, '[0-9]+') AS UNSIGNED) < 25")).toBe(0);
+    });
+
     it('names who moved money out, and their share of what left', async () => {
       const o = (await new BalanceHistoryService(pool).outflows(1))!;
       expect(o.list.length).toBe(20);

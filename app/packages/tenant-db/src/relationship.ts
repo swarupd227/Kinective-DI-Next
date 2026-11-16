@@ -1,6 +1,7 @@
 // Relationship Manager data (spec 17.2): contact details, digital use, attrition scores, product
 // suggestions, loan applications, interactions and 30-day account activity. It is generated from
 // its own seed after the warehouse rows, so every figure the golden questions use is unchanged.
+import { depositsAt, type PartyDeposits } from './espHistory.ts';
 import { AS_OF, prng, unit, ymd, type GeneratedTenant } from './generate.ts';
 
 export const RELATIONSHIP_DDL = [
@@ -166,7 +167,11 @@ const DEMO = {
   ] as const,
 };
 
-export function generateRelationship(t: GeneratedTenant): RelationshipRows {
+/**
+ * history: each person's deposits at each month-end (ESP phase 4). With it, the attrition score sees
+ * money that left over the last quarter and accounts closed in the last 90 days, as Member 360 shows them.
+ */
+export function generateRelationship(t: GeneratedTenant, history?: PartyDeposits): RelationshipRows {
   const r = prng(t.profile.seed ^ 0x5eed0360);
   const asOf = new Date(`${AS_OF}T00:00:00Z`);
   const daysAgo = (n: number) => ymd(new Date(asOf.getTime() - Math.round(n) * DAY));
@@ -255,8 +260,17 @@ export function generateRelationship(t: GeneratedTenant): RelationshipRows {
     // Attrition: factors computed from the member's own data, then a little model noise.
     const factors: { code: string; label: string; weight: number }[] = [];
     if (ddStatus === 'stopped' && digital[6] && digital[6] >= daysAgo(120)) factors.push({ code: 'direct_deposit_stopped', label: `Direct deposit stopped on ${longDate(digital[6])}`, weight: 3 });
+    // The quarter's month-ends: what left over three months, closed accounts included.
+    const lastMe = history?.months.at(-1);
+    const firstMe = history?.months.at(-4);
+    const meNow = lastMe ? depositsAt(history!, id, lastMe) : null;
+    const meThen = firstMe ? depositsAt(history!, id, firstMe) : null;
+    const quarter = !demo && meNow !== null && meThen !== null && meThen >= 1000 ? (meNow - meThen) / meThen : null;
+    if (quarter !== null && quarter <= -0.25) factors.push({ code: 'balance_drop_3m', label: `Deposits down ${Math.round(-quarter * 100)}% from ${longDate(firstMe!)} to ${longDate(lastMe!)}`, weight: quarter <= -0.5 ? 4 : 2 });
+    const closed = demo || !history ? null : (depsBy.get(id) ?? []).filter((d) => d[5] && String(d[5]).slice(0, 10) >= daysAgo(90)).sort((a, b) => String(b[5]).localeCompare(String(a[5])))[0];
+    if (closed) factors.push({ code: 'account_closed', label: `Closed an account on ${longDate(String(closed[5]).slice(0, 10))} (${closed[3]})`, weight: 1 });
     const change = dep30 > 0 ? (depNow - dep30) / dep30 : 0;
-    if (change < -0.15) factors.push({ code: 'balance_drop', label: `Deposit balances down ${Math.round(-change * 100)}% in 30 days`, weight: 2 });
+    if (change < -0.15 && !factors.some((f) => f.code === 'balance_drop_3m')) factors.push({ code: 'balance_drop', label: `Deposit balances down ${Math.round(-change * 100)}% in 30 days`, weight: 2 });
     if (cats.size <= 1) factors.push({ code: 'single_product', label: 'Holds only one product', weight: 2 });
     if (tenureYears < 3) factors.push({ code: 'short_tenure', label: 'Relationship under 3 years', weight: 1 });
     if (lastLogin && lastLogin <= daysAgo(45)) factors.push({ code: 'no_recent_login', label: `No online or mobile login since ${longDate(lastLogin)}`, weight: 1 });

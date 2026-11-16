@@ -180,3 +180,30 @@ export function generateExceptions(x: ExceptionInputs) {
   }
   return rows;
 }
+
+/** Each person's deposits at each month-end on file, from the same rows as hist_person_month. */
+export interface PartyDeposits {
+  /** The month-ends, oldest first. */
+  months: string[];
+  byParty: Map<number, Float64Array>;
+}
+
+export function depositsByParty(depositMonths: unknown[][], deposits: unknown[][]): PartyDeposits {
+  const months = [...new Set(depositMonths.map((r) => String(r[0])))].sort();
+  const at = new Map(months.map((m, i) => [m, i]));
+  const partyOf = new Map(deposits.map((d) => [Number(d[0]), Number(d[1])]));
+  const byParty = new Map<number, Float64Array>();
+  for (const [me, id, balance] of depositMonths as [string, number, number][]) {
+    const party = partyOf.get(id);
+    if (party === undefined) continue;
+    const row = byParty.get(party) ?? byParty.set(party, new Float64Array(months.length)).get(party)!;
+    row[at.get(me)!]! += balance;
+  }
+  return { months, byParty };
+}
+
+/** A person's deposits at a month-end, or null when it isn't on file. */
+export const depositsAt = (p: PartyDeposits, party: number, monthEnd: string) => {
+  const i = p.months.indexOf(monthEnd);
+  return i < 0 ? null : (p.byParty.get(party)?.[i] ?? 0);
+};

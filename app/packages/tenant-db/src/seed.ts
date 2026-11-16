@@ -36,7 +36,7 @@ import { ESP_ACCOUNT_COLUMNS, ESP_ACCOUNT_DDL, generateAccounts } from './espAcc
 import { ESP_DETAIL_COLUMNS, ESP_DETAIL_DDL, generateDetails } from './espDetails.ts';
 import { ESP_LOSS_COLUMNS, ESP_LOSS_DDL, generateLosses } from './espLosses.ts';
 import { collateralHistory, ESP_COLLATERAL_COLUMNS, ESP_COLLATERAL_DDL, generateCollateral } from './espCollateral.ts';
-import { ESP_HISTORY_COLUMNS, ESP_HISTORY_DDL, generateExceptions, generateHistory } from './espHistory.ts';
+import { depositsByParty, ESP_HISTORY_COLUMNS, ESP_HISTORY_DDL, generateExceptions, generateHistory } from './espHistory.ts';
 import { ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
@@ -69,6 +69,8 @@ async function main() {
   for (const profile of TENANTS) {
     const started = Date.now();
     const t = generate(profile);
+    // Each person's deposits at each month-end: the attrition score and the model's snapshots read them.
+    const partyDeposits = depositsByParty(t.depositMonths, t.deposits as unknown[][]);
     await admin.query(`DROP DATABASE IF EXISTS \`${profile.schema}\``);
     await admin.query(`CREATE DATABASE \`${profile.schema}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
     await admin.query(`USE \`${profile.schema}\``);
@@ -92,7 +94,7 @@ async function main() {
     await insert(admin, 'hist_loan_roll_month', ['month_end', 'branch_id', 'loan_category', 'from_bucket', 'to_bucket', 'balance', 'loan_count'], t.histRoll);
     await insert(admin, 'meta_build', ['build_id', 'as_of_date', 'completed_at', 'state'], [[BUILD.buildId, AS_OF, BUILD.completedAt, 'completed']]);
     for (const ddl of RELATIONSHIP_DDL) await admin.query(ddl);
-    const rm = generateRelationship(t);
+    const rm = generateRelationship(t, partyDeposits);
     await insert(admin, 'cdm_party_contact', ['party_id', 'email', 'phone', 'preferred_channel'], rm.contacts);
     await insert(admin, 'cdm_digital_usage', ['party_id', 'online_banking_since', 'mobile_since', 'mobile_deposit_since', 'estatements_since', 'bill_pay_since', 'direct_deposit_status', 'direct_deposit_changed', 'last_login'], rm.digital);
     await insert(admin, 'hist_member_month', ['month_end', 'branch_id', 'age_band', 'member_count', 'with_checking', 'with_loan', 'with_direct_deposit', 'digital_active', 'product_count'], generateMemberHistory(t, rm.digital));
@@ -194,7 +196,7 @@ async function main() {
     await history('cdm_transaction_exception', exceptions);
     // Predictive models: each member at each of the last 12 month-ends, and where models and scores are kept.
     for (const ddl of ML_DDL) await admin.query(ddl);
-    await insert(admin, 'hist_member_snapshot', SNAPSHOT_COLUMNS, generateSnapshots(t, rm));
+    await insert(admin, 'hist_member_snapshot', SNAPSHOT_COLUMNS, generateSnapshots(t, rm, partyDeposits));
     // Decision tables people can change, each starting at version 1.
     for (const ddl of DMN_DDL) await admin.query(ddl);
     await insert(admin, 'dmn_table_version', DECISION_TABLE_COLUMNS, decisionTableRows(profile.institutionType, BUILD.completedAt));

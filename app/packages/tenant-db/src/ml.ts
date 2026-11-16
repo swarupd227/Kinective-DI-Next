@@ -15,6 +15,7 @@
 // deposit landed in the last 90 days. Before a member opens a loan they often shop for one first, and
 // before a certificate, money market or savings account a large deposit often lands; about 60% show it,
 // and some members who open nothing show the same thing.
+import { depositsAt, type PartyDeposits } from './espHistory.ts';
 import type { GeneratedTenant } from './generate.ts';
 import { AS_OF, unit } from './generate.ts';
 
@@ -126,7 +127,7 @@ interface Exit {
  * days_since_login, fees_3m, contacts_3m, complaints_3m, cert_maturing_90d, loan_shopping_90d,
  * large_deposit_90d, held].
  */
-export function generateSnapshots(t: GeneratedTenant, rm: { digital: unknown[][]; activity: unknown[][]; interactions: unknown[][] }) {
+export function generateSnapshots(t: GeneratedTenant, rm: { digital: unknown[][]; activity: unknown[][]; interactions: unknown[][] }, history?: PartyDeposits) {
   const months = snapshotMonths();
   const first = shiftMonths(months[0]!, -3);
   const rows: unknown[][] = [];
@@ -170,8 +171,16 @@ export function generateSnapshots(t: GeneratedTenant, rm: { digital: unknown[][]
     for (const m of months) {
       if (join > m) continue;
       const k = monthsBetween(m, months.at(-1)!);
-      const bal = balanceAt(m);
+      let bal = balanceAt(m);
       const bal3 = balanceAt(shiftMonths(m, -3));
+      // Money that really left (ESP phase 4's month-ends, closed accounts included): a fall of a quarter
+      // or more over three months shows as Member 360 and the outflow report show it. Smaller moves stay
+      // as they were: month-end balances also dip a few percent every summer, and a model trained on the
+      // winter would read that as members leaving.
+      const real = history ? depositsAt(history, id, m) : null;
+      const real3 = history ? depositsAt(history, id, shiftMonths(m, -3)) : null;
+      const realChange = real !== null && real3 !== null && real3 >= 1000 ? (real - real3) / real3 : null;
+      if (realChange !== null && realChange <= -0.25) bal = real!;
       const cats = new Set([...deps.filter((d) => openAt(d[4], d[5], m)).map((d) => d[3]), ...loans.filter((l) => openAt(l[6], l[7], m)).map((l) => l[4])]);
       const dd = ddStatus === 'active' ? (!ddChanged || ddChanged <= m ? 1 : 0) : ddStatus === 'stopped' ? (ddChanged && ddChanged > m ? 1 : 0) : 0;
       const stopped = ddStatus === 'stopped' && ddChanged && ddChanged <= m && daysBetween(ddChanged, m) <= 90 ? 1 : 0;
@@ -187,7 +196,7 @@ export function generateSnapshots(t: GeneratedTenant, rm: { digital: unknown[][]
       const saveSoon = deps.some((d) => d[3] !== 'Checking' && soon(d[4]));
       const shopping = (loanSoon && unit(id, 700 + at0) < 0.6) || unit(id, 720 + at0) < 0.04 ? 1 : 0;
       const largeDeposit = (saveSoon && unit(id, 740 + at0) < 0.6) || unit(id, 760 + at0) < 0.04 ? 1 : 0;
-      let change = bal3 > 0 ? Math.max(-1, Math.min(9, Math.round(((bal - bal3) / bal3) * 1000) / 1000)) : 0;
+      let change = realChange !== null && realChange <= -0.25 ? Math.max(-1, Math.round(realChange * 1000) / 1000) : bal3 > 0 ? Math.max(-1, Math.min(9, Math.round(((bal - bal3) / bal3) * 1000) / 1000)) : 0;
       let shownBal = bal;
       let shownDd = dd;
       let shownStop = stopped;
