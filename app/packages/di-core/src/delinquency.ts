@@ -170,6 +170,55 @@ export class DelinquencyService {
     });
   }
 
+  /**
+   * Charge-offs and recoveries loan by loan, year to date through the latest Call Report quarter (ESP phase 2):
+   * by category, the largest, and, for the whole institution, the Call Report lines they add up to.
+   */
+  async chargeOffs(scope: DqScope & { category?: string } = {}) {
+    const has = await rows<{ n: number }>(this.pool, 'SELECT COUNT(*) AS n FROM cdm_loan_chargeoff').catch(() => null);
+    if (!has) return null;
+    const [q] = await rows<{ q: unknown }>(this.pool, 'SELECT MAX(quarter_end) AS q FROM cr_value').catch(() => []);
+    const to = q?.q ? day(q.q) : null;
+    if (!to) return null;
+    const from = `${to.slice(0, 4)}-01-01`;
+    const w = await this.where(scope, 'l');
+    const cat = scope.category ? ' AND c.loan_category = ?' : '';
+    const catParams = scope.category ? [scope.category] : [];
+    const co = await rows<{ c: string; n: number; amt: number }>(this.pool, `SELECT c.loan_category AS c, COUNT(*) AS n, SUM(c.amount) AS amt FROM cdm_loan_chargeoff c JOIN cdm_loan l ON l.loan_id = c.loan_id WHERE c.charge_off_date BETWEEN ? AND ?${w.sql}${cat} GROUP BY c.loan_category`, [from, to, ...catParams]);
+    const rec = await rows<{ c: string; amt: number }>(this.pool, `SELECT c.loan_category AS c, SUM(r.amount) AS amt FROM cdm_loan_recovery r JOIN cdm_loan_chargeoff c ON c.loan_id = r.loan_id JOIN cdm_loan l ON l.loan_id = c.loan_id WHERE r.recovery_date BETWEEN ? AND ?${w.sql}${cat} GROUP BY c.loan_category`, [from, to, ...catParams]);
+    const cats = [...new Set([...co.map((x) => x.c), ...rec.map((x) => x.c)])];
+    const byCategory = cats
+      .map((c) => {
+        const a = co.find((x) => x.c === c);
+        const chargedOff = Number(a?.amt ?? 0);
+        const recovered = Number(rec.find((x) => x.c === c)?.amt ?? 0);
+        return { category: c, count: Number(a?.n ?? 0), chargedOff, recovered, net: chargedOff - recovered };
+      })
+      .sort((a, b) => b.net - a.net);
+    const largest = (
+      await rows<Record<string, unknown>>(
+        this.pool,
+        `SELECT c.loan_id, l.party_id, p.first_name, p.last_name, c.loan_category, loc.name AS branch, c.charge_off_date, c.amount, c.is_indirect,
+                (SELECT COALESCE(SUM(r.amount), 0) FROM cdm_loan_recovery r WHERE r.loan_id = c.loan_id AND r.recovery_date <= ?) AS recovered
+           FROM cdm_loan_chargeoff c JOIN cdm_loan l ON l.loan_id = c.loan_id JOIN cdm_party p ON p.party_id = l.party_id JOIN cdm_location loc ON loc.int_id = l.branch_id
+          WHERE c.charge_off_date BETWEEN ? AND ?${w.sql}${cat} ORDER BY c.amount DESC LIMIT 15`,
+        [to, from, to, ...catParams],
+      )
+    ).map((r) => ({ loanId: Number(r.loan_id), partyId: Number(r.party_id), name: `${r.first_name as string} ${r.last_name as string}`, last4: memberNumber(Number(r.party_id)).slice(-4), category: r.loan_category as string, branch: r.branch as string, date: day(r.charge_off_date), amount: Number(r.amount), recovered: Number(r.recovered), channel: Number(r.is_indirect) ? 'Indirect' : 'Direct' }));
+    const [since] = await rows<{ n: number; amt: number | null }>(this.pool, `SELECT COUNT(*) AS n, SUM(c.amount) AS amt FROM cdm_loan_chargeoff c JOIN cdm_loan l ON l.loan_id = c.loan_id WHERE c.charge_off_date > ?${w.sql}${cat}`, [to, ...catParams]);
+    const total = { count: byCategory.reduce((s, x) => s + x.count, 0), chargedOff: byCategory.reduce((s, x) => s + x.chargedOff, 0), recovered: byCategory.reduce((s, x) => s + x.recovered, 0), net: 0 };
+    total.net = total.chargedOff - total.recovered;
+    // The Call Report lines these add up to, for the whole institution only.
+    let reported: { form: string; chargeOffs: number; recoveries: number } | null = null;
+    if (!w.sql && !scope.category) {
+      const cr = await rows<{ code: string; amount: number }>(this.pool, "SELECT code, amount FROM cr_value WHERE quarter_end = ? AND code IN ('550','551','RIAD4635','RIAD4605')", [to]);
+      const v = (c: string) => cr.find((x) => x.code === c);
+      if (v('RIAD4635')) reported = { form: 'FFIEC 051 RI-B', chargeOffs: Number(v('RIAD4635')!.amount), recoveries: Number(v('RIAD4605')?.amount ?? 0) };
+      else if (v('550')) reported = { form: '5300 Schedule A', chargeOffs: Number(v('550')!.amount), recoveries: Number(v('551')?.amount ?? 0) };
+    }
+    return { from, to, byCategory, total, largest, reported, since: { count: Number(since?.n ?? 0), amount: Number(since?.amt ?? 0) } };
+  }
+
   /** Net charge-offs and the allowance, from the latest 5300 when there is one. */
   async losses() {
     const cr = await rows<{ code: string; amount: number; q: unknown }>(this.pool, `SELECT code, amount, quarter_end AS q FROM cr_value WHERE quarter_end = (SELECT MAX(quarter_end) FROM cr_value) AND code IN ('550','551','025B','AS0048','041B','RIAD4635','RIAD4605','RCON2122','RCON3123','RCON1403','RCON1407')`).catch(() => []);

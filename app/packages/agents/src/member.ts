@@ -193,7 +193,7 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
             { label: 'Credit score', value: p.creditScore ? `${p.creditScore.score}, from ${p.creditScore.from}, ${longDate(p.creditScore.asOf)}` : 'None on file' },
             { label: 'Latest survey', value: survey ? `${survey.score} of 10, ${survey.kind.toLowerCase()}, ${longDate(survey.date)}${survey.comment ? `: “${survey.comment}”` : ''}`.slice(0, 120) : 'None answered' },
             { label: 'Identity last verified', value: p.lastVerification ? `${longDate(p.lastVerification.at.slice(0, 10))}, ${p.lastVerification.channel.toLowerCase()}, ${p.lastVerification.result.toLowerCase()} (${p.lastVerification.by})` : 'Not verified in DI' },
-            { label: 'Charged off', value: p.chargeOffs.count ? `${p.chargeOffs.count} ${p.chargeOffs.count === 1 ? 'loan' : 'loans'}: ${p.chargeOffs.items.map((x) => `${x.product}, ${longDate(x.chargedOff)}`).join('; ')}`.slice(0, 120) : 'None' },
+            { label: 'Charged off', value: p.chargeOffs.count ? `${p.chargeOffs.count} ${p.chargeOffs.count === 1 ? 'loan' : 'loans'}: ${p.chargeOffs.items.map((x) => `${x.product}, ${longDate(x.chargedOff)}${x.amount !== null ? `, $${Math.round(x.amount).toLocaleString('en-US')}${x.recovered ? ` ($${Math.round(x.recovered).toLocaleString('en-US')} recovered)` : ''}` : ''}`).join('; ')}`.slice(0, 160) : 'None' },
           ],
         },
         {

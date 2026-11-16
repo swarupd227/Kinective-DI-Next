@@ -43,7 +43,7 @@ Run it after any schema change, so the mapping can't drift unnoticed.
 | Third-party feed | 147 | Sources, when a feature needs one. |
 | Work and people | 128 | DI-Next has its own where needed. |
 
-Business layer: 269 covered, 33 partial, 91 missing, 356 not needed (after phase 1b; 244, 43 and 106 before phase 1). See `mapping.md`.
+Business layer: 277 covered, 29 partial, 84 missing, 359 not needed (after phase 2; 244, 43 and 106 before phase 1). See `mapping.md`.
 
 ## Phases
 
@@ -51,7 +51,7 @@ Business layer: 269 covered, 33 partial, 91 missing, 356 not needed (after phase
 |---|---|---|
 | 1 (done) | `cdm_account`, `cdm_account_holding`, `cdm_household`, `cdm_party_detail`, `cdm_party_address`, `cdm_loan_terms`, `cdm_deposit_terms`: accounts and which loans and shares sit under each, households, member number, names, TIN type, language, deceased, marketing opt-out, address, and loan and share terms (payment, due date, APR, rate type, credit limit, opening deposit, certificate term, auto-renew) | 0 |
 | 1b (done) | `cdm_product_detail`, `cdm_cross_sell_group`, `cdm_dividend_tier`, `cdm_card_product`, `cdm_card_terms`, `cdm_misc_product`, `cdm_misc_account`, and columns on phase 1's tables: product details and cross-sell groups, rate tiers by balance, card products and expiry, safe deposit boxes, servicing-branch overrides, each indirect loan's dealer (as Indirect's dealer figures assign it), loan maturity, the renewing amount, account titles and relationship codes, name prefix and suffix, phones and a second email. The loan's application link and who decided it stay out: the demo seed builds applications apart from the loan book. | 0 |
-| 2 | Charge-off amounts and recoveries per account; insider and employee loans (Regulation O, NCUA 701.21(d)) | 11 |
+| 2 (done) | `cdm_loan_chargeoff`, `cdm_loan_recovery`, `cdm_deposit_chargeoff`, `cdm_deposit_recovery`, `cdm_insider`, `cdm_insider_loan`: each charge-off and recovery, loan by loan and for overdrawn checking closed with a negative balance; directors, committee members, executive officers, principal shareholders and employees, and their loans with the board's approval (Regulation O, NCUA 701.21(d)). The seed's loan book had charged off too few loans for the losses its Call Report reported, so loans now charge off at realistic yearly rates by product, and the Call Report's charge-off and recovery lines are the sums of these rows. Off-core deposits have no feed in DI, so their charge-offs are not needed yet. | 0 |
 | 3 | FHLB collateral eligibility, lien position, participations | 8 |
 | 4 | Account-level month-end snapshots (loans, shares, people, accounts, households); waits for 1 to 3 | 17 |
 | 5 | Services per account, channel activity, logins | 17 |
@@ -61,7 +61,7 @@ Business layer: 269 covered, 33 partial, 91 missing, 356 not needed (after phase
 
 ## Guardrails for every phase
 
-- **Additive only.** New tables beside existing ones. No ALTER of an existing table, and no changed value: new random draws use salts of their own. Existing metrics keep their SQL; new metrics get new names.
+- **Additive only,** unless the existing data is wrong and the user agrees to correct it (phase 2's charge-offs); then every changed figure is listed in the commit. New tables beside existing ones. No ALTER of an existing table, and no changed value: new random draws use salts of their own. Existing metrics keep their SQL; new metrics get new names.
 - **Fingerprints.** Every table in both demo databases is fingerprinted over its existing columns, before and after the phase. The only differences allowed are the new tables, plus referral dates, which change on every reseed.
 - **Tests.**
   - The full test suite and the offline evals.

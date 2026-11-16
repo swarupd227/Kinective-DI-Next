@@ -18,13 +18,16 @@ const toCategory = (t: string) => {
   return c ? ({ auto: 'Auto', mortgage: 'Mortgage', heloc: 'HELOC', 'home equity': 'HELOC', 'credit card': 'Credit Card', 'credit cards': 'Credit Card', personal: 'Personal', business: 'Business', consumer: 'Consumer', commercial: 'Commercial & Industrial' } as Record<string, string>)[c] : undefined;
 };
 
+/** Charge-offs loan by loan rather than the ratio: which loans, by type, the largest, and recoveries. */
+const CHARGE_OFF_DETAIL = /\brecover(y|ies|ed)\b|\b(which|what) loans (were |did we |have we |got )?charged? ?off\b|\bloans? (we )?charged off\b|\bcharge-?offs? (by|per) (loan|category|type|product)|\b(largest|biggest|top) charge-?offs?\b|\bcharge-?offs? (this year|year to date|ytd)\b|\bcharge-?off (detail|list)\b|\bcharge-?offs? and recoveries\b/i;
+
 export function delinquencyModule(dq: DelinquencyService): ModuleSpec {
   const scope = (ctx: ModuleContext) => ({ purviewBranches: ctx.purviewBranches });
   const spec: ModuleSpec = {
     id: 'delinquency',
     prefix: 'dq',
     agent: 'Delinquency',
-    request: /\broll ?rates?\b|\brolled\b|\bvintages?\b|\bcohorts?\b|\baging\b|\bdays past due\b|\bdelinquency buckets?\b|\b30\+|\b30[-–]59\b|\b30 (day|plus)\b|\bcure rate|\bcured\b|\b(largest|biggest|top|most) delinquent\b|\bdelinquent loans to work\b|\bworst (segments?|branches and products)\b|\b(drives?|driving) (our |the )?delinquency\b|\bdelinquency drivers?\b|\bnet charge-?off|\bcharge-?off ratio|\ballowance coverage|^(?![\s\S]*\b(?:chart|graph|plot)\b)[\s\S]*?(?:\bnpl\b|\bnon-?performing loans?\b)|\bcollections (list|queue)\b/i,
+    request: /\broll ?rates?\b|\brolled\b|\bvintages?\b|\bcohorts?\b|\baging\b|\bdays past due\b|\bdelinquency buckets?\b|\b30\+|\b30[-–]59\b|\b30 (day|plus)\b|\bcure rate|\bcured\b|\b(largest|biggest|top|most) delinquent\b|\bdelinquent loans to work\b|\bworst (segments?|branches and products)\b|\b(drives?|driving) (our |the )?delinquency\b|\bdelinquency drivers?\b|\bnet charge-?off|\bcharge-?off ratio|\ballowance coverage|^(?![\s\S]*\b(?:chart|graph|plot)\b)[\s\S]*?(?:\bnpl\b|\bnon-?performing loans?\b)|\bcollections (list|queue)\b|\b(loan|credit) recoveries\b|\brecoveries (on|from) (charged|charge)|\bwhich loans (were |did we |have we )?charged? ?off\b|\b(largest|biggest|top) charge-?offs?\b|\bcharge-?offs? (by|per) (loan|category|type|product)|\bcharge-?offs? and recoveries\b|\brecoveries (by|per)\b|\brecovered (on|from) (charged|charge)/i,
     noAccess: NO_ACCESS,
     sources: [{ kind: 'table', label: 'Delinquency history (month-end)', ref: 'table:hist_loan_dq_month' }],
     prompt: ({ tenant, user, title }) => `You are the Delinquency agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) manages credit quality. Buckets are the 5300's: Current, 30–59, 60–89, 90–179, 180–359 and 360+ days; 60+ is reportable delinquency. Roll rates are the share of last month's balance in a status that moved to each status this month.
@@ -35,10 +38,12 @@ export function delinquencyModule(dq: DelinquencyService): ModuleSpec {
 - "Which branches and products are worst?": dq_segments.
 - "Show the largest delinquent loans", "which auto loans are 90+ days?": dq_loans with min_days and category.
 - "What's our net charge-off ratio?", "allowance coverage?", "what's our NPL ratio?": dq_losses.
+- "Show charge-offs and recoveries by loan type", "which loans were charged off this year?", "largest charge-offs": dq_chargeoffs, optionally one category.
 - You only read. Working a loan is the collector's action; offer the early-warning list for outreach.`,
     plan: (text) => {
       const t = text.toLowerCase();
       const category = toCategory(t);
+      if (CHARGE_OFF_DETAIL.test(t)) return { tool: 'dq_chargeoffs', args: category ? { category } : {} };
       if (/charge-?off|allowance|coverage|\bnco\b|loss|\bnpl\b|non-?performing/.test(t)) return { tool: 'dq_losses', args: {} };
       if (/roll|cure|migrat/.test(t)) return { tool: 'dq_rolls', args: {} };
       if (/vintage|cohort|year (opened|booked|made)|origination year/.test(t)) return { tool: 'dq_vintages', args: {} };
@@ -142,6 +147,31 @@ export function delinquencyModule(dq: DelinquencyService): ModuleSpec {
             text: `The ${list.length} largest ${a.category ? `${a.category.toLowerCase()} ` : ''}loans ${a.min_days}+ days past due total **${m(total)}**. The largest is ${list[0]!.name}’s ${list[0]!.category.toLowerCase()} at ${list[0]!.branch}, ${m(list[0]!.balance)}, ${list[0]!.days} days past due. Working them is the collector’s step; DI can queue outreach from the early-warning list.`,
             blocks: [moduleTable(spec, `Largest loans ${a.min_days}+ days past due`, ctx.runId, 'dq.loans', [{ field: 'name', headerName: 'Borrower', type: 'text' }, { field: 'member', headerName: 'Member', type: 'text' }, { field: 'category', headerName: 'Category', type: 'text' }, { field: 'branch', headerName: 'Branch', type: 'text' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'days', headerName: 'Days past due', type: 'number' }, { field: 'bucket', headerName: 'Bucket', type: 'text' }, { field: 'channel', headerName: 'Channel', type: 'text' }], list.map((l) => ({ name: l.name, member: `…${l.last4}`, category: l.category, branch: l.branch, balance: Math.round(l.balance), days: l.days, bucket: l.bucket, channel: l.channel })))],
             suggestions: ['Queue outreach tasks for the early-warning list'],
+          };
+        },
+      },
+      {
+        name: 'dq_chargeoffs',
+        description: 'Charge-offs and recoveries loan by loan, year to date through the latest Call Report quarter: by loan category (loans, charged off, recovered, net), the largest charge-offs with what has come back, and for the whole institution the Call Report lines they add up to. Optionally one category.',
+        input: z.object({ category: z.string().max(40).optional() }).strict(),
+        run: async (a: { category?: string }, ctx) => {
+          guard(ctx);
+          const c = await dq.chargeOffs({ ...scope(ctx), ...(a.category ? { category: a.category } : {}) });
+          if (!c) return { text: 'Charge-offs loan by loan aren’t loaded for this institution.' };
+          if (!c.total.count && !c.total.recovered) return { text: `No ${a.category ? `${a.category.toLowerCase()} ` : ''}loans in your view were charged off between ${c.from} and ${c.to}.` };
+          const label = `${c.from.slice(0, 4)} through ${c.to}`;
+          const top = c.byCategory[0];
+          const ties = c.reported
+            ? ` They add up to the ${c.reported.form} for that quarter: ${m(c.reported.chargeOffs)} charged off and ${m(c.reported.recoveries)} recovered${Math.abs(c.reported.chargeOffs - c.total.chargedOff) < 1 && Math.abs(c.reported.recoveries - c.total.recovered) < 1 ? '' : ` (detail ${m(c.total.chargedOff)} and ${m(c.total.recovered)})`}.`
+            : '';
+          const since = c.since.count ? ` Since then, ${c.since.count} more ${c.since.count === 1 ? 'loan was' : 'loans were'} charged off (${m(c.since.amount)}), for next quarter’s report.` : '';
+          return {
+            text: `From ${label}, **${c.total.count} loans** were charged off for **${m(c.total.chargedOff)}**, and **${m(c.total.recovered)}** came back on loans charged off earlier: net **${m(c.total.net)}**, ${c.total.chargedOff ? p1((c.total.recovered / c.total.chargedOff) * 100) : '0%'} recovered.${!a.category && top ? ` ${top.category} loans are the largest net loss, ${m(top.net)} from ${top.count} loans.` : ''}${ties}${since}`,
+            blocks: [
+              moduleTable(spec, `Charge-offs and recoveries, ${label}`, ctx.runId, 'dq.chargeoffs.category', [{ field: 'category', headerName: 'Category', type: 'text' }, { field: 'count', headerName: 'Loans charged off', type: 'number' }, { field: 'chargedOff', headerName: 'Charged off', type: 'currency' }, { field: 'recovered', headerName: 'Recovered', type: 'currency' }, { field: 'net', headerName: 'Net', type: 'currency' }], [...c.byCategory, { category: 'Total', ...c.total }].map((x) => ({ category: x.category, count: x.count, chargedOff: Math.round(x.chargedOff), recovered: Math.round(x.recovered), net: Math.round(x.net) }))),
+              moduleTable(spec, 'Largest charge-offs', ctx.runId, 'dq.chargeoffs.loans', [{ field: 'name', headerName: 'Borrower', type: 'text' }, { field: 'member', headerName: 'Member', type: 'text' }, { field: 'category', headerName: 'Category', type: 'text' }, { field: 'branch', headerName: 'Branch', type: 'text' }, { field: 'date', headerName: 'Charged off', type: 'text' }, { field: 'amount', headerName: 'Amount', type: 'currency' }, { field: 'recovered', headerName: 'Recovered so far', type: 'currency' }, { field: 'channel', headerName: 'Channel', type: 'text' }], c.largest.map((l) => ({ name: l.name, member: `…${l.last4}`, category: l.category, branch: l.branch, date: l.date, amount: Math.round(l.amount), recovered: Math.round(l.recovered), channel: l.channel }))),
+            ],
+            suggestions: ['What’s our net charge-off ratio?', 'Show the largest delinquent loans'],
           };
         },
       },

@@ -3,7 +3,7 @@
 // and never decides whether something is a regulatory complaint under a rule. Closing an issue from
 // a regulator is high risk, with the issue number typed (AI-AGT-241).
 import { z } from 'zod';
-import { CoreError, findPerson, ISSUE_REGULATORS, ISSUE_ROOT_CAUSES, type IssueService } from '@dinext/di-core';
+import { CoreError, findPerson, ISSUE_REGULATORS, ISSUE_ROOT_CAUSES, type InsiderService, type IssueService } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
@@ -23,7 +23,10 @@ const NOT_BRANCH = ['The', 'My', 'Our', 'What', 'Who', 'That', 'Today', 'All', '
 /** The branch a question names ("open complaints for Westport"), checked against real branch names when the tool runs. */
 export const namedBranch = (t: string) => [/\b(?:at|in|for) ([A-Z][a-z]+)\b/g, /\b([A-Z][a-z]+)['’]s\b/g].flatMap((re) => [...t.matchAll(re)].map((x) => x[1]!)).find((w) => !NOT_BRANCH.includes(w));
 
-export function complianceModule(issues: IssueService, pool: Pool): ModuleSpec {
+/** Loans to insiders: directors, officials, executive officers, principal shareholders, employees. */
+export const INSIDER = /\binsider (loans?|lending|credit)\b|\breg(ulation)? ?o\b|\b215\.4\b|\b701\.21\b|\bloans? to (our )?(insiders|officials|directors|the board|board members|executive officers|employees|staff)\b|\b(official|director|employee|staff)[- ]owned loans?\b|\b(officials|directors|employees)['’] loans\b/i;
+
+export function complianceModule(issues: IssueService, pool: Pool, insiders?: InsiderService): ModuleSpec {
   /** A branch the question named: a real one the viewer may see, or nothing for a word that isn't a branch. */
   const branchOf = async (asked: string | undefined, ctx: ModuleContext) => {
     const name = asked?.trim().toLowerCase();
@@ -39,7 +42,7 @@ export function complianceModule(issues: IssueService, pool: Pool): ModuleSpec {
     id: 'compliance',
     prefix: 'cpm',
     agent: 'Compliance & Problem Management',
-    request: /\b(complaints?|CFPB|NCUA|OCC|FDIC|BBB|root causes?)\b|\bregulatory issues?\b|\bopen issues\b|\bcompliance issues?\b|\b(past[- ]due|overdue) issues\b|\b(?:issue|case) #?\d{3,}\b/i,
+    request: /\b(complaints?|CFPB|NCUA|OCC|FDIC|BBB|root causes?)\b|\bregulatory issues?\b|\bopen issues\b|\bcompliance issues?\b|\b(past[- ]due|overdue) issues\b|\b(?:issue|case) #?\d{3,}\b|\binsider (loans?|lending|credit)\b|\breg(ulation)? ?o\b|\b215\.4\b|\b701\.21\b|\bloans? to (our )?(insiders|officials|directors|the board|board members|executive officers)\b|\b(official|director|employee|staff)[- ]owned loans?\b/i,
     noAccess: 'Compliance issues aren’t part of your DI access.',
     sources: [{ kind: 'table', label: 'Issues', ref: 'table:cpm_issue' }],
     prompt: ({ tenant, user, title }) => `You are the Compliance & Problem Management agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) works member and regulatory issues.
@@ -49,6 +52,7 @@ export function complianceModule(issues: IssueService, pool: Pool): ModuleSpec {
 - "Summarize case 4471": cpm_issue_get.
 - "What are the top root causes?": cpm_root_causes.
 - "Log a complaint from James Lee about a double fee": cpm_issue_create. Don't decide if it's a regulatory complaint under any rule: a person confirms the source on the card.
+- "Show our insider loans", "are we within Regulation O?", "loans to directors and officials": cpm_insider_loans. It reports the record; whether something is a violation is for the compliance officer.
 - "Escalate issue 3307": cpm_issue_escalate. "Close issue 3307 with resolution: ...": cpm_issue_close, with a root cause only if the user gave one.`,
     today: async (ctx) => {
       const f = await issues.list({ overdueOnly: true }, ctx);
@@ -59,6 +63,7 @@ export function complianceModule(issues: IssueService, pool: Pool): ModuleSpec {
     plan: (text) => {
       const t = text.trim().replace(/[.!?]+$/, '');
       const id = Number(/\b(?:issue|case) #?(\d{3,})\b/i.exec(t)?.[1] ?? NaN);
+      if (INSIDER.test(t) && !id && !/^\s*log\b/i.test(t)) return { tool: 'cpm_insider_loans', args: {} };
       if (/^\s*log\b|\b(log|record|open) (a |an )?(complaint|issue)\b/i.test(t)) {
         const who = /\bfrom ((?:[A-Z][\w'-]*\s?){1,3})/.exec(t)?.[1]?.trim();
         if (!who) return { say: 'Who is the complaint from?' };
@@ -77,6 +82,30 @@ export function complianceModule(issues: IssueService, pool: Pool): ModuleSpec {
       return { tool: 'cpm_issues_list', args: { ...(branch ? { branch } : {}), ...(/\bregulatory\b/i.test(t) ? { kind: 'regulatory' } : {}), ...(SOURCES.find((s) => new RegExp(`\\b${s}\\b`).test(t)) ? { source: SOURCES.find((s) => new RegExp(`\\b${s}\\b`).test(t)) } : {}), ...(weeks ? { older_than_days: Number(weeks[1]) * 7 } : days ? { older_than_days: Number(days[1]) } : {}), ...(/\boverdue\b/i.test(t) ? { overdue_only: true } : {}) } };
     },
     tools: [
+      {
+        name: 'cpm_insider_loans',
+        description: 'Loans to insiders: directors, committee members, executive officers, principal shareholders (officials) and employees. Each official’s open loans and commitments against the board-approval threshold (Regulation O for a bank, NCUA 701.21(d) for a credit union), loans made without a recorded board approval, a bank’s lending limit and the aggregate against capital, and employees’ loans.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const r = insiders ? await insiders.loans() : null;
+          if (!r) return { text: 'Insiders and their loans aren’t loaded for this institution.' };
+          const money = (n: number) => (Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : `$${Math.round(n).toLocaleString('en-US')}`);
+          const who = r.bank ? 'directors, executive officers and principal shareholders' : 'directors, committee members and executive officers';
+          const missing = r.exceptions.flatMap((x) => x.unapproved.map((l) => ({ ...l, name: x.name, title: x.title })));
+          const exceptions = missing.length
+            ? ` **${missing.length} ${missing.length === 1 ? 'loan has' : 'loans have'} no board approval on record** though the official is over the threshold: ${missing.map((l) => `${l.name} (${l.title}), a ${l.category.toLowerCase()} loan of ${money(l.original)} opened ${l.opened}`).join('; ')}. Worth confirming with the board minutes before the next exam.`
+            : ' Every loan over the threshold has the board’s approval on record.';
+          const limit = r.bank && r.aggregateToCapital !== null ? ` Together insiders’ credit is ${r.aggregateToCapital.toFixed(1)}% of capital (the limit is 100%)${r.exceptions.some((x) => x.overLendingLimit) ? '; one insider is over the 15% lending limit' : ', and each insider is within the 15% lending limit'}.` : '';
+          return {
+            text: `Under ${r.rule}, **${r.officials.borrowers} of ${r.officials.people}** ${who} borrow from us: **${r.officials.loans} loans, ${money(r.officials.balance)}** outstanding. ${r.needingApproval} ${r.needingApproval === 1 ? 'is' : 'are'} over the ${money(r.threshold)} board-approval threshold.${exceptions}${limit} Employees hold ${r.employees.loans} loans (${money(r.employees.balance)}) across ${r.employees.borrowers} people; their rates should come from a benefit program open to all staff. Whether anything is a violation is the compliance officer’s call.`,
+            blocks: [
+              moduleTable(spec, 'Insiders and their loans', ctx.runId, 'cpm.insiders', [{ field: 'name', headerName: 'Name', type: 'text' }, { field: 'title', headerName: 'Role', type: 'text' }, { field: 'loans', headerName: 'Open loans', type: 'number' }, { field: 'committed', headerName: 'Loans and lines', type: 'currency' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'approval', headerName: 'Board approval', type: 'text' }], r.list.filter((x) => x.loans).map((x) => ({ name: x.name, title: x.title, loans: x.loans, committed: Math.round(x.committed), balance: Math.round(x.balance), approval: x.kind === 'Employee' ? 'Not required' : !x.needsApproval ? 'Under threshold' : x.unapproved.length ? `Missing (${x.unapproved.length})` : 'On record' }))),
+            ],
+            suggestions: ['Show the open regulatory issues'],
+          };
+        },
+      },
       {
         name: 'cpm_issues_list',
         description: 'Open issues, oldest first, with owner and status. Filter by kind, source, age or branch.',

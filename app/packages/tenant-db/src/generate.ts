@@ -284,6 +284,14 @@ export interface GeneratedTenant {
   histRoll: unknown[][];
   /** Memberships closed during the history window: who left, when, after how long and why. */
   exits: unknown[][];
+  /** Each loan charge-off: [loan, date, amount, category, indirect, branch]. */
+  chargeOffs: unknown[][];
+  /** Recoveries on charged-off loans: [loan, date, amount]. */
+  recoveries: unknown[][];
+  /** Overdrawn checking charged off at closing: [account, date, amount, category, branch]. */
+  depositChargeOffs: unknown[][];
+  /** [account, date, amount]. */
+  depositRecoveries: unknown[][];
 }
 
 /** Members leave at about 6% a year, so net growth lands between 1% and 2%, as at most credit unions now. */
@@ -500,6 +508,24 @@ export function generate(profile: TenantProfile): GeneratedTenant {
     }
   }
 
+  // Charge-offs at the rates a real book loses (phase 2). The draw above charges off too few loans for the
+  // losses the Call Report reports, so from 2024 each loan also faces a yearly chance of charge-off by
+  // product, higher indirect and in weaker branches. Hashes of the loan id, so no other draw moves; the
+  // demos' first 500 members keep their loans.
+  const lossFrom = new Date(Date.UTC(2024, 0, 1));
+  for (const l of loans) {
+    if (l.chargeOff || l.party <= 500) continue;
+    const yearly = lossRate(l.cat.category) * profile.branches[l.branch]!.dqBias * (l.indirect ? 1.3 : 1);
+    const start = new Date(Math.max(addMonths(l.open, 4).getTime(), lossFrom.getTime()));
+    const end = new Date(Math.min(asOf.getTime(), (l.close ?? asOf).getTime(), addMonths(l.open, l.cat.termMonths).getTime()) - 86_400_000);
+    if (end <= start) continue;
+    const p = 1 - Math.pow(1 - yearly, monthsBetween(start, end) / 12);
+    const u = unit(l.id, 2801);
+    if (u >= p) continue;
+    l.chargeOff = new Date(start.getTime() + (u / p) * (end.getTime() - start.getTime()));
+    l.close = null;
+  }
+
   const balanceAt = (l: Loan, at: Date) => {
     if (at < l.open || (l.close && l.close <= at) || (l.chargeOff && l.chargeOff <= at)) return 0;
     return l.original * Math.max(0, 1 - monthsBetween(l.open, at) / l.cat.termMonths);
@@ -562,6 +588,8 @@ export function generate(profile: TenantProfile): GeneratedTenant {
   /** Loans that were 60+ days behind at any month-end: their borrowers had weaker credit at origination. */
   const everBehind = new Set<number>();
   const lastBal = new Map<number, number>();
+  /** What each loan charged off in the history window: its balance at the month-end before. */
+  const chargedAmount = new Map<number, number>();
   // Account-level paths give the mix and the branches, not believable totals: late account opening alone
   // grew shares 13% a year and sank loan-to-share 18 points in 18 months. Each month-end is scaled so loans
   // grow about 3% a year and shares about 5%, with the spring tax-refund bump in shares: loan-to-share
@@ -611,6 +639,7 @@ export function generate(profile: TenantProfile): GeneratedTenant {
       } else if (l.chargeOff && l.chargeOff > monthStart && l.chargeOff <= at && prev) {
         state = 'Charged off';
         amount = lastBal.get(l.id) ?? 0;
+        chargedAmount.set(l.id, amount);
       }
       if (state) {
         const dk = `${me}|${l.branch + 1}|${l.cat.category}|${l.indirect ? 1 : 0}|${l.open.getUTCFullYear()}|${state}`;
@@ -691,6 +720,38 @@ export function generate(profile: TenantProfile): GeneratedTenant {
   // Credit at origination. Hashes of the loan id, so adding these leaves every other figure unchanged.
   loans.forEach((l, i) => loanRows[i]!.push(...creditTerms(l, asOf, everBehind.has(l.id) || Boolean(l.chargeOff))));
 
+  // Each charge-off's amount, and what was recovered later (repossessions sold, settlements, collection
+  // agencies). The Call Report's charge-off and recovery lines add these up.
+  const chargeOffRows: unknown[][] = [];
+  const recoveryRows: unknown[][] = [];
+  for (const l of loans) {
+    if (!l.chargeOff) continue;
+    const before = l.original * Math.max(0, 1 - monthsBetween(l.open, l.chargeOff) / l.cat.termMonths);
+    const amount = round2(chargedAmount.get(l.id) ?? Math.max(before, l.original * 0.02));
+    if (amount <= 0) continue;
+    chargeOffRows.push([l.id, ymd(l.chargeOff), amount, l.cat.category, l.indirect ? 1 : 0, l.branch + 1]);
+    const [chance, share] = recoveryOf(l.cat.category);
+    if (unit(l.id, 2811) >= chance) continue;
+    const recovered = amount * share * (0.4 + unit(l.id, 2812) * 1.2);
+    const n = 1 + Math.floor(unit(l.id, 2813) * 3);
+    for (let k = 0; k < n; k++) {
+      const at = addMonths(l.chargeOff, 1 + Math.floor(unit(l.id, 2814 + k) * 14));
+      if (at > asOf) continue;
+      recoveryRows.push([l.id, ymd(at), round2(recovered / n)]);
+    }
+  }
+  // Overdrawn checking closed with a negative balance is charged off too; a few pay some of it back.
+  const depositChargeOffRows: unknown[][] = [];
+  const depositRecoveryRows: unknown[][] = [];
+  for (const d of deps) {
+    if (!d.close || d.close < lossFrom || !/^checking/i.test(d.mix.category) || unit(d.id, 2821) >= 0.06) continue;
+    const amount = round2(25 + Math.pow(unit(d.id, 2822), 2) * 1_400);
+    depositChargeOffRows.push([d.id, ymd(d.close), amount, d.mix.category, d.branch + 1]);
+    if (unit(d.id, 2823) >= 0.3) continue;
+    const at = addMonths(d.close, 1 + Math.floor(unit(d.id, 2824) * 8));
+    if (at <= asOf) depositRecoveryRows.push([d.id, ymd(at), round2(amount * (0.2 + unit(d.id, 2825) * 0.8))]);
+  }
+
   return {
     profile,
     locations,
@@ -720,5 +781,30 @@ export function generate(profile: TenantProfile): GeneratedTenant {
       return [me, Number(b), v[0], v[1], v[2]];
     }),
     exits: exits.map((x) => [x.id, x.branch + 1, ymd(x.join), ymd(x.close), ymd(x.birth), x.segment, x.reason]),
+    chargeOffs: chargeOffRows,
+    recoveries: recoveryRows,
+    depositChargeOffs: depositChargeOffRows,
+    depositRecoveries: depositRecoveryRows,
   };
+}
+
+/** The yearly chance an open loan is charged off, by product: cards and unsecured loans most, mortgages least. */
+function lossRate(category: string) {
+  if (/credit card/i.test(category)) return 0.05;
+  if (/personal|consumer/i.test(category)) return 0.034;
+  if (/auto/i.test(category)) return 0.014;
+  if (/heloc|home equity/i.test(category)) return 0.0018;
+  if (/mortgage/i.test(category)) return 0.0006;
+  if (/industrial|business/i.test(category)) return 0.0045;
+  if (/real estate/i.test(category)) return 0.0015;
+  return 0.005;
+}
+
+/** [chance anything is recovered, share of the charge-off recovered when it is], by product. */
+function recoveryOf(category: string): [number, number] {
+  if (/auto/i.test(category)) return [0.75, 0.35];
+  if (/credit card/i.test(category)) return [0.5, 0.18];
+  if (/personal|consumer/i.test(category)) return [0.55, 0.22];
+  if (/mortgage|heloc|home equity|real estate/i.test(category)) return [0.6, 0.3];
+  return [0.55, 0.25];
 }

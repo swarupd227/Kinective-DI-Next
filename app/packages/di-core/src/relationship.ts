@@ -120,7 +120,7 @@ export interface MemberProfile {
   /** The latest credit score on file, from the person's most recent loan. */
   creditScore: { score: number; asOf: string; from: string } | null;
   /** Loans charged off, with when and the amount lent. */
-  chargeOffs: { count: number; original: number; items: { product: string; chargedOff: string; original: number }[] };
+  chargeOffs: { count: number; original: number; items: { product: string; chargedOff: string; original: number; amount: number | null; recovered: number }[] };
   cards: { kind: 'Debit' | 'Credit'; last4: string; status: string; opened: string; activated: string | null; closed: string | null; account: string }[];
   /** Checking transactions in the last 90 days: how many, and the latest. Null where the core's transactions aren't loaded. */
   transactions: { total90d: number; items: { date: string; description: string; amount: number; type: string; account: string }[] } | null;
@@ -459,7 +459,12 @@ export class RelationshipService {
     const staff = await this.staffNames();
     const day10 = (v: unknown) => String(v instanceof Date ? v.toISOString() : v).slice(0, 10);
     const [score] = await q<{ credit_score: number | null; loan_category: string; open_date: unknown }>('SELECT credit_score, loan_category, open_date FROM cdm_loan WHERE party_id = ? AND credit_score IS NOT NULL ORDER BY open_date DESC LIMIT 1', [partyId]);
-    const chargedOff = await q<{ loan_category: string; charge_off_date: unknown; original_amount: number }>('SELECT loan_category, charge_off_date, original_amount FROM cdm_loan WHERE party_id = ? AND charge_off_date IS NOT NULL ORDER BY charge_off_date DESC', [partyId]);
+    // What each charged off and has recovered since (ESP phase 2), where those tables are loaded.
+    type ChargedOff = { loan_category: string; charge_off_date: unknown; original_amount: number; amount: number | null; recovered: number | null };
+    const chargedOff = await q<ChargedOff>(
+      'SELECT l.loan_category, l.charge_off_date, l.original_amount, c.amount, (SELECT SUM(r.amount) FROM cdm_loan_recovery r WHERE r.loan_id = l.loan_id) AS recovered FROM cdm_loan l LEFT JOIN cdm_loan_chargeoff c ON c.loan_id = l.loan_id WHERE l.party_id = ? AND l.charge_off_date IS NOT NULL ORDER BY l.charge_off_date DESC',
+      [partyId],
+    ).catch(() => q<ChargedOff>('SELECT loan_category, charge_off_date, original_amount, NULL AS amount, NULL AS recovered FROM cdm_loan WHERE party_id = ? AND charge_off_date IS NOT NULL ORDER BY charge_off_date DESC', [partyId]));
     const cards = await q<{ kind: 'Debit' | 'Credit'; last4: string; status: string; opened: unknown; activated: unknown; closed: unknown; account_id: number }>('SELECT kind, last4, status, opened, activated, closed, account_id FROM cdm_card WHERE party_id = ? ORDER BY closed IS NOT NULL, opened DESC', [partyId]).catch(() => []);
     // The core's checking transactions, where they're loaded; a table that isn't there, or is empty for the
     // whole institution, means none are.
@@ -608,7 +613,7 @@ export class RelationshipService {
         return { birthDate, age, generation: generationOf(birthDate) };
       })(),
       creditScore: score?.credit_score ? { score: score.credit_score, asOf: day10(score.open_date), from: `the ${label(score.loan_category).toLowerCase()} application` } : null,
-      chargeOffs: { count: chargedOff.length, original: chargedOff.reduce((s, x) => s + Number(x.original_amount), 0), items: chargedOff.map((x) => ({ product: label(x.loan_category), chargedOff: day10(x.charge_off_date), original: Number(x.original_amount) })) },
+      chargeOffs: { count: chargedOff.length, original: chargedOff.reduce((s, x) => s + Number(x.original_amount), 0), items: chargedOff.map((x) => ({ product: label(x.loan_category), chargedOff: day10(x.charge_off_date), original: Number(x.original_amount), amount: x.amount === null ? null : Number(x.amount), recovered: Number(x.recovered ?? 0) })) },
       cards: cards.map((k) => ({ kind: k.kind, last4: k.last4, status: k.status, opened: day10(k.opened), activated: k.activated ? day10(k.activated) : null, closed: k.closed ? day10(k.closed) : null, account: String(k.account_id % 10_000).padStart(4, '0') })),
       transactions: txns === null ? null : { total90d: txns.length, items: txns.slice(0, 15).map((t) => ({ date: day10(t.post_date), description: t.description.slice(0, 80), amount: Number(t.amount), type: t.txn_type, account: `Checking …${String(t.account_id % 10_000).padStart(4, '0')}` })) },
       usage: usage ? { logins90d: Number(usage.logins_90d), mobileLogins90d: Number(usage.mobile_logins_90d), billPayments90d: Number(usage.bill_payments_90d), mobileDeposits90d: Number(usage.mobile_deposits_90d), fees90d: Number(usage.fees_90d), estatementAccounts: base.estatements_since ? deps.filter((d) => day10(d.open_date) <= day10(base.estatements_since)).length || deps.length : 0, depositAccounts: deps.length } : null,

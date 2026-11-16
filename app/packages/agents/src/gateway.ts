@@ -428,7 +428,7 @@ function profileForModel(p: MemberProfile, ref: string) {
     recent_interactions: p.interactions.items.slice(0, 5).map((i) => ({ date: i.at.slice(0, 10), channel: i.channel, summary: i.summary })),
     household_size: p.household.length + 1,
     credit_score: p.creditScore ? { score: p.creditScore.score, as_of: p.creditScore.asOf, from: p.creditScore.from } : null,
-    charged_off: p.chargeOffs.items.map((c) => ({ product: c.product, charged_off: c.chargedOff, original: round(c.original) })),
+    charged_off: p.chargeOffs.items.map((c) => ({ product: c.product, charged_off: c.chargedOff, original: round(c.original), ...(c.amount !== null ? { amount: round(c.amount), recovered: round(c.recovered) } : {}) })),
     cards: p.cards.slice(0, 8).map((k) => ({ kind: k.kind, ends: k.last4, status: k.status, opened: k.opened, activated: k.activated, closed: k.closed })),
     usage_90d: p.usage ? { logins: p.usage.logins90d, mobile_logins: p.usage.mobileLogins90d, bill_payments: p.usage.billPayments90d, mobile_deposits: p.usage.mobileDeposits90d, fees: p.usage.fees90d, estatement_accounts: `${p.usage.estatementAccounts} of ${p.usage.depositAccounts}` } : null,
     surveys: p.surveys.map((x) => ({ date: x.date, kind: x.kind, score: x.score, comment: x.comment })),

@@ -130,11 +130,13 @@ describe.skipIf(!up)('an acquisition the bank could afford', () => {
       // A structure ruled out is not challenged again in the second round.
       expect(texts.find((t) => t.startsWith('**Chief Risk Officer, second round:**')) ?? '').not.toMatch(/All cash|Half cash/);
       const rec = texts.find((t) => t.startsWith('**Recommendation:'))!;
-      // With leverage this close to its stress-based floor, no structure fits even a small bank: not now, and why.
-      expect(rec).toMatch(/^\*\*Recommendation: Not now\.\*\* No structure considered holds every limit, even for a \$50\.0M bank.* Build capital first; all stock comes closest/);
+      // A $500M bank breaks every structure; shrinking the all-stock deal finds one that holds every limit, and says what limits it.
+      expect(rec).toMatch(/^\*\*Recommendation: All stock\.\*\* The bank can afford about \$\d+\.\dM in assets.* What limits it is capital/);
       const table = blocks.find((b) => b.title === 'Three ways to pay for the acquisition')!;
       const limits = table.type === 'table' ? table.data.rows!.find((r) => r.item === 'Limits')! : {};
-      for (const k of ['cash', 'mixed', 'stock']) expect((limits as Record<string, string>)[k]).toMatch(/breach/);
+      // Cash and half cash still break a limit; the shrunk all-stock deal holds them all, close to two.
+      for (const k of ['cash', 'mixed']) expect((limits as Record<string, string>)[k]).toMatch(/breach/);
+      expect((limits as Record<string, string>).stock).not.toMatch(/breach/);
       const preview = out.approval!.card.data.preview;
       expect(preview.kind === 'message' && preview.body).toMatch(/DI holds no data on a specific target/);
 

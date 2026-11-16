@@ -115,7 +115,7 @@ export async function boardScorecard(svc: SemanticService, pool: Pool, instituti
   const better = rows.filter((r) => r.vsPeer === 'Better' || r.vsPeer === 'In line').length;
   const peered = rows.filter((r) => r.vsPeer === 'Better' || r.vsPeer === 'In line' || r.vsPeer === 'Worse').length;
   const behind = rows.filter((r) => r.vsPlan === 'Behind');
-  const headline = `On or ahead of plan on ${ahead} of ${judged} measures, and in line with or better than peers on ${better} of ${peered}.${behind.length ? ` Behind plan: ${behind.map((b) => `${b.label.toLowerCase().replace(/, 12 months$/, '')} (${fmt(b.actual, b.places)} against ${fmt(b.plan, b.places)})`).join('; ')}.` : ''}`;
+  const headline = `On or ahead of plan on ${ahead} of ${judged} measures, and in line with or better than peers on ${better} of ${peered}.${behind.length ? ` Behind plan: ${behind.slice(0, 4).map((b) => `${b.label.toLowerCase().replace(/, 12 months$/, '')} (${fmt(b.actual, b.places)} against ${fmt(b.plan, b.places)})`).join('; ')}${behind.length > 4 ? `; and ${behind.length - 4} more` : ''}.` : ''}`;
   return { rows, headline, behind, asOf: end };
 }
 

@@ -62,6 +62,8 @@ export function generateFfiecCallReport(t: GeneratedTenant) {
   const loans = t.loans as [number, number, number, number, string, number, string, string | null, string | null, number, number, number, number][];
   const deposits = t.deposits as [number, number, number, string, string, string | null, string | null, number, number][];
   const parties = (t.parties as unknown[][]).length;
+  const chargeOffs = t.chargeOffs as [number, string, number][];
+  const recoveries = t.recoveries as [number, string, number][];
 
   const sumBy = <R>(rows: R[], key: (r: R) => string, val: (r: R) => number) => {
     const m = new Map<string, number>();
@@ -124,15 +126,14 @@ export function generateFfiecCallReport(t: GeneratedTenant) {
     set('RCON1407', dq.filter((h) => PAST_DUE_90.has(h[5]) && !NONACCRUAL_CATS.has(h[2])).reduce((s, h) => s + h[6], 0));
     // Nonaccrual also holds commercial real estate loans whose collection is in doubt though they aren't
     // 90 days late; two impaired CRE loans moved there in the third quarter.
-    const impaired = (bal.get('Commercial Real Estate') ?? 0) * [0.0034, 0.0036, 0.0035, 0.0037, 0.0105][i]!;
+    const impaired = (bal.get('Commercial Real Estate') ?? 0) * [0.0034, 0.0036, 0.0035, 0.0037, 0.0125][i]!;
     set('RCON1403', dq.filter((h) => PAST_DUE_90.has(h[5]) && NONACCRUAL_CATS.has(h[2])).reduce((s, h) => s + h[6], 0) + impaired);
 
     // ---- RI-B charge-offs, recoveries and the allowance ----
-    const avgLoans = ytd.reduce((s, me) => s + total(loansAt(me)), 0) / (ytd.length || 1);
-    // Net charge-offs of about 0.30% a year, higher late in 2025.
-    const nco = avgLoans * [0.0034, 0.0036, 0.0027, 0.0029, 0.003][i]! * m;
-    set('RIAD4635', nco / 0.82);
-    set('RIAD4605', get('RIAD4635') * 0.18);
+    // Charge-offs and recoveries year to date: the loans' own, account by account (cdm_loan_chargeoff, cdm_loan_recovery).
+    const inYtd = (d: string) => d >= `${q.end.slice(0, 4)}-01-01` && d <= q.end;
+    set('RIAD4635', chargeOffs.filter((c) => inYtd(c[1])).reduce((s, c) => s + c[2], 0));
+    set('RIAD4605', recoveries.filter((r) => inYtd(r[1])).reduce((s, r) => s + r[2], 0));
     // An allowance of about 1.15% of loans, a little more as nonaccrual rises.
     set('RCON3123', get('RCON2122') * 0.0112 + get('RCON1403') * 0.08);
     aclAt.set(q.end, get('RCON3123'));

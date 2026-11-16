@@ -34,6 +34,7 @@ import { ESP_TXN_DDL, generateTransactions30 } from './espTransactions.ts';
 import { ESP_OWNER_DDL, generateOwners } from './espOwners.ts';
 import { ESP_ACCOUNT_COLUMNS, ESP_ACCOUNT_DDL, generateAccounts } from './espAccounts.ts';
 import { ESP_DETAIL_COLUMNS, ESP_DETAIL_DDL, generateDetails } from './espDetails.ts';
+import { ESP_LOSS_COLUMNS, ESP_LOSS_DDL, generateLosses } from './espLosses.ts';
 import { ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
@@ -156,6 +157,13 @@ async function main() {
     await insert(admin, 'cdm_card_terms', [...ESP_DETAIL_COLUMNS.cdm_card_terms], esp7.cardTerms);
     await insert(admin, 'cdm_misc_product', [...ESP_DETAIL_COLUMNS.cdm_misc_product], esp7.miscProducts);
     if (esp7.misc.length) await insert(admin, 'cdm_misc_account', [...ESP_DETAIL_COLUMNS.cdm_misc_account], esp7.misc);
+    // ESP alignment, phase 2: charge-offs and recoveries account by account, insiders and their loans.
+    for (const ddl of ESP_LOSS_DDL) await admin.query(ddl);
+    const equity = profile.institutionType === 'bank' ? Number((generateFfiecCallReport(t).values as unknown[][]).find((v) => v[0] === 'RCON3210' && v[1] === '2026-09-30')?.[2] ?? 0) : 0;
+    const esp8 = generateLosses({ institutionType: profile.institutionType, chargeOffs: t.chargeOffs, recoveries: t.recoveries, depositChargeOffs: t.depositChargeOffs, depositRecoveries: t.depositRecoveries, parties: t.parties as unknown[][], loans: t.loans as unknown[][], employees: t.employees as unknown[][], capital: equity });
+    for (const [table, rows] of [['cdm_loan_chargeoff', esp8.chargeOffs], ['cdm_loan_recovery', esp8.recoveries], ['cdm_deposit_chargeoff', esp8.depositChargeOffs], ['cdm_deposit_recovery', esp8.depositRecoveries], ['cdm_insider', esp8.insiders], ['cdm_insider_loan', esp8.insiderLoans]] as const) {
+      if (rows.length) await insert(admin, table, [...ESP_LOSS_COLUMNS[table]], rows);
+    }
     // Predictive models: each member at each of the last 12 month-ends, and where models and scores are kept.
     for (const ddl of ML_DDL) await admin.query(ddl);
     await insert(admin, 'hist_member_snapshot', SNAPSHOT_COLUMNS, generateSnapshots(t, rm));

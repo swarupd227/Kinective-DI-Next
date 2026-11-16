@@ -168,6 +168,24 @@ sources:
     filters: ['ac.close_date IS NULL']
     purview_column: ac.branch_id
     lineage: [cdm_account, cdm_account_holding, cdm_location]
+  loan_chargeoff_ytd:
+    # Loans charged off this year, each with the amount charged off (ESP phase 2). They add up to the Call Report's charge-off lines.
+    kind: current
+    table: cdm_loan_chargeoff
+    alias: co
+    joins: ['JOIN cdm_location AS loc ON loc.int_id = co.branch_id']
+    filters: ['co.charge_off_date >= MAKEDATE(YEAR((SELECT MAX(as_of_date) FROM meta_build)), 1)']
+    purview_column: co.branch_id
+    lineage: [cdm_loan_chargeoff, cdm_location]
+  loan_recovery_ytd:
+    # Money recovered this year on loans charged off this year or earlier (ESP phase 2).
+    kind: current
+    table: cdm_loan_recovery
+    alias: rc
+    joins: ['JOIN cdm_loan_chargeoff AS co ON co.loan_id = rc.loan_id', 'JOIN cdm_location AS loc ON loc.int_id = co.branch_id']
+    filters: ['rc.recovery_date >= MAKEDATE(YEAR((SELECT MAX(as_of_date) FROM meta_build)), 1)']
+    purview_column: co.branch_id
+    lineage: [cdm_loan_recovery, cdm_loan_chargeoff, cdm_location]
 
 dimensions:
   branch:
@@ -190,6 +208,8 @@ dimensions:
       party_detail_current: loc.name
       household_current: loc.name
       account_current: loc.name
+      loan_chargeoff_ytd: loc.name
+      loan_recovery_ytd: loc.name
     values_sql: SELECT name FROM cdm_location ORDER BY int_id
   region:
     label: Region
@@ -210,6 +230,8 @@ dimensions:
       party_detail_current: loc.region
       household_current: loc.region
       account_current: loc.region
+      loan_chargeoff_ytd: loc.region
+      loan_recovery_ytd: loc.region
     values_sql: SELECT DISTINCT region FROM cdm_location ORDER BY region
   loan_category:
     label: Loan category
@@ -221,6 +243,8 @@ dimensions:
       loan_dq_history: hq.loan_category
       application_history: ha.loan_category
       loan_terms_current: l.loan_category
+      loan_chargeoff_ytd: co.loan_category
+      loan_recovery_ytd: co.loan_category
     values_sql: SELECT DISTINCT loan_category FROM cdm_loan ORDER BY loan_category
   origination_channel:
     label: Origination channel
@@ -231,6 +255,8 @@ dimensions:
       loan_history: "CASE WHEN h.is_indirect = 1 THEN 'Indirect' ELSE 'Direct' END"
       loan_dq_history: "CASE WHEN hq.is_indirect = 1 THEN 'Indirect' ELSE 'Direct' END"
       loan_terms_current: "CASE WHEN l.is_indirect = 1 THEN 'Indirect' ELSE 'Direct' END"
+      loan_chargeoff_ytd: "CASE WHEN co.is_indirect = 1 THEN 'Indirect' ELSE 'Direct' END"
+      loan_recovery_ytd: "CASE WHEN co.is_indirect = 1 THEN 'Indirect' ELSE 'Direct' END"
     values: [Direct, Indirect]
   delinquency_bucket:
     label: Days past due
@@ -797,6 +823,18 @@ measures:
     unit: usd
     exprs:
       loan_terms_current: SUM(lt.payment_amount)
+  chargeoff_amount_sum:
+    unit: usd
+    exprs:
+      loan_chargeoff_ytd: SUM(co.amount)
+  chargeoff_loan_count:
+    unit: count
+    exprs:
+      loan_chargeoff_ytd: COUNT(*)
+  recovery_amount_sum:
+    unit: usd
+    exprs:
+      loan_recovery_ytd: SUM(rc.amount)
   detail_member_sum:
     unit: count
     exprs:
@@ -1694,6 +1732,36 @@ metrics:
     synonyms: [unused commitments, unfunded commitments, undrawn lines, unused lines, unused credit lines, available credit, open to buy, untapped lines]
     owner: Finance data team
     dimensions_allowed: [branch, region, loan_category]
+    current_only: true
+  loan_charge_offs_ytd:
+    label: Loan charge-offs this year
+    type: simple
+    measure: chargeoff_amount_sum
+    format: currency
+    description: The amount charged off on loans so far this year, loan by loan. Through the latest quarter end it matches the Call Report's charge-off line.
+    synonyms: [charge-offs this year, gross charge-offs, loans charged off, charge off amount, written off]
+    owner: Finance data team
+    dimensions_allowed: [branch, region, loan_category, origination_channel]
+    current_only: true
+  loans_charged_off_ytd:
+    label: Loans charged off this year
+    type: simple
+    measure: chargeoff_loan_count
+    format: count
+    description: How many loans were charged off so far this year.
+    synonyms: [number of charge-offs, charge-off count, count of loans charged off]
+    owner: Finance data team
+    dimensions_allowed: [branch, region, loan_category, origination_channel]
+    current_only: true
+  loan_recoveries_ytd:
+    label: Loan recoveries this year
+    type: simple
+    measure: recovery_amount_sum
+    format: currency
+    description: Money recovered so far this year on loans charged off this year or before - repossessions sold, settlements, collection agencies. Through the latest quarter end it matches the Call Report's recovery line.
+    synonyms: [recoveries, recoveries this year, charge-off recoveries, amounts recovered]
+    owner: Finance data team
+    dimensions_allowed: [branch, region, loan_category, origination_channel]
     current_only: true
   line_utilization:
     label: Credit line utilization

@@ -137,12 +137,13 @@ RULES = [
     (r'^esp_finbi_(loancustomermatchtypes|sharecustomermatchtypes|accountcustomermatchtypes)$', C, 'cdm_account_owner', None, 'Owner roles (cdm_account_owner.role).'),
     (r'^esp_finbi_(loanprodreportmetrics|shareprodreportmetrics)$', N, '', None, 'Report column settings.'),
     # Charge-offs, recoveries, insider loans
-    (r'^esp_finbi_(loanchargeoffs|loanrecoveries|depositchargeoffs|depositrecoveries)$', P, 'cdm_loan, cr_value', 2, 'Charge-off date per loan and net charge-offs from the Call Report; amounts and recoveries per account are phase 2.'),
-    (r'^esp_finbi_external(loan|deposit)(chargeoffs|recoveries)$', M, 'ofc_loan', 2, 'Charge-offs and recoveries on off-core accounts.'),
-    (r'^esp_finbi_(officialownedloans|employeeowned_loans)$', M, '', 2, 'Insider and employee loans: Regulation O (banks), NCUA 701.21(d) (credit unions).'),
+    (r'^esp_finbi_(loanchargeoffs|loanrecoveries|depositchargeoffs|depositrecoveries)$', C, 'cdm_loan_chargeoff, cdm_loan_recovery, cdm_deposit_chargeoff, cdm_deposit_recovery', None, 'Each charge-off and recovery, account by account; the Call Report lines are their sums (phase 2).'),
+    (r'^esp_finbi_externalloan(chargeoffs|recoveries)$', C, 'cdm_loan_chargeoff, cdm_loan_recovery, cdm_loan', None, 'Off-core loans load into cdm_loan with their source, so their charge-offs and recoveries sit beside the core\u2019s (phase 2).'),
+    (r'^esp_finbi_externaldeposit(chargeoffs|recoveries)$', N, '', None, 'DI has no off-core deposit feed; one would load like off-core loans, and its charge-offs into cdm_deposit_chargeoff.'),
+    (r'^esp_finbi_(officialownedloans|employeeowned_loans)$', C, 'cdm_insider_loan, cdm_insider', None, 'Insider and employee loans with effective and expiration dates and the board\u2019s approval: Regulation O (banks), NCUA 701.21(d) (credit unions) (phase 2).'),
     # Off-core
     (r'^esp_finbi_externalloandata$|^esp_finbi_externalloansources$', C, 'ofc_loan, ofc_feed, ofc_load', None, 'Off-core loans and their sources.'),
-    (r'^esp_finbi_externaldepositsources$', M, '', 2, 'Off-core deposit sources.'),
+    (r'^esp_finbi_externaldepositsources$', N, '', None, 'DI has no off-core deposit feed; ofc_feed would register one.'),
     # Applications
     (r'^esp_finbi_(loanappdata|loanapphistory|loanapplicants|loanappstatuses|loanapplicanttypes)$', C, 'cdm_loan_application, cdm_loan_app_status_history, mod_lap_status_map', None, 'Loan applications and their status history.'),
     (r'^esp_finbi_loanappsby_applicant_product$', C, 'cdm_loan_application', None, 'A reporting view over applications.'),
@@ -233,7 +234,7 @@ COLUMNS = {
         'originatingBranch': (C, 'cdm_account_origination.originating_branch_id'), 'openedByEmpNumber': (C, 'cdm_account_origination.opened_by_employee_id'),
         'originatingUser': (C, 'cdm_loan.officer_id'), 'associatedCustomers': (C, 'cdm_account_owner.party_id'), 'homeBranchOverride': (C, 'cdm_account_holding.servicing_branch_id'),
         'interestRate': (C, 'cdm_loan.rate'), 'apr': (C, 'cdm_loan_terms.apr'), 'loanTerm': (C, 'cdm_loan.term_months'), 'maturityDate': (C, 'cdm_loan_terms.maturity_date'),
-        'daysDelinquent': (C, 'cdm_loan.days_delinquent'), 'chargeOffDate': (C, 'cdm_loan.charge_off_date'), 'chargeOffAmount': (M, 'Amount charged off', 2),
+        'daysDelinquent': (C, 'cdm_loan.days_delinquent'), 'chargeOffDate': (C, 'cdm_loan.charge_off_date'), 'chargeOffAmount': (C, 'cdm_loan_chargeoff.amount'),
         'appCreditScore': (C, 'cdm_loan.credit_score'), 'appCreditScoreTypeID': (C, 'cdm_credit_score_history.score_type'),
         'avgRecentCreditScore': (D, 'cdm_credit_score_history.score'), 'maxRecentCreditScore': (D, 'cdm_credit_score_history.score'), 'minRecentCreditScore': (D, 'cdm_credit_score_history.score'),
         'recentCreditScoreDate': (D, 'cdm_credit_score_history.as_of'), 'recentCreditScoreTypeID': (D, 'cdm_credit_score_history.score_type'),
@@ -247,7 +248,7 @@ COLUMNS = {
         'percentOwnership': (M, 'Share sold in a participation', 3), 'retainedBalance': (M, 'Balance kept after a participation', 3), 'participationTypeID': (M, 'Participation type', 3),
         'investorNumber': (M, 'Investor on a sold loan', 3), 'lienPositionID': (M, 'Lien position', 3), 'fhlbIneligibilityCause': (M, 'Why the loan can’t be pledged', 3),
         'fhlbIneligibiltyCauses': (M, 'Why the loan can’t be pledged', 3), 'fhlbCreditScore': (M, 'Score the FHLB uses', 3),
-        'empOwned': (M, 'Employee loan', 2), 'officialOwned': (M, 'Insider loan (Regulation O, 701.21)', 2), 'allowedServices': (M, 'Services on the loan', 5),
+        'empOwned': (C, 'cdm_insider_loan.kind'), 'officialOwned': (C, 'cdm_insider_loan.kind'), 'allowedServices': (M, 'Services on the loan', 5),
     }),
     'esp_finbi_sharedata': ('cdm_deposit_account', {
         'id': (C, 'cdm_deposit_account.account_id'), 'shareID': (C, 'cdm_account_holding.suffix'), 'accountID': (C, 'cdm_account_holding.account_number'),
@@ -256,7 +257,7 @@ COLUMNS = {
         'maturityDate': (C, 'cdm_deposit_account.maturity_date'), 'openBranch': (C, 'cdm_deposit_account.branch_id'), 'openedByEmpNumber': (C, 'cdm_account_origination.opened_by_employee_id'),
         'associatedCustomers': (C, 'cdm_account_owner.party_id'), 'homeBranchOverride': (C, 'cdm_account_holding.servicing_branch_id'), 'originalAmount': (C, 'cdm_deposit_terms.original_amount'),
         'autoRenew': (C, 'cdm_deposit_terms.auto_renew'), 'autoRenewAmount': (C, 'cdm_deposit_terms.auto_renew_amount'),
-        'chargeOffAmount': (M, 'Overdrawn balance charged off', 2), 'chargeOffDate': (M, 'Overdrawn balance charge-off date', 2),
+        'chargeOffAmount': (C, 'cdm_deposit_chargeoff.amount'), 'chargeOffDate': (C, 'cdm_deposit_chargeoff.charge_off_date'),
     }),
     'esp_crm_customerdata': ('cdm_party', {
         'id': (C, 'cdm_party.party_id'), 'memberNumber': (C, 'cdm_party_detail.member_number'), 'first': (C, 'cdm_party.first_name'), 'last': (C, 'cdm_party.last_name'),
@@ -282,7 +283,7 @@ COLUMNS = {
         'associatedCustomers': (C, 'cdm_account_owner.party_id'), 'type': (C, 'cdm_account.account_type'), 'homeBranch': (C, 'cdm_account.branch_id'), 'openBranch': (C, 'cdm_account.branch_id'),
         'openEmpNumber': (C, 'cdm_account.opened_by_employee_id'), 'openEmpsort2ID': (D, 'cdm_account.opened_by_employee_id, cdm_employee.branch_id, cdm_org_unit'), 'openDate': (C, 'cdm_account.open_date'), 'closeDate': (C, 'cdm_account.close_date'), 'closed': (C, 'cdm_account.close_date'),
         'onboardedDate': (D, 'onb_task'), 'lastOnboardingTime': (D, 'onb_task'), 'onboardingDays': (D, 'onb_task'), 'relationshipCode': (C, 'cdm_account.relationship_code'),
-        'isBoardMember': (M, 'Board member on the account', 2), 'isRepPayee': (C, 'cdm_account.is_rep_payee'), 'isTrust': (C, 'cdm_account.account_type'), 'restrictAccess': (N, 'ESP row security'),
+        'isBoardMember': (D, 'cdm_insider.role, cdm_account.primary_party_id'), 'isRepPayee': (C, 'cdm_account.is_rep_payee'), 'isTrust': (C, 'cdm_account.account_type'), 'restrictAccess': (N, 'ESP row security'),
         'eNotice': (C, 'cdm_account.e_notice'), 'estatements': (C, 'cdm_account.estatements'), 'estatementsEligible': (C, 'cdm_account.estatements_eligible'), 'lastCheckingOpenDate': (D, 'cdm_deposit_account.open_date'),
         'acctHasIndirect': (D, 'cdm_loan.is_indirect'), 'isAcctOnlyIndirect': (D, 'cdm_loan.is_indirect'), 'orgDate': (C, 'cdm_account.open_date'), 'lastCorrespondenceDate': (D, 'cdm_interaction.occurred_at'),
         'onlineBanking': (D, 'cdm_digital_usage.online_banking_since'), 'mobileBanking': (D, 'cdm_digital_usage.mobile_since'), 'billPay': (D, 'cdm_digital_usage.bill_pay_since'), 'directDeposit': (D, 'cdm_digital_usage.direct_deposit_status'),

@@ -68,6 +68,9 @@ export function generateCallReport(t: GeneratedTenant) {
   const loans = t.loans as [number, number, number, number, string, number, string, string | null, string | null, number, number, number, number][];
   const histDq = t.histDq as [string, number, string, number, number, string, number, number][];
   const deposits = t.deposits as [number, number, number, string, string, string | null, string | null, number, number][];
+  const chargeOffs = t.chargeOffs as [number, string, number, string, number, number][];
+  const recoveries = t.recoveries as [number, string, number][];
+  const coOf = new Map(chargeOffs.map((c) => [c[0], c]));
 
   // Balance-weighted rates by category, from the accounts themselves.
   const rateOf = <R>(rows: R[], cat: (r: R) => string, bal: (r: R) => number, rate: (r: R) => number) => {
@@ -111,12 +114,12 @@ export function generateCallReport(t: GeneratedTenant) {
     const m = q.ytdMonths / 12;
 
     // ---- Schedule A: loans, delinquency and charge-offs by loan type ----
-    const coRaw = sumBy(loans.filter((l) => l[8] && l[8] >= `${q.end.slice(0, 4)}-01-01` && l[8] <= q.end), (l) => l[4], (l) => l[9] * 0.55);
-    // Net charge-offs run about 0.62% of loans a year; the mix follows the book's own charge-offs.
-    // A year of losses moves: higher late in 2025, easing in the first half of 2026.
-    const coTarget = [...avgLoan.values()].reduce((a, b) => a + b, 0) * [0.0066, 0.0069, 0.0056, 0.0059, 0.0062][i]! * m;
-    const coMix = [...bal.keys()].map((c) => (coRaw.get(c) ?? 0) + (dq60.get(c) ?? 0) * 0.15);
-    const coByCat = new Map([...bal.keys()].map((c, k) => [c, (coTarget * coMix[k]!) / (coMix.reduce((a, b) => a + b, 0) || 1)]));
+    // Charge-offs and recoveries year to date: the loans' own, account by account (cdm_loan_chargeoff, cdm_loan_recovery).
+    const inYtd = (d: string) => d >= `${q.end.slice(0, 4)}-01-01` && d <= q.end;
+    const coByCat = sumBy(chargeOffs.filter((c) => inYtd(c[1])), (c) => c[3], (c) => c[2]);
+    const recByCat = sumBy(recoveries.filter((r) => inYtd(r[1])), (r) => coOf.get(r[0])?.[3] ?? '', (r) => r[2]);
+    const indirectCo = chargeOffs.filter((c) => inYtd(c[1]) && c[4]).reduce((s, c) => s + c[2], 0);
+    const indirectRec = recoveries.filter((r) => inYtd(r[1]) && coOf.get(r[0])?.[4]).reduce((s, r) => s + r[2], 0);
     for (const [cat, share, countCode, amountCode, row, coCode, recCode] of LOAN_TYPES) {
       const amount = r0((bal.get(cat) ?? 0) * share);
       const count = r0((cnt.get(cat) ?? 0) * share);
@@ -138,9 +141,8 @@ export function generateCallReport(t: GeneratedTenant) {
       }
       set(dqCode.get(`${row} - Total Amount of Loans Delinquent 60+ Days`)!, d60);
       set(dqCode.get(`${row} - Total Number of Loans Delinquent 60+ Days`)!, n60);
-      const co = (coByCat.get(cat) ?? 0) * share;
-      set(coCode, co);
-      set(recCode, co * 0.14);
+      set(coCode, (coByCat.get(cat) ?? 0) * share);
+      set(recCode, (recByCat.get(cat) ?? 0) * share);
     }
     // Every other loan type is reported as zero.
     for (const code of dqCode.values()) if (!v.has(code)) v.set(code, 0);
@@ -174,8 +176,8 @@ export function generateCallReport(t: GeneratedTenant) {
     set('551', LOAN_TYPES.reduce((s, x) => s + get(x[6]), 0));
     set('550F', 0);
     set('551F', 0);
-    set('550E', get('550C1') * 0.6 + get('550C2') * 0.55);
-    set('551E', get('551C1') * 0.6 + get('551C2') * 0.55);
+    set('550E', indirectCo);
+    set('551E', indirectRec);
 
     // ---- Shares and members ----
     const S = [...shares.values()].reduce((a, b) => a + b, 0);
