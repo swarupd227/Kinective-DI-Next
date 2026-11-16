@@ -3,7 +3,7 @@
 // open a mortgage"), and whether earlier suggestions were taken up ("Successful Suggestions"). One
 // member's suggestions stay with Relationship Manager.
 import { z } from 'zod';
-import { BALANCE_BANDS, CoreError, HIGH_LIKELIHOOD, PredictiveService, type BalanceBand, type ProfitabilityService } from '@dinext/di-core';
+import { BALANCE_BANDS, CoreError, HIGH_LIKELIHOOD, MemberProfitService, PredictiveService, type BalanceBand, type ProfitabilityService } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
@@ -96,16 +96,25 @@ export function predictiveModule(svc: PredictiveService, person: 'member' | 'cus
                 const losers = all.filter((m) => m.contribution < 0);
                 const top10 = all.slice(0, Math.ceil(all.length / 10)).reduce((s, m) => s + m.contribution, 0);
                 const lead = `Across **${count(all.length)} ${person}s**, yearly contribution before overhead is **${usd(total)}**. The top 10% bring **${p1((top10 / total) * 100)}** of it; **${count(losers.length)}** (${p1((losers.length / all.length) * 100)}) lose money, ${usd(-losers.reduce((s, m) => s + m.contribution, 0))} a year in all.`;
+                // The last 12 month-ends of actual profit (ESP phase 6), where loaded: the trend, and who cost more than they brought in.
+                const history = new MemberProfitService(profit.pool);
+                const trend = await history.trend();
+                const year = trend.length >= 2 ? await history.members(ctx.purviewBranches ?? undefined, 1) : null;
+                const monthOf = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+                const kind = year?.losing.kinds[0];
+                const KIND_WORDS: Record<string, string> = { 'With a loan': 'have a loan', 'Deposits only': 'have deposits only', 'Deposits under $1,000, no loan': 'have deposits under $1,000 and no loan' };
+                const past = year && trend.length >= 2 ? ` Over the last ${trend.length} month-ends it came to **${usd(year.total)}**, ${usd(trend[0]!.total)} in ${monthOf(trend[0]!.monthEnd)} and ${usd(trend.at(-1)!.total)} in ${monthOf(trend.at(-1)!.monthEnd)}; ${count(year.losing.people)} ${person}s cost more than they brought in, ${usd(Math.abs(year.losing.amount))} together${kind ? `, and ${count(kind.people)} of them ${KIND_WORDS[kind.kind] ?? kind.kind.toLowerCase()}` : ''}.` : '';
+                const trendBlock = trend.length >= 2 ? [moduleTable(spec, 'Contribution at each month-end', ctx.runId, 'predictive.profit.trend', [text('month', 'Month'), { field: 'loans', headerName: 'Loans', type: 'currency' }, { field: 'deposits', headerName: 'Deposits', type: 'currency' }, { field: 'total', headerName: 'Total', type: 'currency' }], trend.map((m) => ({ month: monthOf(m.monthEnd), loans: m.loans, deposits: m.deposits, total: m.total })))] : [];
                 if (a.show === 'deciles') {
                   const size = Math.ceil(all.length / 10);
                   const deciles = Array.from({ length: 10 }, (_, i) => all.slice(i * size, (i + 1) * size)).filter((d) => d.length).map((d, i) => ({ decile: `${i * 10 + 1} to ${Math.min(100, (i + 1) * 10)}%`, people: d.length, contribution: d.reduce((s, m) => s + m.contribution, 0), average: Math.round(d.reduce((s, m) => s + m.contribution, 0) / d.length), deposits: d.reduce((s, m) => s + m.deposits, 0), loans: d.reduce((s, m) => s + m.loans, 0) }));
-                  return { text: lead, blocks: [moduleTable(spec, `Contribution by ${person} decile, most profitable first`, ctx.runId, 'predictive.profit.deciles', [text('decile', 'Decile'), { field: 'people', headerName: 'People', type: 'count' }, { field: 'contribution', headerName: 'Contribution a year', type: 'currency' }, { field: 'average', headerName: 'Average', type: 'currency' }, { field: 'deposits', headerName: 'Deposits', type: 'currency' }, { field: 'loans', headerName: 'Loans', type: 'currency' }], deciles)], suggestions: [`Who are our least profitable ${person}s?`, `Who are our most profitable ${person}s?`] };
+                  return { text: lead + past, blocks: [...trendBlock, moduleTable(spec, `Contribution by ${person} decile, most profitable first`, ctx.runId, 'predictive.profit.deciles', [text('decile', 'Decile'), { field: 'people', headerName: 'People', type: 'count' }, { field: 'contribution', headerName: 'Contribution a year', type: 'currency' }, { field: 'average', headerName: 'Average', type: 'currency' }, { field: 'deposits', headerName: 'Deposits', type: 'currency' }, { field: 'loans', headerName: 'Loans', type: 'currency' }], deciles)], suggestions: [`Who are our least profitable ${person}s?`, `Who are our most profitable ${person}s?`] };
                 }
                 const pick = (a.show === 'top' ? all.slice(0, 50) : all.slice(-50).reverse());
                 const [names] = (await profit.pool.query('SELECT p.party_id, p.first_name, p.last_name, b.name AS branch, p.segment_code FROM cdm_party p JOIN cdm_location b ON b.int_id = p.primary_branch_id WHERE p.party_id IN (?)', [pick.map((m) => m.partyId)])) as unknown as [{ party_id: number; first_name: string; last_name: string; branch: string; segment_code: string }[]];
                 const nameOf = new Map(names.map((n) => [n.party_id, n]));
                 return {
-                  text: lead,
+                  text: lead + past,
                   blocks: [moduleTable(spec, a.show === 'top' ? `Most profitable ${person}s` : `Least profitable ${person}s`, ctx.runId, 'predictive.profit.members', [text('name', person === 'member' ? 'Member' : 'Customer'), text('branch', 'Branch'), text('segment', 'Segment'), { field: 'contribution', headerName: 'Contribution a year', type: 'currency' }, { field: 'deposits', headerName: 'Deposits', type: 'currency' }, { field: 'loans', headerName: 'Loans', type: 'currency' }, { field: 'accounts', headerName: 'Accounts', type: 'count' }], pick.map((m) => ({ name: nameOf.get(m.partyId) ? `${nameOf.get(m.partyId)!.first_name} ${nameOf.get(m.partyId)!.last_name}` : `#${m.partyId}`, branch: nameOf.get(m.partyId)?.branch ?? '', segment: nameOf.get(m.partyId)?.segment_code ?? '', contribution: m.contribution, deposits: m.deposits, loans: m.loans, accounts: m.accounts })))],
                 };
               },

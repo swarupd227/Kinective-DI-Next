@@ -23,15 +23,15 @@ export const FTP_CURVE: [maxMonths: number, ratePct: number][] = [
 const ftpFor = (term: number | null) => FTP_CURVE.find(([m]) => (term ?? 12) <= m)![1];
 
 /** The credit a deposit earns for its funding: core deposits are worth long-term money, certificates their term. */
-const DEPOSIT_FTP: Record<string, number> = { Checking: 3.55, 'Share Savings': 3.45, Savings: 3.45, 'Money Market': 3.5, Certificates: 3.85, 'Certificates of Deposit': 3.85, IRA: 3.9 };
+export const DEPOSIT_FTP: Record<string, number> = { Checking: 3.55, 'Share Savings': 3.45, Savings: 3.45, 'Money Market': 3.5, Certificates: 3.85, 'Certificates of Deposit': 3.85, IRA: 3.9 };
 
 /** Annual expected loss on today's balance, by product: through-the-cycle rates for a community lender. */
 export const LOSS_RATE: Record<string, number> = { Mortgage: 0.05, HELOC: 0.15, Auto: 0.55, Personal: 2.3, 'Credit Card': 3.1, Consumer: 2.0, Business: 0.5, 'Commercial Real Estate': 0.25, 'Commercial & Industrial': 0.6 };
 /** Expected remaining life in years: CECL losses are over a loan's life, long for mortgages, short for cards. */
 export const LIFE_YEARS: Record<string, number> = { Mortgage: 7, HELOC: 4.5, Auto: 2.2, Personal: 1.9, 'Credit Card': 1.5, Consumer: 1.9, Business: 3, 'Commercial Real Estate': 4.5, 'Commercial & Industrial': 2.5 };
 /** Servicing cost and fee income per account per year. */
-const LOAN_COST: Record<string, [cost: number, fees: number]> = { Mortgage: [620, 140], HELOC: [310, 60], Auto: [190, 25], Personal: [170, 30], 'Credit Card': [95, 70], Consumer: [160, 25], Business: [1800, 450], 'Commercial Real Estate': [3600, 900], 'Commercial & Industrial': [2600, 700] };
-const DEPOSIT_COST: Record<string, [cost: number, fees: number]> = { Checking: [165, 120], 'Share Savings': [38, 6], Savings: [38, 6], 'Money Market': [70, 10], Certificates: [45, 4], 'Certificates of Deposit': [45, 4], IRA: [60, 4] };
+export const LOAN_COST: Record<string, [cost: number, fees: number]> = { Mortgage: [620, 140], HELOC: [310, 60], Auto: [190, 25], Personal: [170, 30], 'Credit Card': [95, 70], Consumer: [160, 25], Business: [1800, 450], 'Commercial Real Estate': [3600, 900], 'Commercial & Industrial': [2600, 700] };
+export const DEPOSIT_COST: Record<string, [cost: number, fees: number]> = { Checking: [165, 120], 'Share Savings': [38, 6], Savings: [38, 6], 'Money Market': [70, 10], Certificates: [45, 4], 'Certificates of Deposit': [45, 4], IRA: [60, 4] };
 
 /** How much more a weaker credit band loses than the product's average. */
 export const BAND_FACTOR = (score: number | null, rating: number | null) => (rating !== null ? (rating >= 7 ? 6 : rating === 6 ? 3 : 0.8) : score === null ? 1 : score >= 740 ? 0.45 : score >= 680 ? 0.9 : score >= 620 ? 2.1 : 4.2);

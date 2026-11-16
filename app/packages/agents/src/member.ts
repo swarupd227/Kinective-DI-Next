@@ -154,6 +154,9 @@ function ownersDetail(p: MemberProfile, suffix: string, base: string | null): { 
   return text ? { detail: text.slice(0, 80) } : {};
 }
 
+/** Whole dollars with a sign: "$1,240", "−$310". */
+const signedUsd = (n: number) => `${n < 0 ? '−' : ''}$${Math.abs(Math.round(n)).toLocaleString('en-US')}`;
+
 /** An account's detail with its services (ESP phase 5) after it: "Matures Mar 3, 2027. Courtesy pay, Debit card". */
 function withServices(base: string | null, services: string[] | undefined): string | null {
   return [base, services?.length ? services.join(', ') : null].filter(Boolean).join('. ') || null;
@@ -213,6 +216,7 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
             { label: 'Loans', value: p.totals.loans, unit: 'currency' },
             { label: 'Products', value: p.totals.products, unit: 'count' },
             { label: 'Interactions', value: p.interactions.total, unit: 'count', detail: 'Last 12 months' },
+            ...(p.profit ? [{ label: `Profit, ${p.profit.months} months`, value: p.profit.total, unit: 'currency' as const, detail: `Before overhead: loans ${signedUsd(p.profit.loans)}, deposits ${signedUsd(p.profit.deposits)}` }] : []),
           ],
           scores: scores(p),
           facts: [

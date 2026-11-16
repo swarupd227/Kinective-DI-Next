@@ -1,10 +1,10 @@
 // Account Activity: fee income by type, product and branch, and the channel mix, from the last 30 days
 // of loan and share transactions. Listed last among the agents, so questions other agents answer stay theirs.
 import { z } from 'zod';
-import { CoreError, type ActivityService } from '@dinext/di-core';
+import { CoreError, type ActivityService, type MemberProfitService } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
-export const ACTIVITY_REQUEST = /\bfees? by (?:type|fee type|branch|product)\b|\boverdraft fees?\b|\bmaintenance fees?\b|\bfees? (?:we )?charged\b|\bchannel (?:mix|usage|use)\b|\btransactions? by channel\b|\bhow (?:do )?(?:members|customers|people) (?:transact|bank)\b|\b(?:teller|atm|mobile|card) (?:transactions|usage|volume)\b/i;
+export const ACTIVITY_REQUEST = /\bfees? by (?:type|fee type|branch|product)\b|\boverdraft fees?\b|\bmaintenance fees?\b|\bfees? (?:we )?charged\b|\bchannel (?:mix|usage|use)\b|\btransactions? by channel\b|\bhow (?:do )?(?:members|customers|people) (?:transact|bank)\b|\b(?:teller|atm|mobile|card) (?:transactions|usage|volume)\b|\btransaction costs?\b|\bcost (?:to serve|per transaction|by channel)\b|\bchannel costs?\b|\bwhat (?:do|does) (?:our |a )?(?:transactions?|tellers?) cost\b/i;
 const NO_ACCESS = 'Account activity isn’t part of your DI access.';
 const usd = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
 const FEE_TYPES = ['Overdraft', 'Maintenance', 'ATM', 'Late payment'] as const;
@@ -12,7 +12,8 @@ const feeType = (t: string): (typeof FEE_TYPES)[number] | undefined =>
   /\b(?:overdraft|nsf)\b/i.test(t) ? 'Overdraft' : /\bmaintenance\b/i.test(t) ? 'Maintenance' : /\batm fees?\b/i.test(t) ? 'ATM' : /\blate (?:payment )?fees?\b/i.test(t) ? 'Late payment' : undefined;
 const text = (field: string, headerName: string) => ({ field, headerName, type: 'text' as const });
 
-export function activityModule(svc: ActivityService): ModuleSpec {
+/** costs: what each kind of transaction costs to handle (ESP phase 6), where loaded. */
+export function activityModule(svc: ActivityService, costs: MemberProfitService | null = null): ModuleSpec {
   const need = (ctx: ModuleContext) => {
     if (!ctx.modules.includes('activity')) throw new CoreError('NO_ACCESS', NO_ACCESS);
   };
@@ -59,7 +60,7 @@ export function activityModule(svc: ActivityService): ModuleSpec {
       },
       {
         name: 'act_channels',
-        description: 'Transactions in the last 30 days by channel (teller, ATM, card, mobile, online, ACH): count, people and dollars, and each channel’s share.',
+        description: 'Transactions in the last 30 days by channel (teller, ATM, card, mobile, online, ACH): count, people and dollars, each channel’s share, and what they cost to handle, with what moving a quarter of teller transactions to mobile and online would save.',
         input: z.object({}).strict(),
         run: async (_: unknown, ctx) => {
           need(ctx);
@@ -67,9 +68,13 @@ export function activityModule(svc: ActivityService): ModuleSpec {
           if (!list) return { text: 'Loan and share transactions aren’t loaded for this institution yet.' };
           if (!list.length) return { text: 'No transactions in the last 30 days.' };
           const teller = list.find((c) => c.channel === 'Teller');
+          // What they cost to handle (ESP phase 6), where the cost of each kind is loaded.
+          const cost = costs ? await costs.channels().catch(() => null) : null;
+          const costOf = new Map((cost?.list ?? []).map((c) => [c.channel, c]));
+          const costText = cost ? ` They cost about ${usd(cost.total)} to handle, ${usd(cost.total * 12)} a year${cost.teller ? `; tellers handle ${cost.teller.share}% of them but ${cost.teller.costShare}% of the cost` : ''}.${cost.quarterToDigital > 0 ? ` Moving a quarter of teller transactions to mobile and online would save about ${usd(cost.quarterToDigital)} a year.` : ''}` : '';
           return {
-            text: `**${list[0]!.channel}** is the busiest channel, ${list[0]!.sharePct}% of transactions in the last 30 days.${teller ? ` Tellers handled ${teller.sharePct}%.` : ''}`,
-            blocks: [moduleTable(spec, 'Transactions by channel, last 30 days', ctx.runId, 'activity.channels', [text('channel', 'Channel'), { field: 'transactions', headerName: 'Transactions', type: 'count' }, { field: 'people', headerName: 'People', type: 'count' }, { field: 'amount', headerName: 'Dollars', type: 'currency' }, text('share', 'Share')], list.map((c) => ({ ...c, share: `${c.sharePct}%` })))],
+            text: `**${list[0]!.channel}** is the busiest channel, ${list[0]!.sharePct}% of transactions in the last 30 days.${teller ? ` Tellers handled ${teller.sharePct}%.` : ''}${costText}`,
+            blocks: [moduleTable(spec, 'Transactions by channel, last 30 days', ctx.runId, 'activity.channels', [text('channel', 'Channel'), { field: 'transactions', headerName: 'Transactions', type: 'count' }, { field: 'people', headerName: 'People', type: 'count' }, { field: 'amount', headerName: 'Dollars', type: 'currency' }, text('share', 'Share'), ...(cost ? [text('each', 'Cost each'), { field: 'cost', headerName: 'Cost to handle', type: 'currency' as const }] : [])], list.map((c) => ({ ...c, share: `${c.sharePct}%`, ...(cost ? { each: costOf.has(c.channel) ? `$${costOf.get(c.channel)!.each.toFixed(2)}` : '—', cost: costOf.get(c.channel)?.cost ?? 0 } : {}) })))],
             sources,
           };
         },

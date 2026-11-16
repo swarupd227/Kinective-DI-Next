@@ -36,6 +36,7 @@ import { ESP_ACCOUNT_COLUMNS, ESP_ACCOUNT_DDL, generateAccounts } from './espAcc
 import { ESP_DETAIL_COLUMNS, ESP_DETAIL_DDL, generateDetails } from './espDetails.ts';
 import { ESP_LOSS_COLUMNS, ESP_LOSS_DDL, generateLosses } from './espLosses.ts';
 import { collateralHistory, ESP_COLLATERAL_COLUMNS, ESP_COLLATERAL_DDL, generateCollateral } from './espCollateral.ts';
+import { ESP_PROFIT_COLUMNS, ESP_PROFIT_DDL, generateProfitMonths, generateProfitSetup, lastMonthEnds } from './espProfit.ts';
 import { ESP_SERVICE_COLUMNS, ESP_SERVICE_DDL, generateLogins, generateServices } from './espServices.ts';
 import { depositsByParty, ESP_HISTORY_COLUMNS, ESP_HISTORY_DDL, generateExceptions, generateHistory } from './espHistory.ts';
 import { ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
@@ -199,8 +200,6 @@ async function main() {
       await history('hist_person_month', month.people);
       await history('hist_household_month', month.households);
     }
-    t.loanMonths.length = 0;
-    t.depositMonths.length = 0;
     await history('hist_fhlb_collateral_quarter', qcrHistory);
     await history('cdm_transaction_exception', exceptions);
     stepDone('phase 4');
@@ -213,6 +212,24 @@ async function main() {
     // A million logins or so: built and inserted a batch at a time.
     for (const rows of generateLogins(m360.partyActivity as unknown[][], rm.digital as unknown[][])) await insert(admin, 'cdm_login', [...ESP_SERVICE_COLUMNS.cdm_login], rows, 10_000);
     stepDone('phase 5');
+    // ESP alignment, phase 6: the cost model, and each loan, share, account and person's profit at each of
+    // the last 12 month-ends, built a month at a time from phase 4's month-end rows.
+    for (const ddl of ESP_PROFIT_DDL) await admin.query(ddl);
+    const profitIn = { loanProducts: esp2.loanProducts as unknown[][], depositProducts: esp2.depositProducts as unknown[][], loans: t.loans as unknown[][], deposits: t.deposits as unknown[][], holdings: esp6.holdings as unknown[][] };
+    const profitMonths = lastMonthEnds(t.depositMonths, 12);
+    const esp12 = generateProfitSetup(profitIn, profitMonths);
+    for (const [table, rows] of [['cdm_profit_group', esp12.groups], ['cdm_product_profit_group', esp12.productGroups], ['cdm_ftp_rate', esp12.ftp], ['cdm_product_ftp', esp12.productFtp], ['cdm_predicted_loss', esp12.losses], ['cdm_transaction_cost', esp12.costs], ['cdm_profit_line', esp12.lines]] as const) {
+      if (rows.length) await insert(admin, table, [...ESP_PROFIT_COLUMNS[table]], rows as unknown[][]);
+    }
+    for (const month of generateProfitMonths(profitIn, t.loanMonths, t.depositMonths, profitMonths, esp12.shift)) {
+      for (const [table, rows] of [['hist_loan_profit_month', month.loans], ['hist_deposit_profit_month', month.deposits], ['hist_account_profit_month', month.accounts], ['hist_person_profit_month', month.people]] as const) {
+        if (rows.length) await insert(admin, table, [...ESP_PROFIT_COLUMNS[table]], rows, 10_000);
+      }
+    }
+    // The month-end rows are let go once the last phase that reads them is done, so the seed fits 2 GB.
+    t.loanMonths.length = 0;
+    t.depositMonths.length = 0;
+    stepDone('phase 6');
     // Predictive models: each member at each of the last 12 month-ends, and where models and scores are kept.
     for (const ddl of ML_DDL) await admin.query(ddl);
     await insert(admin, 'hist_member_snapshot', SNAPSHOT_COLUMNS, generateSnapshots(t, rm, partyDeposits));

@@ -210,6 +210,9 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-ADD-002', set: 'golden', persona: 'bank_cfo', q: 'Which dealers sell the most add-ons on our loans?', agent: 'Portfolio Reports', contains: ['across dealers', 'mechanical repair coverage'], approval: 'none' },
   { id: 'GQ-ADD-003', set: 'golden', persona: 'executive', q: 'Show courtesy pay enrollment by branch', agent: 'Portfolio Reports', contains: ['have courtesy pay', 'open checking accounts', 'all of them enrolled'], approval: 'none' },
   { id: 'GQ-ADD-004', set: 'golden', persona: 'bank_cfo', q: 'How many checking accounts are enrolled in overdraft privilege?', agent: 'Portfolio Reports', contains: ['have overdraft privilege'], approval: 'none' },
+  { id: 'GQ-PRF-001', set: 'golden', persona: 'executive', q: 'Who are our least profitable members?', agent: 'Predictive Analytics', contains: ['Over the last 12 month-ends', 'cost more than they brought in'], approval: 'none' },
+  { id: 'GQ-PRF-002', set: 'golden', persona: 'bank_cfo', q: 'Show profitability by customer', agent: 'Predictive Analytics', contains: ['Over the last 12 month-ends'], approval: 'none' },
+  { id: 'GQ-CHN-001', set: 'golden', persona: 'executive', q: 'What do our transactions cost by channel?', agent: 'Account Activity', contains: ['to handle', 'Moving a quarter of teller transactions'], approval: 'none' },
   { id: 'GQ-INS-002', set: 'golden', persona: 'executive', q: 'Are we within Regulation O on loans to directors?', agent: 'Compliance & Problem Management', contains: ['board-approval threshold'], approval: 'none' },
   { id: 'GQ-NPL-002', set: 'golden', persona: 'bank_cfo', q: 'Chart our NPL ratio by quarter', agent: 'Analytics Q&A', approval: 'none' },
   // Core mapping: Kinective's standard columns locked, the institution's own added by approval.

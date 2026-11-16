@@ -129,6 +129,8 @@ export interface MemberProfile {
   logins: { at: string; kind: string }[];
   /** When the person signed up for phone banking (ESP phase 5); null where they haven't or it isn't loaded. */
   phoneBanking: string | null;
+  /** Profit over the month-ends on file, before overhead (ESP phase 6); null where it isn't loaded. */
+  profit: { months: number; total: number; loans: number; deposits: number } | null;
   cards: { kind: 'Debit' | 'Credit'; last4: string; status: string; opened: string; activated: string | null; closed: string | null; account: string }[];
   /** Checking transactions in the last 90 days: how many, and the latest. Null where the core's transactions aren't loaded. */
   transactions: { total90d: number; items: { date: string; description: string; amount: number; type: string; account: string }[] } | null;
@@ -483,6 +485,7 @@ export class RelationshipService {
     ).catch(() => []);
     const servicesOf = (k: 'deposit' | 'loan', id: number) => [...new Set(serviceRows.filter((r) => r.k === k && Number(r.id) === id).map((r) => r.name))];
     const [phoneRow] = await q<{ since: unknown }>("SELECT MIN(s.added) AS since FROM cdm_account_service s JOIN cdm_account a ON a.account_number = s.account_number JOIN cdm_service_type t ON t.service_id = s.service_id WHERE a.primary_party_id = ? AND t.code = 'PHONE' AND s.removed IS NULL", [partyId]).catch(() => []);
+    const [profitRow] = await q<{ n: number; p: number | null; lp: number | null; dp: number | null }>('SELECT COUNT(*) AS n, SUM(profit) AS p, SUM(loan_profit) AS lp, SUM(deposit_profit) AS dp FROM hist_person_profit_month WHERE party_id = ?', [partyId]).catch(() => []);
     const loginRows = await q<{ login_time: unknown; kind: string }>('SELECT login_time, kind FROM cdm_login WHERE party_id = ? ORDER BY login_time DESC LIMIT 5', [partyId]).catch(() => []);
     const cards = await q<{ kind: 'Debit' | 'Credit'; last4: string; status: string; opened: unknown; activated: unknown; closed: unknown; account_id: number }>('SELECT kind, last4, status, opened, activated, closed, account_id FROM cdm_card WHERE party_id = ? ORDER BY closed IS NOT NULL, opened DESC', [partyId]).catch(() => []);
     // The core's checking transactions, where they're loaded; a table that isn't there, or is empty for the
@@ -637,6 +640,7 @@ export class RelationshipService {
       balanceHistory: months.map((x) => ({ monthEnd: day10(x.month_end), deposits: Number(x.deposit_balance), loans: Number(x.loan_balance) })),
       logins: loginRows.map((r) => ({ at: (r.login_time instanceof Date ? r.login_time.toISOString() : String(r.login_time)).slice(0, 16).replace('T', ' '), kind: r.kind })),
       phoneBanking: phoneRow?.since ? day10(phoneRow.since) : null,
+      profit: profitRow && Number(profitRow.n) ? { months: Number(profitRow.n), total: Math.round(Number(profitRow.p)), loans: Math.round(Number(profitRow.lp)), deposits: Math.round(Number(profitRow.dp)) } : null,
       cards: cards.map((k) => ({ kind: k.kind, last4: k.last4, status: k.status, opened: day10(k.opened), activated: k.activated ? day10(k.activated) : null, closed: k.closed ? day10(k.closed) : null, account: String(k.account_id % 10_000).padStart(4, '0') })),
       transactions: txns === null ? null : { total90d: txns.length, items: txns.slice(0, 15).map((t) => ({ date: day10(t.post_date), description: t.description.slice(0, 80), amount: Number(t.amount), type: t.txn_type, account: `Checking …${String(t.account_id % 10_000).padStart(4, '0')}` })) },
       usage: usage ? { logins90d: Number(usage.logins_90d), mobileLogins90d: Number(usage.mobile_logins_90d), billPayments90d: Number(usage.bill_payments_90d), mobileDeposits90d: Number(usage.mobile_deposits_90d), fees90d: Number(usage.fees_90d), estatementAccounts: base.estatements_since ? deps.filter((d) => day10(d.open_date) <= day10(base.estatements_since)).length || deps.length : 0, depositAccounts: deps.length } : null,
