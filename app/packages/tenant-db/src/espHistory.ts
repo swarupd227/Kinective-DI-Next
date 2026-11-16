@@ -45,60 +45,73 @@ export interface HistoryInputs {
   holdings: unknown[][];
 }
 
-/** The month-end rows added up by account, by person and by household. */
-export function generateHistory(x: HistoryInputs) {
+/**
+ * The month-end rows added up by account, by person and by household, one month-end at a time: the
+ * seed inserts each month's rows before building the next, so millions of rollups never sit in memory
+ * at once (the cloud seed job has 2 GB).
+ */
+export function* generateHistory(x: HistoryInputs): Generator<{ accounts: unknown[][]; people: unknown[][]; households: unknown[][] }> {
   const loanParty = new Map(x.loans.map((l) => [Number(l[0]), Number(l[1])]));
   const depositParty = new Map(x.deposits.map((d) => [Number(d[0]), Number(d[1])]));
   const accountOf = new Map(x.holdings.map((h) => [`${h[0]}|${h[1]}`, String(h[2])]));
   const householdOf = new Map(x.parties.filter((p) => p[7] !== null && p[7] !== undefined).map((p) => [Number(p[0]), Number(p[7])]));
-  // [deposit count, deposit balance, loan count, loan balance]
-  const byAccount = new Map<string, number[]>();
-  const byPerson = new Map<string, number[]>();
-  const add = (map: Map<string, number[]>, key: string, deposit: boolean, balance: number) => {
-    const v = map.get(key) ?? [0, 0, 0, 0];
-    v[deposit ? 0 : 2]! += 1;
-    v[deposit ? 1 : 3]! += balance;
-    map.set(key, v);
+  // The generator writes each month's rows together, oldest first.
+  const runs = (rows: unknown[][]) => {
+    const at = new Map<string, [number, number]>();
+    rows.forEach((r, i) => {
+      const run = at.get(String(r[0]));
+      if (!run) at.set(String(r[0]), [i, i + 1]);
+      else if (run[1] === i) run[1] = i + 1;
+      else throw new Error(`Month-end rows for ${r[0]} are not together`);
+    });
+    return at;
   };
-  for (const [me, id, balance] of x.depositMonths as [string, number, number][]) {
-    const account = accountOf.get(`deposit|${id}`);
-    if (account) add(byAccount, `${me}|${account}`, true, balance);
-    const party = depositParty.get(id);
-    if (party !== undefined) add(byPerson, `${me}|${party}`, true, balance);
+  const depositRuns = runs(x.depositMonths);
+  const loanRuns = runs(x.loanMonths);
+  const months = [...new Set([...depositRuns.keys(), ...loanRuns.keys()])].sort();
+  for (const me of months) {
+    // [deposit count, deposit balance, loan count, loan balance]
+    const byAccount = new Map<string, number[]>();
+    const byPerson = new Map<number, number[]>();
+    const add = <K>(map: Map<K, number[]>, key: K, deposit: boolean, balance: number) => {
+      const v = map.get(key) ?? [0, 0, 0, 0];
+      v[deposit ? 0 : 2]! += 1;
+      v[deposit ? 1 : 3]! += balance;
+      map.set(key, v);
+    };
+    const [d0, d1] = depositRuns.get(me) ?? [0, 0];
+    for (let i = d0; i < d1; i++) {
+      const [, id, balance] = x.depositMonths[i] as [string, number, number];
+      const account = accountOf.get(`deposit|${id}`);
+      if (account) add(byAccount, account, true, balance);
+      const party = depositParty.get(id);
+      if (party !== undefined) add(byPerson, party, true, balance);
+    }
+    const [l0, l1] = loanRuns.get(me) ?? [0, 0];
+    for (let i = l0; i < l1; i++) {
+      const [, id, balance] = x.loanMonths[i] as [string, number, number];
+      const account = accountOf.get(`loan|${id}`);
+      if (account) add(byAccount, account, false, balance);
+      const party = loanParty.get(id);
+      if (party !== undefined) add(byPerson, party, false, balance);
+    }
+    // [people with a balance, deposits, loans]
+    const byHousehold = new Map<number, number[]>();
+    for (const [party, v] of byPerson) {
+      const hh = householdOf.get(party);
+      if (hh === undefined) continue;
+      const h = byHousehold.get(hh) ?? [0, 0, 0];
+      h[0]! += 1;
+      h[1]! += v[1]!;
+      h[2]! += v[3]!;
+      byHousehold.set(hh, h);
+    }
+    yield {
+      accounts: [...byAccount].map(([account, v]) => [me, account, v[0], round2(v[1]!), v[2], round2(v[3]!)]),
+      people: [...byPerson].map(([party, v]) => [me, party, v[0], round2(v[1]!), v[2], round2(v[3]!)]),
+      households: [...byHousehold].map(([hh, v]) => [me, hh, v[0], round2(v[1]!), round2(v[2]!)]),
+    };
   }
-  for (const [me, id, balance] of x.loanMonths as [string, number, number][]) {
-    const account = accountOf.get(`loan|${id}`);
-    if (account) add(byAccount, `${me}|${account}`, false, balance);
-    const party = loanParty.get(id);
-    if (party !== undefined) add(byPerson, `${me}|${party}`, false, balance);
-  }
-  // [people with a balance, deposits, loans]
-  const byHousehold = new Map<string, number[]>();
-  for (const [key, v] of byPerson) {
-    const [me, party] = key.split('|');
-    const hh = householdOf.get(Number(party));
-    if (hh === undefined) continue;
-    const k = `${me}|${hh}`;
-    const h = byHousehold.get(k) ?? [0, 0, 0];
-    h[0]! += 1;
-    h[1]! += v[1]!;
-    h[2]! += v[3]!;
-    byHousehold.set(k, h);
-  }
-  return {
-    accounts: [...byAccount].map(([k, v]) => {
-      const [me, account] = k.split('|');
-      return [me, account, v[0], round2(v[1]!), v[2], round2(v[3]!)];
-    }),
-    people: [...byPerson].map(([k, v]) => {
-      const [me, party] = k.split('|');
-      return [me, Number(party), v[0], round2(v[1]!), v[2], round2(v[3]!)];
-    }),
-    households: [...byHousehold].map(([k, v]) => {
-      const [me, hh] = k.split('|');
-      return [me, Number(hh), v[0], round2(v[1]!), round2(v[2]!)];
-    }),
-  };
 }
 
 export interface ExceptionInputs {

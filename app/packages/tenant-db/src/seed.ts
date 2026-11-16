@@ -175,13 +175,23 @@ async function main() {
     // ESP alignment, phase 4: each loan and share at each month-end, added up by account, person and
     // household; the collateral report by quarter; voided and reversed transactions.
     for (const ddl of ESP_HISTORY_DDL) await admin.query(ddl);
-    const esp10 = generateHistory({ loanMonths: t.loanMonths, depositMonths: t.depositMonths, loans: t.loans as unknown[][], deposits: t.deposits as unknown[][], parties: t.parties as unknown[][], holdings: esp6.holdings as unknown[][] });
     const qcrHistory = collateralHistory({ loans: t.loans as unknown[][], loanMonths: t.loanMonths, insiderLoans: esp8.insiderLoans, collateral: esp9.collateral, manual: esp9.manual });
     const exceptions = generateExceptions({ share: esp4.share as unknown[][], loan: esp4.loan as unknown[][], employees: t.employees as unknown[][], deposits: t.deposits as unknown[][] });
-    for (const [table, rows] of [['hist_loan_account_month', t.loanMonths], ['hist_deposit_account_month', t.depositMonths], ['hist_account_month', esp10.accounts], ['hist_person_month', esp10.people], ['hist_household_month', esp10.households], ['hist_fhlb_collateral_quarter', qcrHistory], ['cdm_transaction_exception', exceptions]] as const) {
-      // Millions of short rows: bigger batches keep the round trips to the cloud database down.
-      if (rows.length) await insert(admin, table, [...ESP_HISTORY_COLUMNS[table]], rows as unknown[][], 10_000);
+    // Millions of short rows: bigger batches keep the round trips to the cloud database down. The
+    // rollups are built and inserted a month-end at a time, and the month-end rows are let go once
+    // inserted, so the seed fits the cloud job's 2 GB.
+    const history = (table: keyof typeof ESP_HISTORY_COLUMNS, rows: unknown[][]) => (rows.length ? insert(admin, table, [...ESP_HISTORY_COLUMNS[table]], rows, 10_000) : undefined);
+    await history('hist_loan_account_month', t.loanMonths);
+    await history('hist_deposit_account_month', t.depositMonths);
+    for (const month of generateHistory({ loanMonths: t.loanMonths, depositMonths: t.depositMonths, loans: t.loans as unknown[][], deposits: t.deposits as unknown[][], parties: t.parties as unknown[][], holdings: esp6.holdings as unknown[][] })) {
+      await history('hist_account_month', month.accounts);
+      await history('hist_person_month', month.people);
+      await history('hist_household_month', month.households);
     }
+    t.loanMonths.length = 0;
+    t.depositMonths.length = 0;
+    await history('hist_fhlb_collateral_quarter', qcrHistory);
+    await history('cdm_transaction_exception', exceptions);
     // Predictive models: each member at each of the last 12 month-ends, and where models and scores are kept.
     for (const ddl of ML_DDL) await admin.query(ddl);
     await insert(admin, 'hist_member_snapshot', SNAPSHOT_COLUMNS, generateSnapshots(t, rm));
