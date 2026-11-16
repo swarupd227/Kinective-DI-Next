@@ -94,7 +94,7 @@ export function complianceModule(issues: IssueService, pool: Pool, insiders?: In
           const who = r.bank ? 'directors, executive officers and principal shareholders' : 'directors, committee members and executive officers';
           const missing = r.exceptions.flatMap((x) => x.unapproved.map((l) => ({ ...l, name: x.name, title: x.title })));
           const exceptions = missing.length
-            ? ` **${missing.length} ${missing.length === 1 ? 'loan has' : 'loans have'} no board approval on record** though the official is over the threshold: ${missing.map((l) => `${l.name} (${l.title}), a ${l.category.toLowerCase()} loan of ${money(l.original)} opened ${l.opened}`).join('; ')}. Worth confirming with the board minutes before the next exam.`
+            ? ` **${missing.length} ${missing.length === 1 ? 'loan has' : 'loans have'} no board approval on record** though the official is over the threshold: ${missing.map((l) => `${l.name} (${l.title}), ${/^[aeiou]/i.test(l.category) ? 'an' : 'a'} ${l.category.toLowerCase()} loan of ${money(l.original)} opened ${l.opened}`).join('; ')}. Worth confirming with the board minutes before the next exam.`
             : ' Every loan over the threshold has the board’s approval on record.';
           const limit = r.bank && r.aggregateToCapital !== null ? ` Together insiders’ credit is ${r.aggregateToCapital.toFixed(1)}% of capital (the limit is 100%)${r.exceptions.some((x) => x.overLendingLimit) ? '; one insider is over the 15% lending limit' : ', and each insider is within the 15% lending limit'}.` : '';
           return {
