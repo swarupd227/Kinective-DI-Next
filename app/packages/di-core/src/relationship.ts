@@ -583,6 +583,17 @@ export class RelationshipService {
     for (const d of depositLines.filter((a) => a.maturity && a.maturity >= asOf && a.maturity <= addDays(asOf, 30))) alerts.push({ code: 'certificate_maturing', label: `${d.name} …${d.suffix} matures ${longDate(d.maturity!)}`, tone: 'warning' });
     if (closed && closed.n > 0) alerts.push({ code: 'closed_accounts', label: `${closed.n} account${closed.n === 1 ? '' : 's'} closed in the last 90 days`, tone: 'info' });
     for (const l of loanLines.filter((a) => (a.daysPastDue ?? 0) >= 30)) alerts.push({ code: 'delinquent', label: `${l.name} …${l.suffix} is ${l.daysPastDue} days past due`, tone: 'danger' });
+    // ESP phase 7: the newest events the core raised on the person and their accounts, of kinds not shown above.
+    const events = await q<{ code: string; color: string; description: string; event_date: unknown }>(
+      `SELECT t.code, t.color, x.description, x.event_date FROM (
+          SELECT aa.type_id, aa.description, aa.event_date FROM cdm_account_alert aa JOIN cdm_account a ON a.account_number = aa.account_number WHERE a.primary_party_id = ?
+          UNION ALL SELECT pa.type_id, pa.description, pa.event_date FROM cdm_person_alert pa WHERE pa.party_id = ?) x
+         JOIN cdm_alert_type t ON t.type_id = x.type_id
+        WHERE t.code IN ('LARGE_DEPOSIT', 'LARGE_WITHDRAWAL', 'OVERDRAFT', 'DD_STOPPED', 'BIRTHDAY') AND x.event_date > ? ORDER BY x.event_date DESC LIMIT 3`,
+      [partyId, partyId, addDays(asOf, -30)],
+    ).catch(() => []);
+    const TONE: Record<string, Tone> = { green: 'success', red: 'danger', amber: 'warning', blue: 'info' };
+    for (const e of events) alerts.push({ code: e.code.toLowerCase(), label: e.description.slice(0, 120), tone: TONE[e.color] ?? 'info' });
 
     const stamp = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v).replace(' ', 'T')).slice(0, 19);
     const interactions = [

@@ -213,6 +213,12 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-PRF-001', set: 'golden', persona: 'executive', q: 'Who are our least profitable members?', agent: 'Predictive Analytics', contains: ['Over the last 12 month-ends', 'cost more than they brought in'], approval: 'none' },
   { id: 'GQ-PRF-002', set: 'golden', persona: 'bank_cfo', q: 'Show profitability by customer', agent: 'Predictive Analytics', contains: ['Over the last 12 month-ends'], approval: 'none' },
   { id: 'GQ-CHN-001', set: 'golden', persona: 'executive', q: 'What do our transactions cost by channel?', agent: 'Account Activity', contains: ['to handle', 'Moving a quarter of teller transactions'], approval: 'none' },
+  { id: 'GQ-APP-001', set: 'golden', persona: 'executive', q: 'How many membership applications did we get?', agent: 'Membership', contains: ['applications** were started', 'abandoned part-way'], approval: 'none' },
+  { id: 'GQ-APP-002', set: 'golden', persona: 'bank_cfo', q: 'Show the account-opening applications', agent: 'Membership', contains: ['applications** were started'], approval: 'none' },
+  { id: 'GQ-ALR-001', set: 'golden', persona: 'executive', q: 'Show this week’s member alerts', agent: 'Account Activity', contains: ['alerts** in the last 7 days'], approval: 'none' },
+  { id: 'GQ-TCH-001', set: 'golden', persona: 'executive', q: 'How often do we reach members?', agent: 'Campaigns', contains: ['campaigns made', 'people already with us'], approval: 'none' },
+  { id: 'GQ-LMI-001', set: 'golden', persona: 'bank_cfo', q: 'How much do we lend in low- and moderate-income tracts?', agent: 'Compliance & Problem Management', contains: ['went to borrowers in low- and moderate-income tracts', 'compliance officer’s call'], approval: 'none' },
+  { id: 'GQ-SEG-020', set: 'golden', persona: 'executive', q: 'Which SEGs have the most employees banking with us?', agent: 'SEG Development', contains: ['active SEGs', 'direct deposit'], approval: 'none' },
   { id: 'GQ-INS-002', set: 'golden', persona: 'executive', q: 'Are we within Regulation O on loans to directors?', agent: 'Compliance & Problem Management', contains: ['board-approval threshold'], approval: 'none' },
   { id: 'GQ-NPL-002', set: 'golden', persona: 'bank_cfo', q: 'Chart our NPL ratio by quarter', agent: 'Analytics Q&A', approval: 'none' },
   // Core mapping: Kinective's standard columns locked, the institution's own added by approval.

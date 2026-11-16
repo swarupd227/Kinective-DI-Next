@@ -36,6 +36,9 @@ import { ESP_ACCOUNT_COLUMNS, ESP_ACCOUNT_DDL, generateAccounts } from './espAcc
 import { ESP_DETAIL_COLUMNS, ESP_DETAIL_DDL, generateDetails } from './espDetails.ts';
 import { ESP_LOSS_COLUMNS, ESP_LOSS_DDL, generateLosses } from './espLosses.ts';
 import { collateralHistory, ESP_COLLATERAL_COLUMNS, ESP_COLLATERAL_DDL, generateCollateral } from './espCollateral.ts';
+import { ESP_BUSINESS_COLUMNS, ESP_BUSINESS_DDL, generateBusinesses } from './espBusiness.ts';
+import { ESP_ENGAGEMENT_COLUMNS, ESP_ENGAGEMENT_DDL, generateAlerts, generateApplications, generateTouches } from './espEngagement.ts';
+import { ESP_GEO_COLUMNS, ESP_GEO_DDL, generateGeography } from './espGeo.ts';
 import { ESP_PROFIT_COLUMNS, ESP_PROFIT_DDL, generateProfitMonths, generateProfitSetup, lastMonthEnds } from './espProfit.ts';
 import { ESP_SERVICE_COLUMNS, ESP_SERVICE_DDL, generateLogins, generateServices } from './espServices.ts';
 import { depositsByParty, ESP_HISTORY_COLUMNS, ESP_HISTORY_DDL, generateExceptions, generateHistory } from './espHistory.ts';
@@ -421,8 +424,58 @@ async function main() {
     // Off-core loans: DI's store, and the build account that publishes them into cdm_loan.
     await createOffcoreTables(admin, profile.schema);
     for (const table of [...ML_WRITE_TABLES, ...DMN_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE, DELETE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
+    // Rows already written above, read back for the phases that build on them.
+    const back = async (sql: string) => ((await admin.query({ sql, rowsAsArray: true }).catch(() => [[]])) as unknown as [unknown[][]])[0];
+    stepDone('the rest');
+    // ESP alignment, phase 7: membership applications, alerts, people matched across sources, campaign touches.
+    for (const ddl of ESP_ENGAGEMENT_DDL) await admin.query(ddl);
+    const engagementIn = {
+      institutionType: profile.institutionType,
+      parties: t.parties as unknown[][],
+      deposits: t.deposits as unknown[][],
+      loans: t.loans as unknown[][],
+      employees: t.employees as unknown[][],
+      contacts: rm.contacts as unknown[][],
+      addresses: esp6.addresses as unknown[][],
+      digital: rm.digital as unknown[][],
+      share: esp4.share as unknown[][],
+      accounts: esp6.accounts as unknown[][],
+      holdings: esp6.holdings as unknown[][],
+      campaigns: await back('SELECT campaign_id, name, channel, product, sent, applications, loan_dollars, control_size, control_responders, cost, deposit_dollars, launched FROM cmp_campaign ORDER BY campaign_id'),
+      attribution: await back('SELECT campaign_id, party_id, account_kind, account_id, product, opened, amount FROM cmp_attribution'),
+      exits: t.exits as unknown[][],
+    };
+    const esp13 = generateApplications(engagementIn);
+    const alerts13 = generateAlerts(engagementIn);
+    for (const [table, rows] of [['cdm_application_status', esp13.statuses], ['cdm_membership_application', esp13.applications], ['cdm_membership_applicant', esp13.applicants], ['cdm_application_history', esp13.history], ['cdm_person_match', esp13.matches], ['cdm_alert_type', alerts13.types], ['cdm_account_alert', alerts13.accountAlerts], ['cdm_person_alert', alerts13.personAlerts]] as const) {
+      if (rows.length) await insert(admin, table, [...ESP_ENGAGEMENT_COLUMNS[table]], rows as unknown[][], 10_000);
+    }
+    for (const rows of generateTouches(engagementIn)) await insert(admin, 'cmp_touch', [...ESP_ENGAGEMENT_COLUMNS.cmp_touch], rows, 10_000);
+    stepDone('phase 7');
+    // ESP alignment, phase 8: business relationships, and the census geography each address sits in.
+    for (const ddl of [...ESP_BUSINESS_DDL, ...ESP_GEO_DDL]) await admin.query(ddl);
+    const geo = generateGeography(esp6.addresses as unknown[][]);
+    for (const [table, rows] of [['cen_vintage', geo.vintages], ['cen_geography_type', geo.types], ['cen_state', geo.states], ['cen_county', geo.counties], ['cen_tract', geo.tracts], ['cen_block_group', geo.blockGroups], ['cen_block', geo.blocks], ['cen_zcta', geo.zctas], ['cen_address_map', geo.map]] as const) {
+      if (rows.length) await insert(admin, table, [...ESP_GEO_COLUMNS[table]], rows as unknown[][], 10_000);
+    }
+    const brm = generateBusinesses({
+      institutionType: profile.institutionType,
+      parties: t.parties as unknown[][],
+      addresses: esp6.addresses as unknown[][],
+      employees: t.employees as unknown[][],
+      segCompanies: await back('SELECT company_id, name, stage, members, new_members, loans, deposits, owner, sponsorship FROM seg_company ORDER BY company_id'),
+      segContacts: await back('SELECT company_id, contact_name, title, phone, email, branch, bd_manager, active, employees FROM seg_contact'),
+      prospects: await back('SELECT prospect_id, company, contact, city, branch, lat, lng, assets, grade, stage, disposition, owner FROM prs_prospect ORDER BY prospect_id'),
+      locations: t.locations as unknown[][],
+      employers: await back('SELECT party_id, employer FROM cdm_party_profile'),
+      directDeposit: new Set((rm.digital as unknown[][]).filter((d) => d[6] === 'active').map((d) => Number(d[0]))),
+    });
+    for (const [table, rows] of [['brm_status', brm.statuses], ['brm_channel', brm.channels], ['brm_dd_account_type', brm.ddTypes], ['brm_vendor_specialty', brm.vendorSpecialties], ['brm_business', brm.businesses], ['brm_business_specialty', brm.specialties], ['brm_location', brm.locations], ['brm_contact', brm.contacts], ['brm_recipient', brm.recipients], ['brm_direct_deposit', brm.deposits]] as const) {
+      if (rows.length) await insert(admin, table, [...ESP_BUSINESS_COLUMNS[table]], rows as unknown[][], 10_000);
+    }
+    stepDone('phase 8');
     if (profile.institutionType === 'credit_union') await seedCoreReplica(admin, profile.schema);
-    console.log(`${profile.key}: ${t.parties.length} parties, ${t.loans.length} loans, ${t.deposits.length} deposit accounts, ${t.histLoan.length} loan history rows, ${rm.interactions.length} interactions in ${((Date.now() - started) / 1000).toFixed(1)}s (${[...laps, `the rest ${((Date.now() - lapAt) / 1000).toFixed(0)}s`].join(', ')})`);
+    console.log(`${profile.key}: ${t.parties.length} parties, ${t.loans.length} loans, ${t.deposits.length} deposit accounts, ${t.histLoan.length} loan history rows, ${rm.interactions.length} interactions in ${((Date.now() - started) / 1000).toFixed(1)}s (${[...laps, `core replica ${((Date.now() - lapAt) / 1000).toFixed(0)}s`].join(', ')})`);
   }
   await admin.end();
 }

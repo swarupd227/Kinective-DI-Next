@@ -43,6 +43,8 @@ export { CollateralService, FHLB_LENDABLE, type QcrCategory } from './collateral
 export { BalanceHistoryService, type FeeReversalRep, type Outflow } from './balanceHistory.ts';
 export { addOnName, LoanServicesService, type AddOn, type AddOnRow } from './loanServices.ts';
 export { MemberProfitService, type MemberProfitRow } from './memberProfit.ts';
+export { EngagementService } from './engagement.ts';
+export { GeographyService } from './geography.ts';
 export { LIQUIDITY_POLICY, LiquidityService, pctAgainst } from './liquidity.ts';
 export { FundingRiskService, type RunScenario } from './fundingRisk.ts';
 export { NiiService, NII_GROWTH_WATCH } from './nii.ts';

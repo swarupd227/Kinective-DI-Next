@@ -199,7 +199,7 @@ export function monthEnds(): string[] {
 // Names are drawn uniformly, so the pool sets how often a full name repeats. 300 first and 271 last
 // names give about 81,000 combinations: in 46,000 members a name repeats a handful of times at most,
 // as in a real membership, instead of 720 combinations repeating up to 124 times.
-const FIRST = [
+export const FIRST = [
   'Aaron', 'Abigail', 'Adam', 'Adrian', 'Aisha', 'Alan', 'Albert', 'Alejandro', 'Alex', 'Alexis',
   'Alice', 'Alicia', 'Allison', 'Amanda', 'Amara', 'Amber', 'Amir', 'Amy', 'Ana', 'Andre',
   'Andrea', 'Andrew', 'Angela', 'Anita', 'Ann', 'Anthony', 'Antonio', 'Arjun', 'Ashley', 'Audrey',
@@ -232,7 +232,7 @@ const FIRST = [
   'Victor', 'Victoria', 'Vincent', 'Virginia', 'Walter', 'Wanda', 'Wayne', 'Wei', 'Wesley',
   'William', 'Xavier', 'Yasmin', 'Yolanda', 'Yusuf', 'Zachary', 'Zoe',
 ];
-const LAST = [
+export const LAST = [
   'Abbott', 'Acosta', 'Adams', 'Adeyemi', 'Aguilar', 'Ahmed', 'Alexander', 'Ali', 'Allen',
   'Alvarez', 'Anderson', 'Andrews', 'Armstrong', 'Arnold', 'Bailey', 'Baker', 'Banerjee', 'Barnes',
   'Bell', 'Bennett', 'Berg', 'Bishop', 'Black', 'Boyd', 'Bradley', 'Brennan', 'Brooks', 'Brown',

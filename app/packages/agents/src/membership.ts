@@ -2,7 +2,7 @@
 // leave, growth by branch, relationship depth by branch and age band, and how new members are doing.
 // Read-only and under the viewer's purview.
 import { z } from 'zod';
-import { CoreError, MEMBERSHIP_BENCHMARKS, type MembershipService } from '@dinext/di-core';
+import { CoreError, MEMBERSHIP_BENCHMARKS, type EngagementService, type MembershipService } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 const NO_ACCESS = 'Membership growth isn’t part of your DI access. It is for executives, the finance and marketing teams and branch managers.';
@@ -13,13 +13,21 @@ const p1 = (n: number) => `${n.toFixed(1)}%`;
 const n0 = (n: number) => Math.round(n).toLocaleString('en-US');
 const signed = (n: number) => `${n >= 0 ? '+' : '−'}${n0(Math.abs(n))}`;
 
-export function membershipModule(svc: MembershipService): ModuleSpec {
+/**
+ * Applications to join or to open a first account (ESP phase 7): the funnel, where they drop out, how long
+ * opening takes, and applicants who are already members. Loan applications stay with the loan pipeline.
+ */
+export const APPLICATION_REQUEST =
+  /\b(?:membership|member|account[- ]opening|new[- ]account|new[- ]member|new[- ]customer) applications?\b|\bapplications? to (?:join|open an account|become a (?:member|customer))\b|\b(?:membership|account[- ]opening|application) funnel\b|\babandoned (?:online |membership )?applications?\b|\bapplicants? (?:who |that )?(?:are |were )?already (?:members|customers)\b|\bduplicate (?:members|customers|applicants|applications)\b|\bhow (?:long|many days) (?:does it take )?to (?:open an account|join|become a (?:member|customer))\b/i;
+
+/** apps: membership applications (ESP phase 7), where loaded. */
+export function membershipModule(svc: MembershipService, apps: EngagementService | null = null): ModuleSpec {
   const scope = (ctx: ModuleContext) => ({ purviewBranches: ctx.purviewBranches });
   const spec: ModuleSpec = {
     id: 'membership',
     prefix: 'mem',
     agent: 'Membership',
-    request: /\b(member|customer|membership) (attrition|churn|growth|exits?)\b|\battrition rate\b|\bchurn rate\b|\b(members|customers) (who )?(left|leave|leaving|closed)\b(?!.*\b(follow-?ups?|draft|at risk)\b)|\bwhy (did|do|are) (members|customers) (leave|leaving)|\bclosed memberships?\b|\bnet (member |customer )?growth\b|\bhow fast are we (really )?growing\b|\bbranch(es)? (are |is )?(growing|shrinking)( fastest| most)?\s*\??\s*$|\bpenetration\b|\bproducts? per (member|customer)\b|\bcross-?sell ratio\b|\brelationship depth\b|\b(members|customers) (with|have|has) (checking|a loan|loans|direct deposit)\b|\bshare of (members|customers) with\b|\bdigital (adoption|penetration)\b|\bnew (members|customers) (stay|stick|staying|leave|leaving|doing)\b/i,
+    request: new RegExp(`${APPLICATION_REQUEST.source}|${/\b(member|customer|membership) (attrition|churn|growth|exits?)\b|\battrition rate\b|\bchurn rate\b|\b(members|customers) (who )?(left|leave|leaving|closed)\b(?!.*\b(follow-?ups?|draft|at risk)\b)|\bwhy (did|do|are) (members|customers) (leave|leaving)|\bclosed memberships?\b|\bnet (member |customer )?growth\b|\bhow fast are we (really )?growing\b|\bbranch(es)? (are |is )?(growing|shrinking)( fastest| most)?\s*\??\s*$|\bpenetration\b|\bproducts? per (member|customer)\b|\bcross-?sell ratio\b|\brelationship depth\b|\b(members|customers) (with|have|has) (checking|a loan|loans|direct deposit)\b|\bshare of (members|customers) with\b|\bdigital (adoption|penetration)\b|\bnew (members|customers) (stay|stick|staying|leave|leaving|doing)\b/.source}`, 'i'),
     noAccess: NO_ACCESS,
     sources: [
       { kind: 'table', label: 'Member history (month-end)', ref: 'table:hist_party_month' },
@@ -32,9 +40,11 @@ export function membershipModule(svc: MembershipService): ModuleSpec {
 - "Which branches are growing?", "attrition by branch": mem_branches.
 - "What share of members have checking?", "products per member", "penetration by age": mem_penetration with focus.
 - "Are new members staying?": mem_new_members.
+- "How many membership applications did we get?", "where do applications drop out?", "abandoned online applications", "are any applicants already members?": mem_applications.
 - You only read. For named members at risk of leaving, offer the Relationship Manager's at-risk list.`,
     plan: (text) => {
       const t = text.toLowerCase();
+      if (APPLICATION_REQUEST.test(text)) return { tool: 'mem_applications', args: {} };
       if (/\bnew (members|customers)\b.*\b(stay|stick|leav|doing)|first year/.test(t)) return { tool: 'mem_new_members', args: {} };
       if (/why|reason|closed memberships?/.test(t)) return { tool: 'mem_exits', args: {} };
       if (/penetration|products? per|cross-?sell|depth|(with|have|has) (checking|a loan|loans|direct deposit)|share of (members|customers)|digital/.test(t)) return { tool: 'mem_penetration', args: { focus: /\bage|young|older|generation|senior/.test(t) ? 'age' : /branch/.test(t) ? 'branch' : 'overall' } };
@@ -42,6 +52,36 @@ export function membershipModule(svc: MembershipService): ModuleSpec {
       return { tool: 'mem_growth', args: {} };
     },
     tools: [
+      {
+        name: 'mem_applications',
+        description: 'Applications to join (a bank: to open a first account) over the last 12 months: started, opened and the share opened, by channel and branch; denials by reason; online applications abandoned; the median days from applying to opening; applications still waiting; and applicants who are already members.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx: ModuleContext) => {
+          guard(ctx);
+          if (!apps) return { text: 'Membership applications aren’t loaded for this institution yet.' };
+          const a = await apps.applications(12, ctx.purviewBranches ?? undefined);
+          if (!a) return { text: 'Membership applications aren’t loaded for this institution yet.' };
+          const online = a.byChannel.find((c) => c.name === 'Online');
+          const branch = a.byChannel.find((c) => c.name === 'Branch');
+          const denied = a.byChannel.reduce((s, c) => s + c.denied, 0);
+          const dup = (a.alreadyMembers['Confirmed'] ?? 0) + (a.alreadyMembers['Possible match'] ?? 0);
+          return {
+            text: [
+              `Over the 12 months to ${new Date(`${a.asOf}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}, **${n0(a.total)} applications** were started and **${n0(a.opened)} opened (${p1(a.openedPct)})**${a.medianDays === 0 ? ', most the day they applied' : a.medianDays !== null ? `, a median of ${a.medianDays} ${a.medianDays === 1 ? 'day' : 'days'} after applying` : ''}.`,
+              online && branch ? `Online, ${p1(online.openedPct)} opened and ${n0(online.abandoned)} were abandoned part-way; in the branches, ${p1(branch.openedPct)} opened.` : '',
+              denied ? `${n0(denied)} were denied${a.denials[0] ? `, most for ${a.denials[0].reason.charAt(0).toLowerCase()}${a.denials[0].reason.slice(1)} (${n0(a.denials[0].count)})` : ''}.` : '',
+              a.waiting.length ? `${n0(a.waiting.length)} ${a.waiting.length === 1 ? 'is' : 'are'} still waiting, the oldest since ${new Date(`${a.waiting[0]!.applied}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}.` : '',
+              dup ? `${n0(dup)} applicants matched someone already on file${a.alreadyMembers['Possible match'] ? `, ${n0(a.alreadyMembers['Possible match'])} under a familiar form of their name to review` : ''}.` : '',
+            ].filter(Boolean).join(' '),
+            blocks: [
+              moduleTable(spec, 'Applications by channel, last 12 months', ctx.runId, 'membership.applications.channel', [{ field: 'name', headerName: 'Channel', type: 'text' }, { field: 'started', headerName: 'Started', type: 'count' }, { field: 'opened', headerName: 'Opened', type: 'count' }, { field: 'rate', headerName: 'Share opened', type: 'text' }, { field: 'abandoned', headerName: 'Abandoned', type: 'count' }, { field: 'denied', headerName: 'Denied', type: 'count' }, { field: 'withdrawn', headerName: 'Withdrawn', type: 'count' }, { field: 'waiting', headerName: 'Waiting', type: 'count' }], a.byChannel.map((c) => ({ ...c, rate: p1(c.openedPct) }))),
+              moduleTable(spec, 'Applications by branch, last 12 months', ctx.runId, 'membership.applications.branch', [{ field: 'name', headerName: 'Branch', type: 'text' }, { field: 'started', headerName: 'Started', type: 'count' }, { field: 'opened', headerName: 'Opened', type: 'count' }, { field: 'rate', headerName: 'Share opened', type: 'text' }, { field: 'denied', headerName: 'Denied', type: 'count' }], a.byBranch.map((c) => ({ ...c, rate: p1(c.openedPct) }))),
+              ...(a.denials.length ? [moduleTable(spec, 'Denied, by reason', ctx.runId, 'membership.applications.denials', [{ field: 'reason', headerName: 'Reason', type: 'text' }, { field: 'count', headerName: 'Applications', type: 'count' }], a.denials)] : []),
+            ],
+            sources: [{ kind: 'table', label: 'Membership applications', ref: 'table:cdm_membership_application' }],
+          };
+        },
+      },
       {
         name: 'mem_growth',
         description: 'Net member growth and the annual attrition rate over the last twelve months, with joins and exits by month.',

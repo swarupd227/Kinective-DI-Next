@@ -1,8 +1,11 @@
 // Account Activity: fee income by type, product and branch, and the channel mix, from the last 30 days
 // of loan and share transactions. Listed last among the agents, so questions other agents answer stay theirs.
 import { z } from 'zod';
-import { CoreError, type ActivityService, type MemberProfitService } from '@dinext/di-core';
+import { CoreError, type ActivityService, type EngagementService, type MemberProfitService } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
+
+/** Events on accounts and people (ESP phase 7): large deposits, overdrafts, late loans, direct deposit stopped. */
+export const ALERT_REQUEST = /\b(?:member|customer|account) alerts?\b|\balerts? (?:this|last|in the last) (?:week|month|\d+ days)\b|\b(?:any|show|which) alerts?\b|\balerts? on (?:my |our )?(?:members|customers|accounts)\b|\bwhich (?:members|customers) had (?:a )?large (?:deposits?|withdrawals?)\b|\blarge (?:deposits?|withdrawals?) (?:this|last) (?:week|month)\b|\bwhose direct deposit stopped\b/i;
 
 export const ACTIVITY_REQUEST = /\bfees? by (?:type|fee type|branch|product)\b|\boverdraft fees?\b|\bmaintenance fees?\b|\bfees? (?:we )?charged\b|\bchannel (?:mix|usage|use)\b|\btransactions? by channel\b|\bhow (?:do )?(?:members|customers|people) (?:transact|bank)\b|\b(?:teller|atm|mobile|card) (?:transactions|usage|volume)\b|\btransaction costs?\b|\bcost (?:to serve|per transaction|by channel)\b|\bchannel costs?\b|\bwhat (?:do|does) (?:our |a )?(?:transactions?|tellers?) cost\b/i;
 const NO_ACCESS = 'Account activity isn’t part of your DI access.';
@@ -12,8 +15,8 @@ const feeType = (t: string): (typeof FEE_TYPES)[number] | undefined =>
   /\b(?:overdraft|nsf)\b/i.test(t) ? 'Overdraft' : /\bmaintenance\b/i.test(t) ? 'Maintenance' : /\batm fees?\b/i.test(t) ? 'ATM' : /\blate (?:payment )?fees?\b/i.test(t) ? 'Late payment' : undefined;
 const text = (field: string, headerName: string) => ({ field, headerName, type: 'text' as const });
 
-/** costs: what each kind of transaction costs to handle (ESP phase 6), where loaded. */
-export function activityModule(svc: ActivityService, costs: MemberProfitService | null = null): ModuleSpec {
+/** costs: what each kind of transaction costs to handle (ESP phase 6); alerts: events on accounts and people (ESP phase 7); where loaded. */
+export function activityModule(svc: ActivityService, costs: MemberProfitService | null = null, alerts: EngagementService | null = null): ModuleSpec {
   const need = (ctx: ModuleContext) => {
     if (!ctx.modules.includes('activity')) throw new CoreError('NO_ACCESS', NO_ACCESS);
   };
@@ -22,15 +25,39 @@ export function activityModule(svc: ActivityService, costs: MemberProfitService 
     id: 'activity',
     prefix: 'act',
     agent: 'Account Activity',
-    request: ACTIVITY_REQUEST,
+    request: new RegExp(`${ALERT_REQUEST.source}|${ACTIVITY_REQUEST.source}`, 'i'),
     noAccess: NO_ACCESS,
     sources,
     prompt: ({ tenant, user, title }) => `You are the Account Activity agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) looks at how accounts are used, from the last 30 days of loan and share transactions.
 
 - act_fees (type): fees charged, by fee type (overdraft, maintenance, ATM, late payment), product and branch. Pass type for one fee type, such as overdraft fees by branch.
-- act_channels: transactions by channel (teller, ATM, card, mobile, online, ACH): how many, how many people, and dollars.`,
-    plan: (t) => (/\bfees?\b/i.test(t) ? { tool: 'act_fees', args: feeType(t) ? { type: feeType(t) } : {} } : { tool: 'act_channels', args: {} }),
+- act_channels: transactions by channel (teller, ATM, card, mobile, online, ACH): how many, how many people, and dollars.
+- act_alerts (days): events on accounts and people: large deposits and withdrawals, overdraft fees, loans 30 days late, certificates maturing, shares closed, direct deposit stopped, new members, birthdays. days 7 for this week, 30 for the month.`,
+    plan: (t) => (ALERT_REQUEST.test(t) ? { tool: 'act_alerts', args: { days: /\bmonth|30 days\b/i.test(t) ? 30 : 7 } } : /\bfees?\b/i.test(t) ? { tool: 'act_fees', args: feeType(t) ? { type: feeType(t) } : {} } : { tool: 'act_channels', args: {} }),
     tools: [
+      {
+        name: 'act_alerts',
+        description: 'Events on accounts and people over the last 7 or 30 days, under the viewer’s purview: how many of each kind, and the latest, with whose they are.',
+        input: z.object({ days: z.union([z.literal(7), z.literal(30)]).default(7) }).strict(),
+        run: async (a: { days?: 7 | 30 }, ctx: ModuleContext) => {
+          need(ctx);
+          const x = alerts ? await alerts.alerts(a.days ?? 7, ctx.purviewBranches ?? undefined) : null;
+          if (!x) return { text: 'Alerts on accounts and people aren’t loaded for this institution yet.' };
+          if (!x.total) return { text: `No alerts in the last ${x.days} days.` };
+          // What needs acting on first; birthdays and new members are in the table.
+          const kinds = x.byType.filter((k) => k.code !== 'BIRTHDAY' && k.code !== 'NEW_MEMBER').slice(0, 4).map((k) => `${k.count.toLocaleString('en-US')} ${k.type.toLowerCase()}`).join(', ');
+          const large = x.items.find((i) => i.code === 'LARGE_DEPOSIT' || i.code === 'LARGE_WITHDRAWAL');
+          const stopped = x.items.filter((i) => i.code === 'DD_STOPPED').length;
+          return {
+            text: `**${x.total.toLocaleString('en-US')} alerts** in the last ${x.days} days: ${kinds}.${large ? ` The latest large one: ${large.name} at ${large.branch}, ${large.description.charAt(0).toLowerCase()}${large.description.slice(1)}.` : ''}${stopped ? ` ${stopped} ${stopped === 1 ? 'person’s' : 'people’s'} direct deposit stopped: worth a call before the money follows.` : ''}`,
+            blocks: [
+              moduleTable(spec, `Alerts by kind, last ${x.days} days`, ctx.runId, 'activity.alerts.kind', [text('type', 'Alert'), { field: 'count', headerName: 'Alerts', type: 'count' }, { field: 'people', headerName: 'People', type: 'count' }], x.byType),
+              moduleTable(spec, 'Latest alerts', ctx.runId, 'activity.alerts.items', [text('date', 'Date'), text('name', 'Name'), text('branch', 'Branch'), text('type', 'Alert'), text('description', 'What happened')], x.items.slice(0, 50).map((i) => ({ date: i.date, name: i.name, branch: i.branch, type: i.type, description: i.description }))),
+            ],
+            sources: [{ kind: 'table', label: 'Alerts on accounts and people', ref: 'table:cdm_account_alert' }],
+          };
+        },
+      },
       {
         name: 'act_fees',
         description: 'Fees charged in the last 30 days: by fee type (overdraft, maintenance, out-of-network ATM, late payment), by product and by branch, with how many accounts paid one. Pass type for one fee type only.',

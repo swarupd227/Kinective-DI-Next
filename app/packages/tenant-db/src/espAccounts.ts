@@ -59,7 +59,7 @@ const TOWNS: Record<'credit_union' | 'bank', { state: string; branches: [string,
     ],
   },
 };
-const STREETS = ['Maple', 'Oak', 'Cedar', 'Pine', 'Elm', 'Birch', 'Willow', 'Spruce', 'Harbor', 'Lake', 'Hill', 'River', 'Park', 'Sunset', 'Meadow', 'Forest', 'Ridge', 'Valley', 'Bay', 'Mill', 'Church', 'Main', 'Washington', 'Lincoln', 'Jefferson', 'Madison', 'Franklin', 'Highland', 'Orchard', 'Vista'];
+export const STREETS = ['Maple', 'Oak', 'Cedar', 'Pine', 'Elm', 'Birch', 'Willow', 'Spruce', 'Harbor', 'Lake', 'Hill', 'River', 'Park', 'Sunset', 'Meadow', 'Forest', 'Ridge', 'Valley', 'Bay', 'Mill', 'Church', 'Main', 'Washington', 'Lincoln', 'Jefferson', 'Madison', 'Franklin', 'Highland', 'Orchard', 'Vista'];
 const SUFFIXES = ['St', 'Ave', 'Rd', 'Dr', 'Ln', 'Way', 'Ct', 'Pl', 'Blvd', 'Ter'];
 const MIDDLE = ['A.', 'B.', 'C.', 'D.', 'E.', 'F.', 'G.', 'H.', 'J.', 'K.', 'L.', 'M.', 'N.', 'P.', 'R.', 'S.', 'T.', 'W.', 'Ann', 'Lee', 'Marie', 'James', 'Lynn', 'Ray', 'Rose', 'Jean'];
 const NICKNAMES: Record<string, string> = { William: 'Bill', Robert: 'Bob', Richard: 'Rick', James: 'Jim', Michael: 'Mike', Elizabeth: 'Liz', Katherine: 'Kate', Margaret: 'Maggie', Jennifer: 'Jen', Christopher: 'Chris', Daniel: 'Dan', Matthew: 'Matt', Anthony: 'Tony', Joseph: 'Joe', Thomas: 'Tom', Patricia: 'Pat', Susan: 'Sue', Samuel: 'Sam', Benjamin: 'Ben', Alexander: 'Alex', Nicholas: 'Nick', Jonathan: 'Jon', Rebecca: 'Becky', Deborah: 'Debbie', Victoria: 'Tori', Suzanne: 'Suzy' };

@@ -3,7 +3,7 @@
 // and never decides whether something is a regulatory complaint under a rule. Closing an issue from
 // a regulator is high risk, with the issue number typed (AI-AGT-241).
 import { z } from 'zod';
-import { CoreError, findPerson, ISSUE_REGULATORS, ISSUE_ROOT_CAUSES, type BalanceHistoryService, type InsiderService, type IssueService } from '@dinext/di-core';
+import { CoreError, findPerson, ISSUE_REGULATORS, ISSUE_ROOT_CAUSES, type BalanceHistoryService, type GeographyService, type InsiderService, type IssueService } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
@@ -29,7 +29,11 @@ export const INSIDER = /\binsider (loans?|lending|credit)\b|\breg(ulation)? ?o\b
 /** Voided and reversed transactions, fee refunds by employee, returned loan payments (ESP phase 4). */
 export const REVERSALS = /\b(?:voided|reversed|voids|reversals?)\b[^.?!]*\b(?:transactions?|fees?|payments?|entries)\b|\b(?:transactions?|fees?|payments?|entries)\b[^.?!]*\b(?:voided|reversed)\b|\bfee (?:reversals?|refunds?)\b|\brefund(?:ed|s|ing)? (?:the most |so many |more )?fees\b|\breturned (?:loan )?payments\b/i;
 
-export function complianceModule(issues: IssueService, pool: Pool, insiders?: InsiderService, history?: BalanceHistoryService): ModuleSpec {
+/** Lending by the income level of the borrower's census tract (ESP phase 8): CRA and fair-lending reviews. */
+export const LMI_REQUEST =
+  /\bcra\b|\bcommunity reinvestment\b|\blow[- ](?:and|&|to)[- ]moderate[- ]income\b|\blmi\b|\b(?:low|moderate)[- ]income (?:tracts?|areas?|neighbou?rhoods?|census tracts?)\b|\bcensus tracts?\b|\bassessment area\b|\bunderserved (?:areas?|tracts?|neighbou?rhoods?|communities)\b|\bredlining\b/i;
+
+export function complianceModule(issues: IssueService, pool: Pool, insiders?: InsiderService, history?: BalanceHistoryService, geo?: GeographyService): ModuleSpec {
   /** A branch the question named: a real one the viewer may see, or nothing for a word that isn't a branch. */
   const branchOf = async (asked: string | undefined, ctx: ModuleContext) => {
     const name = asked?.trim().toLowerCase();
@@ -45,7 +49,7 @@ export function complianceModule(issues: IssueService, pool: Pool, insiders?: In
     id: 'compliance',
     prefix: 'cpm',
     agent: 'Compliance & Problem Management',
-    request: new RegExp(`${/\b(complaints?|CFPB|NCUA|OCC|FDIC|BBB|root causes?)\b|\bregulatory issues?\b|\bopen issues\b|\bcompliance issues?\b|\b(past[- ]due|overdue) issues\b|\b(?:issue|case) #?\d{3,}\b|\binsider (loans?|lending|credit)\b|\breg(ulation)? ?o\b|\b215\.4\b|\b701\.21\b|\bloans? to (our )?(insiders|officials|directors|the board|board members|executive officers)\b|\b(official|director|employee|staff)[- ]owned loans?\b/.source}|${REVERSALS.source}`, 'i'),
+    request: new RegExp(`${/\b(complaints?|CFPB|NCUA|OCC|FDIC|BBB|root causes?)\b|\bregulatory issues?\b|\bopen issues\b|\bcompliance issues?\b|\b(past[- ]due|overdue) issues\b|\b(?:issue|case) #?\d{3,}\b|\binsider (loans?|lending|credit)\b|\breg(ulation)? ?o\b|\b215\.4\b|\b701\.21\b|\bloans? to (our )?(insiders|officials|directors|the board|board members|executive officers)\b|\b(official|director|employee|staff)[- ]owned loans?\b/.source}|${REVERSALS.source}|${LMI_REQUEST.source}`, 'i'),
     noAccess: 'Compliance issues aren’t part of your DI access.',
     sources: [{ kind: 'table', label: 'Issues', ref: 'table:cpm_issue' }],
     prompt: ({ tenant, user, title }) => `You are the Compliance & Problem Management agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) works member and regulatory issues.
@@ -57,6 +61,7 @@ export function complianceModule(issues: IssueService, pool: Pool, insiders?: In
 - "Log a complaint from James Lee about a double fee": cpm_issue_create. Don't decide if it's a regulatory complaint under any rule: a person confirms the source on the card.
 - "Show our insider loans", "are we within Regulation O?", "loans to directors and officials": cpm_insider_loans. It reports the record; whether something is a violation is for the compliance officer.
 - "Show voided and reversed transactions", "who refunds the most fees?", "any returned loan payments?": cpm_reversals. It reports the record; whether a refund was wrong is for the branch manager or compliance officer.
+- "How much do we lend in low- and moderate-income tracts?", "CRA", "lending by census tract income": cpm_lmi. It reports where loans went against where households live; whether lending meets the institution's obligations is the compliance officer's call.
 - "Escalate issue 3307": cpm_issue_escalate. "Close issue 3307 with resolution: ...": cpm_issue_close, with a root cause only if the user gave one.`,
     today: async (ctx) => {
       const f = await issues.list({ overdueOnly: true }, ctx);
@@ -68,6 +73,7 @@ export function complianceModule(issues: IssueService, pool: Pool, insiders?: In
       const t = text.trim().replace(/[.!?]+$/, '');
       const id = Number(/\b(?:issue|case) #?(\d{3,})\b/i.exec(t)?.[1] ?? NaN);
       if (INSIDER.test(t) && !id && !/^\s*log\b/i.test(t)) return { tool: 'cpm_insider_loans', args: {} };
+      if (LMI_REQUEST.test(t) && !id && !/^\s*log\b/i.test(t)) return { tool: 'cpm_lmi', args: {} };
       if (REVERSALS.test(t) && !id && !/^\s*log\b/i.test(t)) return { tool: 'cpm_reversals', args: {} };
       if (/^\s*log\b|\b(log|record|open) (a |an )?(complaint|issue)\b/i.test(t)) {
         const who = /\bfrom ((?:[A-Z][\w'-]*\s?){1,3})/.exec(t)?.[1]?.trim();
@@ -87,6 +93,36 @@ export function complianceModule(issues: IssueService, pool: Pool, insiders?: In
       return { tool: 'cpm_issues_list', args: { ...(branch ? { branch } : {}), ...(/\bregulatory\b/i.test(t) ? { kind: 'regulatory' } : {}), ...(SOURCES.find((s) => new RegExp(`\\b${s}\\b`).test(t)) ? { source: SOURCES.find((s) => new RegExp(`\\b${s}\\b`).test(t)) } : {}), ...(weeks ? { older_than_days: Number(weeks[1]) * 7 } : days ? { older_than_days: Number(days[1]) } : {}), ...(/\boverdue\b/i.test(t) ? { overdue_only: true } : {}) } };
     },
     tools: [
+      {
+        name: 'cpm_lmi',
+        description: 'Loans made over the last 12 months by the income level of the borrower’s census tract (low, moderate, middle, upper), against the share of the market’s households in tracts of each level; the share in low- and moderate-income tracts by branch and product.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx: ModuleContext) => {
+          if (!ctx.modules.includes('compliance')) throw new CoreError('NO_ACCESS', 'Compliance issues aren’t part of your DI access.');
+          const x = geo ? await geo.lmi(12, ctx.purviewBranches ?? undefined) : null;
+          if (!x) return { text: 'Census geography isn’t loaded for this institution yet, so DI can’t place loans in tracts.' };
+          const low = x.byLevel.find((l) => l.level === 'Low')!;
+          const mod = x.byLevel.find((l) => l.level === 'Moderate')!;
+          const sorted = [...x.byBranch].filter((b) => b.loans >= 50).sort((a, b) => a.lmiPct - b.lmiPct);
+          const lowest = sorted[0];
+          const gap = Math.round((x.lmi.householdsPct - x.lmi.lmiPct) * 10) / 10;
+          return {
+            text: [
+              `Of the ${x.geocoded.toLocaleString('en-US')} loans made over the last 12 months that geocode to a tract, **${x.lmi.lmiPct}% went to borrowers in low- and moderate-income tracts** (${low.loansPct}% low, ${mod.loansPct}% moderate), where ${x.lmi.householdsPct}% of the market’s households live.`,
+              gap > 2 ? `That is ${gap} points below where households live.` : gap < -2 ? `That is ${Math.abs(gap)} points above where households live.` : 'That is in line with where households live.',
+              lowest && sorted.length > 1 ? `${lowest.name} has the lowest share, ${lowest.lmiPct}% of its ${lowest.loans.toLocaleString('en-US')} loans.` : '',
+              x.loans > x.geocoded ? `${(x.loans - x.geocoded).toLocaleString('en-US')} loans didn’t geocode to a tract and are left out.` : '',
+              'Whether this meets the institution’s obligations is the compliance officer’s call.',
+            ].filter(Boolean).join(' '),
+            blocks: [
+              moduleTable(spec, 'Loans by tract income level, last 12 months', ctx.runId, 'compliance.lmi.level', [{ field: 'level', headerName: 'Tract income', type: 'text' }, { field: 'tracts', headerName: 'Tracts', type: 'count' }, { field: 'households', headerName: 'Households', type: 'text' }, { field: 'loans', headerName: 'Loans', type: 'count' }, { field: 'share', headerName: 'Share of loans', type: 'text' }, { field: 'amount', headerName: 'Amount', type: 'currency' }], x.byLevel.map((l) => ({ level: l.level, tracts: l.tracts, households: `${l.householdsPct}%`, loans: l.loans, share: `${l.loansPct}%`, amount: l.amount }))),
+              moduleTable(spec, 'Share in low- and moderate-income tracts by branch', ctx.runId, 'compliance.lmi.branch', [{ field: 'name', headerName: 'Branch', type: 'text' }, { field: 'loans', headerName: 'Loans', type: 'count' }, { field: 'lmi', headerName: 'In LMI tracts', type: 'count' }, { field: 'share', headerName: 'Share', type: 'text' }], x.byBranch.map((b) => ({ name: b.name, loans: b.loans, lmi: b.lmi, share: `${b.lmiPct}%` }))),
+              moduleTable(spec, 'Share in low- and moderate-income tracts by product', ctx.runId, 'compliance.lmi.product', [{ field: 'name', headerName: 'Product', type: 'text' }, { field: 'loans', headerName: 'Loans', type: 'count' }, { field: 'lmi', headerName: 'In LMI tracts', type: 'count' }, { field: 'share', headerName: 'Share', type: 'text' }], x.byProduct.map((b) => ({ name: b.name, loans: b.loans, lmi: b.lmi, share: `${b.lmiPct}%` }))),
+            ],
+            sources: [{ kind: 'table', label: 'Census tracts and where each address geocodes', ref: 'table:cen_address_map' }],
+          };
+        },
+      },
       {
         name: 'cpm_insider_loans',
         description: 'Loans to insiders: directors, committee members, executive officers, principal shareholders (officials) and employees. Each official’s open loans and commitments against the board-approval threshold (Regulation O for a bank, NCUA 701.21(d) for a credit union), loans made without a recorded board approval, a bank’s lending limit and the aggregate against capital, and employees’ loans.',

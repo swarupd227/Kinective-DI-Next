@@ -3,7 +3,7 @@
 // Each states its limits: the Call Report agent is read-only, the Admin agent can't change its own
 // user or impersonate anyone, and DI never contacts a borrower or changes a loan.
 import { z } from 'zod';
-import { CALL_REPORT_EDITION, CR_ADJUST_REASONS, CR_RESOLUTIONS, type CrAdjustReason, type CrResolution, CAPABILITIES, CLASSES, CoreError, SEG_STAGES, USER_CLASSES, type CallReportLine, type CallReportService, stampUtc, csvCells, type FileStore, type ApiService, type CampaignService, type CollectionsService, type WatchedLoan, type OperationsService, type SegService } from '@dinext/di-core';
+import { CALL_REPORT_EDITION, CR_ADJUST_REASONS, CR_RESOLUTIONS, type CrAdjustReason, type CrResolution, CAPABILITIES, CLASSES, CoreError, SEG_STAGES, USER_CLASSES, type CallReportLine, type CallReportService, stampUtc, csvCells, type FileStore, type ApiService, type CampaignService, type EngagementService, type GeographyService, type CollectionsService, type WatchedLoan, type OperationsService, type SegService } from '@dinext/di-core';
 import { money } from './pipelineAgent.ts';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
@@ -777,14 +777,19 @@ export function collectionsModule(col: CollectionsService): ModuleSpec {
 
 // ---- campaigns --------------------------------------------------------------------------------
 
-export function campaignModule(cmp: CampaignService, api: ApiService | null = null): ModuleSpec {
+/** How often campaigns reach people (ESP phase 7): touches, contact frequency, and non-members who joined. */
+export const TOUCH_REQUEST =
+  /\b(?:marketing|campaign) (?:touch(?:es|points)?|frequency)\b|\bhow (?:often|many times) (?:do |did |have )?(?:we|campaigns?) (?:reach(?:ed)?|touch(?:ed)?|contact(?:ed)?|mail(?:ed)?|email(?:ed)?)\b|\bcontact (?:frequency|fatigue)\b|\bover-?(?:contact|market|mail|email)(?:ed|ing)\b|\bmarketing fatigue\b|\bwho (?:did|does) (?:the |our )?campaigns? reach\b|\bpostcards? to non-?members\b|\b(?:non-?members|prospects) (?:who|that) joined\b/i;
+
+/** touches: each campaign's sends (ESP phase 7), where loaded. */
+export function campaignModule(cmp: CampaignService, api: ApiService | null = null, touches: EngagementService | null = null): ModuleSpec {
   const noAccess = 'Campaigns aren’t part of your DI access.';
   const need = (ctx: ModuleContext) => guard(ctx, 'campaigns', noAccess);
   const spec: ModuleSpec = {
     id: 'campaigns',
     prefix: 'cmp',
     agent: 'Campaigns',
-    request: /\bcampaigns?\b|\baudiences?\b|\bmarketing (roi|return|spend|sources?)\b|\bsales by (?:marketing )?source\b|\b(?:roi|return on spend) (?:history|by quarter|over time)\b|\bcampaign lift\b|\b(?:send|push)\b[^.?!]*\bto (?:the )?(?:relay|marketing platform)\b|\bopen and click\b|\bclick rates?\b|\bhow did the email\b/i,
+    request: new RegExp(`${TOUCH_REQUEST.source}|${/\bcampaigns?\b|\baudiences?\b|\bmarketing (roi|return|spend|sources?)\b|\bsales by (?:marketing )?source\b|\b(?:roi|return on spend) (?:history|by quarter|over time)\b|\bcampaign lift\b|\b(?:send|push)\b[^.?!]*\bto (?:the )?(?:relay|marketing platform)\b|\bopen and click\b|\bclick rates?\b|\bhow did the email\b/.source}`, 'i'),
     noAccess,
     sources: [{ kind: 'table', label: 'Campaign Success', ref: 'table:cmp_campaign' }],
     prompt: ({ tenant, user, title }) => `You are the Campaign agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) reviews campaigns and builds audiences.
@@ -795,11 +800,13 @@ export function campaignModule(cmp: CampaignService, api: ApiService | null = nu
 - "Send the audience of members with no auto loan to Relay", "push it to the marketing platform": cmp_audience_send. It is high risk: contact details leave DI.
 - "Pull back the campaign results": cmp_platform_pull. "How did the email do?", "open and click rates": cmp_platform_results.
 - "How has campaign ROI changed?", "ROI by quarter": cmp_roi_history. "What did campaigns bring in by product and channel?": cmp_product_channel. "Sales by marketing source", "what came from campaigns this month?": cmp_sources. "Campaign timeline", "when did responses come in?": cmp_timeline. "Which accounts came from the summer auto campaign?": cmp_accounts. "Campaign results by age", "by branch", "by month", for one campaign or a period: cmp_breakdown.
+- "How often do we reach members?", "contact frequency", "who did the campaigns reach?", "did postcards to non-members bring anyone in?": cmp_touches.
 - Exporting an audience as a file isn't available; sending goes through the connected marketing platform.`,
     plan: (text) => {
       const t = clean(text);
       const no = /\bno ([\w ]+?) loan\b|\bwithout an? ([\w ]+?) loan\b/i.exec(t);
       if (/\b(?:send|push|upload|sync)\b/i.test(t) && /\b(?:audience|list|relay|marketing platform)\b/i.test(t)) return no ? { tool: 'cmp_audience_send', args: { without_category: (no[1] ?? no[2])! } } : { say: 'Which audience should I send? For example, “Send members with no auto loan to Relay.”' };
+      if (TOUCH_REQUEST.test(t)) return { tool: 'cmp_touches', args: {} };
       if (/\bexport\b/i.test(t)) return { say: 'DI can’t export an audience as a file: member contact details would leave DI with no record of where they went. It can send an audience to the connected marketing platform, with an approval that shows who and which fields.' };
       if (/\bpull\b[^.?!]*\bresults?\b|\bpull (?:them |it )?back\b|\brefresh\b[^.?!]*\bresults?\b/i.test(t)) return { tool: 'cmp_platform_pull', args: {} };
       if (/\bopen(?:ed|s| rate)?\b|\bclick|\bdeliver|\bunsubscrib|\bplatform results\b|\bon relay\b|\bhow did\b[^.?!]*\b(?:email|send)\b/i.test(t)) return { tool: 'cmp_platform_results', args: {} };
@@ -816,6 +823,34 @@ export function campaignModule(cmp: CampaignService, api: ApiService | null = nu
       return { tool: 'cmp_results', args: {} };
     },
     tools: [
+      {
+        name: 'cmp_touches',
+        description: 'How campaigns reached people over the last 12 months: each campaign’s sends to members and to addresses of people who weren’t members, how many of those joined within 90 days, the members it was credited with, how many campaigns reached each member, and the members reached most often.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx: ModuleContext) => {
+          need(ctx);
+          if (!touches) return { text: 'Campaign sends aren’t loaded for this institution yet.' };
+          const x = await touches.touches(365);
+          if (!x) return { text: 'Campaign sends aren’t loaded for this institution yet.' };
+          const sends = x.campaigns.reduce((s, c) => s + c.sends, 0);
+          const non = x.campaigns.reduce((s, c) => s + c.nonMembers, 0);
+          const joined = x.campaigns.reduce((s, c) => s + c.joined, 0);
+          const top = x.most[0];
+          return {
+            text: [
+              `Over the last 12 months, ${x.campaigns.length} campaigns made ${sends.toLocaleString('en-US')} sends and reached **${x.reached.toLocaleString('en-US')} people already with us**.`,
+              x.heavy ? `**${x.heavy.toLocaleString('en-US')}** of them heard from five or more campaigns${top ? `; ${top.name} at ${top.branch} from ${top.campaigns}` : ''}. Worth a frequency cap before the next one.` : '',
+              non ? `Campaigns also reached ${non.toLocaleString('en-US')} people who weren’t with us, by postcard or prospect email; ${joined.toLocaleString('en-US')} of them joined within 90 days.` : '',
+            ].filter(Boolean).join(' '),
+            blocks: [
+              moduleTable(spec, 'Campaign sends, last 12 months', ctx.runId, 'campaigns.touches', [{ field: 'name', headerName: 'Campaign', type: 'text' }, { field: 'channel', headerName: 'Channel', type: 'text' }, { field: 'launched', headerName: 'Launched', type: 'text' }, { field: 'sends', headerName: 'Sends', type: 'count' }, { field: 'members', headerName: 'People with us', type: 'count' }, { field: 'nonMembers', headerName: 'Other addresses', type: 'count' }, { field: 'joined', headerName: 'Of those, joined', type: 'count' }, { field: 'credited', headerName: 'Credited with an opening', type: 'count' }], x.campaigns),
+              moduleTable(spec, 'How many campaigns reached each person', ctx.runId, 'campaigns.frequency', [{ field: 'campaigns', headerName: 'Campaigns', type: 'count' }, { field: 'people', headerName: 'People', type: 'count' }], x.frequency),
+              moduleTable(spec, 'Reached most often', ctx.runId, 'campaigns.most', [{ field: 'name', headerName: 'Name', type: 'text' }, { field: 'branch', headerName: 'Branch', type: 'text' }, { field: 'campaigns', headerName: 'Campaigns', type: 'count' }, { field: 'sends', headerName: 'Sends', type: 'count' }], x.most),
+            ],
+            sources: [{ kind: 'table', label: 'Campaign sends', ref: 'table:cmp_touch' }],
+          };
+        },
+      },
       {
         name: 'cmp_roi_history',
         description: 'Return on spend by quarter launched and channel: campaigns, spend, value caused and return, oldest quarter first.',
@@ -1050,7 +1085,11 @@ export function campaignModule(cmp: CampaignService, api: ApiService | null = nu
 
 // ---- SEG --------------------------------------------------------------------------------------
 
-export function segModule(seg: SegService, today: () => string): ModuleSpec {
+/** Across SEGs (ESP phase 8): how many of their people bank with us and by direct deposit, and who receives their statements. */
+export const SEG_REACH_REQUEST = /\b(?:SEG|employer group) (?:penetration|reach|payroll|direct deposit)\b|\bwhich (?:SEGs|employer groups|employers) (?:have|send|bank)\b|\b(?:SEG )?employees? (?:who )?bank(?:s|ing)? with us\b|\bstatement recipients?\b|\bwho (?:gets|receives) (?:the |their |each SEG'?s? )?(?:statements?|invoices?)\b|\bpayroll direct deposits?\b/i;
+
+/** brm: the business relationships behind each SEG (ESP phase 8), where loaded. */
+export function segModule(seg: SegService, today: () => string, brm: GeographyService | null = null): ModuleSpec {
   const noAccess = 'SEG Management is for credit unions.';
   const need = (ctx: ModuleContext) => guard(ctx, 'seg', noAccess);
   const company = /\b(?:with|for|at)\s+((?:[A-Z][\w&'-]*\s?){1,4})/;
@@ -1058,7 +1097,7 @@ export function segModule(seg: SegService, today: () => string): ModuleSpec {
     id: 'seg',
     prefix: 'seg',
     agent: 'SEG Development',
-    request: /\bSEGs?\b|\bsponsor(?:ship|ing)?s?\b|\bdonations?\b|\b[Ww]ho (?:at|from) [A-Z][\w&'-]*(?: [A-Z][\w&'-]*){0,3} banks? with us\b|\blunch-and-learn\b|\bprospect stage\b|\b[Bb][Dd] score ?card\b|\bbusiness development (?:score ?card|goals?|activity)\b|\bemployer groups?\b/,
+    request: new RegExp(`${SEG_REACH_REQUEST.source}|${/\bSEGs?\b|\bsponsor(?:ship|ing)?s?\b|\bdonations?\b|\b[Ww]ho (?:at|from) [A-Z][\w&'-]*(?: [A-Z][\w&'-]*){0,3} banks? with us\b|\blunch-and-learn\b|\bprospect stage\b|\b[Bb][Dd] score ?card\b|\bbusiness development (?:score ?card|goals?|activity)\b|\bemployer groups?\b/.source}`),
     noAccess,
     sources: [{ kind: 'table', label: 'SEG Management', ref: 'table:seg_company' }],
     prompt: ({ tenant, user, title }) => `You are the SEG/Business Development agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) develops select employee groups.
@@ -1076,6 +1115,7 @@ export function segModule(seg: SegService, today: () => string): ModuleSpec {
 - "Add a new SEG: …": seg_company_add. "Retire Valley Courier Service", "reactivate it": seg_company_active. Nothing is deleted.`,
     plan: (text) => {
       const t = clean(text);
+      if (SEG_REACH_REQUEST.test(t)) return { tool: 'seg_reach', args: {} };
       const name = company.exec(t)?.[1]?.trim();
       const stage = SEG_STAGES.find((s) => new RegExp(`\\b${s}\\b`, 'i').test(t));
       if (/\bmove\b/i.test(t) && stage) return { tool: 'seg_stage_prepare', args: { company: /\b[Mm]ove ((?:[A-Z][\w&'-]*\s?){1,4}?)\s+to\b/.exec(t)?.[1]?.trim() ?? '', stage, ...(/[:—]\s*(.+)$/.exec(t)?.[1] ? { note: /[:—]\s*(.+)$/.exec(t)![1] } : {}) } };
@@ -1111,6 +1151,33 @@ export function segModule(seg: SegService, today: () => string): ModuleSpec {
       return { tool: 'seg_performance', args: {} };
     },
     tools: [
+      {
+        name: 'seg_reach',
+        description: 'Across SEGs: each one’s employees, how many bank with us (from the employers on file) and how many of those get paid by direct deposit, its primary contact, who receives its statements and how, and where its payroll comes from.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx: ModuleContext) => {
+          need(ctx);
+          const list = brm ? await brm.segs() : null;
+          if (!list) return { text: 'No SEGs are on file yet.' };
+          const active = list.filter((s) => s.status === 'Active');
+          const withUs = active.reduce((n, s) => n + s.withUs, 0);
+          const dd = active.reduce((n, s) => n + s.directDeposit, 0);
+          const top = active[0];
+          const lowDd = active.filter((s) => s.withUs >= 50).sort((a, b) => a.ddPct - b.ddPct)[0];
+          // A company not yet a SEG whose people already bank with us: the strongest case to sign.
+          const signable = list.filter((s) => s.status !== 'Active' && s.withUs >= 100).sort((a, b) => b.withUs - a.withUs)[0];
+          return {
+            text: [
+              `Across ${active.length} active SEGs, **${withUs.toLocaleString('en-US')} members** work there by the employers on file, and ${Math.round((dd / Math.max(1, withUs)) * 100)}% of them get paid by direct deposit.`,
+              top ? `${top.name} has the most, ${top.withUs.toLocaleString('en-US')}${top.withUsPct !== null ? ` of ${top.employees!.toLocaleString('en-US')} employees (${top.withUsPct}%)` : ''}.` : '',
+              lowDd && lowDd !== top ? `${lowDd.name} has the lowest direct-deposit share, ${lowDd.ddPct}% of ${lowDd.withUs.toLocaleString('en-US')}: a payroll conversation worth having with ${lowDd.contact ?? 'their contact'}.` : '',
+              signable ? `${signable.name} isn’t a SEG yet, but ${signable.withUs.toLocaleString('en-US')} members list it as their employer: the strongest case to sign.` : '',
+            ].filter(Boolean).join(' '),
+            blocks: [moduleTable(spec, 'SEGs: people with us, direct deposit and statements', ctx.runId, 'seg.reach', [{ field: 'name', headerName: 'SEG', type: 'text' }, { field: 'status', headerName: 'Status', type: 'text' }, { field: 'employees', headerName: 'Employees', type: 'count' }, { field: 'withUs', headerName: 'With us', type: 'count' }, { field: 'dd', headerName: 'Direct deposit', type: 'text' }, { field: 'contact', headerName: 'Contact', type: 'text' }, { field: 'statements', headerName: 'Statements to', type: 'text' }, { field: 'payroll', headerName: 'Payroll from', type: 'text' }], list.map((s) => ({ name: s.name, status: s.status, employees: s.employees ?? 0, withUs: s.withUs, dd: s.withUs ? `${s.ddPct}%` : '—', contact: s.contact ? `${s.contact}${s.title ? `, ${s.title}` : ''}` : '—', statements: s.statements ?? '—', payroll: s.payrollBank ?? '—' })))],
+            sources: [{ kind: 'table', label: 'Business relationships', ref: 'table:brm_business' }],
+          };
+        },
+      },
       {
         name: 'seg_list',
         description: 'The SEG list with filters: stage, business development manager, branch, active or retired, minimum employees, and words in the name.',
