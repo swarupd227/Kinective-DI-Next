@@ -35,6 +35,7 @@ import { ESP_OWNER_DDL, generateOwners } from './espOwners.ts';
 import { ESP_ACCOUNT_COLUMNS, ESP_ACCOUNT_DDL, generateAccounts } from './espAccounts.ts';
 import { ESP_DETAIL_COLUMNS, ESP_DETAIL_DDL, generateDetails } from './espDetails.ts';
 import { ESP_LOSS_COLUMNS, ESP_LOSS_DDL, generateLosses } from './espLosses.ts';
+import { ESP_COLLATERAL_COLUMNS, ESP_COLLATERAL_DDL, generateCollateral } from './espCollateral.ts';
 import { ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
@@ -163,6 +164,12 @@ async function main() {
     const esp8 = generateLosses({ institutionType: profile.institutionType, chargeOffs: t.chargeOffs, recoveries: t.recoveries, depositChargeOffs: t.depositChargeOffs, depositRecoveries: t.depositRecoveries, parties: t.parties as unknown[][], loans: t.loans as unknown[][], employees: t.employees as unknown[][], capital: equity });
     for (const [table, rows] of [['cdm_loan_chargeoff', esp8.chargeOffs], ['cdm_loan_recovery', esp8.recoveries], ['cdm_deposit_chargeoff', esp8.depositChargeOffs], ['cdm_deposit_recovery', esp8.depositRecoveries], ['cdm_insider', esp8.insiders], ['cdm_insider_loan', esp8.insiderLoans]] as const) {
       if (rows.length) await insert(admin, table, [...ESP_LOSS_COLUMNS[table]], rows);
+    }
+    // ESP alignment, phase 3: lien positions, participations, and the FHLB's qualifying collateral.
+    for (const ddl of ESP_COLLATERAL_DDL) await admin.query(ddl);
+    const esp9 = generateCollateral({ institutionType: profile.institutionType, loans: t.loans as unknown[][], insiderLoans: esp8.insiderLoans });
+    for (const [table, rows] of [['cdm_lien_position', esp9.liens], ['cdm_participation_type', esp9.participationTypes], ['cdm_fhlb_investor', esp9.investors], ['cdm_loan_collateral', esp9.collateral], ['cdm_fhlb_ineligibility_type', esp9.types], ['cdm_fhlb_ineligibility', esp9.ineligible], ['cdm_fhlb_manual_ineligibility', esp9.manual]] as const) {
+      if (rows.length) await insert(admin, table, [...ESP_COLLATERAL_COLUMNS[table]], rows as unknown[][]);
     }
     // Predictive models: each member at each of the last 12 month-ends, and where models and scores are kept.
     for (const ddl of ML_DDL) await admin.query(ddl);

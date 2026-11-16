@@ -6,6 +6,7 @@
 // figures, so this is DI's estimate, like the IRR view.
 import type { Pool } from '@dinext/tenant-db';
 import { IrrService } from './irr.ts';
+import { CollateralService } from './collateral.ts';
 
 const rows = async <T>(pool: Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
 
@@ -92,7 +93,10 @@ export class LiquidityService {
     const securities = cr.length ? v('AS0067') + v('AS0073') : investments;
     // Securities within a year are already counted as liquid; the rest can be pledged or sold.
     const pledgeableSecurities = Math.max(0, securities - invWithinYear);
-    const fhlbCollateral = (c('mortgage') * LENDABLE.firstMortgage + c('heloc') * LENDABLE.homeEquity + c('cre') * 0.5) * FHLB_LISTED;
+    // The FHLB lends against eligible collateral (ESP phase 3's qualifying collateral, loan by loan); without
+    // it, DI's estimate: performing loans at lendable values, with 70% of them listed.
+    const qcr = await new CollateralService(this.pool).fhlb();
+    const fhlbCollateral = qcr ? qcr.lendable : (c('mortgage') * LENDABLE.firstMortgage + c('heloc') * LENDABLE.homeEquity + c('cre') * 0.5) * FHLB_LISTED;
     const fhlbLimit = Math.min(fhlbCollateral, A * FHLB_ASSET_CAP);
     const fhlbAvailable = Math.max(0, fhlbLimit - borrowings);
     const discountWindow = c('auto') * LENDABLE.auto + c('consumer') * LENDABLE.consumer;
@@ -100,7 +104,9 @@ export class LiquidityService {
     const bank = this.institutionType === 'bank';
     const lineName = bank ? 'Correspondent bank line' : 'Corporate credit union line';
     const capacity = [
-      { source: 'FHLB advances', collateral: 'First mortgages, home equity and commercial real estate, current or under 60 days', collateralValue: c('mortgage') + c('heloc') + c('cre'), lendable: fhlbLimit, used: borrowings, available: fhlbAvailable },
+      qcr
+        ? { source: 'FHLB advances', collateral: 'Eligible first mortgages, home equity and commercial real estate, loan by loan', collateralValue: qcr.eligible, lendable: fhlbLimit, used: borrowings, available: fhlbAvailable }
+        : { source: 'FHLB advances', collateral: 'First mortgages, home equity and commercial real estate, current or under 60 days', collateralValue: c('mortgage') + c('heloc') + c('cre'), lendable: fhlbLimit, used: borrowings, available: fhlbAvailable },
       { source: 'Federal Reserve discount window', collateral: 'Auto and consumer loans under 30 days, if pledged', collateralValue: c('auto') + c('consumer'), lendable: discountWindow, used: 0, available: discountWindow },
       { source: 'Unpledged securities', collateral: 'Investments beyond a year, to pledge for repo or sell', collateralValue: pledgeableSecurities, lendable: securitiesValue, used: 0, available: securitiesValue },
       { source: bank ? 'Correspondent bank line' : 'Corporate credit union line', collateral: 'Committed line of credit', collateralValue: CORPORATE_LINE, lendable: CORPORATE_LINE, used: 0, available: CORPORATE_LINE },
@@ -162,7 +168,9 @@ export class LiquidityService {
       assumptions: [
         ['Liquid assets', cr.length ? 'Cash and deposits (5300 AS0009) plus investments maturing within a year (Schedule B, NV0153).' : fromCallReport ? 'Cash and balances due (Call Report RC 0081, 0071), plus 21% of securities (RC-B) assumed to mature within a year.' : 'Cash, plus 21% of investments assumed to mature within a year.'],
         ['Cash-flow ladder', `Loan payments and prepayments and investment maturities as in the IRR model; ${Math.round(CERT_RENEWAL * 100)}% of maturing certificates renew; non-maturity shares run off at the IRR model's decay rates.`],
-        ['FHLB lendable values', `First mortgages ${LENDABLE.firstMortgage * 100}%, home equity ${LENDABLE.homeEquity * 100}%, commercial real estate 50% of balance, performing loans only, with ${FHLB_LISTED * 100}% of eligible loans listed as collateral; capped at ${FHLB_ASSET_CAP * 100}% of total assets, less advances outstanding.`],
+        qcr
+          ? ['FHLB lendable values', `Eligible loans only, loan by loan from DI’s qualifying collateral report (not 60+ days late, classified, to an insider, bought into, over the LTV limit or missing documents): first mortgages ${LENDABLE.firstMortgage * 100}%, home equity ${LENDABLE.homeEquity * 100}%, commercial real estate 50% of balance; capped at ${FHLB_ASSET_CAP * 100}% of total assets, less advances outstanding.`]
+          : ['FHLB lendable values', `First mortgages ${LENDABLE.firstMortgage * 100}%, home equity ${LENDABLE.homeEquity * 100}%, commercial real estate 50% of balance, performing loans only, with ${FHLB_LISTED * 100}% of eligible loans listed as collateral; capped at ${FHLB_ASSET_CAP * 100}% of total assets, less advances outstanding.`],
         ['Discount window', `Auto loans ${LENDABLE.auto * 100}%, consumer loans and cards ${LENDABLE.consumer * 100}%, under 30 days past due, assuming they are pledged under a borrower-in-custody arrangement.`],
         ['Securities', `Investments beyond a year at ${LENDABLE.securities * 100}% of value, for repo or sale.`],
         [bank ? 'Correspondent line' : 'Corporate line and CLF', bank ? `A committed $${CORPORATE_LINE / 1e6}M correspondent bank line.` : `A committed $${CORPORATE_LINE / 1e6}M corporate line; CLF access through the corporate credit union, not counted as capacity.`],

@@ -43,7 +43,7 @@ Run it after any schema change, so the mapping can't drift unnoticed.
 | Third-party feed | 147 | Sources, when a feature needs one. |
 | Work and people | 128 | DI-Next has its own where needed. |
 
-Business layer: 277 covered, 29 partial, 84 missing, 359 not needed (after phase 2; 244, 43 and 106 before phase 1). See `mapping.md`.
+Business layer: 284 covered, 30 partial, 76 missing, 359 not needed (after phase 3; 244, 43 and 106 before phase 1). See `mapping.md`.
 
 ## Phases
 
@@ -52,8 +52,8 @@ Business layer: 277 covered, 29 partial, 84 missing, 359 not needed (after phase
 | 1 (done) | `cdm_account`, `cdm_account_holding`, `cdm_household`, `cdm_party_detail`, `cdm_party_address`, `cdm_loan_terms`, `cdm_deposit_terms`: accounts and which loans and shares sit under each, households, member number, names, TIN type, language, deceased, marketing opt-out, address, and loan and share terms (payment, due date, APR, rate type, credit limit, opening deposit, certificate term, auto-renew) | 0 |
 | 1b (done) | `cdm_product_detail`, `cdm_cross_sell_group`, `cdm_dividend_tier`, `cdm_card_product`, `cdm_card_terms`, `cdm_misc_product`, `cdm_misc_account`, and columns on phase 1's tables: product details and cross-sell groups, rate tiers by balance, card products and expiry, safe deposit boxes, servicing-branch overrides, each indirect loan's dealer (as Indirect's dealer figures assign it), loan maturity, the renewing amount, account titles and relationship codes, name prefix and suffix, phones and a second email. The loan's application link and who decided it stay out: the demo seed builds applications apart from the loan book. | 0 |
 | 2 (done) | `cdm_loan_chargeoff`, `cdm_loan_recovery`, `cdm_deposit_chargeoff`, `cdm_deposit_recovery`, `cdm_insider`, `cdm_insider_loan`: each charge-off and recovery, loan by loan and for overdrawn checking closed with a negative balance; directors, committee members, executive officers, principal shareholders and employees, and their loans with the board's approval (Regulation O, NCUA 701.21(d)). The seed's loan book had charged off too few loans for the losses its Call Report reported, so loans now charge off at realistic yearly rates by product, and the Call Report's charge-off and recovery lines are the sums of these rows. Off-core deposits have no feed in DI, so their charge-offs are not needed yet. | 0 |
-| 3 | FHLB collateral eligibility, lien position, participations | 8 |
-| 4 | Account-level month-end snapshots (loans, shares, people, accounts, households); waits for 1 to 3 | 17 |
+| 3 (done) | `cdm_lien_position`, `cdm_participation_type`, `cdm_fhlb_investor`, `cdm_loan_collateral`, `cdm_fhlb_ineligibility_type`, `cdm_fhlb_ineligibility`, `cdm_fhlb_manual_ineligibility`: each real-estate loan's lien and FHLB collateral category, a bank's participations sold and bought with the other bank, and every reason a loan can't be pledged, ranked (60+ days late, classified, to an insider, bought into, over the LTV limit, a document missing from the file). The liquidity model now lends against the eligible loans instead of assuming 70% of performing loans are listed; the FHLB's 20%-of-assets cap still binds for both demo tenants, so capacity is unchanged. `cdm_loan.balance` stays the institution's own share of a participation. | 0 |
+| 4 | Account-level month-end snapshots (loans, shares, people, accounts, households), and the quarterly collateral report's history; waits for 1 to 3 | 18 |
 | 5 | Services per account, channel activity, logins | 17 |
 | 6 | Profitability per account and member, funds transfer pricing | 15 |
 | 7 | Membership applications, alerts, deduplication, marketing touches | 29 |

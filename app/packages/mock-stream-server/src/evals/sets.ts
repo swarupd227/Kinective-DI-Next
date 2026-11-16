@@ -197,6 +197,9 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-CO-001', set: 'golden', persona: 'executive', q: 'Show charge-offs and recoveries by loan type', agent: 'Delinquency', contains: ['They add up to the 5300 Schedule A for that quarter'], notContains: ['(detail '], approval: 'none' },
   { id: 'GQ-CO-002', set: 'golden', persona: 'bank_cfo', q: 'Which loans were charged off this year?', agent: 'Delinquency', contains: ['They add up to the FFIEC 051 RI-B for that quarter'], notContains: ['(detail '], approval: 'none' },
   { id: 'GQ-INS-001', set: 'golden', persona: 'executive', q: 'Show our insider loans', agent: 'Compliance & Problem Management', contains: ['Under NCUA 701.21(d)', 'no board approval on record'], approval: 'none' },
+  // ESP phase 3: FHLB collateral loan by loan, and participations.
+  { id: 'GQ-COLL-001', set: 'golden', persona: 'bank_cfo', q: 'How much of our collateral is eligible for the FHLB?', agent: 'Liquidity', contains: ['can be pledged to the FHLB', 'the cap is', 'Participations:'], approval: 'none' },
+  { id: 'GQ-COLL-002', set: 'golden', persona: 'executive', q: 'Which loans can’t be pledged to the FHLB?', agent: 'Liquidity', contains: ['can be pledged to the FHLB', 'The largest reason loans are out is'], notContains: ['Participations:'], approval: 'none' },
   { id: 'GQ-INS-002', set: 'golden', persona: 'executive', q: 'Are we within Regulation O on loans to directors?', agent: 'Compliance & Problem Management', contains: ['board-approval threshold'], approval: 'none' },
   { id: 'GQ-NPL-002', set: 'golden', persona: 'bank_cfo', q: 'Chart our NPL ratio by quarter', agent: 'Analytics Q&A', approval: 'none' },
   // Core mapping: Kinective's standard columns locked, the institution's own added by approval.

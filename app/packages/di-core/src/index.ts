@@ -39,6 +39,7 @@ export { compileMapExpr, MapExprError, type CompileScope } from './mapExpr.ts';
 export { IRR_LIMITS, IRR_LIMITS_BANK, IRR_WATCH_SHARE, IrrService, RAMPS_BP, SHOCKS_BP } from './irr.ts';
 export { CHARGED_OFF, DQ_BUCKETS, DelinquencyService, type DqScope } from './delinquency.ts';
 export { InsiderService, approvalThreshold, type Insider } from './insiders.ts';
+export { CollateralService, FHLB_LENDABLE, type QcrCategory } from './collateral.ts';
 export { LIQUIDITY_POLICY, LiquidityService, pctAgainst } from './liquidity.ts';
 export { FundingRiskService, type RunScenario } from './fundingRisk.ts';
 export { NiiService, NII_GROWTH_WATCH } from './nii.ts';

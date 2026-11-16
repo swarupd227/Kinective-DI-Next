@@ -1,7 +1,7 @@
 // Liquidity on the shared module agent: the liquidity ratios, the cash-flow ladder, borrowing capacity by
 // source and survival under share runoff. Read-only, and honest that capacity is DI's estimate.
 import { z } from 'zod';
-import { CoreError, pctAgainst, type FundingRiskService, type LiquidityService } from '@dinext/di-core';
+import { CoreError, pctAgainst, type CollateralService, type FundingRiskService, type LiquidityService } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 const NO_ACCESS = 'Liquidity isn’t part of your DI access. It is for the finance team and executives.';
@@ -10,6 +10,8 @@ const guard = (ctx: ModuleContext) => {
 };
 /** Questions about what borrowers could still draw on their lines (ESP phase 1's credit limits). */
 export const COMMITMENTS_REQUEST = /\bunused (?:credit )?lines?\b|\bunused commitments?\b|\bunfunded commitments?\b|\bundrawn (?:credit )?lines?\b|\bcould (?:still )?draw\b|\bdraw (?:down )?(?:on )?(?:their|the) lines\b/i;
+/** FHLB collateral loan by loan (ESP phase 3): what can be pledged, why the rest can't, and participations. */
+export const COLLATERAL_REQUEST = /\bqualifying collateral\b|\bqcr\b|\bcollateral (?:report|eligib\w*|file)\b|\b(?:eligible|pledgeable|ineligible) (?:collateral|loans?|mortgages?)\b|\b(?:can't|cannot|can’t|couldn't|could not) (?:be )?pledge\w*|\bpledge\w* (?:to|with) the fhlb\b|\bfhlb collateral\b|\bcollateral (?:for|with|at) the fhlb\b|\bloan participations?\b|\bparticipations? (?:we )?(?:sold|bought|purchased)\b|\b(?:our|which) participations\b|\blien positions?\b/i;
 const m = (n: number) => (Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : `$${(n / 1e6).toFixed(1)}M`);
 const p1 = (n: number) => `${n.toFixed(1)}%`;
 
@@ -52,7 +54,7 @@ export function amountFrom(text: string): number | null {
 
 const RATES_UP = /\brates? (?:rise|rises|go up|goes up|increase|climb|keep rising)|\brising rates\b|\bhigher rates\b|\brate (?:hikes?|increases?)\b|\bif rates\b/;
 
-export function liquidityModule(liq: LiquidityService, funding?: FundingRiskService | null): ModuleSpec {
+export function liquidityModule(liq: LiquidityService, funding?: FundingRiskService | null, collateral?: CollateralService | null): ModuleSpec {
   const bankOnly = () => {
     if (!funding) throw new CoreError('INVALID', 'The 30-day funding test, LCR and NSFR are built from a bank’s FFIEC Call Report (uninsured deposits and the securities’ fair values). For a credit union, ask how long we’d last if shares ran off.');
     return funding;
@@ -61,13 +63,14 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
     id: 'liquidity',
     prefix: 'liq',
     agent: 'Liquidity',
-    request: new RegExp(`${COMMITMENTS_REQUEST.source}|${funding ? `${SECURITIES_REQUEST.source}|${LTD_REQUEST.source}|${DEPOSIT_REQUEST.source}|` : ''}${/\blcr\b|\bnsfr\b|\bliquidity coverage\b|\bnet stable funding\b|\bsvb\b|\bsilicon valley\b|\bwithout selling\b|\bsell(?:ing)? (?:assets|securities|bonds|investments) at a loss\b|\bunrealized loss|\buninsured (?:deposits? )?(?:run|runoff|run-off|outflows?|leave|flight)\b|\buninsured deposits?\b[^.?!]*\b(?:leave|left|run|withdraw)|\bliquidity\b|\bborrowing capacity\b|\bhow much (could|can) we borrow\b|\bfhlb\b|\bdiscount window\b|\bcontingency funding\b|\b(deposit|share) (run|runoff|run-off|outflows?)\b|\brun on (deposits|shares)\b|\bclf\b|\bcorporate (credit union )?line\b|\bcash.flow ladder\b|\bliquid assets\b|\bsurvive\b.*\b(run|outflow|leave)/.source}`, 'i'),
+    request: new RegExp(`${COMMITMENTS_REQUEST.source}|${COLLATERAL_REQUEST.source}|${funding ? `${SECURITIES_REQUEST.source}|${LTD_REQUEST.source}|${DEPOSIT_REQUEST.source}|` : ''}${/\blcr\b|\bnsfr\b|\bliquidity coverage\b|\bnet stable funding\b|\bsvb\b|\bsilicon valley\b|\bwithout selling\b|\bsell(?:ing)? (?:assets|securities|bonds|investments) at a loss\b|\bunrealized loss|\buninsured (?:deposits? )?(?:run|runoff|run-off|outflows?|leave|flight)\b|\buninsured deposits?\b[^.?!]*\b(?:leave|left|run|withdraw)|\bliquidity\b|\bborrowing capacity\b|\bhow much (could|can) we borrow\b|\bfhlb\b|\bdiscount window\b|\bcontingency funding\b|\b(deposit|share) (run|runoff|run-off|outflows?)\b|\brun on (deposits|shares)\b|\bclf\b|\bcorporate (credit union )?line\b|\bcash.flow ladder\b|\bliquid assets\b|\bsurvive\b.*\b(run|outflow|leave)/.source}`, 'i'),
     noAccess: NO_ACCESS,
     sources: [{ kind: 'table', label: 'Loans, investments, deposits and borrowings', ref: 'table:cdm_loan' }],
     prompt: ({ tenant, user, title }) => `You are the Liquidity agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) manages liquidity for the ALCO and the contingency funding plan. DI estimates on-balance-sheet liquidity, a 30/90/180/365-day cash-flow ladder, borrowing capacity (FHLB, the Federal Reserve discount window, unpledged securities, the corporate or correspondent line) and survival under share runoff. Capacity uses typical lendable values; the FHLB's and Reserve Bank's own collateral rules set the real figures, so say it is an estimate.
 
 - "How is our liquidity?", "are we within policy?": liq_summary.
 - "How much could we borrow tomorrow?", "what's our FHLB capacity?": liq_capacity.
+- "How much of our collateral is eligible for the FHLB?", "which loans can't be pledged?", "show our loan participations": liq_collateral.
 - "Can we survive a 20% deposit run?": liq_stress with runoff_pct.
 - "Show the cash-flow ladder": liq_ladder.
 - "What assumptions?": liq_assumptions.
@@ -103,6 +106,7 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
       if (/ladder|cash.flow|maturit|next (30|90) days/.test(t)) return { tool: 'liq_ladder', args: {} };
       if (/\brun\b|runoff|run-off|outflow|survive|stress|leave/.test(t)) return { tool: 'liq_stress', args: { runoff_pct: runoffFrom(t) ?? 20 } };
       if (COMMITMENTS_REQUEST.test(t)) return { tool: 'liq_commitments', args: {} };
+      if (COLLATERAL_REQUEST.test(text) || (/\bfhlb\b/.test(t) && /\b(?:collateral|pledge\w*|eligib\w*)\b/.test(t))) return { tool: 'liq_collateral', args: {} };
       if (/borrow|capacity|fhlb|discount window|corporate|correspondent|clf|line/.test(t)) return { tool: 'liq_capacity', args: {} };
       return { tool: 'liq_summary', args: {} };
     },
@@ -151,6 +155,32 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
           return {
             text: `DI estimates **${m(a.contingent)}** could be raised quickly beyond liquid assets. The largest source is ${inSentence(top.source)}, **${m(top.available)}** available${top.used ? ` after ${m(top.used)} already drawn` : ''}.${a.clf ? ` ${a.clf}` : ''} These are estimates at typical lendable values; the FHLB’s and the Reserve Bank’s collateral rules and actual pledges set the real figures.`,
             blocks: [moduleTable(spec, 'Borrowing capacity', ctx.runId, 'liq.capacity', [{ field: 'source', headerName: 'Source', type: 'text' }, { field: 'collateral', headerName: 'Collateral', type: 'text' }, { field: 'value', headerName: 'Collateral value', type: 'currency' }, { field: 'lendable', headerName: 'Lendable value', type: 'currency' }, { field: 'used', headerName: 'Used', type: 'currency' }, { field: 'available', headerName: 'Available', type: 'currency' }], a.capacity.map((c) => ({ source: c.source, collateral: c.collateral, value: Math.round(c.collateralValue), lendable: Math.round(c.lendable), used: Math.round(c.used), available: Math.round(c.available) })))],
+          };
+        },
+      },
+      {
+        name: 'liq_collateral',
+        description: 'FHLB qualifying collateral loan by loan: real-estate loans by the FHLB’s categories, how much is eligible and what it lends against, the first-ranked reason each other loan can’t be pledged, files missing a document that could be fixed, and loan participations sold and bought.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          guard(ctx);
+          const r = collateral ? await collateral.report() : null;
+          if (!r) return { text: 'Collateral detail isn’t loaded for this institution, so the FHLB capacity is DI’s estimate at typical lendable values.' };
+          const a = await liq.analysis();
+          const fhlb = a.capacity.find((c) => c.source === 'FHLB advances')!;
+          const capped = fhlb.lendable < r.lendable - 1;
+          const top = [...r.reasons].sort((x, y) => y.balance - x.balance)[0];
+          const sold = r.participations.sold;
+          const bought = r.participations.purchased;
+          const parts = sold || bought ? ` Participations: ${sold ? `${sold.loans} loans partly sold, ${m(sold.sold)} to other banks with ${m(sold.kept)} kept on our books` : ''}${sold && bought ? '; ' : ''}${bought ? `${bought.loans} loans bought into, ${m(bought.balance)}, which the FHLB won’t take` : ''}.` : '';
+          return {
+            text: `Of **${m(r.balance)}** in real-estate loans, **${m(r.eligible)}** (${p1(r.eligiblePct)}) can be pledged to the FHLB, worth **${m(r.lendable)}** at its lendable values.${capped ? ` The FHLB caps advances at 20% of assets, ${m(fhlb.lendable)}, so collateral isn’t what limits us: the cap is.` : ''}${top ? ` The largest reason loans are out is ${top.reason.toLowerCase()}: ${m(top.balance)} across ${top.loans} loans.` : ''}${r.fixable.length ? ` ${r.fixable.length} files are out only for a missing document (${m(r.fixableBalance)}); completing them would add ${m(r.fixableLendable)} of lendable value.` : ''}${parts} The FHLB’s own review of the collateral sets the final figure.`,
+            blocks: [
+              moduleTable(spec, 'FHLB qualifying collateral', ctx.runId, 'liq.collateral', [{ field: 'category', headerName: 'Collateral category', type: 'text' }, { field: 'loans', headerName: 'Loans', type: 'count' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'eligible', headerName: 'Eligible', type: 'currency' }, { field: 'share', headerName: 'Eligible share', type: 'text' }, { field: 'rate', headerName: 'Lends at', type: 'text' }, { field: 'lendable', headerName: 'Lendable value', type: 'currency' }], r.categories.map((c) => ({ category: c.category, loans: c.loans, balance: Math.round(c.balance), eligible: Math.round(c.eligible), share: p1(c.balance ? (c.eligible / c.balance) * 100 : 0), rate: `${Math.round(c.lendableRate * 100)}%`, lendable: Math.round(c.lendable) }))),
+              moduleTable(spec, 'Why loans can’t be pledged', ctx.runId, 'liq.collateral.reasons', [{ field: 'reason', headerName: 'First reason', type: 'text' }, { field: 'loans', headerName: 'Loans', type: 'count' }, { field: 'balance', headerName: 'Balance', type: 'currency' }], r.reasons.map((x) => ({ reason: x.reason, loans: x.loans, balance: Math.round(x.balance) }))),
+              ...(r.participations.byInvestor.length ? [moduleTable(spec, 'Loan participations', ctx.runId, 'liq.collateral.participations', [{ field: 'kind', headerName: '', type: 'text' }, { field: 'investor', headerName: 'Bank', type: 'text' }, { field: 'loans', headerName: 'Loans', type: 'count' }, { field: 'amount', headerName: 'Amount', type: 'currency' }], r.participations.byInvestor.map((x) => ({ kind: x.kind, investor: x.investor, loans: x.loans, amount: Math.round(x.amount) })))] : []),
+            ],
+            suggestions: ['How much could we borrow tomorrow?'],
           };
         },
       },
