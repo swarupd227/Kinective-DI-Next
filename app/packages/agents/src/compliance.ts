@@ -3,7 +3,7 @@
 // and never decides whether something is a regulatory complaint under a rule. Closing an issue from
 // a regulator is high risk, with the issue number typed (AI-AGT-241).
 import { z } from 'zod';
-import { CoreError, findPerson, ISSUE_REGULATORS, ISSUE_ROOT_CAUSES, type InsiderService, type IssueService } from '@dinext/di-core';
+import { CoreError, findPerson, ISSUE_REGULATORS, ISSUE_ROOT_CAUSES, type BalanceHistoryService, type InsiderService, type IssueService } from '@dinext/di-core';
 import type { Pool } from '@dinext/tenant-db';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
@@ -26,7 +26,10 @@ export const namedBranch = (t: string) => [/\b(?:at|in|for) ([A-Z][a-z]+)\b/g, /
 /** Loans to insiders: directors, officials, executive officers, principal shareholders, employees. */
 export const INSIDER = /\binsider (loans?|lending|credit)\b|\breg(ulation)? ?o\b|\b215\.4\b|\b701\.21\b|\bloans? to (our )?(insiders|officials|directors|the board|board members|executive officers|employees|staff)\b|\b(official|director|employee|staff)[- ]owned loans?\b|\b(officials|directors|employees)['’] loans\b/i;
 
-export function complianceModule(issues: IssueService, pool: Pool, insiders?: InsiderService): ModuleSpec {
+/** Voided and reversed transactions, fee refunds by employee, returned loan payments (ESP phase 4). */
+export const REVERSALS = /\b(?:voided|reversed|voids|reversals?)\b[^.?!]*\b(?:transactions?|fees?|payments?|entries)\b|\b(?:transactions?|fees?|payments?|entries)\b[^.?!]*\b(?:voided|reversed)\b|\bfee (?:reversals?|refunds?)\b|\brefund(?:ed|s|ing)? (?:the most |so many |more )?fees\b|\breturned (?:loan )?payments\b/i;
+
+export function complianceModule(issues: IssueService, pool: Pool, insiders?: InsiderService, history?: BalanceHistoryService): ModuleSpec {
   /** A branch the question named: a real one the viewer may see, or nothing for a word that isn't a branch. */
   const branchOf = async (asked: string | undefined, ctx: ModuleContext) => {
     const name = asked?.trim().toLowerCase();
@@ -42,7 +45,7 @@ export function complianceModule(issues: IssueService, pool: Pool, insiders?: In
     id: 'compliance',
     prefix: 'cpm',
     agent: 'Compliance & Problem Management',
-    request: /\b(complaints?|CFPB|NCUA|OCC|FDIC|BBB|root causes?)\b|\bregulatory issues?\b|\bopen issues\b|\bcompliance issues?\b|\b(past[- ]due|overdue) issues\b|\b(?:issue|case) #?\d{3,}\b|\binsider (loans?|lending|credit)\b|\breg(ulation)? ?o\b|\b215\.4\b|\b701\.21\b|\bloans? to (our )?(insiders|officials|directors|the board|board members|executive officers)\b|\b(official|director|employee|staff)[- ]owned loans?\b/i,
+    request: new RegExp(`${/\b(complaints?|CFPB|NCUA|OCC|FDIC|BBB|root causes?)\b|\bregulatory issues?\b|\bopen issues\b|\bcompliance issues?\b|\b(past[- ]due|overdue) issues\b|\b(?:issue|case) #?\d{3,}\b|\binsider (loans?|lending|credit)\b|\breg(ulation)? ?o\b|\b215\.4\b|\b701\.21\b|\bloans? to (our )?(insiders|officials|directors|the board|board members|executive officers)\b|\b(official|director|employee|staff)[- ]owned loans?\b/.source}|${REVERSALS.source}`, 'i'),
     noAccess: 'Compliance issues aren’t part of your DI access.',
     sources: [{ kind: 'table', label: 'Issues', ref: 'table:cpm_issue' }],
     prompt: ({ tenant, user, title }) => `You are the Compliance & Problem Management agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) works member and regulatory issues.
@@ -53,6 +56,7 @@ export function complianceModule(issues: IssueService, pool: Pool, insiders?: In
 - "What are the top root causes?": cpm_root_causes.
 - "Log a complaint from James Lee about a double fee": cpm_issue_create. Don't decide if it's a regulatory complaint under any rule: a person confirms the source on the card.
 - "Show our insider loans", "are we within Regulation O?", "loans to directors and officials": cpm_insider_loans. It reports the record; whether something is a violation is for the compliance officer.
+- "Show voided and reversed transactions", "who refunds the most fees?", "any returned loan payments?": cpm_reversals. It reports the record; whether a refund was wrong is for the branch manager or compliance officer.
 - "Escalate issue 3307": cpm_issue_escalate. "Close issue 3307 with resolution: ...": cpm_issue_close, with a root cause only if the user gave one.`,
     today: async (ctx) => {
       const f = await issues.list({ overdueOnly: true }, ctx);
@@ -64,6 +68,7 @@ export function complianceModule(issues: IssueService, pool: Pool, insiders?: In
       const t = text.trim().replace(/[.!?]+$/, '');
       const id = Number(/\b(?:issue|case) #?(\d{3,})\b/i.exec(t)?.[1] ?? NaN);
       if (INSIDER.test(t) && !id && !/^\s*log\b/i.test(t)) return { tool: 'cpm_insider_loans', args: {} };
+      if (REVERSALS.test(t) && !id && !/^\s*log\b/i.test(t)) return { tool: 'cpm_reversals', args: {} };
       if (/^\s*log\b|\b(log|record|open) (a |an )?(complaint|issue)\b/i.test(t)) {
         const who = /\bfrom ((?:[A-Z][\w'-]*\s?){1,3})/.exec(t)?.[1]?.trim();
         if (!who) return { say: 'Who is the complaint from?' };
@@ -101,6 +106,29 @@ export function complianceModule(issues: IssueService, pool: Pool, insiders?: In
             text: `Under ${r.rule}, **${r.officials.borrowers} of ${r.officials.people}** ${who} borrow from us: **${r.officials.loans} loans, ${money(r.officials.balance)}** outstanding. ${r.needingApproval} ${r.needingApproval === 1 ? 'is' : 'are'} over the ${money(r.threshold)} board-approval threshold.${exceptions}${limit} Employees hold ${r.employees.loans} loans (${money(r.employees.balance)}) across ${r.employees.borrowers} people; their rates should come from a benefit program open to all staff. Whether anything is a violation is the compliance officer’s call.`,
             blocks: [
               moduleTable(spec, 'Insiders and their loans', ctx.runId, 'cpm.insiders', [{ field: 'name', headerName: 'Name', type: 'text' }, { field: 'title', headerName: 'Role', type: 'text' }, { field: 'loans', headerName: 'Open loans', type: 'number' }, { field: 'committed', headerName: 'Loans and lines', type: 'currency' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'approval', headerName: 'Board approval', type: 'text' }], r.list.filter((x) => x.loans).map((x) => ({ name: x.name, title: x.title, loans: x.loans, committed: Math.round(x.committed), balance: Math.round(x.balance), approval: x.kind === 'Employee' ? 'Not required' : !x.needsApproval ? 'Under threshold' : x.unapproved.length ? `Missing (${x.unapproved.length})` : 'On record' }))),
+            ],
+            suggestions: ['Show the open regulatory issues'],
+          };
+        },
+      },
+      {
+        name: 'cpm_reversals',
+        description: 'Voided and reversed transactions over the last 30 days: teller entries keyed wrong and voided, fees charged and refunded by employee (and whether one refunds far more than the others at the branch), and loan payments returned unpaid.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx) => {
+          need(ctx);
+          const r = history ? await history.exceptions() : null;
+          if (!r) return { text: 'Voided and reversed transactions aren’t loaded for this institution; DI keeps posted transactions only.' };
+          const money = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
+          const out = r.standsOut[0];
+          const flag = out
+            ? ` **${out.name}** at ${out.branch} refunded **${out.reversals} fees (${money(out.amount)})**, ${out.againstPeers!.toFixed(1)} times the average of the other reps there${out.topMember && out.topMember.reversals >= 4 ? `, ${out.topMember.reversals} of them for ${out.topMember.name}` : ''}. Worth a look by the branch manager.`
+            : ' No rep’s refunds stand out from the others at the same branch.';
+          return {
+            text: `From ${longDate(r.from)} to ${longDate(r.to)}: **${r.voids} entries voided** and keyed again, **${r.feeRefunds.count} fees refunded** (${money(r.feeRefunds.amount)}) and **${r.returnedPayments.count} loan payments returned** unpaid (${money(r.returnedPayments.amount)}).${flag} None of these moved a balance: posted transactions leave out what was voided and the pairs that cancel. Whether a refund was wrong is the branch manager’s or compliance officer’s call.`,
+            blocks: [
+              moduleTable(spec, 'Fee refunds by employee', ctx.runId, 'cpm.reversals.reps', [{ field: 'name', headerName: 'Employee', type: 'text' }, { field: 'branch', headerName: 'Branch', type: 'text' }, { field: 'refunds', headerName: 'Fees refunded', type: 'number' }, { field: 'amount', headerName: 'Amount', type: 'currency' }, { field: 'peers', headerName: 'Against others at the branch', type: 'text' }, { field: 'member', headerName: 'Most for one member', type: 'text' }], r.reps.map((x) => ({ name: x.name, branch: x.branch, refunds: x.reversals, amount: Math.round(x.amount), peers: x.againstPeers === null ? '—' : `${x.againstPeers.toFixed(1)}×`, member: x.topMember ? `${x.topMember.name} (${x.topMember.reversals})` : '—' }))),
+              moduleTable(spec, 'Voided and reversed, by reason', ctx.runId, 'cpm.reversals.reasons', [{ field: 'kind', headerName: 'Kind', type: 'text' }, { field: 'account', headerName: 'Account', type: 'text' }, { field: 'reason', headerName: 'Reason', type: 'text' }, { field: 'count', headerName: 'Count', type: 'number' }, { field: 'amount', headerName: 'Amount', type: 'currency' }], r.byKind.map((x) => ({ kind: x.kind, account: x.account, reason: x.reason, count: x.count, amount: Math.round(x.amount) }))),
             ],
             suggestions: ['Show the open regulatory issues'],
           };

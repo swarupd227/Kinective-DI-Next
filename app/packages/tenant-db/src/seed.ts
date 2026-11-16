@@ -35,7 +35,8 @@ import { ESP_OWNER_DDL, generateOwners } from './espOwners.ts';
 import { ESP_ACCOUNT_COLUMNS, ESP_ACCOUNT_DDL, generateAccounts } from './espAccounts.ts';
 import { ESP_DETAIL_COLUMNS, ESP_DETAIL_DDL, generateDetails } from './espDetails.ts';
 import { ESP_LOSS_COLUMNS, ESP_LOSS_DDL, generateLosses } from './espLosses.ts';
-import { ESP_COLLATERAL_COLUMNS, ESP_COLLATERAL_DDL, generateCollateral } from './espCollateral.ts';
+import { collateralHistory, ESP_COLLATERAL_COLUMNS, ESP_COLLATERAL_DDL, generateCollateral } from './espCollateral.ts';
+import { ESP_HISTORY_COLUMNS, ESP_HISTORY_DDL, generateExceptions, generateHistory } from './espHistory.ts';
 import { ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
@@ -53,9 +54,9 @@ import { generateOpRisk, OPRISK_DDL } from './oprisk.ts';
 
 const BATCH = 2000;
 
-async function insert(conn: mysql.Connection, table: string, cols: string[], rows: unknown[][]) {
-  for (let i = 0; i < rows.length; i += BATCH) {
-    await conn.query(`INSERT INTO ${table} (${cols.join(', ')}) VALUES ?`, [rows.slice(i, i + BATCH)]);
+async function insert(conn: mysql.Connection, table: string, cols: string[], rows: unknown[][], batch = BATCH) {
+  for (let i = 0; i < rows.length; i += batch) {
+    await conn.query(`INSERT INTO ${table} (${cols.join(', ')}) VALUES ?`, [rows.slice(i, i + batch)]);
   }
 }
 
@@ -170,6 +171,16 @@ async function main() {
     const esp9 = generateCollateral({ institutionType: profile.institutionType, loans: t.loans as unknown[][], insiderLoans: esp8.insiderLoans });
     for (const [table, rows] of [['cdm_lien_position', esp9.liens], ['cdm_participation_type', esp9.participationTypes], ['cdm_fhlb_investor', esp9.investors], ['cdm_loan_collateral', esp9.collateral], ['cdm_fhlb_ineligibility_type', esp9.types], ['cdm_fhlb_ineligibility', esp9.ineligible], ['cdm_fhlb_manual_ineligibility', esp9.manual]] as const) {
       if (rows.length) await insert(admin, table, [...ESP_COLLATERAL_COLUMNS[table]], rows as unknown[][]);
+    }
+    // ESP alignment, phase 4: each loan and share at each month-end, added up by account, person and
+    // household; the collateral report by quarter; voided and reversed transactions.
+    for (const ddl of ESP_HISTORY_DDL) await admin.query(ddl);
+    const esp10 = generateHistory({ loanMonths: t.loanMonths, depositMonths: t.depositMonths, loans: t.loans as unknown[][], deposits: t.deposits as unknown[][], parties: t.parties as unknown[][], holdings: esp6.holdings as unknown[][] });
+    const qcrHistory = collateralHistory({ loans: t.loans as unknown[][], loanMonths: t.loanMonths, insiderLoans: esp8.insiderLoans, collateral: esp9.collateral, manual: esp9.manual });
+    const exceptions = generateExceptions({ share: esp4.share as unknown[][], loan: esp4.loan as unknown[][], employees: t.employees as unknown[][], deposits: t.deposits as unknown[][] });
+    for (const [table, rows] of [['hist_loan_account_month', t.loanMonths], ['hist_deposit_account_month', t.depositMonths], ['hist_account_month', esp10.accounts], ['hist_person_month', esp10.people], ['hist_household_month', esp10.households], ['hist_fhlb_collateral_quarter', qcrHistory], ['cdm_transaction_exception', exceptions]] as const) {
+      // Millions of short rows: bigger batches keep the round trips to the cloud database down.
+      if (rows.length) await insert(admin, table, [...ESP_HISTORY_COLUMNS[table]], rows as unknown[][], 10_000);
     }
     // Predictive models: each member at each of the last 12 month-ends, and where models and scores are kept.
     for (const ddl of ML_DDL) await admin.query(ddl);

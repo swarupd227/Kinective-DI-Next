@@ -292,6 +292,10 @@ export interface GeneratedTenant {
   depositChargeOffs: unknown[][];
   /** [account, date, amount]. */
   depositRecoveries: unknown[][];
+  /** Each open loan at each month-end: [month end, loan, balance, delinquency status]. The rows add up to histLoan. */
+  loanMonths: unknown[][];
+  /** Each open share at each month-end: [month end, account, balance, rate]. The rows add up to histDeposit. */
+  depositMonths: unknown[][];
 }
 
 /** Members leave at about 6% a year, so net growth lands between 1% and 2%, as at most credit unions now. */
@@ -590,6 +594,9 @@ export function generate(profile: TenantProfile): GeneratedTenant {
   const lastBal = new Map<number, number>();
   /** What each loan charged off in the history window: its balance at the month-end before. */
   const chargedAmount = new Map<number, number>();
+  // The same month-ends account by account (ESP phase 4): the rows histLoan and histDeposit add up.
+  const loanMonths: unknown[][] = [];
+  const depositMonths: unknown[][] = [];
   // Account-level paths give the mix and the branches, not believable totals: late account opening alone
   // grew shares 13% a year and sank loan-to-share 18 points in 18 months. Each month-end is scaled so loans
   // grow about 3% a year and shares about 5%, with the spring tax-refund bump in shares: loan-to-share
@@ -656,6 +663,7 @@ export function generate(profile: TenantProfile): GeneratedTenant {
         }
       }
       if (agg[0] || agg[3]) histLoan.set(key, agg);
+      if (bal > 0 && state) loanMonths.push([me, l.id, round2(bal), state]);
       if (state && state !== 'Charged off') {
         dqState.set(l.id, state);
         lastBal.set(l.id, bal);
@@ -681,6 +689,7 @@ export function generate(profile: TenantProfile): GeneratedTenant {
       const then = Math.max(0, now + (DEPOSIT_BETA[d.mix.category] ?? 0.3) * (fedFundsAt(me) - fedFundsAt(months[months.length - 1]!)));
       agg[2]! += bal * then;
       histDeposit.set(key, agg);
+      depositMonths.push([me, d.id, round2(bal), Math.round(then * 1000) / 1000]);
     }
     for (const p of parties) {
       if (!p.member || p.join > at) continue;
@@ -785,6 +794,8 @@ export function generate(profile: TenantProfile): GeneratedTenant {
     recoveries: recoveryRows,
     depositChargeOffs: depositChargeOffRows,
     depositRecoveries: depositRecoveryRows,
+    loanMonths,
+    depositMonths,
   };
 }
 

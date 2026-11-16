@@ -130,3 +130,62 @@ export function generateCollateral(x: CollateralInputs) {
     manual,
   };
 }
+
+const SIXTY_PLUS = new Set(['60–89 days', '90–179 days', '180–359 days', '360+ days']);
+
+export interface CollateralHistoryInputs {
+  loans: unknown[][];
+  /** [month end, loan, balance, delinquency status], from the generator. */
+  loanMonths: unknown[][];
+  /** cdm_insider_loan rows: [loan, party, kind, effective, expiration, approved]. */
+  insiderLoans: unknown[][];
+  /** This generator's collateral and manual rows, for participations bought and files missing a document. */
+  collateral: unknown[][];
+  manual: unknown[][];
+}
+
+/**
+ * The qualifying collateral report at each quarter-end in the history (fhlb_loanprod1histyq): real-estate
+ * loans by collateral category and first-ranked reason, at that month-end's balance and delinquency. The
+ * loan's rating, score and loan-to-value are today's, and a loan's participation and insider status count
+ * from when they began; a file's missing document counts from the review that found it.
+ */
+export function collateralHistory(x: CollateralHistoryInputs) {
+  const loans = new Map((x.loans as unknown[][]).map((l) => [Number(l[0]), l]));
+  const purchased = new Set((x.collateral as unknown[][]).filter((c) => c[4] === 'PURCHASED').map((c) => Number(c[0])));
+  const docs = new Map((x.manual as unknown[][]).map((m) => [Number(m[1]), String(m[5])]));
+  const insider = (x.insiderLoans as unknown[][]).map((r) => ({ loan: Number(r[0]), from: String(r[3]), to: r[4] ? String(r[4]) : null }));
+  const agg = new Map<string, [number, number]>();
+  for (const [me, id, balance, status] of x.loanMonths as [string, number, number, string][]) {
+    if (!/-(03|06|09|12)-/.test(me)) continue;
+    const l = loans.get(id);
+    if (!l) continue;
+    const cat = String(l[4]);
+    const category = cat === 'Mortgage' ? 'One-to-four family first liens' : cat === 'HELOC' ? 'Home equity' : cat === 'Commercial Real Estate' ? 'Commercial real estate' : null;
+    if (!category) continue;
+    const rating = l[16] as number | null;
+    const ltv = l[14] as number | null;
+    const reason = SIXTY_PLUS.has(status)
+      ? 1
+      : rating !== null && rating >= 7
+        ? 2
+        : insider.some((i) => i.loan === id && i.from <= me && (!i.to || i.to > me))
+          ? 3
+          : purchased.has(id)
+            ? 4
+            : ltv !== null && ltv > FHLB_LTV_LIMIT[category]!
+              ? 5
+              : docs.has(id) && docs.get(id)! <= me
+                ? 6
+                : null;
+    const key = `${me}|${category}|${reason ?? ''}`;
+    const v = agg.get(key) ?? [0, 0];
+    v[0] += 1;
+    v[1] += balance;
+    agg.set(key, v);
+  }
+  return [...agg].map(([k, [n, b]]) => {
+    const [me, category, reason] = k.split('|');
+    return [me, category, reason ? Number(reason) : null, n, Math.round(b * 100) / 100];
+  });
+}

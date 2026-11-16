@@ -51,6 +51,23 @@ const depositChange = (p: MemberProfile) => {
 };
 
 /** The short card: who, what they hold, and the two scores with "Why?" (spec 8.24 wireframe). */
+/** Deposits and loans now against 12 month-ends earlier (ESP phase 4), for the engagement facts. */
+function balanceTrend(p: MemberProfile): { label: string; value: string }[] {
+  const h = p.balanceHistory ?? [];
+  const last = h[h.length - 1];
+  if (!last) return [];
+  const want = `${Number(last.monthEnd.slice(0, 4)) - 1}${last.monthEnd.slice(4, 7)}`;
+  const then = h.find((x) => x.monthEnd.startsWith(want)) ?? h[0]!;
+  if (then === last) return [];
+  const usd = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
+  const pct = (a: number, b: number) => (a > 0 ? ` (${b >= a ? '+' : '−'}${Math.abs(Math.round(((b - a) / a) * 100))}%)` : '');
+  const span = `${monthYear(then.monthEnd)} to ${monthYear(last.monthEnd)}`;
+  return [
+    { label: 'Deposits, month-ends', value: `${usd(then.deposits)} to ${usd(last.deposits)}${pct(then.deposits, last.deposits)}, ${span}` },
+    ...(then.loans || last.loans ? [{ label: 'Loans, month-ends', value: `${usd(then.loans)} to ${usd(last.loans)}, ${span}` }] : []),
+  ];
+}
+
 export function memberCard(p: MemberProfile, runId?: string, selected = true): MemberCardBlock {
   return {
     id: newBlockId('mbc'),
@@ -230,6 +247,7 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
             { label: 'Direct deposit', value: dd.status === 'active' ? 'Active' : dd.status === 'stopped' ? `Stopped${dd.changed ? ` ${longDate(dd.changed)}` : ''}` : 'Not set up' },
             { label: 'Last digital login', value: p.lastLogin ? longDate(p.lastLogin) : 'Never' },
             ...(u ? [{ label: 'Logins, 90 days', value: `${u.logins90d} (${u.mobileLogins90d} on mobile)` }, { label: 'Fees, 90 days', value: `$${u.fees90d.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` }] : []),
+            ...balanceTrend(p),
             { label: 'Model', value: `${p.attrition.model}, run ${longDate(p.attrition.runDate)}` },
           ],
         },

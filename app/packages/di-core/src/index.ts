@@ -40,6 +40,7 @@ export { IRR_LIMITS, IRR_LIMITS_BANK, IRR_WATCH_SHARE, IrrService, RAMPS_BP, SHO
 export { CHARGED_OFF, DQ_BUCKETS, DelinquencyService, type DqScope } from './delinquency.ts';
 export { InsiderService, approvalThreshold, type Insider } from './insiders.ts';
 export { CollateralService, FHLB_LENDABLE, type QcrCategory } from './collateral.ts';
+export { BalanceHistoryService, type FeeReversalRep, type Outflow } from './balanceHistory.ts';
 export { LIQUIDITY_POLICY, LiquidityService, pctAgainst } from './liquidity.ts';
 export { FundingRiskService, type RunScenario } from './fundingRisk.ts';
 export { NiiService, NII_GROWTH_WATCH } from './nii.ts';

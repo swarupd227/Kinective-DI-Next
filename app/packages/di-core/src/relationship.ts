@@ -121,6 +121,8 @@ export interface MemberProfile {
   creditScore: { score: number; asOf: string; from: string } | null;
   /** Loans charged off, with when and the amount lent. */
   chargeOffs: { count: number; original: number; items: { product: string; chargedOff: string; original: number; amount: number | null; recovered: number }[] };
+  /** Deposits and loans at each month-end on file (ESP phase 4), oldest first; empty where the snapshots aren't loaded. */
+  balanceHistory: { monthEnd: string; deposits: number; loans: number }[];
   cards: { kind: 'Debit' | 'Credit'; last4: string; status: string; opened: string; activated: string | null; closed: string | null; account: string }[];
   /** Checking transactions in the last 90 days: how many, and the latest. Null where the core's transactions aren't loaded. */
   transactions: { total90d: number; items: { date: string; description: string; amount: number; type: string; account: string }[] } | null;
@@ -465,6 +467,8 @@ export class RelationshipService {
       'SELECT l.loan_category, l.charge_off_date, l.original_amount, c.amount, (SELECT SUM(r.amount) FROM cdm_loan_recovery r WHERE r.loan_id = l.loan_id) AS recovered FROM cdm_loan l LEFT JOIN cdm_loan_chargeoff c ON c.loan_id = l.loan_id WHERE l.party_id = ? AND l.charge_off_date IS NOT NULL ORDER BY l.charge_off_date DESC',
       [partyId],
     ).catch(() => q<ChargedOff>('SELECT loan_category, charge_off_date, original_amount, NULL AS amount, NULL AS recovered FROM cdm_loan WHERE party_id = ? AND charge_off_date IS NOT NULL ORDER BY charge_off_date DESC', [partyId]));
+    // Month-end balances (ESP phase 4), where the snapshots are loaded.
+    const months = await q<{ month_end: unknown; deposit_balance: number; loan_balance: number }>('SELECT month_end, deposit_balance, loan_balance FROM hist_person_month WHERE party_id = ? ORDER BY month_end', [partyId]).catch(() => []);
     const cards = await q<{ kind: 'Debit' | 'Credit'; last4: string; status: string; opened: unknown; activated: unknown; closed: unknown; account_id: number }>('SELECT kind, last4, status, opened, activated, closed, account_id FROM cdm_card WHERE party_id = ? ORDER BY closed IS NOT NULL, opened DESC', [partyId]).catch(() => []);
     // The core's checking transactions, where they're loaded; a table that isn't there, or is empty for the
     // whole institution, means none are.
@@ -614,6 +618,7 @@ export class RelationshipService {
       })(),
       creditScore: score?.credit_score ? { score: score.credit_score, asOf: day10(score.open_date), from: `the ${label(score.loan_category).toLowerCase()} application` } : null,
       chargeOffs: { count: chargedOff.length, original: chargedOff.reduce((s, x) => s + Number(x.original_amount), 0), items: chargedOff.map((x) => ({ product: label(x.loan_category), chargedOff: day10(x.charge_off_date), original: Number(x.original_amount), amount: x.amount === null ? null : Number(x.amount), recovered: Number(x.recovered ?? 0) })) },
+      balanceHistory: months.map((x) => ({ monthEnd: day10(x.month_end), deposits: Number(x.deposit_balance), loans: Number(x.loan_balance) })),
       cards: cards.map((k) => ({ kind: k.kind, last4: k.last4, status: k.status, opened: day10(k.opened), activated: k.activated ? day10(k.activated) : null, closed: k.closed ? day10(k.closed) : null, account: String(k.account_id % 10_000).padStart(4, '0') })),
       transactions: txns === null ? null : { total90d: txns.length, items: txns.slice(0, 15).map((t) => ({ date: day10(t.post_date), description: t.description.slice(0, 80), amount: Number(t.amount), type: t.txn_type, account: `Checking …${String(t.account_id % 10_000).padStart(4, '0')}` })) },
       usage: usage ? { logins90d: Number(usage.logins_90d), mobileLogins90d: Number(usage.mobile_logins_90d), billPayments90d: Number(usage.bill_payments_90d), mobileDeposits90d: Number(usage.mobile_deposits_90d), fees90d: Number(usage.fees_90d), estatementAccounts: base.estatements_since ? deps.filter((d) => day10(d.open_date) <= day10(base.estatements_since)).length || deps.length : 0, depositAccounts: deps.length } : null,

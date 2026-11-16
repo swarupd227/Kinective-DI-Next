@@ -49,6 +49,27 @@ export class CollateralService {
     });
   }
 
+  /** The report at each quarter-end on file (ESP phase 4), oldest first; empty where the history isn't loaded. */
+  async history() {
+    const found = await rows<{ q: unknown; c: string; r: number | null; n: number; bal: number }>(
+      this.pool,
+      'SELECT quarter_end AS q, fhlb_category AS c, reason_type_id AS r, SUM(loan_count) AS n, SUM(balance) AS bal FROM hist_fhlb_collateral_quarter GROUP BY quarter_end, fhlb_category, reason_type_id ORDER BY quarter_end',
+    ).catch(() => []);
+    const quarters = new Map<string, { quarter: string; loans: number; balance: number; eligible: number; lendable: number; delinquent: number }>();
+    for (const r of found) {
+      const q = day(r.q);
+      const x = quarters.get(q) ?? { quarter: q, loans: 0, balance: 0, eligible: 0, lendable: 0, delinquent: 0 };
+      x.loans += Number(r.n);
+      x.balance += Number(r.bal);
+      if (r.r === null) {
+        x.eligible += Number(r.bal);
+        x.lendable += Number(r.bal) * (FHLB_LENDABLE[r.c] ?? 0.5);
+      } else if (Number(r.r) === 1) x.delinquent += Number(r.bal);
+      quarters.set(q, x);
+    }
+    return [...quarters.values()].map((x) => ({ ...x, eligiblePct: x.balance ? (x.eligible / x.balance) * 100 : 0 }));
+  }
+
   /** The qualifying collateral report: categories, why loans are out, the largest that could be fixed, and participations. */
   async report() {
     const has = await rows<{ n: number }>(this.pool, 'SELECT COUNT(*) AS n FROM cdm_loan_collateral').catch(() => null);

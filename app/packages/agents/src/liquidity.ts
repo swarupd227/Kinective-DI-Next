@@ -1,7 +1,7 @@
 // Liquidity on the shared module agent: the liquidity ratios, the cash-flow ladder, borrowing capacity by
 // source and survival under share runoff. Read-only, and honest that capacity is DI's estimate.
 import { z } from 'zod';
-import { CoreError, pctAgainst, type CollateralService, type FundingRiskService, type LiquidityService } from '@dinext/di-core';
+import { CoreError, pctAgainst, type BalanceHistoryService, type CollateralService, type FundingRiskService, type LiquidityService } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 const NO_ACCESS = 'Liquidity isn’t part of your DI access. It is for the finance team and executives.';
@@ -12,7 +12,12 @@ const guard = (ctx: ModuleContext) => {
 export const COMMITMENTS_REQUEST = /\bunused (?:credit )?lines?\b|\bunused commitments?\b|\bunfunded commitments?\b|\bundrawn (?:credit )?lines?\b|\bcould (?:still )?draw\b|\bdraw (?:down )?(?:on )?(?:their|the) lines\b/i;
 /** FHLB collateral loan by loan (ESP phase 3): what can be pledged, why the rest can't, and participations. */
 export const COLLATERAL_REQUEST = /\bqualifying collateral\b|\bqcr\b|\bcollateral (?:report|eligib\w*|file)\b|\b(?:eligible|pledgeable|ineligible) (?:collateral|loans?|mortgages?)\b|\b(?:can't|cannot|can’t|couldn't|could not) (?:be )?pledge\w*|\bpledge\w* (?:to|with) the fhlb\b|\bfhlb collateral\b|\bcollateral (?:for|with|at) the fhlb\b|\bloan participations?\b|\bparticipations? (?:we )?(?:sold|bought|purchased)\b|\b(?:our|which) participations\b|\blien positions?\b/i;
+/** Who moved deposits out, member by member, from the month-end snapshots (ESP phase 4). */
+export const OUTFLOW_REQUEST = /\b(?:who|which (?:members|customers|depositors|accounts))\b[^.?!]*\b(?:moved|took|pulled|withdrew|transferred)\b[^.?!]*\b(?:money|deposits|funds|shares|balances)\b|\b(?:largest|biggest|top) (?:deposit |share )?(?:outflows|withdrawals|deposit declines|balance declines)\b|\b(?:deposit|share|balance) (?:outflows|declines) by (?:member|customer)\b|\bwhere (?:did|has) (?:the |our )?(?:deposits?|money|shares) (?:go|gone)\b/i;
 const m = (n: number) => (Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : `$${(n / 1e6).toFixed(1)}M`);
+const usd = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
+const monthDay = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+const quarterOf = (iso: string) => `Q${Math.ceil(Number(iso.slice(5, 7)) / 3)} ${iso.slice(0, 4)}`;
 const p1 = (n: number) => `${n.toFixed(1)}%`;
 
 /** "a 20% run", "if 30 percent of shares leave": the runoff, nearest modelled (10, 20 or 30). */
@@ -54,7 +59,8 @@ export function amountFrom(text: string): number | null {
 
 const RATES_UP = /\brates? (?:rise|rises|go up|goes up|increase|climb|keep rising)|\brising rates\b|\bhigher rates\b|\brate (?:hikes?|increases?)\b|\bif rates\b/;
 
-export function liquidityModule(liq: LiquidityService, funding?: FundingRiskService | null, collateral?: CollateralService | null): ModuleSpec {
+export function liquidityModule(liq: LiquidityService, funding?: FundingRiskService | null, collateral?: CollateralService | null, history?: BalanceHistoryService | null): ModuleSpec {
+  const people = funding ? 'customers' : 'members';
   const bankOnly = () => {
     if (!funding) throw new CoreError('INVALID', 'The 30-day funding test, LCR and NSFR are built from a bank’s FFIEC Call Report (uninsured deposits and the securities’ fair values). For a credit union, ask how long we’d last if shares ran off.');
     return funding;
@@ -63,7 +69,7 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
     id: 'liquidity',
     prefix: 'liq',
     agent: 'Liquidity',
-    request: new RegExp(`${COMMITMENTS_REQUEST.source}|${COLLATERAL_REQUEST.source}|${funding ? `${SECURITIES_REQUEST.source}|${LTD_REQUEST.source}|${DEPOSIT_REQUEST.source}|` : ''}${/\blcr\b|\bnsfr\b|\bliquidity coverage\b|\bnet stable funding\b|\bsvb\b|\bsilicon valley\b|\bwithout selling\b|\bsell(?:ing)? (?:assets|securities|bonds|investments) at a loss\b|\bunrealized loss|\buninsured (?:deposits? )?(?:run|runoff|run-off|outflows?|leave|flight)\b|\buninsured deposits?\b[^.?!]*\b(?:leave|left|run|withdraw)|\bliquidity\b|\bborrowing capacity\b|\bhow much (could|can) we borrow\b|\bfhlb\b|\bdiscount window\b|\bcontingency funding\b|\b(deposit|share) (run|runoff|run-off|outflows?)\b|\brun on (deposits|shares)\b|\bclf\b|\bcorporate (credit union )?line\b|\bcash.flow ladder\b|\bliquid assets\b|\bsurvive\b.*\b(run|outflow|leave)/.source}`, 'i'),
+    request: new RegExp(`${COMMITMENTS_REQUEST.source}|${COLLATERAL_REQUEST.source}|${OUTFLOW_REQUEST.source}|${funding ? `${SECURITIES_REQUEST.source}|${LTD_REQUEST.source}|${DEPOSIT_REQUEST.source}|` : ''}${/\blcr\b|\bnsfr\b|\bliquidity coverage\b|\bnet stable funding\b|\bsvb\b|\bsilicon valley\b|\bwithout selling\b|\bsell(?:ing)? (?:assets|securities|bonds|investments) at a loss\b|\bunrealized loss|\buninsured (?:deposits? )?(?:run|runoff|run-off|outflows?|leave|flight)\b|\buninsured deposits?\b[^.?!]*\b(?:leave|left|run|withdraw)|\bliquidity\b|\bborrowing capacity\b|\bhow much (could|can) we borrow\b|\bfhlb\b|\bdiscount window\b|\bcontingency funding\b|\b(deposit|share) (run|runoff|run-off|outflows?)\b|\brun on (deposits|shares)\b|\bclf\b|\bcorporate (credit union )?line\b|\bcash.flow ladder\b|\bliquid assets\b|\bsurvive\b.*\b(run|outflow|leave)/.source}`, 'i'),
     noAccess: NO_ACCESS,
     sources: [{ kind: 'table', label: 'Loans, investments, deposits and borrowings', ref: 'table:cdm_loan' }],
     prompt: ({ tenant, user, title }) => `You are the Liquidity agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) manages liquidity for the ALCO and the contingency funding plan. DI estimates on-balance-sheet liquidity, a 30/90/180/365-day cash-flow ladder, borrowing capacity (FHLB, the Federal Reserve discount window, unpledged securities, the corporate or correspondent line) and survival under share runoff. Capacity uses typical lendable values; the FHLB's and Reserve Bank's own collateral rules set the real figures, so say it is an estimate unless the tool's answer already does.
@@ -71,6 +77,7 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
 - "How is our liquidity?", "are we within policy?": liq_summary.
 - "How much could we borrow tomorrow?", "what's our FHLB capacity?": liq_capacity.
 - "How much of our collateral is eligible for the FHLB?", "which loans can't be pledged?", "show our loan participations": liq_collateral.
+- "Who moved the most money out last month?", "where did our deposits go last quarter?": liq_outflows with months (1, or 3 for a quarter).
 - "Can we survive a 20% deposit run?": liq_stress with runoff_pct.
 - "Show the cash-flow ladder": liq_ladder.
 - "What assumptions?": liq_assumptions.
@@ -81,6 +88,8 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
 - You only read, and give no investment advice.`,
     plan: (text) => {
       const t = text.toLowerCase();
+      // Who moved money out, member by member, before the runoff test takes "outflow".
+      if (OUTFLOW_REQUEST.test(text)) return { tool: 'liq_outflows', args: { months: /\bquarter\b|\b(?:3|three) months\b|\b90 days\b/.test(t) ? 3 : 1 } };
       // After SVB, a bank's board asks about the run, selling at a loss, and the LCR and NSFR.
       if (/\blcr\b|\bnsfr\b|liquidity coverage|net stable funding/.test(t)) return { tool: 'liq_lcr', args: {} };
       // A bank's securities: unrealized losses, AOCI, rate rises on the bonds, and a sale. The 30-day test keeps "without selling".
@@ -172,15 +181,38 @@ export function liquidityModule(liq: LiquidityService, funding?: FundingRiskServ
           const top = [...r.reasons].sort((x, y) => y.balance - x.balance)[0];
           const sold = r.participations.sold;
           const bought = r.participations.purchased;
+          // The same report at each quarter-end on file, with a year ago in the answer.
+          const quarters = collateral ? await collateral.history() : [];
+          const yearAgo = quarters.length >= 5 ? quarters[quarters.length - 5]! : null;
+          const lastQ = quarters[quarters.length - 1];
+          const trend = yearAgo && lastQ ? ` At ${quarterOf(yearAgo.quarter)}’s end, ${m(yearAgo.eligible)} (${p1(yearAgo.eligiblePct)}) was eligible; at ${quarterOf(lastQ.quarter)}’s, ${m(lastQ.eligible)} (${p1(lastQ.eligiblePct)}).` : '';
           const parts = sold || bought ? ` Participations: ${sold ? `${sold.loans} loans partly sold, ${m(sold.sold)} to other banks with ${m(sold.kept)} kept on our books` : ''}${sold && bought ? '; ' : ''}${bought ? `${bought.loans} loans bought into, ${m(bought.balance)}, which the FHLB won’t take` : ''}.` : '';
           return {
-            text: `Of **${m(r.balance)}** in real-estate loans, **${m(r.eligible)}** (${p1(r.eligiblePct)}) can be pledged to the FHLB, worth **${m(r.lendable)}** at its lendable values.${capped ? ` The FHLB caps advances at 20% of assets, ${m(fhlb.lendable)}, so collateral isn’t what limits us: the cap is.` : ''}${top ? ` The largest reason loans are out is ${inSentence(top.reason)}: ${m(top.balance)} across ${top.loans} loans.` : ''}${r.fixable.length ? ` ${r.fixable.length} files are out only for a missing document (${m(r.fixableBalance)}); completing them would add ${m(r.fixableLendable)} of lendable value.` : ''}${parts} The FHLB’s own review of the collateral sets the final figure.`,
+            text: `Of **${m(r.balance)}** in real-estate loans, **${m(r.eligible)}** (${p1(r.eligiblePct)}) can be pledged to the FHLB, worth **${m(r.lendable)}** at its lendable values.${capped ? ` The FHLB caps advances at 20% of assets, ${m(fhlb.lendable)}, so collateral isn’t what limits us: the cap is.` : ''}${top ? ` The largest reason loans are out is ${inSentence(top.reason)}: ${m(top.balance)} across ${top.loans} loans.` : ''}${r.fixable.length ? ` ${r.fixable.length} files are out only for a missing document (${m(r.fixableBalance)}); completing them would add ${m(r.fixableLendable)} of lendable value.` : ''}${trend}${parts} The FHLB’s own review of the collateral sets the final figure.`,
             blocks: [
               moduleTable(spec, 'FHLB qualifying collateral', ctx.runId, 'liq.collateral', [{ field: 'category', headerName: 'Collateral category', type: 'text' }, { field: 'loans', headerName: 'Loans', type: 'count' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'eligible', headerName: 'Eligible', type: 'currency' }, { field: 'share', headerName: 'Eligible share', type: 'text' }, { field: 'rate', headerName: 'Lends at', type: 'text' }, { field: 'lendable', headerName: 'Lendable value', type: 'currency' }], r.categories.map((c) => ({ category: c.category, loans: c.loans, balance: Math.round(c.balance), eligible: Math.round(c.eligible), share: p1(c.balance ? (c.eligible / c.balance) * 100 : 0), rate: `${Math.round(c.lendableRate * 100)}%`, lendable: Math.round(c.lendable) }))),
               moduleTable(spec, 'Why loans can’t be pledged', ctx.runId, 'liq.collateral.reasons', [{ field: 'reason', headerName: 'First reason', type: 'text' }, { field: 'loans', headerName: 'Loans', type: 'count' }, { field: 'balance', headerName: 'Balance', type: 'currency' }], r.reasons.map((x) => ({ reason: x.reason, loans: x.loans, balance: Math.round(x.balance) }))),
+              ...(quarters.length >= 2 ? [moduleTable(spec, 'Eligible collateral by quarter', ctx.runId, 'liq.collateral.quarters', [{ field: 'quarter', headerName: 'Quarter end', type: 'text' }, { field: 'balance', headerName: 'Real-estate loans', type: 'currency' }, { field: 'eligible', headerName: 'Eligible', type: 'currency' }, { field: 'share', headerName: 'Eligible share', type: 'text' }, { field: 'lendable', headerName: 'Lendable value', type: 'currency' }, { field: 'late', headerName: 'Out for 60+ days late', type: 'currency' }], [...quarters].reverse().map((q) => ({ quarter: quarterOf(q.quarter), balance: Math.round(q.balance), eligible: Math.round(q.eligible), share: p1(q.eligiblePct), lendable: Math.round(q.lendable), late: Math.round(q.delinquent) })))] : []),
               ...(r.participations.byInvestor.length ? [moduleTable(spec, 'Loan participations', ctx.runId, 'liq.collateral.participations', [{ field: 'kind', headerName: '', type: 'text' }, { field: 'investor', headerName: 'Bank', type: 'text' }, { field: 'loans', headerName: 'Loans', type: 'count' }, { field: 'amount', headerName: 'Amount', type: 'currency' }], r.participations.byInvestor.map((x) => ({ kind: x.kind, investor: x.investor, loans: x.loans, amount: Math.round(x.amount) })))] : []),
             ],
             suggestions: ['How much could we borrow tomorrow?'],
+          };
+        },
+      },
+      {
+        name: 'liq_outflows',
+        description: 'Deposits that left over the last month (months 1) or quarter (months 3), member by member from month-end balances: the net change, how much went out and came in, the largest declines, their share of what went out, and who closed every share.',
+        input: z.object({ months: z.union([z.literal(1), z.literal(3)]).default(1) }).strict(),
+        run: async (a: { months: 1 | 3 }, ctx) => {
+          guard(ctx);
+          const o = history ? await history.outflows(a.months ?? 1) : null;
+          if (!o) return { text: `Month-end balances by ${people.slice(0, -1)} aren’t loaded for this institution, so DI can’t say who moved money out.` };
+          const top = o.list[0];
+          const who = people.charAt(0).toUpperCase() + people.slice(1);
+          return {
+            text: `From ${monthDay(o.from)} to ${monthDay(o.to)}, deposits ${o.net < 0 ? 'fell' : 'rose'} **${m(Math.abs(o.net))}** net: **${m(o.outflow)}** went out of ${people}’ accounts and ${m(o.inflow)} came in. **${o.large.members.toLocaleString('en-US')} ${people}’ deposits fell by $10,000 or more**, ${m(o.large.amount)} together.${top ? ` The ${o.list.length} largest declines add up to **${m(o.list.reduce((s, x) => s - x.change, 0))}**, ${p1(o.topShare)} of what went out; the largest was ${top.name} at ${top.branch}, ${usd(top.before)} to ${usd(top.after)}.` : ''} ${o.closed.members.toLocaleString('en-US')} ${people} closed ${funding ? 'every deposit account' : 'every share'} they had (${m(o.closed.balance)}). These are month-end balances, so money that left and came back within the month doesn’t show.`,
+            blocks: [moduleTable(spec, `Largest declines, ${monthDay(o.from)} to ${monthDay(o.to)}`, ctx.runId, 'liq.outflows', [{ field: 'name', headerName: who.slice(0, -1), type: 'text' }, { field: 'number', headerName: 'Number', type: 'text' }, { field: 'branch', headerName: 'Branch', type: 'text' }, { field: 'before', headerName: 'Deposits before', type: 'currency' }, { field: 'after', headerName: 'Deposits after', type: 'currency' }, { field: 'change', headerName: 'Change', type: 'currency' }, { field: 'closed', headerName: funding ? 'Closed every account' : 'Closed every share', type: 'text' }], o.list.map((x) => ({ name: x.name, number: x.memberNumber, branch: x.branch, before: Math.round(x.before), after: Math.round(x.after), change: Math.round(x.change), closed: x.closedAll ? 'Yes' : '' })))],
+            suggestions: [a.months === 3 ? 'Who moved the most money out last month?' : 'Who moved the most money out last quarter?', 'Can we survive a 20% deposit run?'],
           };
         },
       },
