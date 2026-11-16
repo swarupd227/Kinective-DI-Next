@@ -36,6 +36,7 @@ import { ESP_ACCOUNT_COLUMNS, ESP_ACCOUNT_DDL, generateAccounts } from './espAcc
 import { ESP_DETAIL_COLUMNS, ESP_DETAIL_DDL, generateDetails } from './espDetails.ts';
 import { ESP_LOSS_COLUMNS, ESP_LOSS_DDL, generateLosses } from './espLosses.ts';
 import { collateralHistory, ESP_COLLATERAL_COLUMNS, ESP_COLLATERAL_DDL, generateCollateral } from './espCollateral.ts';
+import { ESP_SERVICE_COLUMNS, ESP_SERVICE_DDL, generateLogins, generateServices } from './espServices.ts';
 import { depositsByParty, ESP_HISTORY_COLUMNS, ESP_HISTORY_DDL, generateExceptions, generateHistory } from './espHistory.ts';
 import { ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
@@ -68,6 +69,13 @@ async function main() {
   await admin.query("CREATE USER IF NOT EXISTS 'dinext'@'%' IDENTIFIED BY ?", [decodeURIComponent(appPassword)]);
   for (const profile of TENANTS) {
     const started = Date.now();
+    // How long the slow steps take, for the job's log: the cloud job allows 60 minutes.
+    const laps: string[] = [];
+    let lapAt = started;
+    const stepDone = (step: string) => {
+      laps.push(`${step} ${((Date.now() - lapAt) / 1000).toFixed(0)}s`);
+      lapAt = Date.now();
+    };
     const t = generate(profile);
     // Each person's deposits at each month-end: the attrition score and the model's snapshots read them.
     const partyDeposits = depositsByParty(t.depositMonths, t.deposits as unknown[][]);
@@ -174,6 +182,7 @@ async function main() {
     for (const [table, rows] of [['cdm_lien_position', esp9.liens], ['cdm_participation_type', esp9.participationTypes], ['cdm_fhlb_investor', esp9.investors], ['cdm_loan_collateral', esp9.collateral], ['cdm_fhlb_ineligibility_type', esp9.types], ['cdm_fhlb_ineligibility', esp9.ineligible], ['cdm_fhlb_manual_ineligibility', esp9.manual]] as const) {
       if (rows.length) await insert(admin, table, [...ESP_COLLATERAL_COLUMNS[table]], rows as unknown[][]);
     }
+    stepDone('up to phase 4');
     // ESP alignment, phase 4: each loan and share at each month-end, added up by account, person and
     // household; the collateral report by quarter; voided and reversed transactions.
     for (const ddl of ESP_HISTORY_DDL) await admin.query(ddl);
@@ -194,6 +203,16 @@ async function main() {
     t.depositMonths.length = 0;
     await history('hist_fhlb_collateral_quarter', qcrHistory);
     await history('cdm_transaction_exception', exceptions);
+    stepDone('phase 4');
+    // ESP alignment, phase 5: each login, and the services on each account, share and loan.
+    for (const ddl of ESP_SERVICE_DDL) await admin.query(ddl);
+    const esp11 = generateServices({ institutionType: profile.institutionType, loans: t.loans as unknown[][], deposits: t.deposits as unknown[][], digital: rm.digital as unknown[][], parties: t.parties as unknown[][], cards: rm.cards as unknown[][], accounts: esp6.accounts as unknown[][], holdings: esp6.holdings as unknown[][], loanProducts: esp2.loanProducts as unknown[][], loanTerms: esp6.loanTerms as unknown[][], origination: esp1.origination as unknown[][], share: esp4.share as unknown[][], employees: t.employees as unknown[][] });
+    for (const [table, rows] of [['cdm_service_type', esp11.types], ['cdm_product_service', esp11.productServices], ['cdm_account_service', esp11.accountServices], ['cdm_deposit_service', esp11.depositServices], ['cdm_loan_service', esp11.loanServices]] as const) {
+      if (rows.length) await insert(admin, table, [...ESP_SERVICE_COLUMNS[table]], rows as unknown[][], 10_000);
+    }
+    // A million logins or so: built and inserted a batch at a time.
+    for (const rows of generateLogins(m360.partyActivity as unknown[][], rm.digital as unknown[][])) await insert(admin, 'cdm_login', [...ESP_SERVICE_COLUMNS.cdm_login], rows, 10_000);
+    stepDone('phase 5');
     // Predictive models: each member at each of the last 12 month-ends, and where models and scores are kept.
     for (const ddl of ML_DDL) await admin.query(ddl);
     await insert(admin, 'hist_member_snapshot', SNAPSHOT_COLUMNS, generateSnapshots(t, rm, partyDeposits));
@@ -386,7 +405,7 @@ async function main() {
     await createOffcoreTables(admin, profile.schema);
     for (const table of [...ML_WRITE_TABLES, ...DMN_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE, DELETE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     if (profile.institutionType === 'credit_union') await seedCoreReplica(admin, profile.schema);
-    console.log(`${profile.key}: ${t.parties.length} parties, ${t.loans.length} loans, ${t.deposits.length} deposit accounts, ${t.histLoan.length} loan history rows, ${rm.interactions.length} interactions in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+    console.log(`${profile.key}: ${t.parties.length} parties, ${t.loans.length} loans, ${t.deposits.length} deposit accounts, ${t.histLoan.length} loan history rows, ${rm.interactions.length} interactions in ${((Date.now() - started) / 1000).toFixed(1)}s (${[...laps, `the rest ${((Date.now() - lapAt) / 1000).toFixed(0)}s`].join(', ')})`);
   }
   await admin.end();
 }

@@ -41,6 +41,7 @@ export { CHARGED_OFF, DQ_BUCKETS, DelinquencyService, type DqScope } from './del
 export { InsiderService, approvalThreshold, type Insider } from './insiders.ts';
 export { CollateralService, FHLB_LENDABLE, type QcrCategory } from './collateral.ts';
 export { BalanceHistoryService, type FeeReversalRep, type Outflow } from './balanceHistory.ts';
+export { addOnName, LoanServicesService, type AddOn, type AddOnRow } from './loanServices.ts';
 export { LIQUIDITY_POLICY, LiquidityService, pctAgainst } from './liquidity.ts';
 export { FundingRiskService, type RunScenario } from './fundingRisk.ts';
 export { NiiService, NII_GROWTH_WATCH } from './nii.ts';

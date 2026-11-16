@@ -154,6 +154,19 @@ function ownersDetail(p: MemberProfile, suffix: string, base: string | null): { 
   return text ? { detail: text.slice(0, 80) } : {};
 }
 
+/** An account's detail with its services (ESP phase 5) after it: "Matures Mar 3, 2027. Courtesy pay, Debit card". */
+function withServices(base: string | null, services: string[] | undefined): string | null {
+  return [base, services?.length ? services.join(', ') : null].filter(Boolean).join('. ') || null;
+}
+
+/** The last login, with the two before it where each login is loaded (ESP phase 5): "Oct 24, 2026 (mobile); before that Oct 21, Oct 19". */
+function lastLogins(p: MemberProfile): string {
+  if (!p.logins.length) return p.lastLogin ? longDate(p.lastLogin) : 'Never';
+  const short = (at: string) => new Date(`${at.slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const [first, ...rest] = p.logins;
+  return `${longDate(first!.at)} (${first!.kind.toLowerCase()})${rest.length ? `; before that ${rest.slice(0, 2).map((l) => short(l.at)).join(', ')}` : ''}`;
+}
+
 /** What to say under a digital service: 90-day use where it's loaded, else when it started. */
 function digitalDetail(d: MemberProfile['digital'][number], u: MemberProfile['usage'], lastLogin: string | undefined): string | null {
   if (u && d.enrolled) {
@@ -216,11 +229,11 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
         {
           kind: 'accounts',
           deposits: [
-            ...p.deposits.slice(0, 40).map((a) => ({ name: a.name, suffix: a.suffix, relationship: a.relationship, balance: a.balance, change30d: Math.round((a.balance - a.balance30d) * 100) / 100, fees30d: a.fees30d, rate: a.rate, ...(ownersDetail(p, a.suffix, a.maturity ? `Matures ${longDate(a.maturity)}` : null)) })),
+            ...p.deposits.slice(0, 40).map((a) => ({ name: a.name, suffix: a.suffix, relationship: a.relationship, balance: a.balance, change30d: Math.round((a.balance - a.balance30d) * 100) / 100, fees30d: a.fees30d, rate: a.rate, ...(ownersDetail(p, a.suffix, withServices(a.maturity ? `Matures ${longDate(a.maturity)}` : null, a.services))) })),
             ...p.sharedAccounts.filter((s) => s.kind === 'deposit').slice(0, Math.max(0, 40 - p.deposits.length)).map((s) => ({ name: s.name, suffix: s.suffix, relationship: s.role === 'Authorized signer' ? ('Authorized' as const) : ('Joint' as const), balance: s.balance, change30d: 0, fees30d: 0, detail: `${s.role}; ${s.primary}’s account`.slice(0, 80) })),
           ],
           loans: [
-            ...p.loans.slice(0, 40).map((a) => ({ name: a.name, suffix: a.suffix, relationship: a.relationship, balance: a.balance, change30d: Math.round((a.balance - a.balance30d) * 100) / 100, fees30d: a.fees30d, rate: a.rate, ...(ownersDetail(p, a.suffix, a.daysPastDue ? `${a.daysPastDue} days past due` : termsDetail(a))) })),
+            ...p.loans.slice(0, 40).map((a) => ({ name: a.name, suffix: a.suffix, relationship: a.relationship, balance: a.balance, change30d: Math.round((a.balance - a.balance30d) * 100) / 100, fees30d: a.fees30d, rate: a.rate, ...(ownersDetail(p, a.suffix, withServices(a.daysPastDue ? `${a.daysPastDue} days past due` : termsDetail(a), a.services))) })),
             ...p.sharedAccounts.filter((s) => s.kind === 'loan').slice(0, Math.max(0, 40 - p.loans.length)).map((s) => ({ name: s.name, suffix: s.suffix, relationship: 'Joint' as const, balance: s.balance, change30d: 0, fees30d: 0, detail: `Co-borrower; ${s.primary}’s loan`.slice(0, 80) })),
           ],
         },
@@ -245,8 +258,9 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
           factors: p.attrition.factors.map((f) => ({ label: f.label, weight: f.weight })),
           facts: [
             { label: 'Direct deposit', value: dd.status === 'active' ? 'Active' : dd.status === 'stopped' ? `Stopped${dd.changed ? ` ${longDate(dd.changed)}` : ''}` : 'Not set up' },
-            { label: 'Last digital login', value: p.lastLogin ? longDate(p.lastLogin) : 'Never' },
+            { label: 'Last digital login', value: lastLogins(p) },
             ...(u ? [{ label: 'Logins, 90 days', value: `${u.logins90d} (${u.mobileLogins90d} on mobile)` }, { label: 'Fees, 90 days', value: `$${u.fees90d.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` }] : []),
+            ...(p.phoneBanking ? [{ label: 'Phone banking', value: `Since ${longDate(p.phoneBanking)}` }] : []),
             ...balanceTrend(p),
             { label: 'Model', value: `${p.attrition.model}, run ${longDate(p.attrition.runDate)}` },
           ],

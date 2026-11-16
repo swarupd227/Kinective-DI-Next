@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { CoreError, type IndirectService, type ProspectService } from '@dinext/di-core';
 import { money } from './pipelineAgent.ts';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
+import { ADD_ON_REQUEST } from './portfolioReports.ts';
 
 const clean = (t: string) => t.trim().replace(/[.!?]+$/, '').replace(/’/g, "'");
 /** How dealers' loans perform, from each indirect loan's dealer (ESP phase 1b). */
@@ -23,8 +24,8 @@ export function indirectModule(ind: IndirectService, dealerNames: string[], toda
     id: 'indirect',
     prefix: 'ind',
     agent: 'Indirect Lending',
-    // A dealer's agreement or documents belong to Files.
-    request: new RegExp(`^(?!.*\\b(agreement|docs?|documents?)\\b).*(\\bdealers?\\b|\\bindirect[- ]to[- ]direct\\b|\\bindirect borrowers\\b|\\b(${names})\\b)`, 'i'),
+    // A dealer's agreement or documents belong to Files; the add-ons dealers sell, to Portfolio Reports.
+    request: new RegExp(`^(?!.*(?:\\b(agreement|docs?|documents?)\\b|${ADD_ON_REQUEST.source})).*(\\bdealers?\\b|\\bindirect[- ]to[- ]direct\\b|\\bindirect borrowers\\b|\\b(${names})\\b)`, 'i'),
     noAccess,
     sources: [{ kind: 'table', label: 'Dealer performance', ref: 'table:ind_dealer_month' }],
     prompt: ({ tenant, user, title }) => `You are the Indirect Lending agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) works with auto dealers.

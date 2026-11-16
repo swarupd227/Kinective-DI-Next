@@ -68,6 +68,8 @@ export interface AccountLine {
   daysPastDue?: number;
   /** A loan's terms (ESP phase 1), where loaded: what's due and when, APR, fixed or variable, and a line's limit. */
   terms?: { payment: number; due: string | null; apr: number; rateType: string; structure: string; creditLimit: number | null };
+  /** Services on the share or loan (ESP phase 5), where loaded: courtesy pay, direct deposit, a debit card, GAP, debt protection. */
+  services?: string[];
 }
 
 export interface Opportunity {
@@ -123,6 +125,10 @@ export interface MemberProfile {
   chargeOffs: { count: number; original: number; items: { product: string; chargedOff: string; original: number; amount: number | null; recovered: number }[] };
   /** Deposits and loans at each month-end on file (ESP phase 4), oldest first; empty where the snapshots aren't loaded. */
   balanceHistory: { monthEnd: string; deposits: number; loans: number }[];
+  /** The latest online and mobile logins (ESP phase 5), newest first; empty where not loaded. */
+  logins: { at: string; kind: string }[];
+  /** When the person signed up for phone banking (ESP phase 5); null where they haven't or it isn't loaded. */
+  phoneBanking: string | null;
   cards: { kind: 'Debit' | 'Credit'; last4: string; status: string; opened: string; activated: string | null; closed: string | null; account: string }[];
   /** Checking transactions in the last 90 days: how many, and the latest. Null where the core's transactions aren't loaded. */
   transactions: { total90d: number; items: { date: string; description: string; amount: number; type: string; account: string }[] } | null;
@@ -469,6 +475,15 @@ export class RelationshipService {
     ).catch(() => q<ChargedOff>('SELECT loan_category, charge_off_date, original_amount, NULL AS amount, NULL AS recovered FROM cdm_loan WHERE party_id = ? AND charge_off_date IS NOT NULL ORDER BY charge_off_date DESC', [partyId]));
     // Month-end balances (ESP phase 4), where the snapshots are loaded.
     const months = await q<{ month_end: unknown; deposit_balance: number; loan_balance: number }>('SELECT month_end, deposit_balance, loan_balance FROM hist_person_month WHERE party_id = ? ORDER BY month_end', [partyId]).catch(() => []);
+    // ESP phase 5: services on each share and loan, phone banking and the latest logins, where loaded.
+    const serviceRows = await q<{ k: 'deposit' | 'loan'; id: number; name: string }>(
+      `SELECT 'deposit' AS k, s.account_id AS id, t.name FROM cdm_deposit_service s JOIN cdm_service_type t ON t.service_id = s.service_id WHERE s.account_id IN (?) AND (s.removed IS NULL OR s.removed > ?)
+       UNION ALL SELECT 'loan' AS k, s.loan_id AS id, t.name FROM cdm_loan_service s JOIN cdm_service_type t ON t.service_id = s.service_id WHERE s.loan_id IN (?) AND (s.removed IS NULL OR s.removed > ?) ORDER BY name`,
+      [deps.length ? deps.map((d) => d.account_id) : [-1], asOf, loans.length ? loans.map((l) => l.loan_id) : [-1], asOf],
+    ).catch(() => []);
+    const servicesOf = (k: 'deposit' | 'loan', id: number) => [...new Set(serviceRows.filter((r) => r.k === k && Number(r.id) === id).map((r) => r.name))];
+    const [phoneRow] = await q<{ since: unknown }>("SELECT MIN(s.added) AS since FROM cdm_account_service s JOIN cdm_account a ON a.account_number = s.account_number JOIN cdm_service_type t ON t.service_id = s.service_id WHERE a.primary_party_id = ? AND t.code = 'PHONE' AND s.removed IS NULL", [partyId]).catch(() => []);
+    const loginRows = await q<{ login_time: unknown; kind: string }>('SELECT login_time, kind FROM cdm_login WHERE party_id = ? ORDER BY login_time DESC LIMIT 5', [partyId]).catch(() => []);
     const cards = await q<{ kind: 'Debit' | 'Credit'; last4: string; status: string; opened: unknown; activated: unknown; closed: unknown; account_id: number }>('SELECT kind, last4, status, opened, activated, closed, account_id FROM cdm_card WHERE party_id = ? ORDER BY closed IS NOT NULL, opened DESC', [partyId]).catch(() => []);
     // The core's checking transactions, where they're loaded; a table that isn't there, or is empty for the
     // whole institution, means none are.
@@ -524,8 +539,9 @@ export class RelationshipService {
       opened: r.open_date,
       ...extra,
     });
-    const depositLines = deps.map((d) => line('deposit', d.account_id, d.deposit_category, d, d.maturity_date ? { maturity: d.maturity_date } : {}));
-    const loanLines = loans.map((l) => line('loan', l.loan_id, label(l.loan_category), l, { daysPastDue: l.days_delinquent, ...(termsOf.has(l.loan_id) ? { terms: termsOf.get(l.loan_id)! } : {}) }));
+    const withServices = (k: 'deposit' | 'loan', id: number) => (serviceRows.length ? { services: servicesOf(k, id) } : {});
+    const depositLines = deps.map((d) => line('deposit', d.account_id, d.deposit_category, d, { ...(d.maturity_date ? { maturity: d.maturity_date } : {}), ...withServices('deposit', d.account_id) }));
+    const loanLines = loans.map((l) => line('loan', l.loan_id, label(l.loan_category), l, { daysPastDue: l.days_delinquent, ...(termsOf.has(l.loan_id) ? { terms: termsOf.get(l.loan_id)! } : {}), ...withServices('loan', l.loan_id) }));
     const held = new Set([...deps.map((d) => d.deposit_category), ...loans.map((l) => l.loan_category)]);
     const heldLabels = new Set([...held].map((c) => label(c).toLowerCase()));
     const totals = { deposits: depositLines.reduce((s, a) => s + a.balance, 0), loans: loanLines.reduce((s, a) => s + a.balance, 0), accounts: depositLines.length + loanLines.length, products: held.size };
@@ -619,6 +635,8 @@ export class RelationshipService {
       creditScore: score?.credit_score ? { score: score.credit_score, asOf: day10(score.open_date), from: `the ${label(score.loan_category).toLowerCase()} application` } : null,
       chargeOffs: { count: chargedOff.length, original: chargedOff.reduce((s, x) => s + Number(x.original_amount), 0), items: chargedOff.map((x) => ({ product: label(x.loan_category), chargedOff: day10(x.charge_off_date), original: Number(x.original_amount), amount: x.amount === null ? null : Number(x.amount), recovered: Number(x.recovered ?? 0) })) },
       balanceHistory: months.map((x) => ({ monthEnd: day10(x.month_end), deposits: Number(x.deposit_balance), loans: Number(x.loan_balance) })),
+      logins: loginRows.map((r) => ({ at: (r.login_time instanceof Date ? r.login_time.toISOString() : String(r.login_time)).slice(0, 16).replace('T', ' '), kind: r.kind })),
+      phoneBanking: phoneRow?.since ? day10(phoneRow.since) : null,
       cards: cards.map((k) => ({ kind: k.kind, last4: k.last4, status: k.status, opened: day10(k.opened), activated: k.activated ? day10(k.activated) : null, closed: k.closed ? day10(k.closed) : null, account: String(k.account_id % 10_000).padStart(4, '0') })),
       transactions: txns === null ? null : { total90d: txns.length, items: txns.slice(0, 15).map((t) => ({ date: day10(t.post_date), description: t.description.slice(0, 80), amount: Number(t.amount), type: t.txn_type, account: `Checking …${String(t.account_id % 10_000).padStart(4, '0')}` })) },
       usage: usage ? { logins90d: Number(usage.logins_90d), mobileLogins90d: Number(usage.mobile_logins_90d), billPayments90d: Number(usage.bill_payments_90d), mobileDeposits90d: Number(usage.mobile_deposits_90d), fees90d: Number(usage.fees_90d), estatementAccounts: base.estatements_since ? deps.filter((d) => day10(d.open_date) <= day10(base.estatements_since)).length || deps.length : 0, depositAccounts: deps.length } : null,

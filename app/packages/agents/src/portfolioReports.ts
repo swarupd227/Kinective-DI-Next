@@ -4,12 +4,20 @@
 // counts and dollars in each bucket.
 import { z } from 'zod';
 import type { Block, DiTake } from '@dinext/block-schemas';
-import { CoreError, PortfolioService, type CoreContext } from '@dinext/di-core';
+import { CoreError, LoanServicesService, PortfolioService, type AddOnRow, type CoreContext } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 import type { ReportAnalyses } from './report.ts';
 
 export const PORTFOLIO_REQUEST =
   /\b(?:member|customer) growth\b|\bnew (?:and|vs\.?|versus) closed (?:members|customers)\b|\b(?:members|customers) (?:joined|added|lost) (?:this|month|quarter|year)|\baverage (?:member|customer) age\b|\b(?:cd|certificate)s? (?:maturity|maturities|maturing) (?:forecast|schedule|by term|by interval)\b|\bmaturing (?:cds?|certificates)\b[^.?!]*\b(?:forecast|by term|by interval)|\b(?:cd|certificate) (?:maturity )?forecast\b|\b(?:how much|what share|what percent(?:age)?)\b[^.?!]*\b(?:will|would|to) renew\b|\b(?:cd|certificate) renewals? (?:forecast|projection)\b|\brenewal (?:forecast|projection)\b|\bdeposit (?:growth|portfolio)\b|\bdeposits? by product\b|\bdelinquency by (?:product|loan type|sub-?product)\b|\bdelinquency buckets?\b[^.?!]*\b(?:product|history|over time)\b|\b(?:loan|deposit|share) products?\b|\b(?:loans|deposits|shares|the book) by (?:loan |deposit |share )?product name\b|\bproduct (?:catalog|list|mix)\b|\bwhat products do we (?:offer|have)\b|\borg (?:hierarchy|tree|chart|structure)\b|\bbranch hierarchy\b|\broll(?:ed)? ?up by (?:region|area|unit)\b|\bunits? under\b/i;
+
+/**
+ * Services sold with loans and shares (ESP phase 5): GAP, mechanical repair coverage and debt protection
+ * on loans; courtesy pay, overdraft transfer, direct deposit and debit cards on checking. "Overdraft
+ * fees" stay with the fee answers, and a repricing gap with interest-rate risk.
+ */
+export const ADD_ON_REQUEST =
+  /\bgap (?:coverage|insurance|waivers?|penetration|sales?|income|attach(?:ment)?(?: rates?)?)\b|\b(?:sells?|sold|selling|sales of) gap\b|\bgap on (?:auto|car|vehicle|indirect|direct)\b|\bdebt (?:protection|cancellation)\b|\bcredit (?:life|disability) insurance\b|\bmechanical (?:repair|breakdown)\b|\b(?:vehicle )?service contracts?\b|\bloan add-?ons?\b|\badd-?ons?\b[^.?!]*\b(?:loans?|penetration|income|sold|sell)\b|\bancillary (?:products?|income|sales)\b|\bpayment packing\b|\b(?:courtesy pay|overdraft privilege|overdraft transfers?|overdraft protection)\b[^.?!]*\b(?:enroll(?:ment|ed)?|penetration|opt(?:ed)?[- ]?ins?|sign(?:ed)?[- ]?ups?|by branch|rates?|how many|share|percent)\b|\b(?:enrolled|opted) in(?:to)? (?:courtesy pay|overdraft)\b|\bchecking (?:account )?services\b|\bservices on (?:checking|loans|accounts)\b/i;
 
 const text = (field: string, headerName: string) => ({ field, headerName, type: 'text' as const });
 const cnt = (field: string, headerName: string) => ({ field, headerName, type: 'count' as const });
@@ -96,7 +104,7 @@ export function portfolioAnalyses(svc: PortfolioService, person: 'member' | 'cus
   };
 }
 
-export function portfolioModule(svc: PortfolioService, person: 'member' | 'customer' = 'member'): ModuleSpec {
+export function portfolioModule(svc: PortfolioService, person: 'member' | 'customer' = 'member', services: LoanServicesService | null = null): ModuleSpec {
   const SOURCES = sourcesFor(person);
   const who = whoFor(person);
   const need = (ctx: ModuleContext) => {
@@ -106,13 +114,14 @@ export function portfolioModule(svc: PortfolioService, person: 'member' | 'custo
     id: 'portfolio',
     prefix: 'port',
     agent: 'Portfolio Reports',
-    request: PORTFOLIO_REQUEST,
+    request: new RegExp(`${PORTFOLIO_REQUEST.source}|${ADD_ON_REQUEST.source}`, 'i'),
     noAccess: 'Portfolio reports aren’t part of your DI access.',
     sources: SOURCES,
     prompt: ({ tenant, user, title }) => `You are the Portfolio Reports agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) reads the monthly portfolio reports.
 
+- port_services for services sold with loans or on checking: GAP, mechanical repair coverage and debt protection by product, branch, officer and dealer (kind loan), or courtesy pay, overdraft transfer, direct deposit and debit cards on checking (kind checking). Whether a sale was right is the lending manager's or compliance officer's call: never say a dealer or employee did wrong.
 - portfolio_report with question members (new, closed and net ${person}s, average age), cds (certificate maturity forecast), deposits (deposit growth by product) or delinquency (by product, counts and dollars per bucket).`,
-    plan: (t) => /\borg (?:hierarchy|tree|chart|structure)\b|\bbranch hierarchy\b|\broll(?:ed)? ?up by (?:region|area|unit)\b|\bunits? under\b/i.test(t) ? { tool: 'port_org', args: (/\b(?:under|for|in) (?:the )?([A-Z][\w ]+?)(?: region| unit)?\s*[?.]?$/.exec(t)?.[1] ? { unit: /\b(?:under|for|in) (?:the )?([A-Z][\w ]+?)(?: region| unit)?\s*[?.]?$/.exec(t)![1] } : {}) } : (/\b(?:loan|deposit|share) products?\b|\bby (?:loan |deposit |share )?product name\b|\bproduct (?:catalog|list|mix)\b|\bwhat products do we (?:offer|have)\b/i.test(t) ? { tool: 'port_products', args: { kind: /\b(?:deposit|share|savings|checking)\b/i.test(t) ? 'deposit' : 'loan' } } : { tool: 'portfolio_report', args: { question: portfolioQuestion(t) } }),
+    plan: (t) => ADD_ON_REQUEST.test(t) ? { tool: 'port_services', args: { kind: /\b(?:courtesy pay|overdraft|checking|direct deposit|debit cards?)\b/i.test(t) ? 'checking' : 'loan' } } : /\borg (?:hierarchy|tree|chart|structure)\b|\bbranch hierarchy\b|\broll(?:ed)? ?up by (?:region|area|unit)\b|\bunits? under\b/i.test(t) ? { tool: 'port_org', args: (/\b(?:under|for|in) (?:the )?([A-Z][\w ]+?)(?: region| unit)?\s*[?.]?$/.exec(t)?.[1] ? { unit: /\b(?:under|for|in) (?:the )?([A-Z][\w ]+?)(?: region| unit)?\s*[?.]?$/.exec(t)![1] } : {}) } : (/\b(?:loan|deposit|share) products?\b|\bby (?:loan |deposit |share )?product name\b|\bproduct (?:catalog|list|mix)\b|\bwhat products do we (?:offer|have)\b/i.test(t) ? { tool: 'port_products', args: { kind: /\b(?:deposit|share|savings|checking)\b/i.test(t) ? 'deposit' : 'loan' } } : { tool: 'portfolio_report', args: { question: portfolioQuestion(t) } }),
     tools: [
       {
         name: 'portfolio_report',
@@ -139,6 +148,53 @@ export function portfolioModule(svc: PortfolioService, person: 'member' | 'custo
           return {
             text: `${list.length} ${isLoan ? 'loan' : 'deposit'} products. **${top.name}** is the largest, ${mm(top.balance)} (${top.sharePct}%) in ${top.accounts.toLocaleString('en-US')} accounts${top.ratePct !== null ? ` at ${top.ratePct}%` : ''}.`,
             blocks: [moduleTable(who, isLoan ? 'Loans by product' : 'Deposits by product', ctx.runId, `portfolio.products.${kind}`, [text('name', 'Product'), text('category', 'Category'), cnt('accounts', 'Accounts'), cur('balance', 'Balance'), text('share', 'Share'), text('rate', 'Rate'), ...(isLoan ? [text('term', 'Average term'), text('dq', '60+ days'), ...(list.some((r) => r.regCode) ? [text('reg', '5300 line')] : [])] : [])], list.map((r) => ({ name: r.name, category: r.category, accounts: r.accounts, balance: r.balance, share: `${r.sharePct}%`, rate: r.ratePct === null ? '—' : `${r.ratePct}%`, term: r.termMonths === null ? '—' : `${r.termMonths} months`, dq: r.dq60Pct === null ? '—' : `${r.dq60Pct}%`, reg: r.regCode ?? '—' })))],
+          };
+        },
+      },
+      {
+        name: 'port_services',
+        description: `Services sold with loans and shares. kind loan: GAP, mechanical repair coverage and debt protection on the loans made over the last 12 months, by product, branch and officer (direct auto) and dealer (indirect auto), what they sold for, a dealer selling them on far more loans than the others, and a branch selling GAP on far fewer. kind checking: courtesy pay, overdraft transfer, direct deposit and debit cards on open checking, by branch, and the overdraft fees charged.`,
+        input: z.object({ kind: z.enum(['loan', 'checking']).default('loan') }).strict(),
+        run: async (a: { kind?: 'loan' | 'checking' }, ctx: ModuleContext) => {
+          need(ctx);
+          if (!services) return { text: 'Services on loans and shares aren’t loaded for this institution yet.' };
+          const P = person === 'customer' ? 'Customers' : 'Members';
+          if ((a.kind ?? 'loan') === 'checking') {
+            const c = await services.checking();
+            if (!c) return { text: 'Services on checking aren’t loaded for this institution yet.' };
+            const t = c.total;
+            const fees = c.overdraftFees;
+            const cp = c.courtesyPayName.toLowerCase();
+            return {
+              text: `Of ${t.accounts.toLocaleString('en-US')} open checking accounts, **${t.cpayPct}% have ${cp}**, ${t.odtPct}% overdraft transfer from savings, ${t.ddPct}% direct deposit and ${t.debitPct}% a debit card.${fees && fees.count ? ` Over the 30 days on file, overdraft fees were charged ${fees.count.toLocaleString('en-US')} times (${mm(Math.abs(fees.amount))}) on ${fees.accounts.toLocaleString('en-US')} accounts, all of them enrolled in ${cp}.` : ''} ${P} opt in to ${cp}; without it, an item that would overdraw the account is returned.`,
+              blocks: [moduleTable(who, 'Services on checking by branch', ctx.runId, 'portfolio.services.checking', [text('branch', 'Branch'), cnt('accounts', 'Checking accounts'), text('cpay', c.courtesyPayName), text('odt', 'Overdraft transfer'), text('dd', 'Direct deposit'), text('debit', 'Debit card')], [...c.byBranch, t].map((r) => ({ branch: r.branch, accounts: r.accounts, cpay: `${r.cpayPct}%`, odt: `${r.odtPct}%`, dd: `${r.ddPct}%`, debit: `${r.debitPct}%` })))],
+              sources: [{ kind: 'table', label: 'Services on each share', ref: 'table:cdm_deposit_service' }],
+            };
+          }
+          const x = await services.addOns(12);
+          if (!x) return { text: 'Services on loans aren’t loaded for this institution yet.' };
+          const d = x.directAuto;
+          const i = x.indirectAuto;
+          const asOf = new Date(`${x.asOf}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+          const packer = x.packing[0];
+          const low = x.lowGap[0];
+          const row = (r: AddOnRow) => ({ name: r.name, loans: r.loans, gap: `${r.gapPct}%`, mrc: `${r.mrcPct}%`, dp: `${r.dpPct}%`, income: r.income });
+          const cols = (first: string) => [text('name', first), cnt('loans', 'Loans made'), text('gap', 'GAP'), text('mrc', 'Repair coverage'), text('dp', 'Debt protection'), cur('income', 'Sold for')];
+          return {
+            text: [
+              `Over the 12 months to ${asOf}, GAP went with **${d.gapPct}% of direct auto loans** and **${i.gapPct}% of indirect**; mechanical repair coverage with ${d.mrcPct}% and ${i.mrcPct}%, debt protection with ${d.dpPct}% and ${i.dpPct}%. Add-ons on the ${x.loans.toLocaleString('en-US')} loans that can carry them sold for ${mm(x.income)} (debt protection counted at one month’s fee).`,
+              packer ? `**${packer.name}** sold GAP on ${packer.gapPct}% of its ${packer.loans} loans and repair coverage on ${packer.mrcPct}%, against ${i.gapPct}% and ${i.mrcPct}% across dealers. That pattern is what a payment-packing review looks for: worth checking that borrowers chose the add-ons.` : '',
+              low ? `**${low.name}** sold GAP on ${low.gapPct}% of its ${low.loans} direct auto loans, against ${d.gapPct}% across branches; at the average price that’s about ${mm(low.missed)} of coverage not offered or not taken.` : '',
+              packer || low ? 'Whether a sale was right is the lending manager’s or compliance officer’s call.' : '',
+            ].filter(Boolean).join(' '),
+            blocks: [
+              moduleTable(who, 'Add-ons by product, loans made in the last 12 months', ctx.runId, 'portfolio.services.product', cols('Product'), x.byProduct.map(row)),
+              moduleTable(who, 'Direct auto loans by branch', ctx.runId, 'portfolio.services.branch', cols('Branch'), x.byBranch.map(row)),
+              ...(x.byDealer.length ? [moduleTable(who, 'Indirect auto loans by dealer', ctx.runId, 'portfolio.services.dealer', cols('Dealer'), x.byDealer.map(row))] : []),
+              ...(x.byOfficer.length ? [moduleTable(who, 'Direct auto loans by loan officer', ctx.runId, 'portfolio.services.officer', cols('Loan officer'), x.byOfficer.map(row))] : []),
+            ],
+            sources: [{ kind: 'table', label: 'Services sold with each loan', ref: 'table:cdm_loan_service' }],
+            suggestions: ['Show courtesy pay enrollment by branch', ...(packer ? [`Show ${packer.name}’s dealer scorecard`] : [])],
           };
         },
       },
