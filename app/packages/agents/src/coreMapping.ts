@@ -293,7 +293,9 @@ function discoverTools(spec: ModuleSpec, need: (ctx: ModuleContext) => SourceSer
         const p = run.proposals.find((x) => match(x.core));
         const pr = run.profiles.find((x) => match(x.core));
         if (!pr) return { text: `${a.column} isn’t among the ${n(run.profiled)} columns run ${run.runId} profiled.` };
-        const what = `${pr.core} has a value on ${n(pr.filled)} of ${n(pr.rows)} rows, ${n(pr.distinct)} different values${pr.min !== null ? ` from ${pr.min} to ${pr.max}` : ''}; DI reads it as ${pr.kind === 'rate1000' ? 'rates in thousandths of a percent' : pr.kind}${pr.refersTo ? `, pointing at ${pr.refersTo}` : ''}.`;
+        const sample = run.summary.sample ?? pr.rows;
+        const seen = pr.rows > sample ? `In a sample of ${n(sample)} of its ${n(pr.rows)} rows, ${pr.core} has a value on ${n(pr.filled)}` : `${pr.core} has a value on ${n(pr.filled)} of ${n(pr.rows)} rows`;
+        const what = `${seen}, ${n(pr.distinct)} different values${pr.min !== null ? ` from ${pr.min} to ${pr.max}` : ''}; DI reads it as ${pr.kind === 'rate1000' ? 'rates in thousandths of a percent' : pr.kind}${pr.refersTo ? `, pointing at ${pr.refersTo}` : ''}.`;
         if (!p) return { text: `${what} It fits no DI column well enough to propose, so it’s a candidate for a custom field.`, suggestions: ['What core fields aren’t mapped yet?'] };
         const sig = p.signals;
         const parts = [`**${p.core} → ${p.di}** (${p.label}), score ${p.score.toFixed(2)}, ${BAND_WORD[p.band]?.toLowerCase() ?? p.band}.`, what, p.signals.why.length ? `Because ${p.signals.why.length > 1 ? `${p.signals.why.slice(0, -1).join(', ')} and ${p.signals.why[p.signals.why.length - 1]}` : p.signals.why[0]}.` : '', p.runnerUp ? `Runner-up: ${p.runnerUp.coreColumn} → ${p.runnerUp.diColumn} at ${p.runnerUp.score.toFixed(2)}.` : ''];

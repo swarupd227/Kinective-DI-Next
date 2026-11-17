@@ -19,6 +19,8 @@ export interface ColumnProfile {
   column: string;
   dataType: string;
   rows: number;
+  /** Rows the value figures below were read from: every row, or a sample of a large table. */
+  sampled?: number;
   /** Rows with a value: not NULL, not blank, not 00000000. */
   filled: number;
   distinct: number;
@@ -88,7 +90,8 @@ export function kindOf(c: ColumnProfile): ColumnKind {
   if (!c.filled) return 'empty';
   if (c.dateShare >= 0.9) return 'date';
   if (c.refersTo && c.refersTo.share >= 0.95) return 'reference';
-  if (c.distinct === c.rows && c.numericShare >= 0.99 && c.rows > 1) return 'key';
+  const seen = c.sampled ?? c.rows;
+  if (c.distinct === seen && c.numericShare >= 0.99 && seen > 1) return 'key';
   if (c.distinct <= 2 && c.flagShare >= 0.99) return 'flag';
   if (c.numericShare >= 0.95 && c.fractionShare > 0.05) return 'money';
   // Rates kept as whole thousandths of a percent (5250 is 5.25%): integers up to 40,000, mostly not zero.

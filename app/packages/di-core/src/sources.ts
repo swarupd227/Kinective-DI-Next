@@ -226,6 +226,8 @@ const IDENT = /^[A-Za-z0-9_$-]{1,64}$/;
 const HOST = /^[A-Za-z0-9.-]{1,253}$/;
 const nowSql = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
 const BATCH = 2000;
+/** Rows per core table a mapping profile reads to see what the values look like. Totals, keys and tie-outs read every row. */
+export const PROFILE_SAMPLE = 20_000;
 
 // ---- custom column mappings --------------------------------------------------------------------
 
@@ -772,6 +774,9 @@ export class SourceService {
         tables.push({ table: t, rows: 0, key: null });
         continue;
       }
+      // What the values look like comes from a sample, so a core of millions of rows profiles in seconds.
+      const sampled = Math.min(total, PROFILE_SAMPLE);
+      const src = total > PROFILE_SAMPLE ? `(SELECT * FROM ${q(t)} LIMIT ${PROFILE_SAMPLE}) s` : q(t);
       const parts = mine.map((x, i) => {
         const v = `CAST(${q(x.c)} AS CHAR)`;
         const has = `(${v} IS NOT NULL AND TRIM(${v}) <> '' AND ${v} <> '00000000')`;
@@ -790,7 +795,7 @@ export class SourceService {
           `MAX(CASE WHEN ${has} THEN ${v} END) AS tmx${i}`,
         ].join(', ');
       });
-      const [agg] = await rows<Record<string, string | number | null>>(core, `SELECT ${parts.join(', ')} FROM ${q(t)}`);
+      const [agg] = await rows<Record<string, string | number | null>>(core, `SELECT ${parts.join(', ')} FROM ${src}`);
       const num = (k: string) => Number(agg?.[k] ?? 0);
       const here: ColumnProfile[] = mine.map((x, i) => {
         const filled = num(`f${i}`);
@@ -801,6 +806,7 @@ export class SourceService {
           column: x.c,
           dataType: x.dt,
           rows: total,
+          sampled,
           filled,
           distinct: num(`d${i}`),
           min: agg?.[numeric ? `mn${i}` : `tmn${i}`] === null || agg?.[numeric ? `mn${i}` : `tmn${i}`] === undefined ? null : String(agg[numeric ? `mn${i}` : `tmn${i}`]).slice(0, 80),
@@ -815,9 +821,17 @@ export class SourceService {
       });
       for (const c of here) {
         if (c.distinct > 40 || !c.filled) continue;
-        c.top = (await rows<{ v: string; n: number }>(core, `SELECT CAST(${q(c.column)} AS CHAR) AS v, COUNT(*) AS n FROM ${q(t)} GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 12`)).map((r) => ({ value: String(r.v ?? ''), count: Number(r.n) }));
+        c.top = (await rows<{ v: string; n: number }>(core, `SELECT CAST(${q(c.column)} AS CHAR) AS v, COUNT(*) AS n FROM ${src} GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 12`)).map((r) => ({ value: String(r.v ?? ''), count: Number(r.n) }));
       }
-      const key = here.find((c) => c.distinct === total && c.numericShare >= 0.99 && c.filled === total)?.column ?? null;
+      // The key: unique in the sample, then checked over every row.
+      let key: string | null = null;
+      for (const c of here.filter((x) => x.distinct === sampled && x.numericShare >= 0.99 && x.filled === sampled)) {
+        const [u] = await rows<{ n: number }>(core, `SELECT COUNT(DISTINCT ${q(c.column)}) AS n FROM ${q(t)}`);
+        if (Number(u?.n) === total) {
+          key = c.column;
+          break;
+        }
+      }
       tables.push({ table: t, rows: total, key });
       columns.push(...here);
     }
@@ -831,14 +845,17 @@ export class SourceService {
     for (const c of columns) {
       const own = tables.find((t) => t.table === c.table);
       if (own?.key === c.column || c.distinct < 50 || c.dateShare >= 0.9 || c.fractionShare > 0.05) continue;
-      const sample = (await rows<{ v: string }>(core, `SELECT DISTINCT CAST(${q(c.column)} AS CHAR) AS v FROM ${q(c.table)} WHERE ${q(c.column)} IS NOT NULL LIMIT 5000`)).map((r) => String(r.v));
+      const from = c.rows > PROFILE_SAMPLE ? `(SELECT ${q(c.column)} FROM ${q(c.table)} LIMIT ${PROFILE_SAMPLE}) s` : q(c.table);
+      const sample = (await rows<{ v: string }>(core, `SELECT DISTINCT CAST(${q(c.column)} AS CHAR) AS v FROM ${from} WHERE ${q(c.column)} IS NOT NULL LIMIT 5000`)).map((r) => String(r.v));
       if (!sample.length) continue;
       let best: ColumnProfile['refersTo'] = null;
       for (const k of keys) {
         if (k.table === c.table && k.key === c.column) continue;
         const set = keyValues.get(k.table)!;
         // A handful of small numbers (rates, codes) fall inside a large key by chance; a reference covers a fair part of it.
-        if (c.distinct < 0.2 * set.size) continue;
+        // Distinct values in the sample, scaled up to the whole table, as an estimate.
+        const estimate = Math.min(c.rows, c.distinct * (c.rows / Math.max(1, c.sampled ?? c.rows)));
+        if (estimate < 0.2 * set.size) continue;
         const share = sample.filter((v) => set.has(v)).length / sample.length;
         if (share >= 0.95 && (!best || share > best.share)) best = { table: k.table, column: k.key!, share };
       }
@@ -928,6 +945,7 @@ export class SourceService {
       ties: result.ties,
       comparison: comparison ? { total: comparison.total, right: comparison.right, transformsRight: comparison.transformsRight, missed: comparison.rows.filter((r) => !r.right).map((r) => ({ di: r.di, expected: r.expected, proposed: r.proposed })), extra: comparison.extra.map((p) => `${p.coreTable}.${p.coreColumn} → ${p.diTable}.${p.diColumn}`) } : null,
       descriptions: useDescriptions && !!pack,
+      sample: PROFILE_SAMPLE,
     };
     const [ins] = (await this.pool.query('INSERT INTO map_run (connection_id, system_id, mode, started_at, finished_at, columns_profiled, summary, run_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [conn.connectionId, conn.system.id, opts.hideStandard ? 'measure' : 'propose', started, nowSql(), result.profile.columns.length, JSON.stringify(summary), opts.runBy])) as unknown as [{ insertId: number }];
     const runId = ins.insertId;
@@ -956,7 +974,7 @@ export class SourceService {
       mode: run.mode,
       at: String(run.finished_at).slice(0, 16),
       profiled: Number(run.columns_profiled),
-      summary: json<{ bands: Record<string, number>; tables: Record<string, string>; ties: { property: string; column: string; core: number; reported: number; code: string; pass: boolean }[]; comparison: { total: number; right: number; transformsRight: number; missed: { di: string; expected: string; proposed: string | null }[]; extra: string[] } | null }>(run.summary),
+      summary: json<{ sample?: number; bands: Record<string, number>; tables: Record<string, string>; ties: { property: string; column: string; core: number; reported: number; code: string; pass: boolean }[]; comparison: { total: number; right: number; transformsRight: number; missed: { di: string; expected: string; proposed: string | null }[]; extra: string[] } | null }>(run.summary),
       proposals: proposals.map((p) => ({ core: `${p.core_table}.${p.core_column}`, di: `${p.di_table}.${p.di_column}`, property: p.property_id, label: ontology().properties.get(p.property_id)?.label ?? p.property_id, score: Number(p.score), band: p.band, transform: p.transform, signals: json<Signals & { why: string[] }>(p.signals), runnerUp: p.runner_up ? json<{ coreColumn: string; diColumn: string; score: number }>(p.runner_up) : null })),
       profiles: profiles.map((p) => ({ core: `${p.core_table}.${p.core_column}`, kind: p.kind, rows: Number(p.row_count), filled: Number(p.filled), distinct: Number(p.distinct_count), min: p.min_value, max: p.max_value, top: p.top_values ? json<{ value: string; count: number }[]>(p.top_values) : [], refersTo: p.refers_to })),
     };
