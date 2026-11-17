@@ -310,7 +310,9 @@ async function main() {
     // Onboarding's touch types and priorities, subscriptions, follow-up rules, and members' employment, leisure and life events.
     for (const ddl of ONB_DESK_DDL) await admin.query(ddl);
     for (const sql of ONB_DESK_UPDATES) await admin.query(sql);
-    const onbDesk = generateOnboardingDesk(t.parties as unknown[][], mods.tasks as unknown[][]);
+    // On the credit union, members work at its SEGs about as often as the SEG module counts them.
+    const segEmployers = profile.institutionType === 'credit_union' ? (MODULE_FIXTURES.companies as unknown[][]).filter((c) => String(c[2]) === 'Board Approved' && Number(c[3]) > 0).map((c) => [String(c[1]), Number(c[3])] as [string, number]) : [];
+    const onbDesk = generateOnboardingDesk(t.parties as unknown[][], mods.tasks as unknown[][], segEmployers);
     await insert(admin, 'onb_subscription', ['party_id', 'subscribed', 'changed'], onbDesk.subscriptions);
     await insert(admin, 'onb_rule', ['name', 'group_name', 'condition_code', 'after_day', 'touch', 'touch_type', 'priority', 'active', 'created_by', 'created_on', 'copied_from', 'approval_id'], onbDesk.rules);
     await insert(admin, 'cdm_party_profile', ['party_id', 'employer', 'occupation', 'income_band', 'years_employed', 'interests', 'life_events', 'goals'], onbDesk.profiles);

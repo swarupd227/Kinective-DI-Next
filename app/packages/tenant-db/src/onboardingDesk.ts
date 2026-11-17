@@ -44,8 +44,11 @@ const pickSome = (list: string[], seed: number, salt: number, n: number) => {
   return out;
 };
 
-/** parties: cdm_party rows; tasks: onb_task rows. */
-export function generateOnboardingDesk(parties: unknown[][], tasks: unknown[][]) {
+/**
+ * parties: cdm_party rows; tasks: onb_task rows; segs: the employer groups members already work at, as
+ * [name, members], so the employers on file add up to about what the SEG module shows for each one.
+ */
+export function generateOnboardingDesk(parties: unknown[][], tasks: unknown[][], segs: [string, number][] = []) {
   const asOf = Date.parse(`${AS_OF}T00:00:00Z`);
   const onboarding = [...new Set(tasks.map((t) => t[1] as number))];
   const subscriptions = onboarding.map((id) => [id, unit(id, 1901) < 0.86 ? 1 : 0, ymd(asOf - Math.floor(5 + unit(id, 1902) * 80) * DAY)]);
@@ -56,12 +59,22 @@ export function generateOnboardingDesk(parties: unknown[][], tasks: unknown[][])
     ['Second product by day 60', 'Growth', 'single_product', 60, 'Second product conversation', 'Call', 'Normal', 0, 'Dana Lee', '2026-07-15', null, null],
   ];
   const profiles: unknown[][] = [];
+  const ageOf = (p: unknown[]) => (p[3] ? (asOf - Date.parse(`${String(p[3]).slice(0, 10)}T00:00:00Z`)) / (365.25 * DAY) : 40);
+  const isRetired = (p: unknown[]) => ageOf(p) >= 66 && unit(p[0] as number, 1911) < 0.8;
+  const working = parties.filter((p) => unit(p[0] as number, 1910) < 0.35 && !isRetired(p)).length;
+  const segTotal = segs.reduce((n, [, m]) => n + m, 0);
+  // The share of working members who work at a SEG, so each SEG gets about as many as it has members.
+  const segShare = working && segTotal ? Math.min(0.6, segTotal / working) : 0;
+  const segAt = (r: number) => {
+    let acc = 0;
+    for (const [name, m] of segs) if ((acc += m / segTotal) > r) return name;
+    return segs[segs.length - 1]![0];
+  };
   for (const p of parties) {
     const id = p[0] as number;
     if (unit(id, 1910) >= 0.35) continue;
-    const age = p[3] ? (asOf - Date.parse(`${String(p[3]).slice(0, 10)}T00:00:00Z`)) / (365.25 * DAY) : 40;
-    const retired = age >= 66 && unit(id, 1911) < 0.8;
-    const employer = retired ? 'Retired' : EMPLOYERS[Math.floor(unit(id, 1912) * (EMPLOYERS.length - 1))]!;
+    const retired = isRetired(p);
+    const employer = retired ? 'Retired' : unit(id, 1923) < segShare ? segAt(unit(id, 1924)) : EMPLOYERS[Math.floor(unit(id, 1912) * (EMPLOYERS.length - 1))]!;
     const events = pickSome(EVENTS, id, 1913, unit(id, 1914) < 0.5 ? 1 : 2).map((e, i) => ({ event: e, date: ymd(asOf - Math.floor(unit(id + i, 1915) * 700) * DAY) }));
     profiles.push([
       id,

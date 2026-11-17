@@ -46,10 +46,11 @@ export function activityModule(svc: ActivityService, costs: MemberProfitService 
           if (!x.total) return { text: `No alerts in the last ${x.days} days.` };
           // What needs acting on first; birthdays and new members are in the table.
           const kinds = x.byType.filter((k) => k.code !== 'BIRTHDAY' && k.code !== 'NEW_MEMBER').slice(0, 4).map((k) => `${k.count.toLocaleString('en-US')} ${k.type.toLowerCase()}`).join(', ');
+          const social = x.byType.filter((k) => k.code === 'BIRTHDAY' || k.code === 'NEW_MEMBER').reduce((n, k) => n + k.count, 0);
           const large = x.items.find((i) => i.code === 'LARGE_DEPOSIT' || i.code === 'LARGE_WITHDRAWAL');
           const stopped = x.items.filter((i) => i.code === 'DD_STOPPED').length;
           return {
-            text: `**${x.total.toLocaleString('en-US')} alerts** in the last ${x.days} days: ${kinds}.${large ? ` The latest large one: ${large.name} at ${large.branch}, ${large.description.charAt(0).toLowerCase()}${large.description.slice(1)}.` : ''}${stopped ? ` ${stopped} ${stopped === 1 ? 'person’s' : 'people’s'} direct deposit stopped: worth a call before the money follows.` : ''}`,
+            text: `**${x.total.toLocaleString('en-US')} alerts** in the last ${x.days} days: ${kinds}${social ? `, and ${social.toLocaleString('en-US')} birthdays and new members` : ''}.${large ? ` The latest large one: ${large.name} at ${large.branch}, ${large.description.charAt(0).toLowerCase()}${large.description.slice(1)}.` : ''}${stopped ? ` ${stopped} ${stopped === 1 ? 'person’s' : 'people’s'} direct deposit stopped: worth a call before the money follows.` : ''}`,
             blocks: [
               moduleTable(spec, `Alerts by kind, last ${x.days} days`, ctx.runId, 'activity.alerts.kind', [text('type', 'Alert'), { field: 'count', headerName: 'Alerts', type: 'count' }, { field: 'people', headerName: 'People', type: 'count' }], x.byType),
               moduleTable(spec, 'Latest alerts', ctx.runId, 'activity.alerts.items', [text('date', 'Date'), text('name', 'Name'), text('branch', 'Branch'), text('type', 'Alert'), text('description', 'What happened')], x.items.slice(0, 50).map((i) => ({ date: i.date, name: i.name, branch: i.branch, type: i.type, description: i.description }))),

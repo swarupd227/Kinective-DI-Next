@@ -165,8 +165,13 @@ export function portfolioModule(svc: PortfolioService, person: 'member' | 'custo
             const t = c.total;
             const fees = c.overdraftFees;
             const cp = c.courtesyPayName.toLowerCase();
+            // The branch spread goes in the words too, so the answer can speak to it without reading the table.
+            const ranked = c.byBranch.filter((r) => r.accounts >= 100).sort((a, b) => b.cpayPct - a.cpayPct);
+            const hi = ranked[0];
+            const lo = ranked[ranked.length - 1];
+            const spread = hi && lo && hi !== lo ? ` By branch, ${cp} runs from ${hi.cpayPct}% at ${hi.branch} to ${lo.cpayPct}% at ${lo.branch}.` : '';
             return {
-              text: `Of ${t.accounts.toLocaleString('en-US')} open checking accounts, **${t.cpayPct}% have ${cp}**, ${t.odtPct}% overdraft transfer from savings, ${t.ddPct}% direct deposit and ${t.debitPct}% a debit card.${fees && fees.count ? ` Over the 30 days on file, overdraft fees were charged ${fees.count.toLocaleString('en-US')} times (${mm(Math.abs(fees.amount))}) on ${fees.accounts.toLocaleString('en-US')} accounts, all of them enrolled in ${cp}.` : ''} ${P} opt in to ${cp}; without it, an item that would overdraw the account is returned.`,
+              text: `Of ${t.accounts.toLocaleString('en-US')} open checking accounts, **${t.cpayPct}% have ${cp}**, ${t.odtPct}% overdraft transfer from savings, ${t.ddPct}% direct deposit and ${t.debitPct}% a debit card.${spread}${fees && fees.count ? ` Over the 30 days on file, overdraft fees were charged ${fees.count.toLocaleString('en-US')} times (${mm(Math.abs(fees.amount))}) on ${fees.accounts.toLocaleString('en-US')} accounts, all of them enrolled in ${cp}.` : ''} ${P} opt in to ${cp}; without it, an item that would overdraw the account is returned.`,
               blocks: [moduleTable(who, 'Services on checking by branch', ctx.runId, 'portfolio.services.checking', [text('branch', 'Branch'), cnt('accounts', 'Checking accounts'), text('cpay', c.courtesyPayName), text('odt', 'Overdraft transfer'), text('dd', 'Direct deposit'), text('debit', 'Debit card')], [...c.byBranch, t].map((r) => ({ branch: r.branch, accounts: r.accounts, cpay: `${r.cpayPct}%`, odt: `${r.odtPct}%`, dd: `${r.ddPct}%`, debit: `${r.debitPct}%` })))],
               sources: [{ kind: 'table', label: 'Services on each share', ref: 'table:cdm_deposit_service' }],
             };
