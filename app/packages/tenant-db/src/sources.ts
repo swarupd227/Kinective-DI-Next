@@ -122,6 +122,40 @@ export const SOURCES_DDL = [
      PRIMARY KEY (run_id, di_table, di_column),
      KEY ix_map_candidate_core (run_id, core_table, core_column)
    )`,
+  // Mapping versions and drift (Core Mapping and Ontology, phase 3). A connection's mapping as pulls
+  // use it, one row per approved change; version 1 is Kinective's standard mapping for the core.
+  `CREATE TABLE IF NOT EXISTS map_version (
+     version_id INT AUTO_INCREMENT PRIMARY KEY,
+     connection_id INT NOT NULL,
+     version_no INT NOT NULL,
+     source VARCHAR(20) NOT NULL,
+     summary VARCHAR(300) NOT NULL,
+     definition JSON NOT NULL,
+     created_by VARCHAR(40) NOT NULL,
+     created_name VARCHAR(80) NOT NULL,
+     created_at DATETIME NOT NULL,
+     approval_id VARCHAR(60) NOT NULL,
+     UNIQUE KEY ux_map_version_approval (approval_id),
+     UNIQUE KEY ux_map_version_no (connection_id, version_no)
+   )`,
+  // What a pull found that the mapping doesn't expect: a code the crosswalk lacks (its rows are held),
+  // a column that appeared or disappeared, or totals that no longer tie out to the regulatory return.
+  `CREATE TABLE IF NOT EXISTS map_drift (
+     drift_id INT AUTO_INCREMENT PRIMARY KEY,
+     connection_id INT NOT NULL,
+     version_id INT NOT NULL,
+     sync_run_id INT NULL,
+     kind VARCHAR(20) NOT NULL,
+     core_table VARCHAR(64) NOT NULL,
+     core_column VARCHAR(64) NOT NULL,
+     value VARCHAR(80) NOT NULL DEFAULT '',
+     detail JSON NULL,
+     state VARCHAR(12) NOT NULL,
+     found_at DATETIME NOT NULL,
+     resolved_at DATETIME NULL,
+     resolved_version_id INT NULL,
+     UNIQUE KEY ux_map_drift_item (connection_id, kind, core_table, core_column, value)
+   )`,
   // The values custom mappings bring in, one row per record and field.
   `CREATE TABLE IF NOT EXISTS cdm_custom_field (
      di_table VARCHAR(64) NOT NULL,
@@ -138,7 +172,10 @@ export const SOURCE_TARGETS = ['cdm_party', 'cdm_deposit_account', 'cdm_loan'] a
 export const landingTable = (diTable: string) => `src_land_${diTable.replace(/^cdm_/, '')}`;
 const LANDING_DDL = SOURCE_TARGETS.map((t) => `CREATE TABLE IF NOT EXISTS ${landingTable(t)} LIKE ${t}`);
 
-export const SOURCES_WRITE_TABLES = ['src_credential', 'src_connection', 'src_mapping', 'src_sync_run', 'src_column_map', 'cdm_custom_field', 'map_run', 'map_profile', 'map_candidate'];
+export const SOURCES_WRITE_TABLES = ['src_credential', 'src_connection', 'src_mapping', 'src_sync_run', 'src_column_map', 'cdm_custom_field', 'map_run', 'map_profile', 'map_candidate', 'map_version', 'map_drift'];
+/** The raw zone: the replica's mapped tables as they came, so existing reports on core tables keep working. A pull replaces them. */
+export const RAW_TABLES = ['ACCOUNT', 'NAME', 'SAVINGS', 'LOAN'] as const;
+export const rawTable = (coreTable: string) => `src_raw_${coreTable.toLowerCase()}`;
 /** A pull replaces what landed last time, so the landing tables also allow deletes. Nothing else does. */
 export const SOURCES_LANDING_TABLES = SOURCE_TARGETS.map(landingTable);
 
@@ -161,6 +198,12 @@ const ymd = (column: string) => `IFNULL(DATE_FORMAT(${column}, '%Y%m%d'), '00000
 export async function createSourceTables(admin: mysql.Connection, schema: string) {
   await admin.query(`USE \`${schema}\``);
   for (const ddl of [...SOURCES_DDL, ...LANDING_DDL]) await admin.query(ddl);
+  // A landing table may hold a row without a value its curated table requires: a pull lands a code
+  // the crosswalk doesn't know as nothing, held for a decision, rather than as a wrong name.
+  for (const t of SOURCE_TARGETS) {
+    const [cols] = (await admin.query("SELECT COLUMN_NAME AS c, COLUMN_TYPE AS ty FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND IS_NULLABLE = 'NO' AND COLUMN_KEY <> 'PRI'", [schema, landingTable(t)])) as unknown as [{ c: string; ty: string }[]];
+    for (const c of cols) await admin.query(`ALTER TABLE \`${schema}\`.\`${landingTable(t)}\` MODIFY \`${c.c}\` ${c.ty} NULL`);
+  }
   for (const table of SOURCES_WRITE_TABLES) await admin.query(`GRANT INSERT, UPDATE ON \`${schema}\`.\`${table}\` TO 'dinext'@'%'`);
   for (const table of SOURCES_LANDING_TABLES) await admin.query(`GRANT INSERT, UPDATE, DELETE ON \`${schema}\`.\`${table}\` TO 'dinext'@'%'`);
   // A pull replaces the values each custom mapping brought in, so it may delete them.
@@ -171,6 +214,18 @@ export async function createSourceTables(admin: mysql.Connection, schema: string
  * The Symitar-style replica for one tenant, built from its curated tables. Dropped and rebuilt each
  * time. core_reader gets SELECT on it and nothing else.
  */
+/**
+ * The raw zone for a tenant: an empty copy of each mapped replica table, in the tenant's database,
+ * which a pull fills as it reads the core. The app may replace their rows and nothing else.
+ */
+export async function createRawTables(admin: mysql.Connection, schema: string, replica: string) {
+  for (const t of RAW_TABLES) {
+    await admin.query(`DROP TABLE IF EXISTS \`${schema}\`.\`${rawTable(t)}\``);
+    await admin.query(`CREATE TABLE \`${schema}\`.\`${rawTable(t)}\` LIKE \`${replica}\`.\`${t}\``);
+    await admin.query(`GRANT SELECT, INSERT, DELETE ON \`${schema}\`.\`${rawTable(t)}\` TO 'dinext'@'%'`);
+  }
+}
+
 export async function seedCoreReplica(admin: mysql.Connection, schema: string) {
   const db = replicaDatabase(schema);
   const [[build]] = (await admin.query(`SELECT DATE_FORMAT(as_of_date, '%Y-%m-%d') AS as_of FROM \`${schema}\`.meta_build ORDER BY as_of_date DESC LIMIT 1`)) as unknown as [{ as_of: string }[]];
@@ -229,6 +284,7 @@ export async function seedCoreReplica(admin: mysql.Connection, schema: string) {
   await admin.query(`CREATE USER IF NOT EXISTS '${CORE_READER}'@'%' IDENTIFIED BY ?`, [coreReaderPassword()]);
   await admin.query(`ALTER USER '${CORE_READER}'@'%' IDENTIFIED BY ?`, [coreReaderPassword()]);
   await admin.query(`GRANT SELECT ON \`${db}\`.* TO '${CORE_READER}'@'%'`);
+  await createRawTables(admin, schema, db);
   await admin.query(`USE ${src}`);
   return { database: db, processDate: asOf };
 }

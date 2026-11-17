@@ -21,7 +21,7 @@ export type Transform =
   | { kind: 'same' }
   | { kind: 'number' }
   | { kind: 'date8' }
-  | { kind: 'code'; codes: Record<string, string> }
+  | { kind: 'code'; codes: Record<string, string>; /** The vendor's code list, such as shareType, when the mapping came from a vendor pack. */ set?: string }
   | { kind: 'rate1000' }
   | { kind: 'daysPast' }
   | { kind: 'not' }
@@ -66,7 +66,7 @@ const fromPack = (id: string, codes: Record<string, Record<string, number>>): Ta
     theirTables: t.their_tables,
     from: t.from,
     key: t.key,
-    columns: t.columns.map((c): ColumnMap => ({ di: c.di, their: c.their, how: c.how === 'code' ? { kind: 'code', codes: invert(codes[c.codes!] ?? {}) } : ({ kind: c.how } as Transform) })),
+    columns: t.columns.map((c): ColumnMap => ({ di: c.di, their: c.their, how: c.how === 'code' ? { kind: 'code', codes: invert(codes[c.codes!] ?? {}), set: c.codes } : ({ kind: c.how } as Transform) })),
   }));
 };
 
@@ -196,6 +196,113 @@ export interface PullResult {
   tables: TableReconcile[];
   differences: Difference[];
   replayed?: boolean;
+  /** The mapping version the pull used. */
+  version?: number | null;
+  /** Rows whose code the crosswalk doesn't know: landed without that value until someone decides. */
+  held?: HeldCodes[];
+  /** Raw-zone tables the pull refreshed, with their rows. */
+  raw?: { table: string; rows: number }[];
+  /** How many drift items the pull found. */
+  drift?: number;
+}
+
+// ---- mapping versions and drift (Core Mapping and Ontology, phase 3) ------------------------------
+
+export interface VersionDefinition {
+  tables: TableMap[];
+  /** The core's columns, by table, when the version was first pulled with. */
+  seen?: Record<string, string[]> | null;
+}
+export interface MappingVersion {
+  versionId: number;
+  versionNo: number;
+  source: string;
+  summary: string;
+  createdName: string;
+  createdAt: string;
+  definition: VersionDefinition;
+}
+export interface CodeProposal {
+  value: string;
+  runnerUp: string | null;
+  evidence: { label: string; held: string; proposed: string }[];
+}
+export interface HeldCodes {
+  diTable: string;
+  diColumn: string;
+  table: string;
+  column: string;
+  set: string | null;
+  code: string;
+  count: number;
+  proposal: CodeProposal | null;
+}
+interface DriftFinding {
+  kind: 'new_code' | 'new_column' | 'missing_column' | 'tie_out';
+  table: string;
+  column: string;
+  value: string;
+  detail: unknown;
+}
+export interface DriftItem {
+  driftId: number;
+  kind: DriftFinding['kind'];
+  table: string;
+  column: string;
+  value: string;
+  state: string;
+  foundAt: string;
+  versionNo: number | null;
+  detail: Record<string, unknown>;
+}
+
+/** "shareType" as a person says it: "share type". */
+export const codeSetWords = (set: string | null | undefined) => (set ? set.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase() : 'code');
+
+/**
+ * The known code whose rows the held rows look most like: the average of each number the mapping
+ * reads (balance, rate) and the share with each date (a maturity date), compared group by group,
+ * each feature scaled by how much it varies across the groups. Null when there's nothing to compare.
+ */
+export function nearestCode(map: TableMap, typed: Raw[][], codeIdx: number, heldRows: number[]): CodeProposal | null {
+  const feats = map.columns
+    .map((c, i) => ({ c, i }))
+    .filter(({ c, i }) => i !== codeIdx && c.di !== map.key && !/_id$/.test(c.di) && ['number', 'rate1000', 'date8'].includes(c.how.kind));
+  if (!feats.length) return null;
+  const held = new Set(heldRows);
+  const groups = new Map<string, number[]>();
+  typed.forEach((r, j) => {
+    if (held.has(j)) return;
+    const v = r[codeIdx];
+    if (v === null || v === undefined) return;
+    (groups.get(String(v)) ?? groups.set(String(v), []).get(String(v))!).push(j);
+  });
+  if (!groups.size) return null;
+  const stat = (idx: number[], f: (typeof feats)[number]) => {
+    if (f.c.how.kind === 'date8') return idx.filter((j) => typed[j]![f.i] !== null).length / Math.max(1, idx.length);
+    const xs = idx.map((j) => typed[j]![f.i]).filter((x): x is number => typeof x === 'number' && Number.isFinite(x));
+    return xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0;
+  };
+  const heldStats = feats.map((f) => stat(heldRows, f));
+  const groupStats = [...groups].map(([value, idx]) => ({ value, stats: feats.map((f) => stat(idx, f)) }));
+  const scale = feats.map((_, k) => {
+    const xs = [...groupStats.map((g) => g.stats[k]!), heldStats[k]!];
+    const mean = xs.reduce((s, x) => s + x, 0) / xs.length;
+    return Math.sqrt(xs.reduce((s, x) => s + (x - mean) ** 2, 0) / xs.length) || 1;
+  });
+  const ranked = groupStats.map((g) => ({ ...g, d: g.stats.reduce((s, x, k) => s + Math.abs(x - heldStats[k]!) / scale[k]!, 0) })).sort((a, b) => a.d - b.d);
+  const best = ranked[0]!;
+  const show = (f: (typeof feats)[number], x: number) =>
+    f.c.how.kind === 'date8' ? `${Math.round(x * 100)}% have one` : f.c.how.kind === 'rate1000' ? `${x.toFixed(2)}% on average` : `$${Math.round(x).toLocaleString('en-US')} on average`;
+  const label = (f: (typeof feats)[number]) => ontology().properties.get(ontology().columnIndex.get(`${map.diTable}.${f.c.di}`) ?? '')?.label ?? f.c.di.replace(/_/g, ' ');
+  // The evidence worth showing: the features that tell the known codes apart most, at most three.
+  const spread = feats.map((_, k) => {
+    const xs = groupStats.map((g) => g.stats[k]!);
+    const mean = xs.reduce((s, x) => s + Math.abs(x), 0) / xs.length;
+    return mean ? Math.sqrt(xs.reduce((s, x) => s + (x - mean) ** 2, 0) / xs.length) / mean : 0;
+  });
+  const telling = feats.map((f, k) => ({ f, k })).filter(({ k }) => spread[k]! > 0.05).sort((a, b) => spread[b.k]! - spread[a.k]!).slice(0, 3);
+  return { value: best.value, runnerUp: ranked[1]?.value ?? null, evidence: telling.map(({ f, k }) => ({ label: label(f), held: show(f, heldStats[k]!), proposed: show(f, best.stats[k]!) })) };
 }
 
 export interface SourceConnection {
@@ -495,37 +602,259 @@ export class SourceService {
     const conn = (await this.connections()).find((x) => x.connectionId === connectionId);
     if (!conn) throw new CoreError('NOT_FOUND', 'That connection isn’t there any more.');
     const [cred] = await rows<{ credential_id: number }>(this.pool, 'SELECT credential_id FROM src_connection WHERE connection_id = ?', [connectionId]);
-    const maps = (await rows<{ definition: string | TableMap }>(this.pool, 'SELECT definition FROM src_mapping WHERE connection_id = ? ORDER BY mapping_id', [connectionId])).map((m) => (typeof m.definition === 'string' ? (JSON.parse(m.definition) as TableMap) : m.definition));
+    // The mapping the pull uses: the connection's current version, or the mapping recorded when it was connected.
+    const version = await this.currentVersion(conn);
+    const maps = version?.definition.tables ?? (await rows<{ definition: string | TableMap }>(this.pool, 'SELECT definition FROM src_mapping WHERE connection_id = ? ORDER BY mapping_id', [connectionId])).map((m) => (typeof m.definition === 'string' ? (JSON.parse(m.definition) as TableMap) : m.definition));
     const started = nowSql();
     const [ins] = (await this.pool.query("INSERT INTO src_sync_run (connection_id, started_at, state, approval_id) VALUES (?, ?, 'Running', ?)", [connectionId, started, meta.approvalId])) as unknown as [{ insertId: number }];
     const runId = ins.insertId;
+    const findings: DriftFinding[] = [];
     try {
       let total = 0;
       let processDate: string | null = null;
       const custom = await this.activeCustom(conn.system.id);
       const customValues: { diTable: string; rows: { record: number; field: string; text: string | null; num: number | null }[]; fields: { field: string; label: string; filled: number }[] }[] = [];
+      const held: HeldCodes[] = [];
+      const raw: { table: string; rows: number }[] = [];
+      const rawTables = new Set((await rows<{ t: string }>(this.pool, "SELECT TABLE_NAME AS t FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE 'src\\_raw\\_%'")).map((r) => r.t.toLowerCase()));
       await this.withCore(cred!.credential_id, async (core) => {
         processDate = await this.processDate(core, conn.system);
+        // The core's columns now, against the ones the mapping was made for.
+        const [{ db }] = (await rows<{ db: string }>(core, 'SELECT DATABASE() AS db')) as [{ db: string }];
+        const now = new Map<string, Set<string>>();
+        for (const r of await rows<{ t: string; c: string }>(core, 'SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ?', [db])) (now.get(r.t.toUpperCase()) ?? now.set(r.t.toUpperCase(), new Set()).get(r.t.toUpperCase())!).add(r.c.toUpperCase());
+        const missing: string[] = [];
+        for (const map of maps) {
+          const al = aliases(map);
+          for (const col of map.columns) {
+            const [a, c] = col.their.split('.') as [string, string];
+            const table = (al[a] ?? '').toUpperCase();
+            if (!now.get(table)?.has(c.toUpperCase())) {
+              missing.push(`${table}.${c}`);
+              findings.push({ kind: 'missing_column', table, column: c, value: '', detail: { diTable: map.diTable, diColumn: col.di } });
+            }
+          }
+          for (const t of map.theirTables) {
+            const seen = version?.definition.seen?.[t.toUpperCase()];
+            if (seen) for (const c of now.get(t.toUpperCase()) ?? []) if (!seen.includes(c)) findings.push({ kind: 'new_column', table: t.toUpperCase(), column: c, value: '', detail: { diTable: map.diTable } });
+          }
+        }
+        if (missing.length) throw new CoreError('INVALID', `The core no longer has ${missing.join(', ')}, which the mapping reads, so the pull stopped and nothing was replaced. Ask what changed in the core.`);
+        // The first pull on a version records the columns it was made for.
+        if (version && !version.definition.seen) {
+          const seen = Object.fromEntries([...new Set(maps.flatMap((m) => m.theirTables.map((t) => t.toUpperCase())))].map((t) => [t, [...(now.get(t) ?? [])].sort()]));
+          await this.pool.query('UPDATE map_version SET definition = ? WHERE version_id = ?', [JSON.stringify({ ...version.definition, seen }), version.versionId]);
+        }
         for (const map of maps) {
           const select = map.columns.map((col, i) => `${col.their} AS c${i}`).join(', ');
           const found = await rows<Record<string, Raw>>(core, `SELECT ${select} FROM ${map.from}`);
           const typed = found.map((r) => map.columns.map((col, i) => transform(r[`c${i}`] ?? null, col.how, processDate)));
+          // A code the crosswalk doesn't know lands without a value, so no report counts it under a wrong name; it's held for a decision.
+          map.columns.forEach((col, i) => {
+            if (col.how.kind !== 'code') return;
+            const codes = col.how.codes;
+            const byCode = new Map<string, number[]>();
+            found.forEach((r, j) => {
+              const v = r[`c${i}`];
+              if (v === null || v === undefined) return;
+              const code = String(Number(v));
+              if (codes[code] !== undefined) return;
+              typed[j]![i] = null;
+              (byCode.get(code) ?? byCode.set(code, []).get(code)!).push(j);
+            });
+            for (const [code, idx] of byCode) {
+              const proposal = nearestCode(map, typed, i, idx);
+              const [a, c] = col.their.split('.') as [string, string];
+              const table = (aliases(map)[a] ?? a).toUpperCase();
+              held.push({ diTable: map.diTable, diColumn: col.di, table, column: c, set: col.how.set ?? null, code, count: idx.length, proposal });
+              findings.push({ kind: 'new_code', table, column: c, value: code, detail: { diTable: map.diTable, diColumn: col.di, set: col.how.set ?? null, count: idx.length, proposal } });
+            }
+          });
           await this.land(map, typed);
           total += typed.length;
-          // The institution's own mappings for this table, compiled by DI from their checked expressions.
           const mine = custom.filter((c) => c.di_table === map.diTable);
           if (mine.length) customValues.push(await this.readCustom(core, map, mine, processDate));
+          // The raw zone: each core table this mapping reads, copied as it is.
+          for (const t of map.theirTables) {
+            const target = `src_raw_${t.toLowerCase()}`;
+            if (!rawTables.has(target) || raw.some((x) => x.table === t)) continue;
+            raw.push({ table: t, rows: await this.copyRaw(core, t, target) });
+          }
         }
       });
       for (const c of customValues) await this.landCustom(c.diTable, c.fields.map((f) => f.field), c.rows);
       const recon = await this.reconcile(maps);
-      const detail = { processDate, ...recon, customFields: customValues.flatMap((c) => c.fields.map((f) => ({ ...f, diTable: c.diTable }))) };
+      // Landed totals against the regulatory return.
+      for (const t of await this.landedTieOuts(maps)) if (!t.pass) findings.push({ kind: 'tie_out', table: t.table, column: t.column, value: t.code, detail: t });
+      await this.recordDrift(connectionId, version?.versionId ?? 0, runId, findings);
+      const detail = { processDate, version: version?.versionNo ?? null, held, raw, drift: findings.length, ...recon, customFields: customValues.flatMap((c) => c.fields.map((f) => ({ ...f, diTable: c.diTable }))) };
       await this.pool.query("UPDATE src_sync_run SET finished_at = ?, state = 'Done', rows_pulled = ?, detail = ? WHERE run_id = ?", [nowSql(), total, JSON.stringify(detail), runId]);
       return this.run(runId);
     } catch (e) {
+      await this.recordDrift(connectionId, version?.versionId ?? 0, runId, findings).catch(() => {});
       await this.pool.query("UPDATE src_sync_run SET finished_at = ?, state = 'Failed', detail = ? WHERE run_id = ?", [nowSql(), JSON.stringify({ error: e instanceof Error ? e.message.slice(0, 300) : String(e) }), runId]);
       throw e;
     }
+  }
+
+  /**
+   * The connection's current mapping version. A connection to a core Kinective has mapped gets
+   * version 1, Kinective's standard mapping for the tables it was connected for, the first time it's
+   * needed. Null where the tables aren't there yet or the core has no standard mapping.
+   */
+  async currentVersion(conn: SourceConnection): Promise<MappingVersion | null> {
+    const latest = async () => {
+      const [v] = await rows<{ version_id: number; version_no: number; source: string; summary: string; created_name: string; created_at: string; definition: string | VersionDefinition }>(this.pool, "SELECT version_id, version_no, source, summary, created_name, DATE_FORMAT(created_at, '%Y-%m-%d %H:%i') AS created_at, definition FROM map_version WHERE connection_id = ? ORDER BY version_no DESC LIMIT 1", [conn.connectionId]);
+      return v ? { versionId: v.version_id, versionNo: v.version_no, source: v.source, summary: v.summary, createdName: v.created_name, createdAt: v.created_at, definition: typeof v.definition === 'string' ? (JSON.parse(v.definition) as VersionDefinition) : v.definition } : null;
+    };
+    let v: MappingVersion | null;
+    try {
+      v = await latest();
+    } catch {
+      return null;
+    }
+    if (v) return v;
+    if (!conn.system.mappings?.length) return null;
+    const mine = new Set(conn.tables.map((t) => t.diTable));
+    const tables = conn.system.mappings.filter((m) => mine.has(m.diTable));
+    await this.pool.query("INSERT IGNORE INTO map_version (connection_id, version_no, source, summary, definition, created_by, created_name, created_at, approval_id) VALUES (?, 1, 'standard', ?, ?, 'kinective', 'Kinective', ?, ?)", [conn.connectionId, `Kinective’s standard ${conn.system.short} mapping`, JSON.stringify({ tables, seen: null }), nowSql(), `standard:${conn.connectionId}`]);
+    return latest();
+  }
+
+  /** Every mapping version of a connection, newest first. */
+  /** The connection a mapping question is about: the one named, else the one feeding DI, else the newest. */
+  private async mappingTarget(connectionId?: number) {
+    if (connectionId) return this.connection(connectionId);
+    const all = await this.connections();
+    const conn = all.find((c) => c.inUse) ?? all[0];
+    if (!conn) throw new CoreError('NOT_FOUND', 'There’s no core connection yet. Connect the core replica first.');
+    return conn;
+  }
+
+  async versions(connectionId?: number): Promise<{ connection: SourceConnection; versions: MappingVersion[] }> {
+    const conn = await this.mappingTarget(connectionId);
+    await this.currentVersion(conn);
+    const list = await rows<{ version_id: number; version_no: number; source: string; summary: string; created_name: string; created_at: string; definition: string | VersionDefinition }>(this.pool, "SELECT version_id, version_no, source, summary, created_name, DATE_FORMAT(created_at, '%Y-%m-%d %H:%i') AS created_at, definition FROM map_version WHERE connection_id = ? ORDER BY version_no DESC", [conn.connectionId]).catch(() => []);
+    return { connection: conn, versions: list.map((v) => ({ versionId: v.version_id, versionNo: v.version_no, source: v.source, summary: v.summary, createdName: v.created_name, createdAt: v.created_at, definition: typeof v.definition === 'string' ? (JSON.parse(v.definition) as VersionDefinition) : v.definition })) };
+  }
+
+  /** What pulls found that the mapping doesn't expect, open first. */
+  async drift(connectionId?: number, includeResolved = false): Promise<{ connection: SourceConnection; items: DriftItem[] }> {
+    const conn = await this.mappingTarget(connectionId);
+    const list = await rows<{ drift_id: number; kind: DriftItem['kind']; core_table: string; core_column: string; value: string; state: string; found_at: string; detail: unknown; version_no: number | null }>(
+      this.pool,
+      `SELECT d.drift_id, d.kind, d.core_table, d.core_column, d.value, d.state, DATE_FORMAT(d.found_at, '%Y-%m-%d %H:%i') AS found_at, d.detail, v.version_no
+         FROM map_drift d LEFT JOIN map_version v ON v.version_id = d.version_id
+        WHERE d.connection_id = ?${includeResolved ? '' : " AND d.state = 'open'"} ORDER BY d.state = 'open' DESC, d.found_at DESC, d.drift_id`,
+      [conn.connectionId],
+    ).catch(() => []);
+    return { connection: conn, items: list.map((d) => ({ driftId: d.drift_id, kind: d.kind, table: d.core_table, column: d.core_column, value: d.value, state: d.state, foundAt: d.found_at, versionNo: d.version_no, detail: (typeof d.detail === 'string' ? JSON.parse(d.detail) : d.detail) ?? {} })) };
+  }
+
+  /**
+   * Checks a change to a code crosswalk, without making it: which columns use the code list, the
+   * value in DI's terms (a DI value, or one of the ontology's code labels), and the rows held for it.
+   */
+  async checkCrosswalk(p: { set: string; code: string; value: string; connectionId?: number }) {
+    const conn = await this.mappingTarget(p.connectionId);
+    const version = await this.currentVersion(conn);
+    if (!version) throw new CoreError('INVALID', `${conn.name} has no mapping version to change yet.`);
+    const cols = version.definition.tables.flatMap((m) => m.columns.filter((c) => c.how.kind === 'code' && c.how.set?.toLowerCase() === p.set.toLowerCase()).map((c) => ({ map: m, col: c })));
+    if (!cols.length) {
+      const sets = [...new Set(version.definition.tables.flatMap((m) => m.columns.map((c) => (c.how.kind === 'code' ? c.how.set : undefined)).filter((x): x is string => !!x)))];
+      throw new CoreError('INVALID', `The mapping has no ${codeSetWords(p.set)} list. It has ${sets.map(codeSetWords).join(', ')}.`);
+    }
+    const code = String(Number(p.code));
+    if (!/^\d+$/.test(code)) throw new CoreError('INVALID', 'A core type code is a number, such as 14.');
+    const set = (cols[0]!.col.how as { set?: string }).set!;
+    const current = (cols[0]!.col.how as { codes: Record<string, string> }).codes;
+    // The value in DI's terms: one the crosswalk already uses, or a code of the ontology's list for this set.
+    const pack = ontology().vendors.get(conn.system.id);
+    const valueSet = pack?.codes[set] ? ontology().valueSets.get(pack.codes[set]!.code_set_of) : null;
+    const used = [...new Set(Object.values(current))];
+    const want = p.value.trim().toLowerCase();
+    let value = used.find((v) => v.toLowerCase() === want) ?? null;
+    if (!value && valueSet) {
+      const hit = Object.values(valueSet.codes).find((c) => c.label.toLowerCase() === want || Object.values(c.labels_by_type ?? {}).some((l) => l?.toLowerCase() === want) || c.values.some((v) => v.toLowerCase() === want));
+      if (hit) value = hit.values.find((v) => used.includes(v)) ?? hit.values[0]!;
+    }
+    if (!value) throw new CoreError('INVALID', `“${p.value}” isn’t a ${codeSetWords(set)} DI knows. It can be ${used.join(', ')}.`);
+    const { items } = await this.drift(conn.connectionId);
+    const heldItems = items.filter((d) => d.kind === 'new_code' && d.value === code && cols.some(({ col }) => col.their.endsWith(`.${d.column}`)));
+    return { conn, version, set, code, value, before: current[code] ?? null, columns: cols.map(({ map, col }) => `${map.diTable}.${col.di}`), held: heldItems.reduce((s, d) => s + Number((d.detail as { count?: number }).count ?? 0), 0), driftIds: heldItems.map((d) => d.driftId) };
+  }
+
+  /** Records a new mapping version with the code added to the crosswalk, and resolves the drift it answers. Once per approval. */
+  async setCrosswalk(p: { set: string; code: string; value: string; connectionId?: number }, owner: { userId: string; name: string }, meta: { approvalId: string }) {
+    const [done] = await rows<{ version_no: number }>(this.pool, 'SELECT version_no FROM map_version WHERE approval_id = ?', [meta.approvalId]);
+    const c = await this.checkCrosswalk(p);
+    if (done) return { ...c, versionNo: done.version_no, replayed: true };
+    const tables = c.version.definition.tables.map((m) => ({ ...m, columns: m.columns.map((col) => (col.how.kind === 'code' && col.how.set === c.set ? { ...col, how: { ...col.how, codes: { ...col.how.codes, [c.code]: c.value } } } : col)) }));
+    const versionNo = c.version.versionNo + 1;
+    const summary = `${codeSetWords(c.set)} ${c.code} → ${c.value}`.replace(/^./, (x) => x.toUpperCase());
+    const [ins] = (await this.pool.query("INSERT INTO map_version (connection_id, version_no, source, summary, definition, created_by, created_name, created_at, approval_id) VALUES (?, ?, 'crosswalk', ?, ?, ?, ?, ?, ?)", [c.conn.connectionId, versionNo, summary, JSON.stringify({ tables, seen: c.version.definition.seen ?? null }), owner.userId, owner.name, nowSql(), meta.approvalId])) as unknown as [{ insertId: number }];
+    if (c.driftIds.length) await this.pool.query(`UPDATE map_drift SET state = 'resolved', resolved_at = ?, resolved_version_id = ? WHERE drift_id IN (${c.driftIds.map(() => '?').join(',')})`, [nowSql(), ins.insertId, ...c.driftIds]);
+    return { ...c, versionNo, replayed: false };
+  }
+
+  /** Replaces a raw-zone table with the core table's rows, as they are, in one transaction. */
+  private async copyRaw(core: mysql.Connection, coreTable: string, target: string) {
+    // Only the columns both sides have: a column new in the core is drift to decide on, not a reason to fail the pull.
+    const mine = new Set((await rows<{ c: string }>(this.pool, 'SELECT COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?', [target])).map((r) => r.c.toUpperCase()));
+    const [{ db }] = (await rows<{ db: string }>(core, 'SELECT DATABASE() AS db')) as [{ db: string }];
+    const theirs = (await rows<{ c: string }>(core, 'SELECT COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND UPPER(TABLE_NAME) = ? ORDER BY ORDINAL_POSITION', [db, coreTable.toUpperCase()])).map((r) => r.c).filter((c) => mine.has(c.toUpperCase()));
+    if (!theirs.length) return 0;
+    const found = await rows<Record<string, Raw>>(core, `SELECT ${theirs.map((c) => `\`${c.replaceAll('`', '')}\``).join(', ')} FROM \`${coreTable.replaceAll('`', '')}\``);
+    const conn = await this.pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      await conn.query(`DELETE FROM \`${target}\``);
+      if (found.length) {
+        const cols = Object.keys(found[0]!);
+        const list = cols.map((c) => `\`${c.replaceAll('`', '')}\``).join(', ');
+        for (let i = 0; i < found.length; i += 5000) await conn.query(`INSERT INTO \`${target}\` (${list}) VALUES ?`, [found.slice(i, i + 5000).map((r) => cols.map((c) => r[c] ?? null))]);
+      }
+      await conn.commit();
+      return found.length;
+    } catch (e) {
+      await conn.rollback().catch(() => {});
+      throw e;
+    } finally {
+      conn.release();
+    }
+  }
+
+  /** Open loan and share balances as landed, against the 5300's total loans (025B) and total shares (018), within 3%. */
+  private async landedTieOuts(maps: TableMap[]) {
+    const out: { property: string; table: string; column: string; landed: number; reported: number; code: string; pass: boolean }[] = [];
+    const lines = await rows<{ code: string; amount: number }>(this.pool, "SELECT code, amount FROM cr_value WHERE quarter_end = (SELECT MAX(quarter_end) FROM cr_value) AND code IN ('025B', '018')").catch(() => []);
+    const line = new Map(lines.map((r) => [r.code, Number(r.amount)]));
+    const checks = [
+      { diTable: 'cdm_loan', property: 'loan.balance', code: '025B', open: 'close_date IS NULL AND charge_off_date IS NULL' },
+      { diTable: 'cdm_deposit_account', property: 'deposit.balance', code: '018', open: 'close_date IS NULL' },
+    ];
+    for (const c of checks) {
+      const map = maps.find((m) => m.diTable === c.diTable);
+      const bal = map?.columns.find((x) => x.di === 'balance');
+      if (!map || !bal || !line.has(c.code)) continue;
+      const [r] = await rows<{ v: number | null }>(this.pool, `SELECT SUM(balance) AS v FROM ${landingTable(c.diTable)} WHERE ${c.open}`).catch(() => []);
+      const landed = Number(r?.v ?? 0);
+      const reported = line.get(c.code)!;
+      const [a, col] = bal.their.split('.') as [string, string];
+      out.push({ property: c.property, table: (aliases(map)[a] ?? a).toUpperCase(), column: col, landed, reported, code: c.code, pass: reported > 0 && Math.abs(landed - reported) / reported <= 0.03 });
+    }
+    return out;
+  }
+
+  /** Records what a pull found: new items open, ones seen before reopened with the latest detail. */
+  private async recordDrift(connectionId: number, versionId: number, runId: number, findings: DriftFinding[]) {
+    const at = nowSql();
+    for (const f of findings)
+      await this.pool.query(
+        `INSERT INTO map_drift (connection_id, version_id, sync_run_id, kind, core_table, core_column, value, detail, state, found_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)
+         ON DUPLICATE KEY UPDATE version_id = VALUES(version_id), sync_run_id = VALUES(sync_run_id), detail = VALUES(detail), state = 'open', found_at = VALUES(found_at), resolved_at = NULL, resolved_version_id = NULL`,
+        [connectionId, versionId, runId, f.kind, f.table, f.column, f.value, JSON.stringify(f.detail), at],
+      );
   }
 
   /** Replaces a landing table's rows in one transaction, so a reader never sees half a pull. */
@@ -577,10 +906,11 @@ export class SourceService {
   }
 
   private async run(runId: number): Promise<PullResult> {
-    const [r] = await rows<{ connection_id: number; at: string; rows_pulled: number; detail: string | { processDate: string | null; tables: TableReconcile[]; differences: Difference[] } }>(this.pool, "SELECT connection_id, DATE_FORMAT(COALESCE(finished_at, started_at), '%Y-%m-%d %H:%i') AS at, rows_pulled, detail FROM src_sync_run WHERE run_id = ?", [runId]);
+    type Detail = { processDate: string | null; tables: TableReconcile[]; differences: Difference[]; version?: number | null; held?: HeldCodes[]; raw?: { table: string; rows: number }[]; drift?: number };
+    const [r] = await rows<{ connection_id: number; at: string; rows_pulled: number; detail: string | Detail }>(this.pool, "SELECT connection_id, DATE_FORMAT(COALESCE(finished_at, started_at), '%Y-%m-%d %H:%i') AS at, rows_pulled, detail FROM src_sync_run WHERE run_id = ?", [runId]);
     const conn = (await this.connections()).find((x) => x.connectionId === r!.connection_id)!;
-    const detail = (typeof r!.detail === 'string' ? JSON.parse(r!.detail) : r!.detail) ?? { processDate: null, tables: [], differences: [] };
-    return { runId, connection: conn, at: r!.at, rows: Number(r!.rows_pulled), processDate: detail.processDate ?? null, tables: detail.tables ?? [], differences: detail.differences ?? [] };
+    const detail: Detail = (typeof r!.detail === 'string' ? JSON.parse(r!.detail) : r!.detail) ?? { processDate: null, tables: [], differences: [] };
+    return { runId, connection: conn, at: r!.at, rows: Number(r!.rows_pulled), processDate: detail.processDate ?? null, tables: detail.tables ?? [], differences: detail.differences ?? [], version: detail.version ?? null, held: detail.held ?? [], raw: detail.raw ?? [], drift: detail.drift ?? 0 };
   }
 
   /** The latest finished pull for a connection, if any. */

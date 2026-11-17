@@ -28,6 +28,15 @@ Add a property when a hub table gains a column; admit a new concept only when a 
 
 On the Symitar replica, with Kinective's mapping hidden, the proposals match it on 31 of 31 columns and read all 31 the same way, from names alone or with the vendor's descriptions. The replica uses real Symitar column names over synthetic rows, and a few synonyms were added in the same change (a member's join date is the membership's open date; a member's segment is the member type), so this shows the method works, not how it will do on another core.
 
+## Versions, drift and the raw zone (phase 3)
+
+Each connection's mapping is versioned in `map_version`: version 1 is Kinective's standard mapping, recorded the first time it's needed, and every approved crosswalk change adds one. A pull uses the latest version and records which. On each pull DI checks the core against the version and records what doesn't fit in `map_drift`:
+- a code the crosswalk doesn't know: its rows land without that value (held), so nothing counts them under a wrong name, and DI proposes the known code whose rows they look most like (balances, rates, which dates they have);
+- a column that appeared in a mapped table, or one the mapping reads that's gone (the pull then stops and replaces nothing);
+- open loan or share balances that no longer tie out to the 5300.
+
+"Map share type 14 to money market" adds the code in a new version through an approval card, and resolves the drift; the next pull maps the held rows. Each pull also copies the core's mapped tables as they are into the raw zone (`src_raw_account`, `src_raw_name`, `src_raw_savings`, `src_raw_loan`), so reports written against core tables can read them.
+
 ## Not yet
 
-FIBO alignment (the `fibo` field is empty until each reference is checked); approving proposals, versioned mappings, the raw zone and drift checks (phase 3); a second core (phase 4); and using the ontology in other agents (phase 5).
+FIBO alignment (the `fibo` field is empty until each reference is checked); freezing a mapping built from proposals, and a second core (phase 4); using the ontology in other agents (phase 5). The raw zone's tables are created with the replica at seed time, so a new core's raw tables need a seed step too.

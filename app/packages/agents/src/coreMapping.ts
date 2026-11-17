@@ -4,10 +4,11 @@
 // it applies from the next pull. A mapping's expression is DI's small read-only language, never SQL:
 // DI writes the SQL, so nothing typed reaches the core.
 import { z } from 'zod';
-import { CoreError, MAP_TARGETS, type ColumnMapRow, type CustomValueType, type MapPreview, type SourceService } from '@dinext/di-core';
+import { CoreError, MAP_TARGETS, codeSetWords, type ColumnMapRow, type CustomValueType, type DriftItem, type MapPreview, type SourceService } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec, type ModuleView } from './moduleAgent.ts';
 
 const n = (x: number) => x.toLocaleString('en-US');
+const plural = (x: number, one: string, many = `${one}s`) => `${n(x)} ${x === 1 ? one : many}`;
 const pct = (part: number, whole: number) => (whole ? `${((part / whole) * 100).toFixed(1)}%` : '0%');
 const TARGET_LABEL: Record<string, string> = { members: 'members', deposits: 'deposit accounts', loans: 'loans' };
 const TYPES: CustomValueType[] = ['text', 'number', 'date', 'flag'];
@@ -17,6 +18,18 @@ const text = (field: string, headerName: string) => ({ field, headerName, type: 
 /** Proposing a whole mapping for a core (Core Mapping and Ontology, phase 2): discover, review, explain. */
 export const DISCOVER_REQUEST =
   /\b(?:propose|work out|discover|auto-?map)\b[^.?!]*\bmappings?\b|\bmap (?:our|the|this) (?:new )?(?:core|connection|replica|symitar)(?: connection| replica)?\s*[.?!]?$|\bhow well (?:would|does|can|could) DI map\b|\bwithout (?:its|the|kinective['’]s) (?:standard )?mapping\b|\b(?:proposed|discovered) mappings?\b|\bwhich (?:proposed )?mappings? need(?:s)? (?:me|a person|review|my review)\b|\bwhy (?:did|do|does) (?:you|DI) (?:map|propose|think)\b|\bexplain (?:the )?(?:proposed )?mapping (?:for|of)\b/i;
+
+/** Mapping versions, drift and code crosswalks (Core Mapping and Ontology, phase 3). */
+export const VERSION_REQUEST =
+  /\bmapping versions?\b|\bversions? of the (?:core |symitar )?mapping\b|\b(?:mapping|core|schema) drift\b|\bwhat changed in the core\b|\bheld (?:rows|records|shares|loans)\b|\bmap (?:share|savings|loan|member|account|deposit) (?:type|code) \d+ (?:to|as)\b/i;
+
+/** "Map share type 14 to money market" → the code list, the code and the value. */
+export function crosswalkFrom(text: string): { set: string; code: string; value: string } | null {
+  const m = /\bmap (share|savings|deposit|loan|member|account) (?:type|code) (\d+) (?:to|as) (?:an? |the )?(.+?)\s*[.?!]?$/i.exec(text.trim());
+  if (!m) return null;
+  const set = /^(?:share|savings|deposit)$/i.test(m[1]!) ? 'shareType' : /^loan$/i.test(m[1]!) ? 'loanType' : 'memberType';
+  return { set, code: m[2]!, value: m[3]!.trim() };
+}
 
 export const MAPPING_REQUEST =
   /^(?![\s\S]*\b(?:pull|sync|connect|reconnect|test the connection)\b)[\s\S]*?(?:\b(?:column |core |custom |field |symitar )?mappings?\b[^.?!]*\b(?:core|symitar|tracking|fields?|columns?|replica|custom|standard)\b|\b(?:core|symitar|replica|custom|standard) (?:column |field )?mappings?\b|\b(?:custom|tracking) (?:fields?|records?|columns?)\b|\bunmapped\b|\b(?:not|aren['’]?t|isn['’]?t) (?:yet )?mapped\b|\bmap(?:ping)? (?:the |our |a )?(?:tracking|symitar|core|custom|user)\b|\bmap(?:ping)? [A-Z_]+\(|\bmap(?:ping)? (?:a\.|n\.|s\.|l\.)[A-Z])/i;
@@ -47,7 +60,7 @@ export function coreMappingModule(sources: SourceService | null, today: () => st
     id: 'sources',
     prefix: 'map',
     agent: 'Core Mapping',
-    request: new RegExp(`${DISCOVER_REQUEST.source}|${MAPPING_REQUEST.source}`, 'i'),
+    request: new RegExp(`${VERSION_REQUEST.source}|${DISCOVER_REQUEST.source}|${MAPPING_REQUEST.source}`, 'i'),
     noAccess,
     sources: [
       { kind: 'table', label: 'Core column mappings', ref: 'table:src_column_map' },
@@ -58,6 +71,7 @@ export function coreMappingModule(sources: SourceService | null, today: () => st
 - "Show the Symitar mapping", "which columns are custom?": map_list.
 - "What core fields aren't mapped?", "suggest mappings for our tracking records": map_suggest.
 - "Map our core connection", "Propose a mapping for the Symitar connection": map_discover, which profiles the core's columns and proposes where each goes in DI, with tie-outs to the 5300. "How well would DI map Symitar without its standard mapping?": map_discover with measure.
+- "Show the mapping versions": map_versions. "What changed in the core?", "Any held rows?": map_drift, with what each held code looks like. "Map share type 14 to money market": map_code, which adds the code to the crosswalk in a new mapping version on approval.
 - "Which mappings need me?": map_review. "Why did you map LOAN.DUEDATE to days past due?": map_explain with the core column.
 - "Try mapping ...": map_preview. "Map ... to email consent": map_add, which previews on real rows and asks for approval. "Remove the email consent mapping": map_remove.
 - Kinective's standard columns are locked. Custom mappings go on members, deposits or loans, and apply from the next pull.
@@ -71,6 +85,9 @@ export function coreMappingModule(sources: SourceService | null, today: () => st
       }
       const parts = mappingFrom(ask);
       if (parts) return { tool: /\b(?:try|preview|test|what would)\b/i.test(ask) ? 'map_preview' : 'map_add', args: { target: parts.target ?? 'members', label: parts.label, expression: parts.expression, type: parts.type ?? 'text' } };
+      const cw = crosswalkFrom(ask);
+      if (cw) return { tool: 'map_code', args: cw };
+      if (VERSION_REQUEST.test(ask)) return { tool: /\bversions?\b/i.test(ask) ? 'map_versions' : 'map_drift', args: {} };
       if (DISCOVER_REQUEST.test(ask)) {
         if (/\bwhy\b|\bexplain\b/i.test(ask)) {
           const column = /\b([A-Z][A-Z0-9_]+\.[A-Z][A-Z0-9_]+)\b/.exec(ask)?.[1] ?? /\b([A-Z][A-Z0-9_]{3,})\b/.exec(ask.replace(/^\w+/, ''))?.[1];
@@ -201,8 +218,91 @@ export function coreMappingModule(sources: SourceService | null, today: () => st
       },
     ],
   };
-  spec.tools.push(...discoverTools(spec, need));
+  spec.tools.push(...discoverTools(spec, need), ...versionTools(spec, need, today));
   return spec;
+}
+
+// ---- mapping versions, drift and code crosswalks (phase 3) --------------------------------------
+
+const DRIFT_WORD: Record<string, string> = { new_code: 'Code the mapping doesn’t know', new_column: 'New column in the core', missing_column: 'Column the mapping reads is gone', tie_out: 'Totals don’t tie out' };
+
+function versionTools(spec: ModuleSpec, need: (ctx: ModuleContext) => SourceService, today: () => string) {
+  const driftLine = (d: DriftItem) => {
+    const x = d.detail as { set?: string | null; count?: number; proposal?: { value: string; runnerUp: string | null } | null; landed?: number; reported?: number; code?: string };
+    if (d.kind === 'new_code') return `${codeSetWords(x.set)} ${d.value} in ${d.table}.${d.column}: ${n(x.count ?? 0)} rows held${x.proposal ? `, and they look most like ${x.proposal.value}` : ''}`;
+    if (d.kind === 'new_column') return `${d.table}.${d.column} appeared in the core; nothing reads it yet`;
+    if (d.kind === 'missing_column') return `${d.table}.${d.column} is gone from the core, and the mapping reads it`;
+    return `${d.table}.${d.column} landed ${x.landed?.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })} against line ${x.code}’s ${x.reported?.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}`;
+  };
+  return [
+    {
+      name: 'map_versions',
+      description: 'The core mapping’s versions for a connection, newest first: version 1 is Kinective’s standard mapping, and each approved change adds one. Pulls use the latest.',
+      input: z.object({}).strict(),
+      run: async (_: unknown, ctx: ModuleContext): Promise<ModuleView> => {
+        const s = need(ctx);
+        const { connection, versions } = await s.versions();
+        if (!versions.length) return { text: `${connection.name} has no mapping version yet: ${connection.system.label} has no standard mapping from Kinective.` };
+        const v = versions[0]!;
+        return {
+          text: `The ${connection.name} mapping is at **version ${v.versionNo}**: ${v.summary}, ${v.createdName === 'Kinective' ? 'from Kinective' : `approved by ${v.createdName}`} on ${v.createdAt.slice(0, 10)}. Every pull uses the latest version and records which one it used.${versions.length > 1 ? ` Earlier: ${versions.slice(1, 4).map((x) => `version ${x.versionNo}, ${x.summary}`).join('; ')}.` : ''}`,
+          blocks: [moduleTable(spec, `${connection.name} mapping versions`, ctx.runId, 'coremap.versions', [text('no', 'Version'), text('summary', 'What changed'), text('by', 'By'), text('at', 'When')], versions.map((x) => ({ no: String(x.versionNo), summary: x.summary, by: x.createdName, at: x.createdAt })))],
+          suggestions: ['What changed in the core?'],
+        };
+      },
+    },
+    {
+      name: 'map_drift',
+      description: 'What the latest pulls found that the mapping doesn’t expect: codes the crosswalk lacks (their rows are held, with the known code they look most like), columns that appeared or disappeared, and totals that no longer tie out to the 5300.',
+      input: z.object({}).strict(),
+      run: async (_: unknown, ctx: ModuleContext): Promise<ModuleView> => {
+        const s = need(ctx);
+        const { connection, items } = await s.drift();
+        if (!items.length) return { text: `Nothing has changed in the ${connection.name} that the mapping doesn’t expect: no unknown codes, no new or missing columns, and the totals tie out.`, suggestions: ['Show the mapping versions'] };
+        const codes = items.filter((d) => d.kind === 'new_code');
+        const first = codes[0];
+        const proposal = first ? (first.detail as { set?: string | null; proposal?: { value: string; runnerUp: string | null; evidence: { label: string; held: string; proposed: string }[] } | null }) : null;
+        const why = proposal?.proposal?.evidence.length ? ` Compared with ${proposal.proposal.value}: ${proposal.proposal.evidence.map((e) => `${e.label.toLowerCase()} ${e.held} against ${e.proposed}`).join('; ')}.` : '';
+        return {
+          text: `**${plural(items.length, 'change')}** in the ${connection.name} to decide: ${items.slice(0, 3).map(driftLine).join('; ')}.${why}${first && proposal?.proposal ? ' Held rows landed without that value, so no report counts them under a wrong name.' : ''}`,
+          blocks: [moduleTable(spec, 'What changed in the core', ctx.runId, 'coremap.drift', [text('kind', 'What'), text('where', 'Where'), text('detail', 'Detail'), text('found', 'Found')], items.map((d) => ({ kind: DRIFT_WORD[d.kind] ?? d.kind, where: `${d.table}.${d.column}${d.value && d.kind === 'new_code' ? ` = ${d.value}` : ''}`, detail: driftLine(d), found: d.foundAt })))],
+          suggestions: first && proposal?.proposal && proposal.set ? [`Map ${codeSetWords(proposal.set)} ${first.value} to ${proposal.proposal.value.toLowerCase()}`] : ['Show the mapping versions'],
+        };
+      },
+    },
+    {
+      name: 'map_code',
+      description: 'Prepare adding a code to the core mapping’s crosswalk, such as share type 14 as money market: DI checks the value against DI’s code list, and on approval records a new mapping version; the next pull maps the held rows. set: shareType, loanType or memberType. Returns approval_required.',
+      input: z.object({ set: z.string().min(3).max(40), code: z.string().regex(/^\d{1,6}$/), value: z.string().min(2).max(60) }).strict(),
+      run: async (a: { set: string; code: string; value: string }, ctx: ModuleContext) => {
+        const s = need(ctx);
+        const c = await s.checkCrosswalk(a);
+        const what = `${codeSetWords(c.set)} ${c.code}`;
+        return {
+          change: {
+            summary: `Map ${what} to ${c.value} in the ${c.conn.name} mapping`,
+            changes: [
+              { label: 'Code', before: c.before ? `${what} = ${c.before}` : `${what}, not in the crosswalk`, after: `${what} = ${c.value}` },
+              { label: 'DI columns', before: '—', after: c.columns.join(', ') },
+              { label: 'Rows held now', before: '—', after: c.held ? `${n(c.held)} rows, mapped on the next pull` : 'None' },
+              { label: 'Mapping version', before: `Version ${c.version.versionNo}`, after: `Version ${c.version.versionNo + 1}` },
+            ],
+            text: `I’ll add **${what} as ${c.value}** to the crosswalk in a new mapping version.${c.held ? ` The ${n(c.held)} held rows get it on the next pull.` : ''} Kinective’s standard columns are otherwise unchanged.`,
+            done: `Mapped ${what} to ${c.value}.`,
+            risk: 'medium' as const,
+            records: c.held,
+            apply: { set: c.set, code: c.code, value: c.value },
+          },
+        };
+      },
+      apply: async (p: { set: string; code: string; value: string }, meta: { approvalId: string }, ctx: ModuleContext): Promise<ModuleView> => {
+        const s = need(ctx);
+        const r = await s.setCrosswalk(p, { userId: ctx.user.id, name: ctx.user.name }, { approvalId: meta.approvalId });
+        void today;
+        return { text: `Recorded **mapping version ${r.versionNo}**: ${codeSetWords(r.set)} ${r.code} is ${r.value}.${r.held ? ` The ${n(r.held)} held rows are mapped on the next pull.` : ''}`, suggestions: ['Pull from the Symitar replica now', 'Show the mapping versions'] };
+      },
+    },
+  ];
 }
 
 // ---- proposing a whole mapping (phase 2) ----------------------------------------------------------

@@ -5,7 +5,7 @@
 // connects and pulls on approval, reconciles every row against what DI has, and switches the build
 // to the replica only when asked. The core is never written to.
 import { z } from 'zod';
-import { CoreError, describeTransform, type ConnectionTest, type PullResult, type SourceService } from '@dinext/di-core';
+import { CoreError, codeSetWords, describeTransform, type ConnectionTest, type PullResult, type SourceService } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec, type ModuleView } from './moduleAgent.ts';
 
 const n = (x: number) => x.toLocaleString('en-US');
@@ -317,9 +317,17 @@ function pullView(spec: ModuleSpec, ctx: ModuleContext, r: PullResult, lead: str
   const odd = r.tables.reduce((x, t) => x + t.newInCore + t.notInCore + t.differ, 0);
   const process = r.processDate ? ` (core process date ${day(r.processDate)})` : '';
   const next = r.connection.inUse ? [] : [`Use the ${r.connection.name} for the next build`];
+  // Mapping version, held rows and drift (Core Mapping and Ontology, phase 3).
+  const held = r.held ?? [];
+  const heldText = held.length
+    ? ` **${n(held.reduce((s, h) => s + h.count, 0))} rows are held**: ${held.map((h) => `${codeSetWords(h.set)} ${h.code} (${n(h.count)} rows)${h.proposal ? ` looks most like ${h.proposal.value}` : ''}`).join('; ')}. They landed without that value, so nothing counts them under a wrong name; approve what the code means and the next pull maps them.`
+    : '';
+  const otherDrift = (r.drift ?? 0) - held.length;
+  const versionText = r.version ? ` It used mapping version ${r.version}.` : '';
+  const rawText = r.raw?.length ? ` The raw zone has the core’s ${r.raw.map((x) => x.table).join(', ')} tables as they came.` : '';
   return {
-    text: `${lead}Pulled **${n(r.rows)} rows** on ${when(r.at)}${process} and checked them against DI. ${parts.join('. ')}.${odd ? ' Those are the rows to look at before the build uses this source.' : ''}`,
+    text: `${lead}Pulled **${n(r.rows)} rows** on ${when(r.at)}${process} and checked them against DI. ${parts.join('. ')}.${odd ? ' Those are the rows to look at before the build uses this source.' : ''}${versionText}${heldText}${otherDrift > 0 ? ` ${plural(otherDrift, 'other change')} in the core to look at.` : ''}${rawText}`,
     blocks: [reconcileTable(spec, ctx, r), ...(odd && offerNext ? [differenceTable(spec, ctx, r)] : [])],
-    suggestions: [...(odd && !offerNext ? ['Show the rows that differ'] : []), ...next],
+    suggestions: [...(held[0]?.proposal && held[0].set ? [`Map ${codeSetWords(held[0].set)} ${held[0].code} to ${held[0].proposal.value.toLowerCase()}`] : []), ...(r.drift ? ['What changed in the core?'] : []), ...(odd && !offerNext ? ['Show the rows that differ'] : []), ...next],
   };
 }
