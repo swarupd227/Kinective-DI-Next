@@ -2,7 +2,8 @@
 // appears as a card that opens beside the conversation, and a running task shows its current step.
 import { useState, type ReactNode } from 'react';
 import clsx from 'clsx';
-import { ChevronRight, Lightbulb, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { Link } from 'react-router';
+import { ChevronRight, Lightbulb, ListTree, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { BlockRenderer } from '@dinext/blocks';
 import type { BlockEntry, ThreadState, Turn } from '@dinext/stream-client';
 import { useUi } from '../shell/uiStore.ts';
@@ -47,7 +48,7 @@ function currentStep(thread: ThreadState, runId: string) {
 }
 
 /** A rating of one answer, kept with its run for the review queue (spec 8.21). */
-function Feedback({ onSend }: { onSend: (rating: 'up' | 'down', comment?: string) => Promise<void> }) {
+function Feedback({ runId, onSend }: { runId: string; onSend: (rating: 'up' | 'down', comment?: string) => Promise<void> }) {
   const [state, setState] = useState<'idle' | 'writing' | 'sent' | 'failed'>('idle');
   const [comment, setComment] = useState('');
   const send = (rating: 'up' | 'down', note?: string) => onSend(rating, note).then(() => setState('sent'), () => setState('failed'));
@@ -76,6 +77,10 @@ function Feedback({ onSend }: { onSend: (rating: 'up' | 'down', comment?: string
       <button type="button" className={styles.feedbackButton} aria-label="Bad answer" title="Bad answer" onClick={() => setState('writing')}>
         <ThumbsDown size={14} aria-hidden />
       </button>
+      {/* Every answer can be audited: the steps DI took, the data it used, and any approval. */}
+      <Link to={`/audit/runs/${runId}`} className={styles.feedbackButton} aria-label="See how DI worked this out" title="See how DI worked this out">
+        <ListTree size={14} aria-hidden />
+      </Link>
     </div>
   );
 }
@@ -124,7 +129,7 @@ export function AgentTurn({
         })}
         {step && <Thinking>{step}…</Thinking>}
       </div>
-      {turn.state !== 'running' && turn.blockIds.length > 0 && <Feedback onSend={(rating, comment) => onFeedback(turn.runId, rating, comment)} />}
+      {turn.state !== 'running' && turn.blockIds.length > 0 && <Feedback runId={turn.runId} onSend={(rating, comment) => onFeedback(turn.runId, rating, comment)} />}
       {turn.suggestions && (
         // Suggestions never start a write; they ask a follow-up question (FE-EXP-020).
         <div className={styles.suggestions} role="group" aria-label="Next steps">

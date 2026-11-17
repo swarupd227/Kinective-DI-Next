@@ -63,7 +63,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     session: {
       user: user('user:9229', 'Dana Lee', 'President and CEO', 'Executive'),
       tenant: CU,
-      apps: ['home', 'conversations', 'tasks', 'reports', 'tables', 'workflows', 'calendar', 'files', 'rm', 'referrals', 'lap', 'gi', 'indirect', 'prospecting', 'campaigns', 'onboarding', 'compliance', 'predictive', 'dq', 'seg', 'callreport', 'irr', 'delinquency', 'liquidity', 'membership', 'gl'],
+      apps: ['home', 'conversations', 'tasks', 'reports', 'tables', 'workflows', 'calendar', 'files', 'rm', 'referrals', 'lap', 'gi', 'indirect', 'prospecting', 'campaigns', 'onboarding', 'compliance', 'predictive', 'dq', 'seg', 'callreport', 'irr', 'delinquency', 'liquidity', 'membership', 'gl', 'audit'],
       permissions: { queryBrowser: false, dashboardAdmin: true },
     },
     lapDetails: true,
@@ -149,7 +149,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     session: {
       user: user('user:1002', 'Sam Taylor', 'DI Administrator', 'Administrator'),
       tenant: CU,
-      apps: ['home', 'conversations', 'tasks', 'tables', 'queries', 'datalogs', 'dq', 'integrations', 'wfbuilder', 'users', 'classes', 'admin', 'calendar', 'files'],
+      apps: ['home', 'conversations', 'tasks', 'tables', 'queries', 'datalogs', 'dq', 'integrations', 'wfbuilder', 'users', 'classes', 'admin', 'audit', 'calendar', 'files'],
       permissions: { queryBrowser: true, dashboardAdmin: true },
     },
     modules: ['governance', 'tasks', 'mytime', 'workflow-builder', 'form-layout', 'calendar', 'files', 'files-board', 'lineage', 'ai-admin', 'datalogs', 'datalogs-approve', 'operations', 'admin', 'tables', 'dataload', 'sources', 'apis'],

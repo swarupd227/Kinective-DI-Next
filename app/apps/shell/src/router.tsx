@@ -29,6 +29,8 @@ const ReportsPage = lazy(() => import('./pages/ReportsPage.tsx').then((m) => ({ 
 const ReferralsPage = lazy(() => import('./pages/ReferralsPage.tsx').then((m) => ({ default: m.ReferralsPage })));
 const GoalsPage = lazy(() => import('./pages/GoalsPage.tsx').then((m) => ({ default: m.GoalsPage })));
 const PipelinePage = lazy(() => import('./pages/PipelinePage.tsx').then((m) => ({ default: m.PipelinePage })));
+const AuditLogPage = lazy(() => import('./pages/AuditLogPage.tsx').then((m) => ({ default: m.AuditLogPage })));
+const RunTracePage = lazy(() => import('./pages/AuditLogPage.tsx').then((m) => ({ default: m.RunTracePage })));
 const ReportPage = lazy(() => import('./pages/ReportsPage.tsx').then((m) => ({ default: m.ReportPage })));
 
 const page = (el: ReactNode) => <Suspense fallback={null}>{el}</Suspense>;
@@ -69,6 +71,9 @@ export const router = createBrowserRouter([
           { path: 'integrations/*', element: guarded('integrations', <AppViewPage app="integrations" />) },
           { path: 'admin/users/*', element: guarded('users', <AppViewPage app="users" />) },
           { path: 'admin/*', element: guarded('admin', <AppViewPage app="admin" />) },
+          // The audit log lists every run for AI admins; a run's trace is open to the person who asked too (the server decides).
+          { path: 'audit', element: guarded('audit', <AuditLogPage />) },
+          { path: 'audit/runs/:runId', element: page(<RunTracePage />) },
           // Everyone has email notifications: the person's own outbox and preferences.
           { path: 'settings/email', element: page(<EmailsPage />) },
           { path: 'members', element: guarded('rm', <MembersPage />) },

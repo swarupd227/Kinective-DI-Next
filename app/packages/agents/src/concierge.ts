@@ -18,6 +18,7 @@ import { runOffline } from './offline.ts';
 import { PIPELINE_AGENT, PIPELINE_REQUEST, runPipeline, runPipelineOffline, type PipelineInput, type PipelineOutcome } from './pipelineAgent.ts';
 import { prescreen } from './prescreen.ts';
 import { describeRecent, recordShown, resolvePerson, spellOut, type Shown } from './followUp.ts';
+import { answeredBy, newTrace, traceSink } from './trace.ts';
 import { newReferralThread, REFERRAL_AGENT, runReferral, runReferralOffline, type ReferralOutcome, type ReferralThread } from './referral.ts';
 import { newRelationshipThread, runRelationship, runRelationshipOffline, type RelationshipOutcome, type RelationshipThread } from './relationship.ts';
 import { describeSchedule, newReportThread, REPORT_AGENT, type ReportGateway, type ReportThread } from './report.ts';
@@ -288,6 +289,8 @@ export class Concierge {
     const recent = (this.recent.get(turn.threadId) ?? []).filter((r) => r.said || r.shown.length || r.people.length);
     const seen: Shown = { question: screened.text.slice(0, 200), agent: '', said: '', shown: [], people: [] };
     sink = recordShown(sink, seen);
+    const trace = newTrace();
+    sink = traceSink(sink, trace);
 
     try {
       if (screened.blocked) {
@@ -668,6 +671,11 @@ export class Concierge {
           modelVersion: svc?.model.version,
           buildId: svc?.build.buildId,
           error,
+          startedAt: trace.startedAt,
+          durationMs: Date.now() - Date.parse(trace.startedAt),
+          agentName: moduleAgent ?? answeredBy(trace) ?? 'DI Concierge',
+          trace: trace.entries,
+          traceTruncated: trace.truncated || undefined,
         })
         .catch(() => {});
       // Kept by reference: work that finishes after the turn (a task's outputs) still lands in it.

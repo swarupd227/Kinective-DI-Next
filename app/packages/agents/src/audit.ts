@@ -5,6 +5,7 @@ import { appendFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { costUsd, type Usage } from './model.ts';
+import type { TraceEntry } from './trace.ts';
 
 export interface ToolCallRecord {
   name: string;
@@ -33,6 +34,14 @@ export interface AuditRecord {
   modelVersion?: string;
   buildId?: string;
   error?: string;
+  /** When the run began and how long it took to answer. */
+  startedAt?: string;
+  durationMs?: number;
+  /** The agent that answered, by the name people see. */
+  agentName?: string;
+  /** Everything the run showed, in order (trace.ts). */
+  trace?: TraceEntry[];
+  traceTruncated?: boolean;
 }
 
 /** One audit line as the permanent audit store keeps it: who, what and where, with the whole line as its body. */

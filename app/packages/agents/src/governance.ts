@@ -1,7 +1,7 @@
 // Data Lineage (spec 24.10) and AI usage and governance (8.21) on the shared agent. Both are read
 // only, and every figure and graph is written by code. The model chooses the tool and nothing else.
 import { z } from 'zod';
-import type { LineageGraphBlock } from '@dinext/block-schemas';
+import type { AuditLogPage, AuditRunTrace, LineageGraphBlock } from '@dinext/block-schemas';
 import { CoreError, type GovernanceService, type LineageService, type UsageGroup } from '@dinext/di-core';
 import { newBlockId } from './answer.ts';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
@@ -87,7 +87,17 @@ const monthIn = (t: string) => {
 };
 const GROUP_LABEL: Record<UsageGroup, string> = { user: 'Person', class: 'Class', agent: 'Agent', model: 'Model' };
 
-export function governanceModule(gov: GovernanceService, year: () => number): ModuleSpec {
+/** The Agent Audit Log's reader (the permanent audit store), when there is one. */
+export interface AuditLogReader {
+  runs(f: { userId?: string; agent?: string; outcome?: string; days?: number; q?: string; limit?: number }, everyone: boolean): Promise<AuditLogPage>;
+  trace(runId: string): Promise<(AuditRunTrace & { ownerId: string }) | null>;
+}
+
+const OUTCOME_WORDS: Record<string, string> = { answer: 'Answered', approval_requested: 'Sent for approval', clarify: 'Asked to clarify', unmatched: 'No measure for it', not_supported: 'Out of scope', no_access: 'Refused: access', failed: 'Failed', cancelled: 'Stopped', scripted: 'Sample scenario', not_found: 'Not found' };
+const seconds = (ms: number | null) => (ms === null ? '—' : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
+const DAYS: Record<string, number> = { today: 1, week: 7, month: 30, quarter: 90 };
+
+export function governanceModule(gov: GovernanceService, year: () => number, trail: () => AuditLogReader | undefined = () => undefined): ModuleSpec {
   const noAccess = 'AI usage reports need the AI usage permission. You can ask about your own usage.';
   const admin = (ctx: ModuleContext) => {
     if (!ctx.modules.includes('ai-admin')) throw new CoreError('NO_ACCESS', noAccess);
@@ -106,14 +116,15 @@ export function governanceModule(gov: GovernanceService, year: () => number): Mo
     id: 'governance',
     prefix: 'gov',
     agent: 'AI Governance',
-    request: /\bAI (cost|usage|spend)\b|\btokens?\b|\b(run )?trace (for|of) (run )?R-|\bR-\d{8}-\w+\b|\bhigh[- ]risk approvals?\b|\bapprovals? (made )?through agents\b|\bhow much have I used\b|\bmy (AI )?usage\b|\b(answer|negative|user) feedback\b|\bthumbs[- ]down\b/i,
+    request: /\baudit (log|trail)\b|\bagent runs?\b|\b(failed|refused) runs?\b|\bruns? (that )?(failed|were refused)\b|\bAI (cost|usage|spend)\b|\btokens?\b|\b(run )?trace (for|of) (run )?R-|\bR-\d{8}-\w+\b|\bhigh[- ]risk approvals?\b|\bapprovals? (made )?through agents\b|\bhow much have I used\b|\bmy (AI )?usage\b|\b(answer|negative|user) feedback\b|\bthumbs[- ]down\b/i,
     noAccess,
     sources: [{ kind: 'table', label: 'AI usage ledger', ref: 'table:ai_run' }],
     prompt: ({ tenant, user, title }) => `You are the AI Governance agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) is asking what the AI has done.
 
 - "Show AI cost by agent for October", "Who used the most tokens last month?": gov_usage.
 - "How much have I used this month?": gov_my_usage.
-- "Open the trace for run R-20261026-0042": gov_trace.
+- "Open the trace for run R-20261026-0042", "How did DI work out run R-…?": gov_trace.
+- "Show the audit log", "Which agent runs failed this week, and why?", "What did the Referrals agent do today?": gov_audit_log.
 - "Show every high-risk approval made through agents this month": gov_approvals.
 - "Show the negative feedback": gov_feedback.
 - Everything here is read only.`,
@@ -123,6 +134,11 @@ export function governanceModule(gov: GovernanceService, year: () => number): Mo
       const when = month ? { month } : {};
       const run = /\bR-\d{8}-\w+\b/.exec(t)?.[0];
       if (run) return { tool: 'gov_trace', args: { run_id: run } };
+      if (/\baudit (log|trail)\b|\bagent runs?\b|\b(failed|refused) runs?\b|\bruns? (that )?(failed|were refused)\b/i.test(t)) {
+        const period = /\btoday\b/i.test(t) ? 'today' : /\bmonth\b|\b30 days\b/i.test(t) ? 'month' : /\bquarter\b|\b90 days\b/i.test(t) ? 'quarter' : 'week';
+        const outcome = /\brefused\b|\baccess\b/i.test(t) ? 'no_access' : /\bfail/i.test(t) ? 'failed' : /\bproblems?\b|\bwent wrong\b/i.test(t) ? 'problems' : undefined;
+        return { tool: 'gov_audit_log', args: { period, ...(outcome ? { outcome } : {}) } };
+      }
       if (/\bapprovals?\b/i.test(t)) return { tool: 'gov_approvals', args: { ...when, ...(/\bhigh[- ]risk\b/i.test(t) ? { risk: 'high' } : {}) } };
       if (/\bfeedback\b|\bthumbs\b/i.test(t)) return { tool: 'gov_feedback', args: {} };
       if (/\bhow much have I\b|\bmy\b/i.test(t) && !/\bmy team\b/i.test(t)) return { tool: 'gov_my_usage', args: when };
@@ -158,9 +174,69 @@ export function governanceModule(gov: GovernanceService, year: () => number): Mo
         description: 'Every step of one run: prompt, tool calls with parameters, approvals with approver and channel, and cost. Your own runs, or any with the AI usage permission.',
         input: z.object({ run_id: z.string().regex(/^R-\d{8}-\w+$/).max(40) }).strict(),
         run: async (a: { run_id: string }, ctx) => {
+          // The full trace from the audit store when there is one: every step in order, with its timing.
+          const full = await trail()?.trace(a.run_id);
+          if (full) {
+            if (full.ownerId !== ctx.user.id && !ctx.modules.includes('ai-admin')) throw new CoreError('NOT_FOUND', 'That run was not found, or it is not yours to see.');
+            const failed = full.timeline.filter((e) => e.status === 'failed').length;
+            const tokens = full.usage.reduce((n, u) => n + u.inputTokens + u.outputTokens, 0);
+            const rows = full.timeline.map((e) => ({ at: e.offsetMs === null ? '—' : seconds(e.offsetMs), step: e.title, by: [e.agent, e.operation].filter(Boolean).join(' · ') || '—', detail: (e.detail ?? '').replace(/\s+/g, ' ').slice(0, 200), status: e.status === 'failed' ? 'Failed' : e.status === 'waiting' ? 'Waiting' : e.status === 'skipped' ? 'Skipped' : 'Done' }));
+            return {
+              text: `Run **${full.runId}**: **${full.user.name}** asked “${full.question}”. **${full.agent}** handled it in ${seconds(full.durationMs)}, in ${plural(full.timeline.length, 'step')}${failed ? `, **${failed} of them failed**` : ''}, using ${plural(tokens, 'token')} for ${usd(full.costUsd)}. The outcome: ${(OUTCOME_WORDS[full.outcome] ?? full.outcome).toLowerCase()}. The full trace, with each tool call’s inputs, is in the Agent Audit Log.`,
+              blocks: [moduleTable(spec, `Trace of ${full.runId}`, ctx.runId, 'ai.trace.get', [{ field: 'at', headerName: 'At', type: 'text' }, { field: 'step', headerName: 'Step', type: 'text' }, { field: 'by', headerName: 'Agent or operation', type: 'text' }, { field: 'detail', headerName: 'Detail', type: 'text' }, { field: 'status', headerName: 'Status', type: 'text' }], rows)],
+            };
+          }
           const t = await gov.trace(a.run_id, { userId: ctx.user.id, all: ctx.modules.includes('ai-admin') });
           const steps = [...t.tools.map((c) => ({ step: 'Tool call', operation: c.name, detail: JSON.stringify(c.input ?? {}).slice(0, 160), ms: c.ms ? `${c.ms} ms` : '—', result: c.ok ? 'OK' : `Failed${c.error ? `, ${c.error}` : ''}` })), ...t.approvals.map((p) => ({ step: 'Approval', operation: p.operation, detail: `${p.risk} risk`, ms: '—', result: `${p.status}, ${p.by} by ${p.channel}` }))];
           return { text: `Run **${t.runId}**, ${t.at}: **${t.user}** asked “${t.question}”. ${t.agent} handled it${t.model ? ` on ${t.model}` : ''}, using ${(t.inputTokens + t.outputTokens).toLocaleString('en-US')} tokens for ${usd(t.cost)}. The outcome was ${t.outcome.replaceAll('_', ' ')}.`, blocks: steps.length ? [moduleTable(spec, `Trace of ${t.runId}`, ctx.runId, 'ai.trace.get', [{ field: 'step', headerName: 'Step', type: 'text' }, { field: 'operation', headerName: 'Operation', type: 'text' }, { field: 'detail', headerName: 'Parameters', type: 'text' }, { field: 'ms', headerName: 'Duration', type: 'text' }, { field: 'result', headerName: 'Result', type: 'text' }], steps)] : [] };
+        },
+      },
+      {
+        name: 'gov_audit_log',
+        description: 'The Agent Audit Log: agent runs over a period, with who asked, which agent answered, how it ended, steps and time. Everyone with the AI usage permission, otherwise the person’s own runs. Filter by outcome (failed, refused for access, or any problem) or agent.',
+        input: z
+          .object({
+            period: z.enum(['today', 'week', 'month', 'quarter']).default('week'),
+            outcome: z.enum(['failed', 'no_access', 'problems', 'approval_requested']).optional(),
+            agent: z.string().max(60).optional().describe('An agent name, such as Referrals or Analytics Q&A'),
+          })
+          .strict(),
+        run: async (a: { period: string; outcome?: string; agent?: string }, ctx) => {
+          const reader = trail();
+          if (!reader) throw new CoreError('NOT_FOUND', 'The audit log isn’t set up in this environment yet.');
+          const everyone = ctx.modules.includes('ai-admin');
+          const days = DAYS[a.period] ?? 7;
+          const page = await reader.runs({ days, outcome: a.outcome, agent: a.agent, userId: everyone ? undefined : ctx.user.id, limit: 25 }, everyone);
+          const when = a.period === 'today' ? 'today' : `in the last ${days} days`;
+          const what = a.outcome === 'failed' ? 'failed runs' : a.outcome === 'no_access' ? 'runs refused for access' : a.outcome === 'problems' ? 'runs that went wrong' : a.outcome === 'approval_requested' ? 'runs sent for approval' : 'agent runs';
+          const whose = everyone ? '' : ' of yours';
+          if (!page.items.length) return { text: `No ${what}${whose} ${when}${a.agent ? ` by ${a.agent}` : ''}.` };
+          // Why runs failed: the recorded error of each, in the person's words where there is one.
+          const why = a.outcome === 'failed' || a.outcome === 'problems' ? await Promise.all(page.items.slice(0, 5).map((r) => reader.trace(r.runId).then((t) => t?.error ?? t?.timeline.findLast((e) => e.status === 'failed')?.title ?? null, () => null))) : [];
+          const reasons = why.filter((w): w is string => Boolean(w));
+          const lead = `**${plural(page.total, what.replace(/s$/, ''), what)}**${whose} ${when}${a.agent ? ` by ${a.agent}` : ''}.`;
+          return {
+            text: `${lead}${reasons.length ? ` What went wrong, newest first: ${[...new Set(reasons)].slice(0, 3).map((r) => `“${r.slice(0, 160)}”`).join('; ')}.` : ''} Each run’s full trace is in the Agent Audit Log.`,
+            blocks: [
+              moduleTable(
+                spec,
+                `Agent runs ${when}`,
+                ctx.runId,
+                'ai.audit.list',
+                [
+                  { field: 'at', headerName: 'When', type: 'text' },
+                  ...(everyone ? [{ field: 'person', headerName: 'Person', type: 'text' as const }] : []),
+                  { field: 'agent', headerName: 'Agent', type: 'text' },
+                  { field: 'question', headerName: 'Question', type: 'text' },
+                  { field: 'outcome', headerName: 'Outcome', type: 'text' },
+                  { field: 'time', headerName: 'Time', type: 'text' },
+                  { field: 'runId', headerName: 'Run', type: 'text' },
+                ],
+                page.items.map((r) => ({ at: r.at.replace('T', ' ').slice(0, 16), person: r.user.name, agent: r.agent, question: r.question, outcome: OUTCOME_WORDS[r.outcome] ?? r.outcome, time: seconds(r.durationMs), runId: r.runId })),
+              ),
+            ],
+            suggestions: [`Open the trace for run ${page.items[0]!.runId}`],
+          };
         },
       },
       {

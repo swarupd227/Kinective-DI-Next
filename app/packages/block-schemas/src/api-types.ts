@@ -39,7 +39,8 @@ export type AppId =
   | 'tasks'
   | 'integrations'
   | 'classes'
-  | 'wfbuilder';
+  | 'wfbuilder'
+  | 'audit';
 
 export interface BuildStatus {
   state: 'completed' | 'running' | 'failed' | 'late';
@@ -410,4 +411,79 @@ export interface ReportSettingsView {
   groups: { id: string; title: string; fields: { label: string; value: string; used: boolean }[] }[];
   prompts: string[];
   lastChange?: string;
+}
+
+// ---- Agent audit log (spec 26.10, AI-GRD-090) ----------------------------------------------------
+
+export type AuditOutcome = 'answer' | 'unmatched' | 'clarify' | 'not_supported' | 'no_access' | 'failed' | 'cancelled' | 'scripted' | 'approval_requested' | 'not_found';
+
+/** One agent run in the audit log. */
+export interface AuditRunSummary {
+  runId: string;
+  at: string;
+  user: { id: string; name: string };
+  threadId: string;
+  agent: string;
+  question: string;
+  outcome: AuditOutcome | string;
+  durationMs: number | null;
+  tokens: number;
+  costUsd: number;
+  toolCalls: number;
+  steps: number;
+  approvals: number;
+}
+
+/** GET /v1/audit/runs: runs newest first, with what the filters can choose from. */
+export interface AuditLogPage {
+  /** False for someone without AI-admin access: they see their own runs only. */
+  everyone: boolean;
+  items: AuditRunSummary[];
+  total: number;
+  totals: { runs: number; failed: number; refused: number; approvals: number; costUsd: number };
+  agents: string[];
+  people: { id: string; name: string }[];
+  /** When the permanent audit store began keeping runs. */
+  since: string | null;
+}
+
+/** One moment in a run, as the trace shows it. */
+export interface AuditTraceEntry {
+  at: string;
+  /** Milliseconds since the run began, when known. */
+  offsetMs: number | null;
+  kind: 'question' | 'routing' | 'plan' | 'step' | 'text' | 'block' | 'suggestion' | 'approval' | 'action' | 'record' | 'outcome';
+  title: string;
+  detail?: string;
+  status?: 'ok' | 'failed' | 'waiting' | 'skipped';
+  agent?: string;
+  operation?: string;
+  sources?: string[];
+}
+
+/** GET /v1/audit/runs/{runId}: everything recorded about one run. */
+export interface AuditRunTrace {
+  runId: string;
+  at: string;
+  durationMs: number | null;
+  user: { id: string; name: string };
+  threadId: string;
+  question: string;
+  /** Identifiers such as account numbers masked before the question reached any model. */
+  maskedIdentifiers: number;
+  agent: string;
+  route: { intent: string; agent: string; confidence: number | null; mode: string };
+  outcome: string;
+  error?: string;
+  modelVersion?: string;
+  buildId?: string;
+  usage: { model: string; role: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; costUsd: number }[];
+  costUsd: number;
+  toolCalls: { name: string; input: unknown; ok: boolean; ms: number; error?: string; resultRef?: string }[];
+  /** Figures taken out of an answer because they could not be checked against data. */
+  numericRemovals: string[];
+  timeline: AuditTraceEntry[];
+  /** True for a run recorded before step-by-step tracing: the usage ledger has its summary only. */
+  partial: boolean;
+  truncated: boolean;
 }

@@ -19,7 +19,7 @@ import { baselAnalyses, baselModule } from '@dinext/agents';
 import { FeeIncomeService, FundingRiskService, NiiService, PerShareService, CeclService, LoanGrowthService, PredictiveService, GlService, InteractionService, ReferralReportService, SalesScorecardService, PortfolioService, ConcentrationService, BsaService, OpRiskService, CapitalPlanService, workToday, BudgetService, ProfitabilityService } from '@dinext/di-core';
 import { AnthropicModelClient, AuditLog, delinquencyModule, irrModule, liquidityModule, membershipModule, alcoAnalyses, boardAnalyses, branchAnalyses, combineAnalyses, ffiecModule, lendingAnalyses, recordsModule, Concierge, ReportGateway, ToolGateway, buildBriefing, buildToday, tasksModule, formLayoutModule, workflowBuilderModule, indirectModule, prospectingModule, calendarModule, callReportModule, filesModule, governanceModule, lineageModule, campaignModule, collectionsModule, complianceModule, dataLogsModule, goalsTake, ModuleGateway, onboardingModule, operationsModule, pipelineTake, segModule, referralTake, reportsTake, todayList, describeSchedule, hasClaudeCredentials, member360, memberTake, type ApprovalDecisionResult, type ConciergeTurn, type ReportControls, type RouteAgent, type RunSink, type TenantRuntime } from '@dinext/agents';
 import { ApprovalStore, ActivityService, CrossSellService, ReferralDeskService, OnboardingDeskService, AlcoService, BranchScorecardService, DelinquencyService, LendingProductionService, IrrService, LiquidityService, MembershipService, WorksheetService, CalendarStore, FileStore, foldersFor, TaskService, WorkflowDefService, IndirectService, ProspectService, QueryService, GovernanceService, LineageService, CallReportService, CampaignService, CollectionsService, CoreError, DataLogService, GoalsService, IssueService, InsiderService, CollateralService, BalanceHistoryService, LoanServicesService, MemberProfitService, EngagementService, GeographyService, OnboardingService, OperationsService, RetentionService, SegService, usd, PipelineService, ReferralService, RelationshipService, ReportStore, type CoreContext, type InboxItem, type Scorecard, type PipelineApplication, type PipelineView, type ScheduleRow, type TemplateRow } from '@dinext/di-core';
-import type { JumpCard, AppNotification, AppView, AppViewId, QueryRun, DiTake, GoalsIndex, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
+import type { AuditLogPage, AuditRunTrace, JumpCard, AppNotification, AppView, AppViewId, QueryRun, DiTake, GoalsIndex, PipelineApplicationDetail, PipelineApplicationRow, PipelineIndex, PipelineList, PipelineViewId, ReferralAction, ReferralDetail, ReferralsIndex, ReferralSummary, ReportCanvasBlock } from '@dinext/block-schemas';
 import { createAppViews } from './appViews.ts';
 import { branchHome, type BranchHome } from './branchHome.ts';
 import { columnStatRows, dataLoadModule, sourcesModule, tablesModule } from '@dinext/agents';
@@ -28,6 +28,7 @@ import { ApiService, apiHosts } from '@dinext/di-core';
 import { RELAY_BASE_URL, relayDemoKey } from '@dinext/tenant-db';
 import { AS_OF, buildDbUrl, createPool, offcoreDemoRows } from '@dinext/tenant-db';
 import { mysqlAuditKeeper } from './auditStore.ts';
+import { AuditTrail, type AuditFilter } from './auditTrail.ts';
 import { OffcoreService } from '@dinext/di-core';
 import { AttritionModelService } from '@dinext/di-core';
 import { NextProductModelService } from '@dinext/di-core';
@@ -118,6 +119,8 @@ interface Tenant {
   apis: ApiService | null;
   /** Off-core loans from servicer spreadsheets, once the tenant has the off-core tables. */
   offcore: OffcoreService | null;
+  /** The Agent Audit Log, once the permanent audit store exists. */
+  trail?: AuditTrail;
 }
 
 /**
@@ -204,6 +207,10 @@ export interface LiveRuntime {
   waitingPayouts(persona: PersonaId): Promise<Omit<AppNotification, 'read'>[]>;
   /** The Goals & Incentives page: the person's own month, their team and any payouts to approve. */
   goals(persona: PersonaId): Promise<GoalsIndex | null>;
+  /** The Agent Audit Log: every run for someone with AI-admin access, otherwise the person's own. Null without the audit store. */
+  auditRuns(persona: PersonaId, filter: AuditFilter): Promise<AuditLogPage | null>;
+  /** One run's whole trace, for the person who asked or someone with AI-admin access. Opening it is itself logged. */
+  auditTrace(persona: PersonaId, runId: string): Promise<AuditRunTrace | null>;
   /** Home's "Needs you": the day's work, ranked, each item starting it. Null when nothing needs them. */
   today(persona: PersonaId): Promise<ListBlock | null>;
   /** For the bell: your stalled applications, or a count for a branch lead. */
@@ -432,7 +439,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
         (r) => r && console.log(`[sources] ${t.key}: connected the demo Symitar replica for ${PERSONAS.admin.session.user.name}`),
         (e: unknown) => console.warn(`[sources] ${t.key}: the demo replica wasn’t connected: ${(e as Error).message}`),
       );
-    const governanceModules = governance ? [lineageModule(new LineageService(pool, semantic.model, undefined, sources ? () => sources.feeds() : undefined, offcore ? () => offcore.feeds() : undefined)), governanceModule(governance, () => new Date().getFullYear())] : [];
+    const governanceModules = governance ? [lineageModule(new LineageService(pool, semantic.model, undefined, sources ? () => sources.feeds() : undefined, offcore ? () => offcore.feeds() : undefined)), governanceModule(governance, () => new Date().getFullYear(), () => tenants.get(tenantId)?.trail)] : [];
     // Indirect Lending and Prospecting exist once the tenant was seeded with Slice 21 or later.
     const growth = await Promise.all([pool.query('SELECT name FROM ind_dealer ORDER BY dealer_id'), pool.query('SELECT company FROM prs_prospect ORDER BY prospect_id'), pool.query('SELECT name FROM prs_stage ORDER BY position')]).then(
       ([d, p, s]) => ({ dealers: (d[0] as { name: string }[]).map((x) => x.name), companies: (p[0] as { company: string }[]).map((x) => x.company), stages: (s[0] as { name: string }[]).map((x) => x.name) }),
@@ -523,6 +530,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
   // Every audit line also goes to the permanent audit store, once the seed has created it.
   const keeper = await mysqlAuditKeeper().catch(() => null);
   if (keeper) audit.keep(keeper.keep);
+  if (keeper) for (const [tenantId, t] of tenants) t.trail = new AuditTrail(t.runtime.key, TENANTS[tenantId]!.schema);
   else console.warn('AI audit store not found: audit lines go to files only. Run the seed (or npm run db:conversations) to create it.');
 
   const model = hasClaudeCredentials() && !opts.offline ? new AnthropicModelClient() : null;
@@ -742,6 +750,26 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       if (!first) return [];
       const n = open.reduce((sum, b) => sum + b.waiting, 0);
       return [{ id: 'ntc_payouts', group: 'approvals', title: `${first.period.split(' ')[0]} payouts are waiting`, detail: `${n} ${n === 1 ? 'person' : 'people'}, ${usd(open.reduce((sum, b) => sum + b.total, 0))}`, at: `${first.periodEnd}T06:00:00.000Z`, link: '/m/gi' }];
+    },
+
+    async auditRuns(persona, filter) {
+      const trail = tenantFor(persona)?.trail;
+      if (!trail) return null;
+      const p = PERSONAS[persona];
+      const everyone = Boolean(p.modules?.includes('ai-admin'));
+      return trail.runs({ ...filter, userId: everyone ? filter.userId : p.session.user.id }, everyone);
+    },
+
+    async auditTrace(persona, runId) {
+      const t = tenantFor(persona);
+      if (!t?.trail) return null;
+      const p = PERSONAS[persona];
+      const run = await t.trail.trace(runId);
+      // Someone else's run reads as one that doesn't exist.
+      if (!run || (run.ownerId !== p.session.user.id && !p.modules?.includes('ai-admin'))) return null;
+      void audit.event({ eventType: 'ai.trace.viewed', tenant: t.runtime.key, userId: p.session.user.id, threadId: '', runId, approvalId: '' }).catch(() => {});
+      const { ownerId: _owner, ...trace } = run;
+      return trace;
     },
 
     async goals(persona) {

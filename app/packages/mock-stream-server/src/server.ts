@@ -596,6 +596,19 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         }
       }
       // ---- referrals (spec 17.3) ----
+      // ---- Agent Audit Log (spec 26.10): the runs, and one run's trace. Read only. ----
+      if (method === 'GET' && path === '/v1/audit/runs') {
+        const num = (k: string) => (url.searchParams.get(k) ? Number(url.searchParams.get(k)) : undefined);
+        const text = (k: string, max: number) => url.searchParams.get(k)?.slice(0, max) || undefined;
+        const days = num('days');
+        const r = await live?.auditRuns(persona(), { userId: text('person', 40), agent: text('agent', 60), outcome: text('outcome', 24), days: days && [1, 7, 30, 90].includes(days) ? days : undefined, q: text('q', 120), offset: num('offset'), limit: num('limit') });
+        return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND', message: 'The audit log is not set up in this environment.' });
+      }
+      const auditRun = /^\/v1\/audit\/runs\/(R-[\w-]{4,40})$/.exec(path);
+      if (method === 'GET' && auditRun) {
+        const r = await live?.auditTrace(persona(), auditRun[1]!);
+        return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND', message: 'That run was not found, or it is not yours to see.' });
+      }
       if (method === 'GET' && path === '/v1/gi/summary') {
         const r = await live?.goals(persona());
         return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });

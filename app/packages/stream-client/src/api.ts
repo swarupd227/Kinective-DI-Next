@@ -1,5 +1,7 @@
 // Experience Layer REST calls used in Slice 0 (spec 12.1, 12.3, 12.5).
 import type {
+  AuditLogPage,
+  AuditRunTrace,
   AppNotification,
   AppView,
   AppViewId,
@@ -110,6 +112,11 @@ export function createApiClient({ baseUrl, token }: ApiClientOptions) {
     search: (q: string, signal?: AbortSignal, kind?: 'member') => get<{ results: SearchResult[] }>(`/v1/search?q=${encodeURIComponent(q)}${kind ? `&kind=${kind}` : ''}`, signal).then((r) => r.results),
     reports: () => get<ReportsIndex>('/v1/reports'),
     goals: () => get<GoalsIndex>('/v1/gi/summary'),
+    /** The Agent Audit Log: runs newest first, filtered. */
+    auditRuns: (f: { person?: string; agent?: string; outcome?: string; days?: number; q?: string; offset?: number } = {}) =>
+      get<AuditLogPage>(`/v1/audit/runs?${new URLSearchParams(Object.entries(f).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))}`),
+    /** One run's whole trace. */
+    auditTrace: (runId: string) => get<AuditRunTrace>(`/v1/audit/runs/${encodeURIComponent(runId)}`),
     pipeline: (view?: PipelineViewId) => get<PipelineIndex>(`/v1/lap/summary${view ? `?view=${view}` : ''}`),
     pipelineApplications: (q: { view: PipelineViewId; group?: string; stalled?: boolean }) => get<PipelineList>(`/v1/lap/applications?${new URLSearchParams({ view: q.view, ...(q.group ? { group: q.group } : {}), ...(q.stalled ? { stalled: '1' } : {}) })}`),
     pipelineApplication: (id: number) => get<PipelineApplicationDetail>(`/v1/lap/applications/${id}`),

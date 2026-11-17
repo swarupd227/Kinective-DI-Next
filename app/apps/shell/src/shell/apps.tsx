@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   BookOpen,
+  ScrollText,
   Brain,
   BriefcaseBusiness,
   Calendar,
@@ -86,6 +87,7 @@ export const APP_META: Record<string, AppMeta> = {
   integrations: { label: 'Integrations', icon: i(Plug), path: '/integrations', group: 'admin' },
   classes: { label: 'Classes', icon: i(ShieldUser), path: '/admin/classes', group: 'admin' },
   users: { label: 'Users', icon: i(Users), path: '/admin/users', group: 'admin', phase: 'Phase 3' },
+  audit: { label: 'Agent Audit Log', icon: i(ScrollText), path: '/audit', group: 'admin' },
   admin: { label: 'Admin', icon: i(Settings), path: '/admin', group: 'admin', phase: 'Phase 3' },
 };
 
