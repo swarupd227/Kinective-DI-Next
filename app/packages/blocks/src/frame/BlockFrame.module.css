@@ -21,15 +21,19 @@
   border-color: var(--color-border-default);
 }
 
+/* The tools sit beside the title while it keeps a readable width; on a phone, where six buttons
+   would squeeze it to a word a line, they move to their own row under it. */
 .header {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-2) var(--space-4);
 }
 
 .titles {
   display: grid;
+  flex: 1 1 12rem;
   gap: var(--space-1);
   min-width: 0;
 }
@@ -53,6 +57,7 @@
   gap: var(--space-1);
   margin-top: calc(var(--space-1) * -1);
   margin-right: calc(var(--space-2) * -1);
+  margin-left: auto;
   flex-shrink: 0;
 }
 
