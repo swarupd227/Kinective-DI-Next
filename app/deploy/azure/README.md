@@ -186,6 +186,8 @@ This block needs nothing from earlier steps: it reads every name from Azure, and
 az account set --subscription "Microsoft Azure Sponsorship"
 (
   set -e
+  # On Windows the CLI otherwise crashes printing the build log's "✓" (the build itself goes on).
+  export PYTHONIOENCODING=utf-8
   RG=rg-dinext-demo; APP=dinext-app; JOB=dinext-seed
   REPO=https://github.com/swarupd227/Kinective-DI-Next.git
   ACR=$(az acr list --resource-group $RG --query "[0].name" -o tsv)
