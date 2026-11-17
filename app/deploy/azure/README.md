@@ -180,18 +180,44 @@ chmod 600 ~/dinext.env
 
 ## Updating after new commits
 
+This block needs nothing from earlier steps: it reads every name from Azure, and rebuilds `~/dinext.env` (see above) if it is missing. It runs in a subshell, so a failure stops it with a message and leaves the shell open. It works in Cloud Shell and in Git Bash on a laptop with the Azure CLI signed in (`az login`).
+
 ```bash
 az account set --subscription "Microsoft Azure Sponsorship"
-source ~/dinext.env
-
-rm -rf ~/Kinective-DI-Next && git clone --depth 1 $REPO ~/Kinective-DI-Next
-cd ~/Kinective-DI-Next
-TAG=$(git rev-parse --short HEAD)
-az acr build --registry $ACR --image dinext:$TAG --image dinext:latest --file app/Dockerfile app
-ACR_SERVER=$(az acr show --name $ACR --query loginServer -o tsv)
-az containerapp update --name $APP --resource-group $RG --image $ACR_SERVER/dinext:$TAG --output none
-az containerapp job update --name $JOB --resource-group $RG --image $ACR_SERVER/dinext:$TAG --output none
-sed -i "s/^TAG=.*/TAG=$TAG/" ~/dinext.env
+(
+  set -e
+  RG=rg-dinext-demo; APP=dinext-app; JOB=dinext-seed
+  REPO=https://github.com/swarupd227/Kinective-DI-Next.git
+  ACR=$(az acr list --resource-group $RG --query "[0].name" -o tsv)
+  [ -n "$ACR" ] || { echo "No container registry in $RG; stopping."; exit 1; }
+  if ! grep -q '^ACR=.' ~/dinext.env 2>/dev/null; then
+    echo "Rebuilding ~/dinext.env from Azure"
+    cat > ~/dinext.env <<EOF
+RG=$RG
+APP=$APP
+JOB=$JOB
+ENVIRONMENT=cae-dinext
+ACR=$ACR
+MYSQL=$(az mysql flexible-server list --resource-group $RG --query "[0].name" -o tsv)
+ACCESS_CODE=$(az containerapp secret show --name $APP --resource-group $RG --secret-name access-code --query value -o tsv)
+REPO=$REPO
+TAG=
+EOF
+    chmod 600 ~/dinext.env
+  fi
+  cd ~
+  rm -rf ~/Kinective-DI-Next
+  git clone --depth 1 $REPO ~/Kinective-DI-Next
+  cd ~/Kinective-DI-Next
+  TAG=$(git rev-parse --short HEAD)
+  [ -n "$TAG" ] || { echo "The clone failed; stopping."; exit 1; }
+  az acr build --registry $ACR --image dinext:$TAG --image dinext:latest --file app/Dockerfile app
+  ACR_SERVER=$(az acr show --name $ACR --query loginServer -o tsv)
+  az containerapp update --name $APP --resource-group $RG --image $ACR_SERVER/dinext:$TAG --output none
+  az containerapp job update --name $JOB --resource-group $RG --image $ACR_SERVER/dinext:$TAG --output none
+  sed -i "s/^TAG=.*/TAG=$TAG/" ~/dinext.env
+  echo "Deployed $TAG"
+)
 ```
 
 If a release changes the data (the README says "run `npm run db:seed`"), run the job again: `az containerapp job start --name $JOB --resource-group $RG`. Reseeding resets every tenant, including demo referrals, reports and schedules.
