@@ -55,6 +55,7 @@ import { generateTransactions, LOAN_GROWTH_DDL, LOAN_GROWTH_WRITE_TABLES, planLo
 import { CONCENTRATION_DDL, generateLoanDetail } from './concentration.ts';
 import { BSA_DDL, generateBsa } from './bsa.ts';
 import { seedBranchOps } from './branchOps.ts';
+import { createConversationStore } from './conversations.ts';
 import { generateOpRisk, OPRISK_DDL } from './oprisk.ts';
 
 const BATCH = 2000;
@@ -71,6 +72,8 @@ async function main() {
   // locally; on Azure the seed creates it with DI_DB_APP_PASSWORD.
   const appPassword = process.env.DI_DB_APP_PASSWORD ?? new URL(process.env.DI_DB_URL ?? DEFAULT_DB_URL).password;
   await admin.query("CREATE USER IF NOT EXISTS 'dinext'@'%' IDENTIFIED BY ?", [decodeURIComponent(appPassword)]);
+  // Conversations are kept apart from the tenant data, which is dropped and rebuilt below.
+  await createConversationStore(admin);
   for (const profile of TENANTS) {
     const started = Date.now();
     // How long the slow steps take, for the job's log: the cloud job allows 60 minutes.

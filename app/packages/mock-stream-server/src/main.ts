@@ -1,4 +1,5 @@
 import { AzureSpeechProvider, FakeSpeechProvider, VoiceGateway } from '@dinext/voice';
+import { mysqlConversationStore } from './conversations.ts';
 import { startLiveRuntime } from './live.ts';
 import { startMockServer } from './server.ts';
 
@@ -23,6 +24,14 @@ const voice = new VoiceGateway({
 });
 
 // In a deployed container the server also serves the built shell, behind an optional demo code.
-startMockServer({ port, live, voice, staticDir: process.env.DI_STATIC_DIR, accessCode: process.env.DI_DEMO_ACCESS_CODE || undefined, perBrowser: true });
+// Tasks are kept in the warehouse's conversation store when the seed has created it (spec 12.1).
+const store = live ? await mysqlConversationStore().catch((err) => (console.warn(`Conversation store unavailable (${(err as Error).message}).`), null)) : null;
+startMockServer({ port, live, voice, staticDir: process.env.DI_STATIC_DIR, accessCode: process.env.DI_DEMO_ACCESS_CODE || undefined, perBrowser: true, store });
+// A new revision stops the old one with SIGTERM: write what is queued before going.
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.once(signal, () => {
+    void Promise.race([store?.close() ?? Promise.resolve(), new Promise((r) => setTimeout(r, 5000))]).finally(() => process.exit(0));
+  });
+}
 const mode = !live ? 'scripted scenarios (run `npm run db:up && npm run db:seed` for live agents)' : live.mode === 'live' ? 'live agents on Claude' : offline ? 'offline planner (--offline, no API calls)' : 'offline planner (set DI_ANTHROPIC_API_KEY in app/.env for Claude)';
-console.log(`DI Next Experience server on http://localhost:${port} (WS /v1/stream): ${mode}; voice: ${voice.providerName ?? 'off (no Azure Speech key)'}${process.env.DI_STATIC_DIR ? '; serving the shell' : ''}${process.env.DI_DEMO_ACCESS_CODE ? '; demo access code on' : ''}`);
+console.log(`DI Next Experience server on http://localhost:${port} (WS /v1/stream): ${mode}; tasks: ${store ? 'saved in the conversation store' : 'in memory (run the seed to keep them)'}; voice: ${voice.providerName ?? 'off (no Azure Speech key)'}${process.env.DI_STATIC_DIR ? '; serving the shell' : ''}${process.env.DI_DEMO_ACCESS_CODE ? '; demo access code on' : ''}`);

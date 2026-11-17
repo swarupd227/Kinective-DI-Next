@@ -21,6 +21,7 @@ import { rank } from './search.ts';
 import { PERSONAS, homeApprovals, homeFor, isPersona, searchFor, sessionFor, tableFor, usersToTell, type PersonaId } from './data.ts';
 import type { LiveRuntime, Notice } from './live.ts';
 import { createSpeechTap } from './speech.ts';
+import type { ConversationStore } from './conversations.ts';
 import type { VoiceGateway } from '@dinext/voice';
 import { CoreError } from '@dinext/di-core';
 
@@ -34,6 +35,8 @@ type Emit = Omit<StreamEvent, 'threadId' | 'seq' | 'ts'>;
 interface Thread {
   /** Tasks are personal: the user who started it, and nobody else, sees it. */
   owner: string;
+  /** The tenant it belongs to, kept with it in the conversation store. */
+  tenant: string;
   summary: ThreadSummary;
   events: StreamEvent[];
   seq: number;
@@ -79,6 +82,8 @@ export interface MockServerOptions {
   accessCode?: string;
   /** Each browser keeps its own demo person in a cookie. Off, the server has one shared person. */
   perBrowser?: boolean;
+  /** Keeps tasks across restarts. Without it they live in memory until the server stops. */
+  store?: ConversationStore | null;
 }
 
 const id = (prefix: string, n = 16) => `${prefix}${randomBytes(n).toString('base64').replace(/[^A-Za-z0-9]/g, '').slice(0, n).padEnd(n, '0')}`;
@@ -90,7 +95,7 @@ const yourReferrals = (block: ListBlock, r: { open: number; overdue: number }): 
   data: { ...block.data, items: block.data.items.filter((item) => item.id === 'w1').map(({ badge: _badge, ...item }) => ({ ...item, meta: `${r.open} open`, subtitle: r.overdue ? `${r.overdue} overdue` : 'Nothing overdue', ...(r.overdue ? { badge: { label: 'Overdue', tone: 'danger' as const } } : {}) })) },
 });
 
-export function startMockServer({ port, speed = 1, live = null, voice = null, staticDir, accessCode, perBrowser = false }: MockServerOptions) {
+export function startMockServer({ port, speed = 1, live = null, voice = null, staticDir, accessCode, perBrowser = false, store = null }: MockServerOptions) {
   const startedAt = new Date().toISOString();
   const gate = accessCode ? demoGate(accessCode) : null;
   const files = staticDir ? staticFiles(staticDir) : null;
@@ -139,10 +144,18 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     let t = threads.get(threadId);
     if (!t) {
       const now = new Date().toISOString();
-      t = { owner: me(), summary: { threadId, title, createdAt: now, updatedAt: now, archived: false, turns: 0 }, events: [], seq: 0, deleted: false };
+      t = { owner: me(), tenant: sessionFor(persona()).tenant.id, summary: { threadId, title, createdAt: now, updatedAt: now, archived: false, turns: 0 }, events: [], seq: 0, deleted: false };
       threads.set(threadId, t);
+      save(t);
     }
     return t;
+  };
+
+  /** Queues the task's summary for the conversation store. */
+  const save = (t: Thread) => store?.thread({ threadId: t.summary.threadId, tenant: t.tenant, owner: t.owner, summary: t.summary, deleted: t.deleted, seq: t.seq });
+  /** Queues an approval card that sits in a task, with how it was decided. Home's own cards are rebuilt on demand. */
+  const saveApproval = (approvalId: string, a: PendingApproval) => {
+    if (a.threadId) store?.approval({ approvalId, threadId: a.threadId, runId: a.runId, blockId: a.blockId, card: a.card, live: Boolean(a.live), noticeId: a.noticeId, decided: a.decided });
   };
 
   /** Someone else's task answers as if it did not exist. */
@@ -160,6 +173,8 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     const event = { ...e, threadId, seq: ++t.seq, ts: new Date().toISOString() } as StreamEvent;
     t.events.push(event);
     t.summary.updatedAt = event.ts;
+    store?.event(event);
+    save(t);
     broadcast(threadId, JSON.stringify(event));
     speech?.event(event);
     return event;
@@ -220,7 +235,9 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       },
       awaitApproval: (card, blockId, onResolved) => {
         const notice = notify(thread(threadId).owner, { group: 'approvals', title: 'Approval needed', detail: card.data.summary, link: `/c/${threadId}` });
-        approvals.set(card.data.approvalId, { threadId, runId, blockId, card, noticeId: notice.id, onResolved: (d) => onResolved(d, ctx) });
+        const entry: PendingApproval = { threadId, runId, blockId, card, noticeId: notice.id, onResolved: (d) => onResolved(d, ctx) };
+        approvals.set(card.data.approvalId, entry);
+        saveApproval(card.data.approvalId, entry);
       },
     };
     for (const step of script(ctx)) {
@@ -249,6 +266,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     if (!a?.live || a.decided) return;
     clearTimeout(a.expiryTimer);
     a.decided = { status: 410, body: { code: 'EXPIRED' } };
+    saveApproval(approvalId, a);
     settleNotice(a, 'expired');
     emit(a.threadId!, { type: 'approval.resolved', runId: a.runId, approvalId, blockId: a.blockId, decision: 'expired', by: 'DI' } as Emit);
     completeRun(a.runId!, a.threadId!);
@@ -276,6 +294,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         approvals.set(approvalId, entry);
         emit(threadId, { type: 'approval.requested', runId, approvalId, blockId: card.id, riskTier: card.data.riskTier, expiresAt: card.data.expiresAt } as Emit);
         entry.noticeId = notify(thread(threadId).owner, { group: 'approvals', title: 'Approval needed', detail: card.data.summary, link: `/c/${threadId}` }).id;
+        saveApproval(approvalId, entry);
         void live?.email?.(thread(threadId).owner, { kind: 'approvals', title: 'An approval is waiting for you', detail: card.data.summary, link: `/c/${threadId}`, sourceRef: `approval:${approvalId}` });
         return;
       }
@@ -346,6 +365,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     clearTimeout(a.expiryTimer);
     const result = { status: r.status, body: r.body };
     a.decided = result;
+    saveApproval(approvalId, a);
     idempotency.set(key, result);
     if (r.resolved) settleNotice(a, r.resolved);
     const by = sessionFor(persona()).user.name;
@@ -395,6 +415,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     const by = sessionFor(persona()).user.name;
     const result = { status: 200, body: { decision, by, at: new Date().toISOString() } };
     a.decided = result;
+    saveApproval(approvalId, a);
     idempotency.set(key, result);
     settleNotice(a, decision);
     if (a.threadId) {
@@ -432,7 +453,39 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     return open.map((n) => ({ ...n, read: readNotices.has(`${me()}:${n.id}`) }));
   };
 
-  const server = createServer((req, res) => (perBrowser ? visitor.run({ persona: fromCookie(req) }, () => handle(req, res)) : handle(req, res)));
+  /**
+   * Tasks saved before a restart, back in memory. A run the restart cut off says so, unless it is
+   * waiting on a card; a waiting card can still be decided, and expires on time.
+   */
+  const restore = async () => {
+    if (!store) return;
+    const saved = await store.load();
+    for (const s of saved.threads) threads.set(s.threadId, { owner: s.owner, tenant: s.tenant, summary: s.summary, events: s.events, seq: s.seq, deleted: s.deleted });
+    for (const s of saved.approvals) {
+      if (!threads.has(s.threadId) || approvals.has(s.approvalId)) continue;
+      const a: PendingApproval = { threadId: s.threadId, runId: s.runId, blockId: s.blockId, card: s.card, live: s.live, noticeId: s.noticeId, decided: s.decided };
+      // A scripted card's follow-on steps were lost with the old process; deciding it closes its run.
+      if (!s.live) a.onResolved = () => completeRun(s.runId!, s.threadId);
+      if (s.live && !s.decided) a.expiryTimer = setTimeout(() => expireLive(s.approvalId), Math.max(0, new Date(s.card.data.expiresAt).getTime() - Date.now()));
+      approvals.set(s.approvalId, a);
+    }
+    const waitingOn = new Set([...approvals.values()].filter((a) => !a.decided && a.runId).map((a) => a.runId!));
+    for (const [threadId, t] of threads) {
+      const open = new Set<string>();
+      for (const e of t.events) {
+        if (e.type === 'run.started') open.add(e.runId);
+        else if (e.type === 'run.completed' || e.type === 'run.failed' || e.type === 'run.cancelled') open.delete(e.runId);
+      }
+      for (const runId of open) {
+        if (waitingOn.has(runId)) continue;
+        runs.set(runId, { threadId, timers: [], completedSteps: [], done: true });
+        emit(threadId, { type: 'run.failed', runId, error: { code: 'INTERRUPTED', userMessage: 'This answer was cut off when DI restarted. Ask again to get it.', referenceId: runId } } as Emit);
+      }
+    }
+  };
+  const ready = restore().catch((err: unknown) => console.error('[conversations] could not load saved tasks:', (err as Error).message));
+
+  const server = createServer((req, res) => void ready.then(() => (perBrowser ? visitor.run({ persona: fromCookie(req) }, () => handle(req, res)) : handle(req, res))));
 
   async function handle(req: IncomingMessage, res: ServerResponse) {
     const url = new URL(req.url ?? '/', `http://localhost:${port}`);
@@ -818,11 +871,13 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
           const patch = await readBody<{ title?: string; archived?: boolean }>(req);
           if (patch.title !== undefined) t.summary.title = patch.title.slice(0, 120) || t.summary.title;
           if (patch.archived !== undefined) t.summary.archived = patch.archived;
+          save(t);
           return json(res, 200, t.summary);
         }
         if (method === 'DELETE') {
           // Removed from the list only; the audit record of prompts and approvals is kept (spec 6.6).
           t.deleted = true;
+          save(t);
           notifications = notifications.filter((n) => n.link !== `/c/${t.summary.threadId}`);
           return json(res, 204);
         }
@@ -835,6 +890,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         const t = thread(threadId);
         if (t.summary.turns === 0 && t.summary.title === 'New conversation') t.summary.title = titleFrom(body.input.text);
         t.summary.turns += 1;
+        save(t);
         const messageId = id('msg_', 8);
         const runId = `R-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${randomBytes(2).toString('hex')}`;
         const accepted = emit(threadId, { type: 'message.accepted', messageId, clientMessageId: body.clientMessageId, text: body.input.text } as Emit);
@@ -898,8 +954,9 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
 
   wss.on('connection', (ws) => {
     const asOwner = (fn: () => void) => (perBrowser ? visitor.run({ persona: socketOwners.get(ws) ?? shared }, fn) : fn());
+    // Messages wait for saved tasks to load, so a tab that reconnects after a restart gets its replay.
     ws.on('message', (raw) => {
-      asOwner(() => onMessage(ws, raw));
+      void ready.then(() => asOwner(() => onMessage(ws, raw)));
     });
     ws.on('close', () => {
       sockets.delete(ws);
@@ -938,6 +995,8 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
   server.listen(port);
   return {
     server,
+    /** Settles once saved tasks are back in memory. */
+    ready,
     close: () =>
       new Promise<void>((resolve) => {
         for (const r of runs.values()) {
@@ -948,7 +1007,7 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         for (const ws of sockets.keys()) ws.terminate();
         wss.close();
         speech?.close();
-        server.close(() => resolve());
+        server.close(() => void (store?.flush() ?? Promise.resolve()).then(() => resolve()));
       }),
   };
 }
