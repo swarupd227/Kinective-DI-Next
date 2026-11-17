@@ -5,6 +5,17 @@ export type ColumnType = 'text' | 'number' | 'currency' | 'percent' | 'bp' | 'co
 
 const locale = () => (typeof navigator !== 'undefined' ? navigator.language : 'en-US');
 
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?Z$/;
+
+/**
+ * A moment in time sent as an ISO timestamp in UTC ("2026-11-17T07:33:58Z"), in the viewer's own time
+ * zone ("Nov 17, 1:03 PM"). Anything else, such as a plain date, is returned as it came.
+ */
+export function formatInstant(value: unknown): string {
+  if (typeof value !== 'string' || !INSTANT.test(value)) return String(value ?? '—');
+  return new Intl.DateTimeFormat(locale(), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value));
+}
+
 export interface FormatOptions {
   compact?: boolean;
   decimals?: number;

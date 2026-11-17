@@ -96,6 +96,9 @@ export interface AuditLogReader {
 const OUTCOME_WORDS: Record<string, string> = { answer: 'Answered', approval_requested: 'Sent for approval', clarify: 'Asked to clarify', unmatched: 'No measure for it', not_supported: 'Out of scope', no_access: 'Refused: access', failed: 'Failed', cancelled: 'Stopped', scripted: 'Sample scenario', not_found: 'Not found' };
 const seconds = (ms: number | null) => (ms === null ? '—' : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
 const DAYS: Record<string, number> = { today: 1, week: 7, month: 30, quarter: 90 };
+/** Answers read from the audit store name it, not the usage ledger the module's other answers read. */
+const AUDIT_SOURCES = [{ kind: 'table' as const, label: 'Agent Audit Log', ref: 'table:ai_audit_event' }];
+const withSources = <B extends { provenance: { sources?: unknown[] } }>(b: B, sources: typeof AUDIT_SOURCES): B => ({ ...b, provenance: { ...b.provenance, sources } });
 
 export function governanceModule(gov: GovernanceService, year: () => number, trail: () => AuditLogReader | undefined = () => undefined): ModuleSpec {
   const noAccess = 'AI usage reports need the AI usage permission. You can ask about your own usage.';
@@ -180,10 +183,11 @@ export function governanceModule(gov: GovernanceService, year: () => number, tra
             if (full.ownerId !== ctx.user.id && !ctx.modules.includes('ai-admin')) throw new CoreError('NOT_FOUND', 'That run was not found, or it is not yours to see.');
             const failed = full.timeline.filter((e) => e.status === 'failed').length;
             const tokens = full.usage.reduce((n, u) => n + u.inputTokens + u.outputTokens, 0);
-            const rows = full.timeline.map((e) => ({ at: e.offsetMs === null ? '—' : seconds(e.offsetMs), step: e.title, by: [e.agent, e.operation].filter(Boolean).join(' · ') || '—', detail: (e.detail ?? '').replace(/\s+/g, ' ').slice(0, 200), status: e.status === 'failed' ? 'Failed' : e.status === 'waiting' ? 'Waiting' : e.status === 'skipped' ? 'Skipped' : 'Done' }));
+            const rows = full.timeline.map((e) => ({ at: e.offsetMs === null ? '—' : seconds(e.offsetMs), step: e.title, by: [e.agent, e.operation].filter(Boolean).join(' · ') || '—', detail: (e.detail ?? '').replace(/\s+/g, ' ').slice(0, 200), status: e.status === 'failed' ? 'Failed' : e.status === 'started' ? 'Started' : e.status === 'waiting' ? 'Waiting' : e.status === 'skipped' ? 'Skipped' : 'Done' }));
             return {
               text: `Run **${full.runId}**: **${full.user.name}** asked “${full.question}”. **${full.agent}** handled it in ${seconds(full.durationMs)}, in ${plural(full.timeline.length, 'step')}${failed ? `, **${failed} of them failed**` : ''}, using ${plural(tokens, 'token')} for ${usd(full.costUsd)}. The outcome: ${(OUTCOME_WORDS[full.outcome] ?? full.outcome).toLowerCase()}. The full trace, with each tool call’s inputs, is in the Agent Audit Log.`,
-              blocks: [moduleTable(spec, `Trace of ${full.runId}`, ctx.runId, 'ai.trace.get', [{ field: 'at', headerName: 'At', type: 'text' }, { field: 'step', headerName: 'Step', type: 'text' }, { field: 'by', headerName: 'Agent or operation', type: 'text' }, { field: 'detail', headerName: 'Detail', type: 'text' }, { field: 'status', headerName: 'Status', type: 'text' }], rows)],
+              blocks: [withSources(moduleTable(spec, `Trace of ${full.runId}`, ctx.runId, 'ai.trace.get', [{ field: 'at', headerName: 'At', type: 'text' }, { field: 'step', headerName: 'Step', type: 'text' }, { field: 'by', headerName: 'Agent or operation', type: 'text' }, { field: 'detail', headerName: 'Detail', type: 'text' }, { field: 'status', headerName: 'Status', type: 'text' }], rows), AUDIT_SOURCES)],
+              sources: AUDIT_SOURCES,
             };
           }
           const t = await gov.trace(a.run_id, { userId: ctx.user.id, all: ctx.modules.includes('ai-admin') });
@@ -210,7 +214,7 @@ export function governanceModule(gov: GovernanceService, year: () => number, tra
           const when = a.period === 'today' ? 'today' : `in the last ${days} days`;
           const what = a.outcome === 'failed' ? 'failed runs' : a.outcome === 'no_access' ? 'runs refused for access' : a.outcome === 'problems' ? 'runs that went wrong' : a.outcome === 'approval_requested' ? 'runs sent for approval' : 'agent runs';
           const whose = everyone ? '' : ' of yours';
-          if (!page.items.length) return { text: `No ${what}${whose} ${when}${a.agent ? ` by ${a.agent}` : ''}.` };
+          if (!page.items.length) return { text: `No ${what}${whose} ${when}${a.agent ? ` by ${a.agent}` : ''}.`, sources: AUDIT_SOURCES };
           // Why runs failed: the recorded error of each, in the person's words where there is one.
           const why = a.outcome === 'failed' || a.outcome === 'problems' ? await Promise.all(page.items.slice(0, 5).map((r) => reader.trace(r.runId).then((t) => t?.error ?? t?.timeline.findLast((e) => e.status === 'failed')?.title ?? null, () => null))) : [];
           const reasons = why.filter((w): w is string => Boolean(w));
@@ -218,13 +222,13 @@ export function governanceModule(gov: GovernanceService, year: () => number, tra
           return {
             text: `${lead}${reasons.length ? ` What went wrong, newest first: ${[...new Set(reasons)].slice(0, 3).map((r) => `“${r.slice(0, 160)}”`).join('; ')}.` : ''} Each run’s full trace is in the Agent Audit Log.`,
             blocks: [
-              moduleTable(
+              withSources(moduleTable(
                 spec,
                 `Agent runs ${when}`,
                 ctx.runId,
                 'ai.audit.list',
                 [
-                  { field: 'at', headerName: 'When', type: 'text' },
+                  { field: 'at', headerName: 'When', type: 'date' },
                   ...(everyone ? [{ field: 'person', headerName: 'Person', type: 'text' as const }] : []),
                   { field: 'agent', headerName: 'Agent', type: 'text' },
                   { field: 'question', headerName: 'Question', type: 'text' },
@@ -232,10 +236,11 @@ export function governanceModule(gov: GovernanceService, year: () => number, tra
                   { field: 'time', headerName: 'Time', type: 'text' },
                   { field: 'runId', headerName: 'Run', type: 'text' },
                 ],
-                page.items.map((r) => ({ at: r.at.replace('T', ' ').slice(0, 16), person: r.user.name, agent: r.agent, question: r.question, outcome: OUTCOME_WORDS[r.outcome] ?? r.outcome, time: seconds(r.durationMs), runId: r.runId })),
-              ),
+                page.items.map((r) => ({ at: r.at.replace(/\.\d+Z$/, 'Z'), person: r.user.name, agent: r.agent, question: r.question, outcome: OUTCOME_WORDS[r.outcome] ?? r.outcome, time: seconds(r.durationMs), runId: r.runId })),
+              ), AUDIT_SOURCES),
             ],
             suggestions: [`Open the trace for run ${page.items[0]!.runId}`],
+            sources: AUDIT_SOURCES,
           };
         },
       },

@@ -56,7 +56,7 @@ const AGENT_SQL = "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(e.body, '$.agentName')), J
 const OUTCOME_SQL = "JSON_UNQUOTE(JSON_EXTRACT(e.body, '$.outcome'))";
 const iso = (sql: string) => `${sql.replace(' ', 'T')}Z`;
 const sqlTime = (d: Date) => d.toISOString().replace('T', ' ').replace('Z', '').slice(0, 23);
-const STEP_STATUS: Record<string, AuditTraceEntry['status']> = { done: 'ok', failed: 'failed', skipped: 'skipped', running: 'waiting', needs_input: 'waiting' };
+const STEP_STATUS: Record<string, AuditTraceEntry['status']> = { done: 'ok', failed: 'failed', skipped: 'skipped', running: 'started', needs_input: 'waiting' };
 const OUTCOME_TEXT: Record<string, string> = { answer: 'Answered', unmatched: 'No defined measure answers this', clarify: 'Asked which was meant', not_supported: 'Outside what DI does', no_access: 'Refused: outside the person’s access', failed: 'Failed', cancelled: 'Stopped by the person', scripted: 'Answered by a sample scenario', approval_requested: 'Waiting on an approval', not_found: 'Not found' };
 
 export class AuditTrail {

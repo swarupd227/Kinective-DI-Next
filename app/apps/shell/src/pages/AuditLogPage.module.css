@@ -239,6 +239,7 @@
   color: var(--color-status-danger-text);
 }
 
+.started .dot,
 .waiting .dot {
   color: var(--color-status-info-text);
 }

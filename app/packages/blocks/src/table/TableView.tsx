@@ -5,7 +5,7 @@ import type { TableBlock } from '@dinext/block-schemas';
 import { Download } from 'lucide-react';
 import { Button, Menu, TextInput } from '@dinext/ui';
 import { useBlockHost } from '../context.tsx';
-import { formatValue } from '../format.ts';
+import { formatInstant, formatValue } from '../format.ts';
 import DataGrid from './DataGrid.tsx';
 import styles from './TableView.module.css';
 
@@ -31,7 +31,7 @@ function usePhone() {
 }
 
 type Column = TableBlock['data']['columns'][number];
-const cell = (c: Column, v: unknown) => (v === null || v === undefined || v === '' ? '—' : NUMERIC.has(c.type ?? 'text') && typeof v === 'number' ? formatValue(v, c.type as never, { decimals: c.type === 'percent' ? 2 : undefined }) : String(v));
+const cell = (c: Column, v: unknown) => (v === null || v === undefined || v === '' ? '—' : NUMERIC.has(c.type ?? 'text') && typeof v === 'number' ? formatValue(v, c.type as never, { decimals: c.type === 'percent' ? 2 : undefined }) : c.type === 'date' ? formatInstant(v) : String(v));
 
 /** One card per row: the first column is the card's title, the rest are label and value. */
 function Stacked({ columns, rows, label }: { columns: Column[]; rows: Record<string, unknown>[]; label: string }) {

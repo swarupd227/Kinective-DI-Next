@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { ArrowLeft, CircleAlert, CircleCheck, CircleDashed, CircleMinus, Search } from 'lucide-react';
+import { ArrowLeft, CircleAlert, CircleCheck, CircleDashed, CircleDot, CircleMinus, Search } from 'lucide-react';
 import { Badge, Button, SegmentedControl, Skeleton, TextInput, type BadgeTone } from '@dinext/ui';
 import type { AuditRunSummary, AuditRunTrace, AuditTraceEntry } from '@dinext/block-schemas';
 import { ApiError } from '@dinext/stream-client';
@@ -243,10 +243,11 @@ function RunRow({ run, everyone, onOpen }: { run: AuditRunSummary; everyone: boo
 const STATUS_ICON = {
   ok: <CircleCheck size={16} aria-hidden />,
   failed: <CircleAlert size={16} aria-hidden />,
+  started: <CircleDot size={16} aria-hidden />,
   waiting: <CircleDashed size={16} aria-hidden />,
   skipped: <CircleMinus size={16} aria-hidden />,
 };
-const STATUS_TEXT = { ok: 'Done', failed: 'Failed', waiting: 'Waiting', skipped: 'Skipped' };
+const STATUS_TEXT = { ok: 'Done', failed: 'Failed', started: 'Started', waiting: 'Waiting', skipped: 'Skipped' };
 
 export function RunTracePage() {
   const { runId = '' } = useParams();

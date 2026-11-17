@@ -19,7 +19,7 @@ import {
   type ColDef,
 } from 'ag-grid-community';
 import { usePreferences } from '@dinext/ui';
-import { formatValue, type ColumnType } from '../format.ts';
+import { formatInstant, formatValue, type ColumnType } from '../format.ts';
 import styles from './DataGrid.module.css';
 
 ModuleRegistry.registerModules([
@@ -102,7 +102,7 @@ export default function DataGrid({ columns, rows, sort, layout = 'auto', filters
           wrapText: !isNum && rows.length <= WRAP_MAX_ROWS,
           autoHeight: !isNum && rows.length <= WRAP_MAX_ROWS,
           filter: filters ? (isNum ? 'agNumberColumnFilter' : 'agTextColumnFilter') : false,
-          valueFormatter: isNum ? (p) => format(p.value) : undefined,
+          valueFormatter: isNum ? (p) => format(p.value) : type === 'date' ? (p) => formatInstant(p.value) : undefined,
         };
       }),
     [columns, rows, sort, filters],

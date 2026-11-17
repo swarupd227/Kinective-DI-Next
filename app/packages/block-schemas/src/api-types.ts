@@ -455,7 +455,7 @@ export interface AuditTraceEntry {
   kind: 'question' | 'routing' | 'plan' | 'step' | 'text' | 'block' | 'suggestion' | 'approval' | 'action' | 'record' | 'outcome';
   title: string;
   detail?: string;
-  status?: 'ok' | 'failed' | 'waiting' | 'skipped';
+  status?: 'ok' | 'failed' | 'started' | 'waiting' | 'skipped';
   agent?: string;
   operation?: string;
   sources?: string[];
