@@ -7,10 +7,11 @@
 // returned by any call, and never reaches an agent: agents refer to it by number.
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
 import mysql from 'mysql2/promise';
-import { landingTable, SYMITAR_CODES, type Pool } from '@dinext/tenant-db';
+import { landingTable, SOURCE_TARGETS, SYMITAR_CODES, type Pool } from '@dinext/tenant-db';
 import { CoreError } from './referrals.ts';
 import { compileMapExpr, MapExprError } from './mapExpr.ts';
-import { ontology } from '@dinext/ontology';
+import { fromAliases, ontology } from '@dinext/ontology';
+import { assign, compareWith, scoreAll, type ColumnProfile, type CoreProfile, type CoreTableProfile, type Proposal, type Signals } from './mappingEngine.ts';
 
 const rows = async <T>(pool: Pool | mysql.Connection, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
 
@@ -747,6 +748,218 @@ export class SourceService {
       }
       return out;
     });
+  }
+
+  // ---- proposing mappings (Core Mapping and Ontology, phase 2) ----
+
+  /**
+   * Profiles every column the login can see, read-only: how many rows have a value (00000000 counts
+   * as none), distinct values, the commonest values of a short code list, whether values look like
+   * YYYYMMDD dates, numbers, money or 0/1 flags, each table's key, and which columns draw their
+   * values from another table's key.
+   */
+  private async profileCore(core: mysql.Connection): Promise<CoreProfile> {
+    const [{ db }] = (await rows<{ db: string }>(core, 'SELECT DATABASE() AS db')) as [{ db: string }];
+    const cols = await rows<{ t: string; c: string; dt: string }>(core, 'SELECT TABLE_NAME AS t, COLUMN_NAME AS c, DATA_TYPE AS dt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME, ORDINAL_POSITION', [db]);
+    const tables: CoreTableProfile[] = [];
+    const columns: ColumnProfile[] = [];
+    const q = (x: string) => `\`${x.replaceAll('`', '')}\``;
+    for (const t of [...new Set(cols.map((x) => x.t))].slice(0, 80)) {
+      const mine = cols.filter((x) => x.t === t);
+      const [{ n }] = (await rows<{ n: number }>(core, `SELECT COUNT(*) AS n FROM ${q(t)}`)) as [{ n: number }];
+      const total = Number(n);
+      if (!total) {
+        tables.push({ table: t, rows: 0, key: null });
+        continue;
+      }
+      const parts = mine.map((x, i) => {
+        const v = `CAST(${q(x.c)} AS CHAR)`;
+        const has = `(${v} IS NOT NULL AND TRIM(${v}) <> '' AND ${v} <> '00000000')`;
+        const num = `${v} REGEXP '^-?[0-9]+(\\\\.[0-9]+)?$'`;
+        return [
+          `SUM(${has}) AS f${i}`,
+          `COUNT(DISTINCT ${v}) AS d${i}`,
+          `SUM(${has} AND ${v} REGEXP '^(19|20)[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$') AS dt${i}`,
+          `SUM(${has} AND ${num}) AS nu${i}`,
+          `SUM(${has} AND ${v} REGEXP '^-?[0-9]+\\\\.[0-9]*[1-9]') AS fr${i}`,
+          `SUM(${has} AND UPPER(TRIM(${v})) IN ('0', '1', 'Y', 'N', 'T', 'F', 'TRUE', 'FALSE')) AS fl${i}`,
+          `MIN(CASE WHEN ${num} THEN ${v} + 0 END) AS mn${i}`,
+          `MAX(CASE WHEN ${num} THEN ${v} + 0 END) AS mx${i}`,
+          `AVG(CASE WHEN ${num} THEN ${v} + 0 END) AS av${i}`,
+          `MIN(CASE WHEN ${has} THEN ${v} END) AS tmn${i}`,
+          `MAX(CASE WHEN ${has} THEN ${v} END) AS tmx${i}`,
+        ].join(', ');
+      });
+      const [agg] = await rows<Record<string, string | number | null>>(core, `SELECT ${parts.join(', ')} FROM ${q(t)}`);
+      const num = (k: string) => Number(agg?.[k] ?? 0);
+      const here: ColumnProfile[] = mine.map((x, i) => {
+        const filled = num(`f${i}`);
+        const share = (k: string) => (filled ? num(k) / filled : 0);
+        const numeric = share(`nu${i}`) >= 0.95;
+        return {
+          table: t,
+          column: x.c,
+          dataType: x.dt,
+          rows: total,
+          filled,
+          distinct: num(`d${i}`),
+          min: agg?.[numeric ? `mn${i}` : `tmn${i}`] === null || agg?.[numeric ? `mn${i}` : `tmn${i}`] === undefined ? null : String(agg[numeric ? `mn${i}` : `tmn${i}`]).slice(0, 80),
+          max: agg?.[numeric ? `mx${i}` : `tmx${i}`] === null || agg?.[numeric ? `mx${i}` : `tmx${i}`] === undefined ? null : String(agg[numeric ? `mx${i}` : `tmx${i}`]).slice(0, 80),
+          dateShare: share(`dt${i}`),
+          numericShare: share(`nu${i}`),
+          fractionShare: share(`fr${i}`),
+          flagShare: share(`fl${i}`),
+          avg: agg?.[`av${i}`] === null ? null : Number(agg?.[`av${i}`]),
+          top: [],
+        };
+      });
+      for (const c of here) {
+        if (c.distinct > 40 || !c.filled) continue;
+        c.top = (await rows<{ v: string; n: number }>(core, `SELECT CAST(${q(c.column)} AS CHAR) AS v, COUNT(*) AS n FROM ${q(t)} GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 12`)).map((r) => ({ value: String(r.v ?? ''), count: Number(r.n) }));
+      }
+      const key = here.find((c) => c.distinct === total && c.numericShare >= 0.99 && c.filled === total)?.column ?? null;
+      tables.push({ table: t, rows: total, key });
+      columns.push(...here);
+    }
+    // Which columns draw their values from another table's key: a sample of up to 5,000 distinct
+    // values, compared as text. Short code lists (a branch number) are left out, since small numbers
+    // fall inside any key by chance.
+    const keys = tables.filter((t) => t.key);
+    // Each key's values, read once (a few hundred thousand at most), so the checks run in memory.
+    const keyValues = new Map<string, Set<string>>();
+    for (const k of keys) keyValues.set(k.table, new Set((await rows<{ v: string }>(core, `SELECT CAST(${q(k.key!)} AS CHAR) AS v FROM ${q(k.table)}`)).map((r) => String(r.v))));
+    for (const c of columns) {
+      const own = tables.find((t) => t.table === c.table);
+      if (own?.key === c.column || c.distinct < 50 || c.dateShare >= 0.9 || c.fractionShare > 0.05) continue;
+      const sample = (await rows<{ v: string }>(core, `SELECT DISTINCT CAST(${q(c.column)} AS CHAR) AS v FROM ${q(c.table)} WHERE ${q(c.column)} IS NOT NULL LIMIT 5000`)).map((r) => String(r.v));
+      if (!sample.length) continue;
+      let best: ColumnProfile['refersTo'] = null;
+      for (const k of keys) {
+        if (k.table === c.table && k.key === c.column) continue;
+        const set = keyValues.get(k.table)!;
+        // A handful of small numbers (rates, codes) fall inside a large key by chance; a reference covers a fair part of it.
+        if (c.distinct < 0.2 * set.size) continue;
+        const share = sample.filter((v) => set.has(v)).length / sample.length;
+        if (share >= 0.95 && (!best || share > best.share)) best = { table: k.table, column: k.key!, share };
+      }
+      c.refersTo = best;
+    }
+    return { tables, columns };
+  }
+
+  /** The regulatory return's latest figures a mapping can be checked against: total loans, total shares and members (a credit union's 5300). */
+  private async returnFigures() {
+    const lines: Record<string, string> = { 'loan.balance': '025B', 'deposit.balance': '018', 'member.id': '083' };
+    const found = await rows<{ code: string; amount: number }>(this.pool, "SELECT v.code, v.amount FROM cr_value v WHERE v.quarter_end = (SELECT MAX(quarter_end) FROM cr_value) AND v.code IN ('025B', '018', '083')").catch(() => []);
+    const by = new Map(found.map((r) => [r.code, Number(r.amount)]));
+    return new Map(Object.entries(lines).filter(([, code]) => by.has(code)).map(([prop, code]) => [prop, { code, amount: by.get(code)! }]));
+  }
+
+  /**
+   * Proposes how the core's columns map to DI's members, shares and loans. Profiles the core
+   * (read-only), scores every pair on five signals, checks loan and share totals and the member
+   * count against the 5300, assigns the best one to one, and records the run. With hideStandard,
+   * Kinective's mapping for this core is left out of the scoring and the proposals are measured
+   * against it instead. Changes no mapping and no pull.
+   */
+  async discover(opts: { connectionId?: number; hideStandard?: boolean; descriptions?: boolean; runBy: string }) {
+    const all = await this.connections();
+    const conn = opts.connectionId ? all.find((c) => c.connectionId === opts.connectionId) : all[0];
+    if (!conn) throw new CoreError('NOT_FOUND', 'There’s no core connection yet. Connect the core replica first; DI proposes a mapping from its real columns and rows.');
+    const [cred] = await rows<{ credential_id: number }>(this.pool, 'SELECT credential_id FROM src_connection WHERE connection_id = ?', [conn.connectionId]);
+    const o = ontology();
+    const pack = o.vendors.get(conn.system.id) ?? null;
+    const useDescriptions = opts.descriptions ?? true;
+    // Kinective's mapping for this core, by core column: the precedent, and what a hidden run is measured against.
+    const standard = new Map<string, string>();
+    const known: { diTable: string; diColumn: string; core: string; transform: string }[] = [];
+    for (const t of pack?.tables ?? []) {
+      const al = fromAliases(t.from);
+      for (const c of t.columns) {
+        const [a, col] = c.their.split('.') as [string, string];
+        const core = `${al.get(a)}.${col}`;
+        standard.set(core, c.denotes);
+        known.push({ diTable: t.di_table, diColumn: c.di, core, transform: c.how });
+      }
+    }
+    const started = nowSql();
+    const figures = await this.returnFigures();
+    const result = await this.withCore(cred!.credential_id, async (core) => {
+      const profile = await this.profileCore(core);
+      if (useDescriptions && pack) profile.descriptions = new Map(Object.entries(pack.vocabulary).flatMap(([t, v]) => Object.entries(v.columns).map(([c, d]) => [`${t}.${c}`, d.description] as [string, string])));
+      const precedent = opts.hideStandard ? null : standard.size ? standard : null;
+      const first = scoreAll(o, profile, [...SOURCE_TARGETS], { precedent, descriptions: useDescriptions });
+      const firstPass = assign(first.candidates);
+      // Tie-outs: the best column for each total, summed over open rows as the first pass reads them.
+      const tieOuts = new Map<string, boolean>();
+      const ties: { property: string; column: string; core: number; reported: number; code: string; pass: boolean }[] = [];
+      for (const [prop, fig] of figures) {
+        // Every column in the right DI table that could hold this total is tried, so the tie-out can tell candidates apart.
+        const diTable = o.properties.get(prop)!.realized_by.map((x) => x.split('.')[0]!).find((t) => (SOURCE_TARGETS as readonly string[]).includes(t));
+        const options = first.candidates.filter((c) => c.property === prop && c.diTable === diTable).sort((a, b) => b.score - a.score).slice(0, 4);
+        for (const c of options) {
+          const empty = (col: string) => `(\`${col}\` IS NULL OR TRIM(\`${col}\`) IN ('', '00000000'))`;
+          // Open rows: no close date (and no charge-off date) as the first pass maps them; members also not flagged as non-members.
+          const conds = firstPass.filter((p) => p.coreTable === c.coreTable && ['loan.close_date', 'loan.charge_off_date', 'deposit.close_date'].includes(p.property)).map((p) => empty(p.coreColumn));
+          if (prop === 'member.id') {
+            for (const p of firstPass.filter((x) => x.coreTable === c.coreTable && x.property === 'member.is_member')) conds.push(`\`${p.coreColumn}\` ${p.transform === 'not' ? "IN ('0', 'N')" : "IN ('1', 'Y')"}`);
+            // A membership's close date isn't a DI column, so it's found by name among the table's dates.
+            const close = profile.columns.find((x) => x.table === c.coreTable && x.kind === 'date' && /close/i.test(x.column));
+            if (close) conds.push(empty(close.column));
+          }
+          const sql = prop === 'member.id' ? `SELECT COUNT(DISTINCT \`${c.coreColumn}\`) AS v FROM \`${c.coreTable}\`` : `SELECT SUM(\`${c.coreColumn}\` + 0) AS v FROM \`${c.coreTable}\``;
+          const [r] = await rows<{ v: number | null }>(core, `${sql}${conds.length ? ` WHERE ${conds.join(' AND ')}` : ''}`).catch(() => []);
+          const v = Number(r?.v ?? 0);
+          const pass = fig.amount > 0 && Math.abs(v - fig.amount) / fig.amount <= 0.03;
+          tieOuts.set(`${c.coreTable}.${c.coreColumn}|${prop}`, pass);
+          if (c === options[0] || pass) ties.push({ property: prop, column: `${c.coreTable}.${c.coreColumn}`, core: v, reported: fig.amount, code: fig.code, pass });
+        }
+      }
+      const second = scoreAll(o, profile, [...SOURCE_TARGETS], { precedent, tieOuts, descriptions: useDescriptions });
+      const proposals = assign(second.candidates, { standard: opts.hideStandard ? undefined : standard });
+      return { profile, proposals, ties, tableOf: second.tableOf, owner: second.owner };
+    });
+    const comparison = known.length ? compareWith(result.proposals, known) : null;
+    const bands = { standard: 0, auto: 0, review: 0, person: 0 } as Record<Proposal['band'], number>;
+    for (const p of result.proposals) bands[p.band]++;
+    const summary = {
+      tables: Object.fromEntries([...result.tableOf]),
+      bands,
+      ties: result.ties,
+      comparison: comparison ? { total: comparison.total, right: comparison.right, transformsRight: comparison.transformsRight, missed: comparison.rows.filter((r) => !r.right).map((r) => ({ di: r.di, expected: r.expected, proposed: r.proposed })), extra: comparison.extra.map((p) => `${p.coreTable}.${p.coreColumn} → ${p.diTable}.${p.diColumn}`) } : null,
+      descriptions: useDescriptions && !!pack,
+    };
+    const [ins] = (await this.pool.query('INSERT INTO map_run (connection_id, system_id, mode, started_at, finished_at, columns_profiled, summary, run_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [conn.connectionId, conn.system.id, opts.hideStandard ? 'measure' : 'propose', started, nowSql(), result.profile.columns.length, JSON.stringify(summary), opts.runBy])) as unknown as [{ insertId: number }];
+    const runId = ins.insertId;
+    const prof = result.profile.columns.map((c) => [runId, c.table, c.column, c.dataType, c.kind ?? 'text', c.rows, c.filled, c.distinct, c.min, c.max, c.top.length ? JSON.stringify(c.top) : null, c.refersTo ? `${c.refersTo.table}.${c.refersTo.column}` : null]);
+    if (prof.length) await this.pool.query('INSERT INTO map_profile (run_id, core_table, core_column, data_type, kind, row_count, filled, distinct_count, min_value, max_value, top_values, refers_to) VALUES ?', [prof]);
+    const cand = result.proposals.map((p) => [runId, p.coreTable, p.coreColumn, p.diTable, p.diColumn, p.property, p.score, p.band, p.transform, JSON.stringify({ ...p.signals, why: p.why }), p.runnerUp ? JSON.stringify(p.runnerUp) : null]);
+    if (cand.length) await this.pool.query('INSERT INTO map_candidate (run_id, core_table, core_column, di_table, di_column, property_id, score, band, transform, signals, runner_up) VALUES ?', [cand]);
+    const used = new Set(result.proposals.map((p) => `${p.coreTable}.${p.coreColumn}`));
+    // Columns with values that fit no DI column: candidates for custom fields, such as tracking records.
+    const unmatched = result.profile.columns.filter((c) => c.filled > 0 && !used.has(`${c.table}.${c.column}`) && c.kind !== 'key' && c.kind !== 'reference').map((c) => `${c.table}.${c.column}`);
+    return { runId, connection: conn, mode: opts.hideStandard ? ('measure' as const) : ('propose' as const), profiled: result.profile.columns.length, tables: result.profile.tables, proposals: result.proposals.map((p) => ({ ...p, label: o.properties.get(p.property)?.label ?? p.property })), ties: result.ties, tableOf: result.tableOf, owner: result.owner, comparison, bands, unmatched };
+  }
+
+  /** The latest run's proposals and profiles, for review and explanation. */
+  async mapRun(runId?: number) {
+    const [run] = runId
+      ? await rows<{ run_id: number; system_id: string; mode: string; finished_at: string; summary: unknown; columns_profiled: number }>(this.pool, 'SELECT run_id, system_id, mode, finished_at, summary, columns_profiled FROM map_run WHERE run_id = ?', [runId]).catch(() => [])
+      : await rows<{ run_id: number; system_id: string; mode: string; finished_at: string; summary: unknown; columns_profiled: number }>(this.pool, 'SELECT run_id, system_id, mode, finished_at, summary, columns_profiled FROM map_run ORDER BY run_id DESC LIMIT 1').catch(() => []);
+    if (!run) return null;
+    const proposals = await rows<{ core_table: string; core_column: string; di_table: string; di_column: string; property_id: string; score: number; band: string; transform: string; signals: unknown; runner_up: unknown }>(this.pool, 'SELECT core_table, core_column, di_table, di_column, property_id, score, band, transform, signals, runner_up FROM map_candidate WHERE run_id = ? ORDER BY di_table, score DESC', [run.run_id]);
+    const profiles = await rows<{ core_table: string; core_column: string; kind: string; row_count: number; filled: number; distinct_count: number; min_value: string | null; max_value: string | null; top_values: unknown; refers_to: string | null }>(this.pool, 'SELECT core_table, core_column, kind, row_count, filled, distinct_count, min_value, max_value, top_values, refers_to FROM map_profile WHERE run_id = ?', [run.run_id]);
+    const json = <T>(v: unknown) => (typeof v === 'string' ? (JSON.parse(v) as T) : (v as T));
+    return {
+      runId: run.run_id,
+      system: coreSystem(run.system_id)?.short ?? run.system_id,
+      mode: run.mode,
+      at: String(run.finished_at).slice(0, 16),
+      profiled: Number(run.columns_profiled),
+      summary: json<{ bands: Record<string, number>; tables: Record<string, string>; ties: { property: string; column: string; core: number; reported: number; code: string; pass: boolean }[]; comparison: { total: number; right: number; transformsRight: number; missed: { di: string; expected: string; proposed: string | null }[]; extra: string[] } | null }>(run.summary),
+      proposals: proposals.map((p) => ({ core: `${p.core_table}.${p.core_column}`, di: `${p.di_table}.${p.di_column}`, property: p.property_id, label: ontology().properties.get(p.property_id)?.label ?? p.property_id, score: Number(p.score), band: p.band, transform: p.transform, signals: json<Signals & { why: string[] }>(p.signals), runnerUp: p.runner_up ? json<{ coreColumn: string; diColumn: string; score: number }>(p.runner_up) : null })),
+      profiles: profiles.map((p) => ({ core: `${p.core_table}.${p.core_column}`, kind: p.kind, rows: Number(p.row_count), filled: Number(p.filled), distinct: Number(p.distinct_count), min: p.min_value, max: p.max_value, top: p.top_values ? json<{ value: string; count: number }[]>(p.top_values) : [], refersTo: p.refers_to })),
+    };
   }
 
   async lastPull(connectionId: number) {

@@ -77,6 +77,51 @@ export const SOURCES_DDL = [
      UNIQUE KEY ux_src_column_map_approval (approval_id),
      KEY ix_src_column_map_field (di_table, field)
    )`,
+  // Proposing mappings for a core (Core Mapping and Ontology, phase 2): each run profiles the core's
+  // columns and scores DI's properties against them; nothing here changes a pull until it's approved.
+  `CREATE TABLE IF NOT EXISTS map_run (
+     run_id INT AUTO_INCREMENT PRIMARY KEY,
+     connection_id INT NOT NULL,
+     system_id VARCHAR(20) NOT NULL,
+     mode VARCHAR(20) NOT NULL,
+     started_at DATETIME NOT NULL,
+     finished_at DATETIME NULL,
+     columns_profiled INT NOT NULL DEFAULT 0,
+     summary JSON NULL,
+     run_by VARCHAR(40) NOT NULL,
+     KEY ix_map_run_connection (connection_id)
+   )`,
+  `CREATE TABLE IF NOT EXISTS map_profile (
+     run_id INT NOT NULL,
+     core_table VARCHAR(64) NOT NULL,
+     core_column VARCHAR(64) NOT NULL,
+     data_type VARCHAR(40) NOT NULL,
+     kind VARCHAR(12) NOT NULL,
+     row_count INT NOT NULL,
+     filled INT NOT NULL,
+     distinct_count INT NOT NULL,
+     min_value VARCHAR(80) NULL,
+     max_value VARCHAR(80) NULL,
+     top_values JSON NULL,
+     refers_to VARCHAR(140) NULL,
+     PRIMARY KEY (run_id, core_table, core_column)
+   )`,
+  `CREATE TABLE IF NOT EXISTS map_candidate (
+     run_id INT NOT NULL,
+     core_table VARCHAR(64) NOT NULL,
+     core_column VARCHAR(64) NOT NULL,
+     di_table VARCHAR(64) NOT NULL,
+     di_column VARCHAR(64) NOT NULL,
+     property_id VARCHAR(80) NOT NULL,
+     score DECIMAL(5,3) NOT NULL,
+     band VARCHAR(12) NOT NULL,
+     transform VARCHAR(12) NOT NULL,
+     signals JSON NOT NULL,
+     runner_up JSON NULL,
+     status VARCHAR(12) NOT NULL DEFAULT 'proposed',
+     PRIMARY KEY (run_id, di_table, di_column),
+     KEY ix_map_candidate_core (run_id, core_table, core_column)
+   )`,
   // The values custom mappings bring in, one row per record and field.
   `CREATE TABLE IF NOT EXISTS cdm_custom_field (
      di_table VARCHAR(64) NOT NULL,
@@ -93,7 +138,7 @@ export const SOURCE_TARGETS = ['cdm_party', 'cdm_deposit_account', 'cdm_loan'] a
 export const landingTable = (diTable: string) => `src_land_${diTable.replace(/^cdm_/, '')}`;
 const LANDING_DDL = SOURCE_TARGETS.map((t) => `CREATE TABLE IF NOT EXISTS ${landingTable(t)} LIKE ${t}`);
 
-export const SOURCES_WRITE_TABLES = ['src_credential', 'src_connection', 'src_mapping', 'src_sync_run', 'src_column_map', 'cdm_custom_field'];
+export const SOURCES_WRITE_TABLES = ['src_credential', 'src_connection', 'src_mapping', 'src_sync_run', 'src_column_map', 'cdm_custom_field', 'map_run', 'map_profile', 'map_candidate'];
 /** A pull replaces what landed last time, so the landing tables also allow deletes. Nothing else does. */
 export const SOURCES_LANDING_TABLES = SOURCE_TARGETS.map(landingTable);
 

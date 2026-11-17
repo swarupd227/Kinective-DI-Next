@@ -37,7 +37,7 @@ export type { RunSink, StepUpdate } from './sink.ts';
 export { classesNamed, fieldsFrom, parseSettingsRequest, settingsDiff, settingsView, SETTINGS_FOLLOW_UP, whoCanOpen, type SettingsAsk, type SettingsInput } from './reportSettings.ts';
 export { kindNamed, notificationsModule, NOTIFICATIONS_AGENT, NOTIFICATIONS_REQUEST } from './notifications.ts';
 export { scheduleFrom, sourcesModule } from './sources.ts';
-export { coreMappingModule, mappingFrom, MAPPING_REQUEST } from './coreMapping.ts';
+export { coreMappingModule, DISCOVER_REQUEST, mappingFrom, MAPPING_REQUEST } from './coreMapping.ts';
 export { RAMP_COLUMNS, irrModule, rampRows, shockFrom } from './irr.ts';
 export { delinquencyModule } from './delinquency.ts';
 export { liquidityModule, runoffFrom } from './liquidity.ts';

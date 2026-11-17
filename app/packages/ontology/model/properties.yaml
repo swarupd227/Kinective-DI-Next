@@ -18,11 +18,11 @@ properties:
     name_suffix: { label: Name suffix, type: text, privacy: none, realized_by: [cdm_party_detail.name_suffix] }
     birth_date: { label: Birth date, type: date, privacy: direct, constraints: { not_after_as_of: true }, realized_by: [cdm_party.birth_date] }
     age_band: { label: Age band, type: code, value_set: age_band, privacy: quasi, realized_by: [hist_member_month.age_band] }
-    join_date: { label: Date joined, labels_by_type: { bank: Customer since }, type: date, privacy: none, constraints: { not_after_as_of: true }, synonyms: { credit_union: [joined, member since, join date], bank: [customer since, relationship start] }, realized_by: [cdm_party.join_date] }
+    join_date: { label: Date joined, labels_by_type: { bank: Customer since }, type: date, privacy: none, constraints: { not_after_as_of: true }, definition: 'When the membership or relationship opened.', synonyms: { credit_union: [joined, member since, join date, membership open date], bank: [customer since, relationship start, relationship open date] }, realized_by: [cdm_party.join_date] }
     home_branch: { label: Home branch, type: reference, refers_to: branch, privacy: none, realized_by: [cdm_party.primary_branch_id, hist_party_month.branch_id, hist_member_month.branch_id] }
-    segment: { label: Segment, type: code, value_set: member_segment, privacy: none, realized_by: [cdm_party.segment_code] }
+    segment: { label: Segment, type: code, value_set: member_segment, privacy: none, synonyms: { credit_union: [member type, membership type], bank: [customer type, customer segment] }, realized_by: [cdm_party.segment_code] }
     household: { label: Household, type: reference, refers_to: household, privacy: none, realized_by: [cdm_party.household_id] }
-    is_member: { label: Is a member, labels_by_type: { bank: Is a customer }, type: flag, privacy: none, definition: 'Yes when the party holds a membership or account; no for a non-member, such as a joint owner only.', realized_by: [cdm_party.is_member] }
+    is_member: { label: Is a member, labels_by_type: { bank: Is a customer }, type: flag, privacy: none, definition: 'Yes when the party holds a membership or account; no for a non-member, such as a joint owner only.', derive: [{ transform: not, from: flag, words: [non member, nonmember] }], realized_by: [cdm_party.is_member] }
     tin_type: { label: Tax ID type, type: code, value_set: tin_type, privacy: none, realized_by: [cdm_party_detail.tin_type] }
     ssn_last4: { label: Last four of SSN, type: identifier, privacy: direct, realized_by: [cdm_party_detail.ssn_last4] }
     language: { label: Preferred language, type: code, value_set: language, privacy: none, realized_by: [cdm_party_detail.language] }
@@ -119,7 +119,7 @@ properties:
     branch: { label: Branch, type: reference, refers_to: branch, privacy: none, realized_by: [cdm_loan.branch_id, cdm_loan_chargeoff.branch_id, hist_loan_month.branch_id, hist_loan_dq_month.branch_id, hist_lap_month.branch_id] }
     officer: { label: Loan officer, type: reference, refers_to: employee, privacy: none, realized_by: [cdm_loan.officer_id] }
     category: { label: Loan type, type: code, value_set: loan_category, privacy: none, synonyms: { credit_union: [loan type, loan category], bank: [loan type, loan category, call report category] }, realized_by: [cdm_loan.loan_category, cdm_loan_chargeoff.loan_category, hist_loan_month.loan_category, hist_loan_dq_month.loan_category, hist_lap_month.loan_category] }
-    is_indirect: { label: Indirect, type: flag, privacy: none, definition: Yes when a dealer arranged the loan., synonyms: { credit_union: [indirect, dealer loan], bank: [indirect, dealer paper] }, realized_by: [cdm_loan.is_indirect, cdm_loan_chargeoff.is_indirect, hist_loan_month.is_indirect, hist_loan_dq_month.is_indirect] }
+    is_indirect: { label: Indirect, type: flag, privacy: none, definition: Yes when a dealer arranged the loan., derive: [{ transform: nonzero, from: code, words: [dealer] }], synonyms: { credit_union: [indirect, dealer loan], bank: [indirect, dealer paper] }, realized_by: [cdm_loan.is_indirect, cdm_loan_chargeoff.is_indirect, hist_loan_month.is_indirect, hist_loan_dq_month.is_indirect] }
     open_date: { label: Date opened, type: date, privacy: none, constraints: { not_after_as_of: true }, realized_by: [cdm_loan.open_date] }
     vintage_year: { label: Year opened, type: number, privacy: none, realized_by: [hist_loan_dq_month.vintage_year] }
     close_date: { label: Date closed, type: date, privacy: none, definition: Empty while open., realized_by: [cdm_loan.close_date] }
@@ -127,7 +127,7 @@ properties:
     original_amount: { label: Original amount, type: money, privacy: financial, constraints: { min: 0 }, realized_by: [cdm_loan.original_amount] }
     balance: { label: Balance, type: money, privacy: financial, constraints: { min: 0 }, synonyms: { credit_union: [loans, loan balance, outstanding], bank: [loans, loan balance, outstanding, principal] }, realized_by: [cdm_loan.balance, hist_loan_month.balance, hist_loan_dq_month.balance] }
     rate: { label: Interest rate, type: rate, privacy: none, constraints: { min: 0, max: 30 }, realized_by: [cdm_loan.rate] }
-    days_delinquent: { label: Days past due, type: count, privacy: financial, constraints: { min: 0 }, synonyms: { credit_union: [days delinquent, past due, late], bank: [days past due, past due, late] }, realized_by: [cdm_loan.days_delinquent] }
+    days_delinquent: { label: Days past due, type: count, privacy: financial, constraints: { min: 0 }, derive: [{ transform: daysPast, from: date, words: [due, next due, payment due] }], synonyms: { credit_union: [days delinquent, past due, late], bank: [days past due, past due, late] }, realized_by: [cdm_loan.days_delinquent] }
     delinquency_bucket: { label: Delinquency bucket, type: code, value_set: delinquency_bucket, privacy: none, realized_by: [hist_loan_dq_month.bucket] }
     credit_score: { label: Credit score at origination, type: score, privacy: financial, constraints: { min: 300, max: 850 }, realized_by: [cdm_loan.credit_score] }
     ltv: { label: Loan to value, type: percent, privacy: none, constraints: { min: 0, max: 200 }, realized_by: [cdm_loan.ltv] }

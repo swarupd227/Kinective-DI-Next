@@ -40,6 +40,8 @@ const PropertySchema = z.object({
   definition: z.string().optional(),
   constraints: z.object({ min: z.number().optional(), max: z.number().optional(), not_after_as_of: z.boolean().optional() }).strict().optional(),
   synonyms,
+  /** How a core column of another kind can give this property: a due date gives days past due. */
+  derive: z.array(z.object({ transform: z.enum(['same', 'number', 'date8', 'code', 'rate1000', 'daysPast', 'not', 'nonzero']), from: z.enum(['date', 'flag', 'code', 'number', 'money', 'text', 'key', 'reference']), words: z.array(z.string()).min(1) }).strict()).default([]),
   realized_by: z.array(column).min(1),
 }).strict();
 
@@ -85,6 +87,9 @@ export interface Ontology {
   vendors: Map<string, VendorPack>;
   /** table.column to the property it realizes. */
   columnIndex: Map<string, string>;
+  /** How core names abbreviate words (div: dividend), and extra words the name splitter knows. */
+  abbreviations: Map<string, string>;
+  words: Set<string>;
 }
 
 /** The core tables in a vendor mapping's FROM, by alias: "ACCOUNT a JOIN NAME n ON ..." gives a and n. */
@@ -166,7 +171,8 @@ export function loadOntology(dir = MODEL_DIR): Ontology {
     }
   }
   if (errors.length) throw new Error(`The ontology doesn't load:\n- ${errors.join('\n- ')}`);
-  return { version: top.version, classes, properties, valueSets, vendors, columnIndex };
+  const abbr = z.object({ abbreviations: z.record(z.string().regex(/^[a-z]+$/), z.string()), words: z.array(z.string().regex(/^[a-z]+$/)) }).strict().parse(read(join(dir, 'abbreviations.yaml')));
+  return { version: top.version, classes, properties, valueSets, vendors, columnIndex, abbreviations: new Map(Object.entries(abbr.abbreviations)), words: new Set(abbr.words) };
 }
 
 let cached: Ontology | null = null;

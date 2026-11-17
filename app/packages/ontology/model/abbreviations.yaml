@@ -1,0 +1,48 @@
+# How core systems abbreviate words in table and column names, vendor-neutral. The mapping engine
+# splits a name such as DIVRATE or CHGOFFDT into words with these, then compares the words with each
+# property's names. A value may be several words.
+abbreviations:
+  acct: account
+  accts: accounts
+  addr: address
+  amt: amount
+  appl: application
+  bal: balance
+  bdate: birth date
+  br: branch
+  brn: branch
+  chgoff: charge off
+  chrgoff: charge off
+  co: charge off
+  cust: customer
+  dda: checking
+  div: dividend
+  dob: birth date
+  dt: date
+  fname: first name
+  hh: household
+  int: interest
+  intrate: interest rate
+  lname: last name
+  ln: loan
+  loanofficer: loan officer
+  mat: maturity
+  mbr: member
+  nbr: number
+  no: number
+  num: number
+  ofcr: officer
+  officer: officer
+  orig: original
+  pmt: payment
+  pymt: payment
+  sav: savings
+  serial: id
+  shr: share
+  ssn: tax id
+  stat: status
+  sts: status
+  typ: type
+
+# Words the splitter knows besides every word in the ontology's names and synonyms.
+words: [account, active, amount, balance, birth, branch, change, charge, close, closed, code, control, date, dealer, dividend, due, first, household, id, institution, interest, last, level, loan, maturity, member, name, next, non, number, off, officer, open, ordinal, original, parent, payment, post, process, rate, release, savings, sequence, serial, share, tracking, transaction, type, user, char]
