@@ -196,7 +196,7 @@ sed -i "s/^TAG=.*/TAG=$TAG/" ~/dinext.env
 
 If a release changes the data (the README says "run `npm run db:seed`"), run the job again: `az containerapp job start --name $JOB --resource-group $RG`. Reseeding resets every tenant, including demo referrals, reports and schedules.
 
-Tasks (conversations) are kept in their own schema, `dinext_conversations`, which the seed creates at its start and never drops, so deploys, restarts and reseeds keep them. The app looks for it at startup: after the first seed that creates it, restart the app once (the command under "Changing the code, keys or scale"). The startup log then says `tasks: saved in the conversation store`.
+Tasks (conversations) are kept in their own schema, `dinext_conversations`, which the seed creates at its start and never drops, so deploys, restarts and reseeds keep them. The AI audit record works the same way: every turn, approval decision, executed change and member record view is added to `dinext_audit.ai_audit_event`, which the app may add to but never change, and a reseed carries each tenant's real runs, approvals and ratings over into the rebuilt AI usage reports. The app looks for both stores at startup: after the first seed that creates them, restart the app once (the command under "Changing the code, keys or scale"). The startup log then says `tasks: saved in the conversation store; audit: kept in the audit store`.
 
 ## Changing the code, keys or scale
 

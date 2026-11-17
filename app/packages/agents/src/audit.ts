@@ -35,11 +35,26 @@ export interface AuditRecord {
   error?: string;
 }
 
+/** One audit line as the permanent audit store keeps it: who, what and where, with the whole line as its body. */
+export interface AuditEntry {
+  at: string;
+  tenant: string;
+  eventType: string;
+  userId?: string;
+  threadId?: string;
+  runId?: string;
+  approvalId?: string;
+  body: Record<string, unknown>;
+}
+
 const DATA_DIR = process.env.DI_DATA_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '.data');
 
 export class AuditLog {
   /** Each tenant's usage ledger, which the AI usage reports read (spec 8.21). */
   private readonly ledgers = new Map<string, (r: AuditRecord) => Promise<void>>();
+
+  /** The permanent audit store, when there is one. */
+  private keeper: ((e: AuditEntry) => Promise<void>) | null = null;
 
   constructor(private readonly dir = DATA_DIR) {}
 
@@ -47,10 +62,15 @@ export class AuditLog {
     this.ledgers.set(tenant, write);
   }
 
+  /** Sends every line to the permanent audit store as well (AI-GRD-090). The files stay for local development. */
+  keep(write: (e: AuditEntry) => Promise<void>) {
+    this.keeper = write;
+  }
+
   async record(r: Omit<AuditRecord, 'at' | 'totalCostUsd' | 'usage'> & { usage: Usage[] }) {
     const usage = r.usage.map((u) => ({ ...u, costUsd: Math.round(costUsd(u) * 1e6) / 1e6 }));
     const full: AuditRecord = { ...r, at: new Date().toISOString(), usage, totalCostUsd: Math.round(usage.reduce((s, u) => s + u.costUsd, 0) * 1e6) / 1e6 };
-    await this.append(join('audit', `${full.at.slice(0, 10)}.jsonl`), full);
+    await this.append(join('audit', `${full.at.slice(0, 10)}.jsonl`), full, 'ai.run');
     await this.ledgers.get(full.tenant)?.(full).catch(() => {});
     return full;
   }
@@ -61,7 +81,7 @@ export class AuditLog {
    * what the AI did and who approved it (AI-GRD-090, AI-GRD-092).
    */
   async event(e: { eventType: string; tenant: string; userId: string; threadId: string; runId: string; approvalId: string } & Record<string, unknown>) {
-    await this.append(join('audit', `${new Date().toISOString().slice(0, 10)}.jsonl`), { at: new Date().toISOString(), ...e });
+    await this.append(join('audit', `${new Date().toISOString().slice(0, 10)}.jsonl`), { at: new Date().toISOString(), ...e }, e.eventType);
   }
 
   /**
@@ -69,15 +89,21 @@ export class AuditLog {
    * BE-RM-002). The party is recorded by its internal ID, never by member number.
    */
   async access(e: { tenant: string; userId: string; partyId: number; via: 'agent' | 'workspace' | 'search'; threadId?: string; runId?: string }) {
-    await this.append(join('audit', `${new Date().toISOString().slice(0, 10)}.jsonl`), { at: new Date().toISOString(), eventType: 'relationship.profile.viewed', ...e });
+    await this.append(join('audit', `${new Date().toISOString().slice(0, 10)}.jsonl`), { at: new Date().toISOString(), eventType: 'relationship.profile.viewed', ...e }, 'relationship.profile.viewed');
   }
 
   /** Questions no defined metric answers, for the tenant's data team (AI-AGT-042). */
   async unmatched(entry: { tenant: string; question: string; unknownTerms: string[]; closest: string[] }) {
-    await this.append('unmatched-questions.jsonl', { at: new Date().toISOString(), ...entry });
+    await this.append('unmatched-questions.jsonl', { at: new Date().toISOString(), ...entry }, 'ai.question.unmatched');
   }
 
-  private async append(relative: string, value: unknown) {
+  private async append(relative: string, value: AuditRecord | ({ at: string; tenant: string } & Record<string, unknown>), eventType: string) {
+    if (this.keeper) {
+      const line = value as Record<string, unknown> & { at: string; tenant: string };
+      const str = (k: string) => (typeof line[k] === 'string' && line[k] ? (line[k] as string) : undefined);
+      // The permanent copy comes first: a full disk must not lose it.
+      await this.keeper({ at: value.at, tenant: value.tenant, eventType, userId: str('userId'), threadId: str('threadId'), runId: str('runId'), approvalId: str('approvalId'), body: line }).catch(() => {});
+    }
     const file = join(this.dir, relative);
     await mkdir(dirname(file), { recursive: true });
     await appendFile(file, `${JSON.stringify(value)}\n`, 'utf8');

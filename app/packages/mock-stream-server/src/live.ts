@@ -27,6 +27,7 @@ import { IngestService, SourceService, coreSystem, secretKeyFrom, TableService, 
 import { ApiService, apiHosts } from '@dinext/di-core';
 import { RELAY_BASE_URL, relayDemoKey } from '@dinext/tenant-db';
 import { AS_OF, buildDbUrl, createPool, offcoreDemoRows } from '@dinext/tenant-db';
+import { mysqlAuditKeeper } from './auditStore.ts';
 import { OffcoreService } from '@dinext/di-core';
 import { AttritionModelService } from '@dinext/di-core';
 import { NextProductModelService } from '@dinext/di-core';
@@ -164,6 +165,8 @@ export interface LiveRunResult {
 export interface LiveRuntime {
   concierge: Concierge;
   mode: 'live' | 'offline';
+  /** True when audit lines also go to the permanent audit store. */
+  audited: boolean;
   /** A workspace page, under the person's purview. Null when it isn't theirs to see. */
   appView(persona: PersonaId, id: AppViewId): Promise<AppView | null>;
   /** An administrator's Platform health for Home and the bell: build age, checks, late feeds, access. */
@@ -517,6 +520,10 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     tenants.set(tenantId, { pool, pipeline, goals, vocabulary, governance, files, tables, outbox, sources, replica, apis, offcore, runtime: { key: t.key, name, institutionType, semantic, workflow, reports, modules, alm: { irr: new IrrService(pool), liquidity: new LiquidityService(pool, institutionType) }, staff: (staff as { display_name: string }[]).map((s) => s.display_name) } });
   }
   if (!tenants.size) return null;
+  // Every audit line also goes to the permanent audit store, once the seed has created it.
+  const keeper = await mysqlAuditKeeper().catch(() => null);
+  if (keeper) audit.keep(keeper.keep);
+  else console.warn('AI audit store not found: audit lines go to files only. Run the seed (or npm run db:conversations) to create it.');
 
   const model = hasClaudeCredentials() && !opts.offline ? new AnthropicModelClient() : null;
   const concierge = new Concierge({ model, audit, beatMs: process.env.NODE_ENV === 'test' ? 0 : 1600 });
@@ -539,6 +546,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
   const rt: LiveRuntime = {
     concierge,
     mode: model ? 'live' : 'offline',
+    audited: Boolean(keeper),
     async appView(persona, id) {
       const t = tenantFor(persona);
       const p = PERSONAS[persona];

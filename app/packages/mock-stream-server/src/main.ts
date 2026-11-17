@@ -34,4 +34,4 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   });
 }
 const mode = !live ? 'scripted scenarios (run `npm run db:up && npm run db:seed` for live agents)' : live.mode === 'live' ? 'live agents on Claude' : offline ? 'offline planner (--offline, no API calls)' : 'offline planner (set DI_ANTHROPIC_API_KEY in app/.env for Claude)';
-console.log(`DI Next Experience server on http://localhost:${port} (WS /v1/stream): ${mode}; tasks: ${store ? 'saved in the conversation store' : 'in memory (run the seed to keep them)'}; voice: ${voice.providerName ?? 'off (no Azure Speech key)'}${process.env.DI_STATIC_DIR ? '; serving the shell' : ''}${process.env.DI_DEMO_ACCESS_CODE ? '; demo access code on' : ''}`);
+console.log(`DI Next Experience server on http://localhost:${port} (WS /v1/stream): ${mode}; tasks: ${store ? 'saved in the conversation store' : 'in memory (run the seed to keep them)'}; audit: ${live?.audited ? 'kept in the audit store' : 'files only'}; voice: ${voice.providerName ?? 'off (no Azure Speech key)'}${process.env.DI_STATIC_DIR ? '; serving the shell' : ''}${process.env.DI_DEMO_ACCESS_CODE ? '; demo access code on' : ''}`);

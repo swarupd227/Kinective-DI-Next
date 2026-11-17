@@ -56,6 +56,7 @@ import { CONCENTRATION_DDL, generateLoanDetail } from './concentration.ts';
 import { BSA_DDL, generateBsa } from './bsa.ts';
 import { seedBranchOps } from './branchOps.ts';
 import { createConversationStore } from './conversations.ts';
+import { createAuditStore, keepRealUsage, restoreRealUsage } from './auditStore.ts';
 import { generateOpRisk, OPRISK_DDL } from './oprisk.ts';
 
 const BATCH = 2000;
@@ -74,6 +75,8 @@ async function main() {
   await admin.query("CREATE USER IF NOT EXISTS 'dinext'@'%' IDENTIFIED BY ?", [decodeURIComponent(appPassword)]);
   // Conversations are kept apart from the tenant data, which is dropped and rebuilt below.
   await createConversationStore(admin);
+  // So is the AI audit record, which nothing may change or remove.
+  await createAuditStore(admin);
   for (const profile of TENANTS) {
     const started = Date.now();
     // How long the slow steps take, for the job's log: the cloud job allows 60 minutes.
@@ -86,6 +89,8 @@ async function main() {
     const t = generate(profile);
     // Each person's deposits at each month-end: the attrition score and the model's snapshots read them.
     const partyDeposits = depositsByParty(t.depositMonths, t.deposits as unknown[][]);
+    // What people really did with DI (runs, approvals, ratings) outlives the rebuild of the demo data.
+    const kept = await keepRealUsage(admin, profile.schema);
     await admin.query(`DROP DATABASE IF EXISTS \`${profile.schema}\``);
     await admin.query(`CREATE DATABASE \`${profile.schema}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
     await admin.query(`USE \`${profile.schema}\``);
@@ -408,6 +413,10 @@ async function main() {
     const usage = generateGovernance();
     await insert(admin, 'ai_run', ['run_id', 'at', 'user_id', 'thread_id', 'agent', 'intent', 'mode', 'question', 'outcome', 'model', 'input_tokens', 'output_tokens', 'cache_read_tokens', 'cost_usd', 'tool_calls', 'source'], usage.runs);
     await insert(admin, 'ai_approvals', ['approval_id', 'operation', 'payload', 'payload_hash', 'risk_tier', 'requested_by', 'run_id', 'thread_id', 'status', 'created_at', 'expires_at', 'decided_by', 'decided_at', 'channel'], usage.approvals);
+    if (kept) {
+      const back = await restoreRealUsage(admin, kept);
+      console.log(`${profile.schema}: kept ${back.runs} runs, ${back.approvals} approvals and ${back.feedback} ratings from before the reseed`);
+    }
     const wf = workflowSeed(profile, t.employees);
     await insert(admin, 'mod_ref_types', ['type_id', 'category', 'label', 'description', 'route_rule', 'fields', 'active'], wf.types);
     await insert(admin, 'esp_com_queues', ['queue_id', 'name', 'branch_id', 'member_employee_ids', 'rr_pointer'], wf.queues);
