@@ -155,6 +155,21 @@ describe.skipIf(!up)('Tables against the warehouse', () => {
     expect(await said(turn('Profile the loan accounts table', []))).toContain('isn’t part of your DI access');
   });
 
+  it('opens the table behind an answer: a warehouse name, or month-end history, within the purview', async () => {
+    expect(await svc.sourceRows('cdm_loan', {})).toMatchObject({ tableId: 'loan_accounts', label: 'Loan Accounts', history: false });
+    const dq = (await svc.sourceRows('hist_loan_dq_month', {}))!;
+    expect(dq).toMatchObject({ tableId: 'hist_loan_dq_month', label: 'Delinquency history (month-end)', history: true });
+    expect(dq.rows.length).toBeGreaterThan(0);
+    const loans = (await svc.sourceRows('hist_loan_month', {}))!;
+    // The two histories agree on the 60+ ratio for the same month, branch and product.
+    const key = (r: Record<string, unknown>) => `${String(r.month)}|${String(r.branch)}|${String(r.product)}`;
+    const first = dq.rows[0]!;
+    expect(loans.rows.find((r) => key(r) === key(first))?.dq60).toBeCloseTo(Number(first.dq60), 1);
+    const west = (await svc.sourceRows('hist_party_month', { purviewBranches: ['Westport'] }))!;
+    expect(new Set(west.rows.map((r) => r.branch))).toEqual(new Set(['Westport']));
+    expect(await svc.sourceRows('cr_value', {})).toBeNull();
+  });
+
   it('names the tables that link to one, and on what', async () => {
     expect(svc.relationships('loan_accounts')).toEqual([{ table: 'Members', tableId: 'members', key: 'Member ID', shape: 'Many to one' }, { table: 'Branches', tableId: 'branches', key: 'Branch', shape: 'Many to one' }]);
     expect(await said(turn('Which tables link to loan accounts?'))).toContain('Members on Member ID');

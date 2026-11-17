@@ -167,7 +167,7 @@ function WorkspaceContent({ view }: { view: WorkspaceView }) {
   // Actions in the pane (Refer, Why?) continue the conversation beside it.
   const threadId = useMatch('/c/:threadId/*')?.params.threadId;
   if (view.kind === 'page') return <PagePane path={view.path} label={view.label} threadId={threadId && threadId !== 'new' ? threadId : undefined} />;
-  if (view.kind === 'table') return <TableWorkspace key={view.tableId} tableId={view.tableId} />;
+  if (view.kind === 'table') return <TableWorkspace key={view.tableId} tableId={view.tableId} label={view.label} />;
   if (view.kind === 'task' || view.kind === 'output') {
     return <Suspense fallback={<Skeleton height="240px" radius="md" />}>{view.kind === 'task' ? <TaskPanel threadId={view.threadId} /> : <TaskOutput threadId={view.threadId} blockId={view.blockId} />}</Suspense>;
   }

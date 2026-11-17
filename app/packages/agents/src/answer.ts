@@ -236,7 +236,8 @@ const TABLE_LABELS: Record<string, string> = {
   hist_deposit_month: 'Deposit history (month-end)',
   hist_party_month: 'Member history (month-end)',
 };
-const TABLE_ROUTES: Record<string, string> = { cdm_loan: 'loan_accounts', cdm_deposit_account: 'deposit_accounts' };
+// Each opens beside the answer: a curated table, or the month-end history rows (served by their own name).
+const TABLE_ROUTES: Record<string, string> = { cdm_loan: 'loan_accounts', cdm_deposit_account: 'deposit_accounts', cdm_party: 'members', hist_loan_month: 'hist_loan_month', hist_deposit_month: 'hist_deposit_month', hist_party_month: 'hist_party_month' };
 
 function provenance(results: SemanticResult[], agent: string, runId: string, definitions: Map<string, MetricDefinition>) {
   const sources: Block['provenance']['sources'] = [];

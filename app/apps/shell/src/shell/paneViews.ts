@@ -36,6 +36,14 @@ const OWNERS: [RegExp, AppId][] = [
   [/^esp_files/, 'files'],
   [/^esp_datalog/, 'datalogs'],
   [/^ops_dq_/, 'dq'],
+  [/^gl_/, 'gl'],
+  [/^fin_/, 'cfo'],
+  [/^ml_/, 'predictive'],
+  [/^(ai_run|ai_audit_event)$/, 'audit'],
+  [/^(src_|api_)/, 'integrations'],
+  [/^cal_/, 'calendar'],
+  [/^fil_/, 'files'],
+  [/^(hist_member_|cdm_membership_)/, 'membership'],
 ];
 
 export const sourceApp = (tableId: string) => OWNERS.find(([owns]) => owns.test(tableId))?.[1];

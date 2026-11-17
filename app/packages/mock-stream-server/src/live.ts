@@ -1146,15 +1146,21 @@ const savedItem = (t: TableService, o: TableObject, userId: string): TableSavedI
 
 /** A curated table other than Loan Accounts, or a saved view or snapshot ("view-12"), under the person's purview. */
 async function tablesData(tenant: Tenant, persona: PersonaId, tableId: string): Promise<TableData | null> {
-  const who = tablesWho(persona);
   const t = tenant.tables;
-  if (!who || !t) return null;
+  if (!t) return null;
   const asOf = tenant.runtime.semantic?.build.completedAt;
   const freshnessAsOf = asOf ? `${asOf}-04:00` : new Date().toISOString();
   const saved = /^(view|snapshot|upload)-(\d+)$/.exec(tableId);
-  const data = saved ? await t.objectRows(who.userId, Number(saved[2]), who.ctx) : t.catalog.some((c) => c.id === tableId) ? await t.rows(tableId, who.ctx) : null;
+  if (saved) {
+    // Saved views, snapshots and uploads belong to the Tables app.
+    const who = tablesWho(persona);
+    const data = who ? await t.objectRows(who.userId, Number(saved[2]), who.ctx) : null;
+    return data ? { tableId, label: data.label, columns: data.columns, rows: data.rows, rowCount: data.rowCount, freshnessAsOf } : null;
+  }
+  // The table behind an answer opens for whoever got the answer, under their own purview.
+  const data = await t.sourceRows(tableId, { purviewBranches: PERSONAS[persona].purview });
   if (!data) return null;
-  return { tableId, label: data.label, columns: data.columns, rows: data.rows, rowCount: data.rowCount, freshnessAsOf };
+  return { tableId: data.tableId, label: data.label, columns: data.columns, rows: data.rows, rowCount: data.rowCount, freshnessAsOf, ...(data.history ? { history: true } : {}) };
 }
 
 async function tablesWorkbench(tenant: Tenant, persona: PersonaId, tableId: string): Promise<TableWorkbench | null> {

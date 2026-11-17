@@ -28,7 +28,33 @@ export function pointCount(block: ChartBlock): number {
   return block.data.dataset.source.length * block.data.series.length;
 }
 
-export function buildOption(block: ChartBlock, theme: ChartTheme, reducedMotion: boolean, opts: { clickable?: boolean } = {}): EChartsCoreOption {
+/** Room the y-axis labels and the grid's margins take from a chart's width, roughly. */
+const Y_AXIS_PX = 64;
+/** A category label this wide or wider wraps onto two lines, as on a desktop. */
+const WIDE_LABEL_PX = 96;
+/** A tilted label's longest run before it ends in an ellipsis. */
+const TILTED_PX = 88;
+/** Rough width of one character at the phone's 11 px axis font. */
+const CHAR_PX = 6.6;
+
+/**
+ * The x-axis labels for the room the chart has. With room, every label of a short series shows,
+ * wrapped onto two lines at word breaks. On a phone, labels that fit their share of the width stay
+ * level; ones that don't (eight branch names) tilt, so each keeps its whole name with none overlapping;
+ * a long series lets ECharts show every other label or fewer, never two over each other.
+ */
+export function categoryLabels(count: number, width?: number, labels: string[] = []) {
+  const slot = width ? (width - Y_AXIS_PX) / Math.max(count, 1) : Infinity;
+  if (count <= 8 && slot >= WIDE_LABEL_PX + 4) return { interval: 0, width: WIDE_LABEL_PX, overflow: 'break', hideOverlap: true };
+  const small = width !== undefined && width < 480 ? { fontSize: 11 } : {};
+  // Wrapping breaks at spaces, so the longest single word must fit the slot or it is cut mid-word.
+  const longestWord = Math.max(0, ...labels.flatMap((l) => l.split(/\s+/)).map((w) => w.length)) * CHAR_PX;
+  if (count <= 8 && slot - 6 >= longestWord) return { interval: 0, width: Math.floor(slot - 6), overflow: 'break', hideOverlap: true, ...small };
+  if (count <= 12 && slot >= 16) return { interval: 0, rotate: 40, width: TILTED_PX, overflow: 'truncate', hideOverlap: true, ...small };
+  return { hideOverlap: true, ...small };
+}
+
+export function buildOption(block: ChartBlock, theme: ChartTheme, reducedMotion: boolean, opts: { clickable?: boolean; width?: number } = {}): EChartsCoreOption {
   const { chartType, dataset, series, axes, legend, markLines } = block.data;
   const unit = axes?.y?.[0]?.unit;
   const dims = dataset.dimensions.map((d) => d.name);
@@ -91,6 +117,8 @@ export function buildOption(block: ChartBlock, theme: ChartTheme, reducedMotion:
   }
 
   const stacked = chartType === 'stacked_bar';
+  const xAt = dims.indexOf(series[0]?.encode.x ?? dims[0] ?? '');
+  const xLabels = dataset.source.map((row) => String(row[Math.max(xAt, 0)] ?? ''));
   return {
     ...base,
     // ECharts 6 keeps axis labels inside the grid by default (outerBounds), replacing containLabel.
@@ -101,8 +129,8 @@ export function buildOption(block: ChartBlock, theme: ChartTheme, reducedMotion:
       axisLine: { lineStyle: { color: theme.grid } },
       axisTick: { show: false },
       // A handful of named bars each keep their label, wrapping onto two lines, rather than ECharts
-      // dropping every other one; long series still thin their labels.
-      axisLabel: { color: theme.muted, fontFamily: theme.fontFamily, ...(chartType !== 'scatter' && dataset.source.length <= 8 ? { interval: 0, width: 96, overflow: 'break' } : {}) },
+      // dropping every other one; long series, and short ones on a phone, thin them so none overlap.
+      axisLabel: { color: theme.muted, fontFamily: theme.fontFamily, ...(chartType === 'scatter' ? { hideOverlap: true } : categoryLabels(dataset.source.length, opts.width, xLabels)) },
     },
     yAxis: (axes?.y?.length ? axes.y : [{}]).map((y) => ({
       type: 'value',

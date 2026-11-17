@@ -394,6 +394,8 @@ export interface TableData {
   rows: Record<string, string | number | null>[];
   rowCount: number;
   freshnessAsOf: string;
+  /** Month-end history behind an answer: rows only, with no page in the Tables app. */
+  history?: boolean;
 }
 
 // ---- Report settings and email notifications ----------------------------------------------------

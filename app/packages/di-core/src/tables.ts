@@ -109,6 +109,61 @@ export function tableCatalog(person: 'member' | 'customer' = 'member'): CatalogT
   ];
 }
 
+/**
+ * The month-end history behind DI's trends, which answers cite as their source. Read-only and not in
+ * the Tables catalog: no stats, views or snapshots, only the rows, by month, branch and product, under
+ * the person's purview. Ids are the warehouse tables' own names, the ones a source chip carries.
+ */
+export interface HistoryTable {
+  id: string;
+  label: string;
+  columns: { field: string; headerName: string; type: ColumnType }[];
+  /** From the history table `h` joined to its branch `b`, grouped; `{scope}` takes the purview. */
+  sql: string;
+  order: string;
+}
+
+const MONTH: HistoryTable['columns'][number] = { field: 'month', headerName: 'Month end', type: 'date' };
+const BRANCH: HistoryTable['columns'][number] = { field: 'branch', headerName: 'Branch', type: 'text' };
+const ratio = (part: string, whole: string) => `ROUND(100 * ${part} / NULLIF(${whole}, 0), 2)`;
+
+export function historyTables(person: 'member' | 'customer' = 'member'): HistoryTable[] {
+  const People = person === 'member' ? 'Members' : 'Customers';
+  return [
+    {
+      id: 'hist_loan_month',
+      label: 'Loan history (month-end)',
+      columns: [MONTH, BRANCH, { field: 'product', headerName: 'Product', type: 'text' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'loans', headerName: 'Loans', type: 'count' }, { field: 'dq60_balance', headerName: '60+ balance', type: 'currency' }, { field: 'dq60', headerName: '60+ ratio', type: 'percent' }, { field: 'new_amount', headerName: 'New loans', type: 'currency' }, { field: 'new_count', headerName: 'New loan count', type: 'count' }],
+      sql: `SELECT ${day('h.month_end')} AS month, b.name AS branch, h.loan_category AS product, SUM(h.balance) AS balance, SUM(h.loan_count) AS loans, SUM(h.delinquent_60_balance) AS dq60_balance, ${ratio('SUM(h.delinquent_60_balance)', 'SUM(h.balance)')} AS dq60, SUM(h.new_loan_amount) AS new_amount, SUM(h.new_loan_count) AS new_count FROM hist_loan_month h JOIN cdm_location b ON b.int_id = h.branch_id WHERE 1 = 1{scope} GROUP BY h.month_end, b.name, h.loan_category`,
+      order: 'month DESC, balance DESC',
+    },
+    {
+      id: 'hist_loan_dq_month',
+      label: 'Delinquency history (month-end)',
+      columns: [MONTH, BRANCH, { field: 'product', headerName: 'Product', type: 'text' }, { field: 'open_balance', headerName: 'Open balance', type: 'currency' }, { field: 'current', headerName: 'Current', type: 'currency' }, { field: 'd30', headerName: '30–59 days', type: 'currency' }, { field: 'd60', headerName: '60–89 days', type: 'currency' }, { field: 'd90', headerName: '90+ days', type: 'currency' }, { field: 'dq60', headerName: '60+ ratio', type: 'percent' }, { field: 'charged_off', headerName: 'Charged off', type: 'currency' }],
+      sql: `SELECT ${day('h.month_end')} AS month, b.name AS branch, h.loan_category AS product, SUM(CASE WHEN h.bucket <> 'Charged off' THEN h.balance ELSE 0 END) AS open_balance, SUM(CASE WHEN h.bucket = 'Current' THEN h.balance ELSE 0 END) AS current, SUM(CASE WHEN h.bucket = '30–59 days' THEN h.balance ELSE 0 END) AS d30, SUM(CASE WHEN h.bucket = '60–89 days' THEN h.balance ELSE 0 END) AS d60, SUM(CASE WHEN h.bucket IN ('90–179 days', '180–359 days', '360+ days') THEN h.balance ELSE 0 END) AS d90, ${ratio("SUM(CASE WHEN h.bucket IN ('60–89 days', '90–179 days', '180–359 days', '360+ days') THEN h.balance ELSE 0 END)", "SUM(CASE WHEN h.bucket <> 'Charged off' THEN h.balance ELSE 0 END)")} AS dq60, SUM(CASE WHEN h.bucket = 'Charged off' THEN h.balance ELSE 0 END) AS charged_off FROM hist_loan_dq_month h JOIN cdm_location b ON b.int_id = h.branch_id WHERE 1 = 1{scope} GROUP BY h.month_end, b.name, h.loan_category`,
+      order: 'month DESC, open_balance DESC',
+    },
+    {
+      id: 'hist_deposit_month',
+      label: 'Deposit history (month-end)',
+      columns: [MONTH, BRANCH, { field: 'product', headerName: 'Product', type: 'text' }, { field: 'balance', headerName: 'Balance', type: 'currency' }, { field: 'accounts', headerName: 'Accounts', type: 'count' }, { field: 'rate', headerName: 'Average rate', type: 'percent' }],
+      sql: `SELECT ${day('h.month_end')} AS month, b.name AS branch, h.deposit_category AS product, SUM(h.balance) AS balance, SUM(h.account_count) AS accounts, ROUND(SUM(h.rate_weighted) / NULLIF(SUM(h.balance), 0), 2) AS rate FROM hist_deposit_month h JOIN cdm_location b ON b.int_id = h.branch_id WHERE 1 = 1{scope} GROUP BY h.month_end, b.name, h.deposit_category`,
+      order: 'month DESC, balance DESC',
+    },
+    {
+      id: 'hist_party_month',
+      label: `${People.slice(0, -1)} history (month-end)`,
+      columns: [MONTH, BRANCH, { field: 'people', headerName: People, type: 'count' }, { field: 'joined', headerName: 'Joined', type: 'count' }, { field: 'left', headerName: 'Left', type: 'count' }],
+      sql: `SELECT ${day('h.month_end')} AS month, b.name AS branch, SUM(h.member_count) AS people, SUM(h.new_member_count) AS joined, SUM(h.closed_member_count) AS \`left\` FROM hist_party_month h JOIN cdm_location b ON b.int_id = h.branch_id WHERE 1 = 1{scope} GROUP BY h.month_end, b.name`,
+      order: 'month DESC, people DESC',
+    },
+  ];
+}
+
+/** The warehouse names answers cite for the curated tables: a chip on `cdm_loan` opens Loan Accounts. */
+export const TABLE_ALIASES: Record<string, string> = { cdm_loan: 'loan_accounts', cdm_deposit_account: 'deposit_accounts', cdm_deposit: 'deposit_accounts', cdm_party: 'members', cdm_location: 'branches' };
+
 const words = (t: string) =>
   t
     .toLowerCase()
@@ -205,12 +260,30 @@ export function shareTargetNamed(text: string) {
 
 export class TableService {
   readonly catalog: CatalogTable[];
+  readonly history: HistoryTable[];
 
   constructor(
     private readonly pool: Pool,
     person: 'member' | 'customer' = 'member',
   ) {
     this.catalog = tableCatalog(person);
+    this.history = historyTables(person);
+  }
+
+  /**
+   * The rows a source chip opens: a curated table (by its id or the warehouse name an answer cites),
+   * or a month-end history table. Null for anything else, which has no table view.
+   */
+  async sourceRows(tableId: string, ctx: CoreContext): Promise<(TableRows & { tableId: string; history: boolean }) | null> {
+    const curated = this.catalog.find((c) => c.id === (TABLE_ALIASES[tableId] ?? tableId));
+    if (curated) return { ...(await this.rows(curated.id, ctx)), tableId: curated.id, history: false };
+    const h = this.history.find((x) => x.id === tableId);
+    if (!h) return null;
+    const scope = ctx.purviewBranches ? { sql: ' AND b.name IN (?)', params: [ctx.purviewBranches.length ? ctx.purviewBranches : ['']] } : { sql: '', params: [] as unknown[] };
+    const grouped = h.sql.replace('{scope}', scope.sql);
+    const found = await rows<Record<string, unknown>>(this.pool, `${grouped} ORDER BY ${h.order} LIMIT ${VIEW_ROW_CAP}`, scope.params);
+    const [n] = await rows<{ n: number }>(this.pool, `SELECT COUNT(*) AS n FROM (${grouped}) g`, scope.params);
+    return { label: h.label, columns: h.columns, rows: found.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, value(v)]))), rowCount: Number(n?.n ?? 0), tableId: h.id, history: true };
   }
 
   /** A curated table, or not found. Nothing outside the catalog can be read here. */

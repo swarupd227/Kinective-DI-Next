@@ -116,7 +116,7 @@ async function computeBriefing(svc: SemanticService, ctx: QueryContext, runId: s
     version: '2.0.0',
     title: 'Delinquency 60+ trend',
     subtitle: `Month-end, last ${periods.length} months`,
-    provenance: { agent: BRIEFING_AGENT, runId, operations: ['semantic.query'], sources: [{ kind: 'metric', label: `${m.delinquency_ratio_60_plus!.label} (definition)`, ref: 'metric:delinquency_ratio_60_plus' }, { kind: 'table', label: 'Loan history (month-end)' }], filters: history.filtersApplied, semanticQueryId: history.queryId },
+    provenance: { agent: BRIEFING_AGENT, runId, operations: ['semantic.query'], sources: [{ kind: 'metric', label: `${m.delinquency_ratio_60_plus!.label} (definition)`, ref: 'metric:delinquency_ratio_60_plus' }, { kind: 'table', label: 'Loan history (month-end)', ref: 'table:hist_loan_month' }], filters: history.filtersApplied, semanticQueryId: history.queryId },
     freshness: { kind: 'nightly_build', asOf, buildId: svc.build.buildId },
     actions: [{ id: 'explain', kind: 'explain', label: 'How it’s calculated' }, { id: 'open', kind: 'open_workspace', label: 'See the rows' }],
     a11y: { summary: `Line chart of the 60+ day delinquency ratio at each month-end, from ${formatMetric(series('delinquency_ratio_60_plus')[0]!, 'percent_2')} in ${periods[0]!.label} to ${formatMetric(dqThen, 'percent_2')} in ${last}.` },

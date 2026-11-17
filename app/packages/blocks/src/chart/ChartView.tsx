@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { readToken, chartPalette } from '@dinext/tokens';
 import { Menu, Skeleton, usePreferences } from '@dinext/ui';
 import type { BlockAction, ChartBlock } from '@dinext/block-schemas';
@@ -30,6 +30,25 @@ function useChartTheme(): ChartTheme {
   );
 }
 
+/** An element's width in steps of 16 px, so a resize redraws the chart only when it matters. */
+function useWidth(ref: RefObject<HTMLDivElement | null>) {
+  const [width, setWidth] = useState<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      const w = el.getBoundingClientRect().width;
+      if (w > 0) setWidth(Math.floor(w / 16) * 16);
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
+  return width;
+}
+
 export interface ChartViewProps {
   block: ChartBlock;
   complete: boolean;
@@ -47,7 +66,10 @@ export default function ChartView({ block, complete, view, onDrill, onPointAsk, 
   const { reducedMotion } = usePreferences();
   // Scatter has no categories and a heatmap shows as a table, so neither offers the point menu.
   const askable = !!onPointAsk && block.data.chartType !== 'scatter' && block.data.chartType !== 'heatmap';
-  const option = useMemo(() => (complete ? buildOption(block, theme, reducedMotion, { clickable: askable }) : null), [block, complete, theme, reducedMotion, askable]);
+  // The chart's own width, so its axis labels fit it: a phone has a third of a desktop's room.
+  const box = useRef<HTMLDivElement>(null);
+  const width = useWidth(box);
+  const option = useMemo(() => (complete ? buildOption(block, theme, reducedMotion, { clickable: askable, width }) : null), [block, complete, theme, reducedMotion, askable, width]);
   const [menu, setMenu] = useState<{ point: ChartPoint; left: number; top: number } | null>(null);
 
   if (!option) {
@@ -76,7 +98,7 @@ export default function ChartView({ block, complete, view, onDrill, onPointAsk, 
 
   return (
     <>
-      <div className={styles.chart}>
+      <div className={styles.chart} ref={box}>
         <EChart
           option={option}
           renderer={pointCount(block) > 2000 ? 'canvas' : 'svg'}

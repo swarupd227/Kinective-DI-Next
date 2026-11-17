@@ -62,3 +62,13 @@
   padding: var(--space-5);
   color: var(--color-text-secondary);
 }
+
+.noView {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+}
+
+.noView p {
+  margin: 0;
+}
