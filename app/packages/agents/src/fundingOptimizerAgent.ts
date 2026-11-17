@@ -75,7 +75,7 @@ export function fundingOptimizerModule(svc: FundingOptimizerService): ModuleSpec
 
 - "What's the cheapest way to fund next year's loan growth?", "optimize our funding": fop_optimize. An amount ("fund $60 million"): amount in dollars. "Without brokered", "no FHLB", "don't use cash": no_brokered, no_fhlb, no_cash, no_deposits.
 - "What does the optimizer assume?": fop_assumptions.
-- It searches every mix through DI's funding model and stated rates. It recommends; ALCO decides.${W.decision ? ' To lay plans out for the board, the Funding Decision agent does that.' : ''}`,
+- It searches every mix through DI's funding model and stated rates. It recommends; ALCO decides. Each answer already ends by saying so: don't add it again.${W.decision ? ' To lay plans out for the board, the Funding Decision agent does that.' : ''}`,
     plan: (t) => {
       if (/\bassum/i.test(t)) return { tool: 'fop_assumptions', args: {} };
       const amount = /\$\s?(\d+(?:\.\d+)?)\s*(m|mm|million|b|billion|k|thousand)?\b/i.exec(t) ?? /\b(\d+(?:\.\d+)?)\s*(million|billion)\b/i.exec(t);
@@ -124,7 +124,7 @@ export function fundingOptimizerModule(svc: FundingOptimizerService): ModuleSpec
                 : ` ${still.join(' and ')} is already over its limit today. This mix doesn’t make it worse, but no mix of these sources brings it back inside: it needs a hedge, shorter assets or less fixed-rate lending.`;
           // The cheaper choices it passed over, and why.
           const passed = r.single.filter((s) => s.mix && s.mix.figures.cost < f.cost - 1 && !s.acceptable).sort((x, y) => x.mix!.figures.cost - y.mix!.figures.cost)[0];
-          const passedNote = passed?.mix ? ` Funding it all ${passed.source === 'deposits' ? `with a ${partsOf(passed.mix)[0]!.source}` : passed.source === 'fhlb' ? 'from the FHLB' : `with ${W.broker}`} would cost less, ${money(passed.mix.figures.cost)}, but ${breaches(passed.mix).some((x) => x.today) ? `makes ${breaches(passed.mix).filter((x) => x.today).map((x) => lower(x.label)).join(' and ')} worse` : `breaches ${breaches(passed.mix).map((x) => lower(x.label)).join(' and ')}`}.` : '';
+          const passedNote = passed?.mix ? ` Funding it all ${passed.source === 'deposits' ? `with a ${partsOf(passed.mix)[0]!.source}` : passed.source === 'fhlb' ? 'from the FHLB' : `with ${W.broker}`} would cost ${f.cost - passed.mix.figures.cost >= 1000 ? `${money(f.cost - passed.mix.figures.cost)} a year less` : 'a little less'}, but ${breaches(passed.mix).some((x) => x.today) ? `makes ${breaches(passed.mix).filter((x) => x.today).map((x) => lower(x.label)).join(' and ')} worse` : `breaches ${breaches(passed.mix).map((x) => lower(x.label)).join(' and ')}`}.` : '';
           const rows = [
             { plan: 'Recommended', mix: wordsOf(c), cost: money(f.cost), allIn: pct(f.allIn), limits: breaches(c).length ? `Keeps every limit it can; ${breaches(c).map((x) => x.label).join(', ')} over today, not worse` : 'Keeps every limit' },
             ...(r.clean && r.clean.figures.cost !== f.cost ? [{ plan: 'Clears every limit', mix: wordsOf(r.clean), cost: money(r.clean.figures.cost), allIn: pct(r.clean.figures.allIn), limits: 'Keeps every limit' }] : []),
