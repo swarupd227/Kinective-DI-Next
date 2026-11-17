@@ -90,6 +90,8 @@ export interface Ontology {
   /** How core names abbreviate words (div: dividend), and extra words the name splitter knows. */
   abbreviations: Map<string, string>;
   words: Set<string>;
+  /** How cores abbreviate code values (CHK: checking), for proposing a code crosswalk. */
+  codeWords: Map<string, string>;
 }
 
 /** The core tables in a vendor mapping's FROM, by alias: "ACCOUNT a JOIN NAME n ON ..." gives a and n. */
@@ -171,8 +173,8 @@ export function loadOntology(dir = MODEL_DIR): Ontology {
     }
   }
   if (errors.length) throw new Error(`The ontology doesn't load:\n- ${errors.join('\n- ')}`);
-  const abbr = z.object({ abbreviations: z.record(z.string().regex(/^[a-z]+$/), z.string()), words: z.array(z.string().regex(/^[a-z]+$/)) }).strict().parse(read(join(dir, 'abbreviations.yaml')));
-  return { version: top.version, classes, properties, valueSets, vendors, columnIndex, abbreviations: new Map(Object.entries(abbr.abbreviations)), words: new Set(abbr.words) };
+  const abbr = z.object({ abbreviations: z.record(z.string().regex(/^[a-z]+$/), z.string()), code_words: z.record(z.string().regex(/^[a-z]+$/), z.string()).default({}), words: z.array(z.string().regex(/^[a-z]+$/)) }).strict().parse(read(join(dir, 'abbreviations.yaml')));
+  return { version: top.version, classes, properties, valueSets, vendors, columnIndex, abbreviations: new Map(Object.entries(abbr.abbreviations)), words: new Set(abbr.words), codeWords: new Map(Object.entries(abbr.code_words)) };
 }
 
 let cached: Ontology | null = null;

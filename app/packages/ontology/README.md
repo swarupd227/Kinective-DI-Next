@@ -37,6 +37,14 @@ Each connection's mapping is versioned in `map_version`: version 1 is Kinective'
 
 "Map share type 14 to money market" adds the code in a new version through an approval card, and resolves the drift; the next pull maps the held rows. Each pull also copies the core's mapped tables as they are into the raw zone (`src_raw_account`, `src_raw_name`, `src_raw_savings`, `src_raw_loan`), so reports written against core tables can read them.
 
+## A core Kinective hasn't mapped (phase 4)
+
+The seed builds a second stand-in core beside the Symitar replica (`<tenant>_coreb`), in a deliberately different shape that isn't any vendor's: members in `person`; shares and loans together in `acct`, told apart by `acct_class`; lower-case names with their own abbreviations; DATE columns; rates as percent decimals; text codes (CHK, MMA, UNSEC, VISA, SEN); a Y/N non-member flag; and days past due beside the next payment date. The demo connects it as "Core B stand-in", with nothing mapped.
+
+For it the engine learned: ISO dates and percent rates; a seeded random profile sample spread over each table; splitting a table whose rows are two or three kinds (a short code under which other columns are filled for one kind and empty for another) into slices, `acct[acct_class=LN]`; text codes and Y/N flags in transforms; and proposing each code list's crosswalk from the codes themselves, through `code_words` in `model/abbreviations.yaml`. "Freeze the proposed mapping" records the latest proposals as a mapping version through an approval card (close calls named), with joins and the slice filter; codes nothing fits are held on pulls, and DI offers its types the core doesn't use yet as the options, rather than a wrong nearest guess.
+
+Measured against an answer key the engine never sees: 27 of 31 DI columns right on the first run, 31 of 31 after adding common abbreviations it lacked (prod, cd for code, dlr, dlq, brch, hhld, nm, pers, cur) and "product type" as a synonym of the share and loan type. Code words for values were written with this core in view. After freezing, shares reconcile row for row; loans and member types with codes DI couldn't read are held until mapped, and two approvals bring loans to row-for-row.
+
 ## Not yet
 
-FIBO alignment (the `fibo` field is empty until each reference is checked); freezing a mapping built from proposals, and a second core (phase 4); using the ontology in other agents (phase 5). The raw zone's tables are created with the replica at seed time, so a new core's raw tables need a seed step too.
+FIBO alignment (the `fibo` field is empty until each reference is checked); using the ontology in other agents (phase 5). The raw zone's tables are created with each stand-in core at seed time, so a real new core's raw tables need a seed step too.

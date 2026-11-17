@@ -11,7 +11,7 @@ import { landingTable, SOURCE_TARGETS, SYMITAR_CODES, type Pool } from '@dinext/
 import { CoreError } from './referrals.ts';
 import { compileMapExpr, MapExprError } from './mapExpr.ts';
 import { fromAliases, ontology } from '@dinext/ontology';
-import { assign, compareWith, scoreAll, type ColumnProfile, type CoreProfile, type CoreTableProfile, type Proposal, type Signals } from './mappingEngine.ts';
+import { assign, compareWith, proposeCrosswalk, scoreAll, type MapTransform, type ColumnProfile, type CoreProfile, type CoreTableProfile, type Proposal, type Signals } from './mappingEngine.ts';
 
 const rows = async <T>(pool: Pool | mysql.Connection, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
 
@@ -110,6 +110,20 @@ const date8 = (v: Raw) => {
 };
 const dayNumber = (iso: string) => Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10))) / 86_400_000;
 
+/** A core code as a crosswalk keys it: numbers without leading zeros (09 is 9), text trimmed (CHK). */
+export const codeKey = (v: Raw) => {
+  const s = String(v ?? '').trim();
+  return /^-?\d+$/.test(s) ? String(Number(s)) : s;
+};
+/** A flag's value: Y, YES, T, TRUE and any number but 0 are yes; empty, N, F and 0 are no. */
+const truthy = (v: Raw) => {
+  const s = String(v ?? '').trim().toUpperCase();
+  if (!s) return false;
+  if (['Y', 'YES', 'T', 'TRUE'].includes(s)) return true;
+  if (['N', 'NO', 'F', 'FALSE'].includes(s)) return false;
+  return Number.isFinite(Number(s)) ? Number(s) !== 0 : true;
+};
+
 /** One core value in DI's terms. Unknown codes stay visible rather than becoming a wrong name. */
 export function transform(v: Raw, t: Transform, processDate: string | null): Raw {
   switch (t.kind) {
@@ -120,17 +134,17 @@ export function transform(v: Raw, t: Transform, processDate: string | null): Raw
     case 'date8':
       return date8(v);
     case 'code':
-      return v === null ? null : (t.codes[String(Number(v))] ?? `Code ${v}`);
+      return v === null ? null : (t.codes[codeKey(v)] ?? `Code ${codeKey(v)}`);
     case 'rate1000':
       return v === null ? null : Math.round(Number(v)) / 1000;
     case 'daysPast': {
-      const due = date8(v);
+      const due = date8(v) ?? (/^\d{4}-\d{2}-\d{2}/.test(String(v ?? '')) ? String(v).slice(0, 10) : null);
       return due && processDate ? Math.max(0, dayNumber(processDate) - dayNumber(due)) : 0;
     }
     case 'not':
-      return Number(v) ? 0 : 1;
+      return truthy(v) ? 0 : 1;
     case 'nonzero':
-      return Number(v) ? 1 : 0;
+      return truthy(v) ? 1 : 0;
   }
 }
 
@@ -224,6 +238,12 @@ export interface MappingVersion {
 }
 export interface CodeProposal {
   value: string;
+  /** Whether the held rows really look like the value's rows; when not, the value is only the nearest of the types mapped so far. */
+  close?: boolean;
+  /** How far the held rows sit from the value's, in spreads between the known types: on the worst feature, and on average. */
+  distance?: { worst: number; mean: number };
+  /** DI's values for this code list the core's codes don't use yet: what the held code may be instead. */
+  options?: string[];
   runnerUp: string | null;
   evidence: { label: string; held: string; proposed: string }[];
 }
@@ -237,6 +257,20 @@ export interface HeldCodes {
   count: number;
   proposal: CodeProposal | null;
 }
+/** A code column's proposed crosswalk: each core code, how many rows have it, and its DI value (null when nothing fits). */
+export interface Crosswalk {
+  diTable: string;
+  diColumn: string;
+  core: string;
+  /** The ontology's code list for the DI column (deposit_category); a vendor pack names its own (shareType). */
+  set: string | null;
+  codes: { code: string; count: number; value: string | null; score: number }[];
+}
+/** The ontology's code lists a vendor pack's code lists answer to, either way round. */
+const SET_ALIASES: Record<string, string> = { shareType: 'deposit_category', loanType: 'loan_category', memberType: 'member_segment', deposit_category: 'shareType', loan_category: 'loanType', member_segment: 'memberType' };
+const DI_KEYS: Record<string, string> = { cdm_party: 'party_id', cdm_deposit_account: 'account_id', cdm_loan: 'loan_id' };
+const DI_LABELS: Record<string, string> = { cdm_party: 'Members', cdm_deposit_account: 'Deposit accounts', cdm_loan: 'Loan accounts' };
+
 interface DriftFinding {
   kind: 'new_code' | 'new_column' | 'missing_column' | 'tie_out';
   table: string;
@@ -256,8 +290,15 @@ export interface DriftItem {
   detail: Record<string, unknown>;
 }
 
+/** A profiled table's source: the core table and, for one slice of it (TABLE[COLUMN=VALUE]), the filter. */
+export function coreSource(name: string): { table: string; column: string | null; value: string | null; where: string } {
+  const m = /^(.+)\[([A-Za-z0-9_]+)=(.*)\]$/.exec(name);
+  if (!m) return { table: name, column: null, value: null, where: '' };
+  return { table: m[1]!, column: m[2]!, value: m[3]!, where: `\`${m[2]}\` = '${m[3]!.replace(/'/g, "''")}'` };
+}
+
 /** "shareType" as a person says it: "share type". */
-export const codeSetWords = (set: string | null | undefined) => (set ? set.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase() : 'code');
+export const codeSetWords = (set: string | null | undefined) => (set ? set.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ').toLowerCase() : 'code');
 
 /**
  * The known code whose rows the held rows look most like: the average of each number the mapping
@@ -267,7 +308,7 @@ export const codeSetWords = (set: string | null | undefined) => (set ? set.repla
 export function nearestCode(map: TableMap, typed: Raw[][], codeIdx: number, heldRows: number[]): CodeProposal | null {
   const feats = map.columns
     .map((c, i) => ({ c, i }))
-    .filter(({ c, i }) => i !== codeIdx && c.di !== map.key && !/_id$/.test(c.di) && ['number', 'rate1000', 'date8'].includes(c.how.kind));
+    .filter(({ c, i }) => i !== codeIdx && c.di !== map.key && !/_id$/.test(c.di) && (['number', 'rate1000', 'date8'].includes(c.how.kind) || ontology().properties.get(ontology().columnIndex.get(`${map.diTable}.${c.di}`) ?? '')?.type === 'date'));
   if (!feats.length) return null;
   const held = new Set(heldRows);
   const groups = new Map<string, number[]>();
@@ -278,8 +319,11 @@ export function nearestCode(map: TableMap, typed: Raw[][], codeIdx: number, held
     (groups.get(String(v)) ?? groups.set(String(v), []).get(String(v))!).push(j);
   });
   if (!groups.size) return null;
+  // Shown by what the DI column holds: dates as the share that have one, rates as percents, dollars, or plain numbers.
+  const typeOf = (f: (typeof feats)[number]) => ontology().properties.get(ontology().columnIndex.get(`${map.diTable}.${f.c.di}`) ?? '')?.type;
+  const isDate = (f: (typeof feats)[number]) => f.c.how.kind === 'date8' || typeOf(f) === 'date';
   const stat = (idx: number[], f: (typeof feats)[number]) => {
-    if (f.c.how.kind === 'date8') return idx.filter((j) => typed[j]![f.i] !== null).length / Math.max(1, idx.length);
+    if (isDate(f)) return idx.filter((j) => typed[j]![f.i] !== null).length / Math.max(1, idx.length);
     const xs = idx.map((j) => typed[j]![f.i]).filter((x): x is number => typeof x === 'number' && Number.isFinite(x));
     return xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0;
   };
@@ -290,19 +334,32 @@ export function nearestCode(map: TableMap, typed: Raw[][], codeIdx: number, held
     const mean = xs.reduce((s, x) => s + x, 0) / xs.length;
     return Math.sqrt(xs.reduce((s, x) => s + (x - mean) ** 2, 0) / xs.length) || 1;
   });
-  const ranked = groupStats.map((g) => ({ ...g, d: g.stats.reduce((s, x, k) => s + Math.abs(x - heldStats[k]!) / scale[k]!, 0) })).sort((a, b) => a.d - b.d);
-  const best = ranked[0]!;
-  const show = (f: (typeof feats)[number], x: number) =>
-    f.c.how.kind === 'date8' ? `${Math.round(x * 100)}% have one` : f.c.how.kind === 'rate1000' ? `${x.toFixed(2)}% on average` : `$${Math.round(x).toLocaleString('en-US')} on average`;
-  const label = (f: (typeof feats)[number]) => ontology().properties.get(ontology().columnIndex.get(`${map.diTable}.${f.c.di}`) ?? '')?.label ?? f.c.di.replace(/_/g, ' ');
-  // The evidence worth showing: the features that tell the known codes apart most, at most three.
+  // Only the features that tell the known codes apart count: a date every type has, or a rate every type
+  // shares, would make anything look close to anything.
   const spread = feats.map((_, k) => {
     const xs = groupStats.map((g) => g.stats[k]!);
     const mean = xs.reduce((s, x) => s + Math.abs(x), 0) / xs.length;
     return mean ? Math.sqrt(xs.reduce((s, x) => s + (x - mean) ** 2, 0) / xs.length) / mean : 0;
   });
-  const telling = feats.map((f, k) => ({ f, k })).filter(({ k }) => spread[k]! > 0.05).sort((a, b) => spread[b.k]! - spread[a.k]!).slice(0, 3);
-  return { value: best.value, runnerUp: ranked[1]?.value ?? null, evidence: telling.map(({ f, k }) => ({ label: label(f), held: show(f, heldStats[k]!), proposed: show(f, best.stats[k]!) })) };
+  const useful = feats.map((_, k) => k).filter((k) => spread[k]! > 0.05);
+  if (!useful.length) return { value: '', close: false, runnerUp: null, evidence: [] };
+  const gap = (stats: number[], k: number) => Math.abs(stats[k]! - heldStats[k]!) / scale[k]!;
+  const ranked = groupStats.map((g) => ({ ...g, d: useful.reduce((s, k) => s + gap(g.stats, k), 0) / useful.length })).sort((a, b) => a.d - b.d);
+  const best = ranked[0]!;
+  const show = (f: (typeof feats)[number], x: number) => {
+    const t = typeOf(f);
+    if (isDate(f)) return `${Math.round(x * 100)}% have one`;
+    if (f.c.how.kind === 'rate1000' || t === 'rate') return `${x.toFixed(2)}% on average`;
+    if (t === 'money') return `$${Math.round(x).toLocaleString('en-US')} on average`;
+    return `${(Math.round(x * 10) / 10).toLocaleString('en-US')} on average`;
+  };
+  const label = (f: (typeof feats)[number]) => ontology().properties.get(ontology().columnIndex.get(`${map.diTable}.${f.c.di}`) ?? '')?.label ?? f.c.di.replace(/_/g, ' ');
+  // The evidence worth showing: the features that tell the known codes apart most, at most three.
+  const telling = [...useful].sort((a, b) => spread[b]! - spread[a]!).slice(0, 3);
+  const worst = Math.max(...useful.map((k) => gap(best.stats, k)));
+  // Close when, on average over those features, the held rows sit well within the spread between the
+  // known types: a rough guide, not a match, so DI also lists the types the core doesn't use yet.
+  return { value: best.value, close: best.d <= 0.65, distance: { worst: Math.round(worst * 100) / 100, mean: Math.round(best.d * 100) / 100 }, runnerUp: ranked[1]?.value ?? null, evidence: telling.map((k) => ({ label: label(feats[k]!), held: show(feats[k]!, heldStats[k]!), proposed: show(feats[k]!, best.stats[k]!) })) };
 }
 
 export interface SourceConnection {
@@ -542,7 +599,8 @@ export class SourceService {
     const t = await this.test(p.credentialId, owner.userId);
     if (!t.readOnly) throw new CoreError('INVALID', 'This login can change data in the core, so DI won’t connect with it.');
     const maps = (t.mappings ?? []).filter((m) => p.tables.includes(m.map.diTable) && !m.missing.length);
-    if (!maps.length) throw new CoreError('INVALID', 'None of the tables to map can be read with this login.');
+    // A core Kinective hasn't mapped connects with nothing mapped yet: its mapping comes from proposals DI makes and someone approves.
+    if (t.mappings && !maps.length) throw new CoreError('INVALID', 'None of the tables to map can be read with this login.');
     const [r] = (await this.pool.query("INSERT INTO src_connection (name, system_id, credential_id, schedule, state, in_use, created_by, created_name, created_on, approval_id) VALUES (?, ?, ?, ?, 'Connected', 0, ?, ?, ?, ?)", [p.name.slice(0, 80), t.login.system.id, p.credentialId, p.schedule.slice(0, 40), owner.userId, owner.name, meta.on, meta.approvalId])) as unknown as [{ insertId: number }];
     for (const m of maps) await this.pool.query('INSERT INTO src_mapping (connection_id, di_table, their_tables, definition) VALUES (?, ?, ?, ?)', [r.insertId, m.map.diTable, m.map.theirTables.join(', '), JSON.stringify(m.map)]);
     return r.insertId;
@@ -649,6 +707,18 @@ export class SourceService {
           const select = map.columns.map((col, i) => `${col.their} AS c${i}`).join(', ');
           const found = await rows<Record<string, Raw>>(core, `SELECT ${select} FROM ${map.from}`);
           const typed = found.map((r) => map.columns.map((col, i) => transform(r[`c${i}`] ?? null, col.how, processDate)));
+          // For each code list, DI's values its codes don't use yet: what a held code may be instead.
+          const unused = new Map<number, string[]>();
+          for (const [i, col] of map.columns.entries()) {
+            if (col.how.kind !== 'code' || !col.how.set) continue;
+            const o = ontology();
+            const vsName = o.valueSets.has(col.how.set) ? col.how.set : (o.vendors.get(conn.system.id)?.codes[col.how.set]?.code_set_of ?? SET_ALIASES[col.how.set]);
+            const vs = vsName ? o.valueSets.get(vsName) : undefined;
+            if (!vs) continue;
+            const inUse = new Set((await rows<{ v: string }>(this.pool, `SELECT DISTINCT \`${col.di}\` AS v FROM \`${map.diTable}\` WHERE \`${col.di}\` IS NOT NULL LIMIT 60`).catch(() => [])).map((r) => String(r.v)));
+            const mapped = new Set(Object.values(col.how.codes));
+            unused.set(i, Object.values(vs.codes).map((c) => c.values.find((v) => inUse.has(v)) ?? (inUse.size ? null : c.values[0]!)).filter((v): v is string => !!v && !mapped.has(v)));
+          }
           // A code the crosswalk doesn't know lands without a value, so no report counts it under a wrong name; it's held for a decision.
           map.columns.forEach((col, i) => {
             if (col.how.kind !== 'code') return;
@@ -657,13 +727,15 @@ export class SourceService {
             found.forEach((r, j) => {
               const v = r[`c${i}`];
               if (v === null || v === undefined) return;
-              const code = String(Number(v));
+              const code = codeKey(v);
               if (codes[code] !== undefined) return;
               typed[j]![i] = null;
               (byCode.get(code) ?? byCode.set(code, []).get(code)!).push(j);
             });
             for (const [code, idx] of byCode) {
-              const proposal = nearestCode(map, typed, i, idx);
+              const near = nearestCode(map, typed, i, idx);
+              const options = unused.get(i) ?? [];
+              const proposal: CodeProposal | null = near ? { ...near, options } : options.length ? { value: '', close: false, runnerUp: null, evidence: [], options } : null;
               const [a, c] = col.their.split('.') as [string, string];
               const table = (aliases(map)[a] ?? a).toUpperCase();
               held.push({ diTable: map.diTable, diColumn: col.di, table, column: c, set: col.how.set ?? null, code, count: idx.length, proposal });
@@ -759,18 +831,20 @@ export class SourceService {
     const conn = await this.mappingTarget(p.connectionId);
     const version = await this.currentVersion(conn);
     if (!version) throw new CoreError('INVALID', `${conn.name} has no mapping version to change yet.`);
-    const cols = version.definition.tables.flatMap((m) => m.columns.filter((c) => c.how.kind === 'code' && c.how.set?.toLowerCase() === p.set.toLowerCase()).map((c) => ({ map: m, col: c })));
+    // A code list by its own name, or by the name it answers to (shareType for deposit_category).
+    const names = new Set([p.set.toLowerCase(), (SET_ALIASES[p.set] ?? '').toLowerCase()].filter(Boolean));
+    const cols = version.definition.tables.flatMap((m) => m.columns.filter((c) => c.how.kind === 'code' && !!c.how.set && names.has(c.how.set.toLowerCase())).map((c) => ({ map: m, col: c })));
     if (!cols.length) {
       const sets = [...new Set(version.definition.tables.flatMap((m) => m.columns.map((c) => (c.how.kind === 'code' ? c.how.set : undefined)).filter((x): x is string => !!x)))];
       throw new CoreError('INVALID', `The mapping has no ${codeSetWords(p.set)} list. It has ${sets.map(codeSetWords).join(', ')}.`);
     }
-    const code = String(Number(p.code));
-    if (!/^\d+$/.test(code)) throw new CoreError('INVALID', 'A core type code is a number, such as 14.');
+    const code = codeKey(p.code);
+    if (!/^[A-Za-z0-9_-]{1,12}$/.test(code)) throw new CoreError('INVALID', 'A core code is a number or a short code, such as 14 or VISA.');
     const set = (cols[0]!.col.how as { set?: string }).set!;
     const current = (cols[0]!.col.how as { codes: Record<string, string> }).codes;
     // The value in DI's terms: one the crosswalk already uses, or a code of the ontology's list for this set.
     const pack = ontology().vendors.get(conn.system.id);
-    const valueSet = pack?.codes[set] ? ontology().valueSets.get(pack.codes[set]!.code_set_of) : null;
+    const valueSet = pack?.codes[set] ? ontology().valueSets.get(pack.codes[set]!.code_set_of) : (ontology().valueSets.get(set) ?? null);
     const used = [...new Set(Object.values(current))];
     const want = p.value.trim().toLowerCase();
     let value = used.find((v) => v.toLowerCase() === want) ?? null;
@@ -794,6 +868,95 @@ export class SourceService {
     const summary = `${codeSetWords(c.set)} ${c.code} → ${c.value}`.replace(/^./, (x) => x.toUpperCase());
     const [ins] = (await this.pool.query("INSERT INTO map_version (connection_id, version_no, source, summary, definition, created_by, created_name, created_at, approval_id) VALUES (?, ?, 'crosswalk', ?, ?, ?, ?, ?, ?)", [c.conn.connectionId, versionNo, summary, JSON.stringify({ tables, seen: c.version.definition.seen ?? null }), owner.userId, owner.name, nowSql(), meta.approvalId])) as unknown as [{ insertId: number }];
     if (c.driftIds.length) await this.pool.query(`UPDATE map_drift SET state = 'resolved', resolved_at = ?, resolved_version_id = ? WHERE drift_id IN (${c.driftIds.map(() => '?').join(',')})`, [nowSql(), ins.insertId, ...c.driftIds]);
+    return { ...c, versionNo, replayed: false };
+  }
+
+  /**
+   * What freezing the latest proposed mapping for a connection would record, without recording it:
+   * per DI table, the core tables joined (an extension table on its reference, filtered to its primary
+   * row; a slice of a shared table by its class code), the columns taken (proposals that need a person
+   * are left out, except the key), and each code column's crosswalk, with the codes nothing fits.
+   */
+  async checkFreeze(connectionRef?: string | number) {
+    const conn = await this.mappingTarget(typeof connectionRef === 'number' ? connectionRef : connectionRef ? (await this.connection(connectionRef)).connectionId : undefined);
+    if (conn.system.mappings?.length) throw new CoreError('INVALID', `Kinective’s standard ${conn.system.short} mapping is in use for the ${conn.name}. Freezing proposals is for a core Kinective hasn’t mapped.`);
+    const [run] = await rows<{ run_id: number; summary: string | Record<string, unknown> }>(this.pool, "SELECT run_id, summary FROM map_run WHERE connection_id = ? AND mode = 'propose' ORDER BY run_id DESC LIMIT 1", [conn.connectionId]);
+    if (!run) throw new CoreError('NOT_FOUND', `DI hasn’t proposed a mapping for the ${conn.name} yet. Ask me to map it first.`);
+    const summary = (typeof run.summary === 'string' ? JSON.parse(run.summary) : run.summary) as { crosswalks?: Crosswalk[]; entities?: Record<string, string> };
+    const props = await rows<{ core_table: string; core_column: string; di_table: string; di_column: string; band: string; transform: MapTransform }>(this.pool, 'SELECT core_table, core_column, di_table, di_column, band, transform FROM map_candidate WHERE run_id = ?', [run.run_id]);
+    const profiles = await rows<{ core_table: string; core_column: string; row_count: number; top_values: unknown; refers_to: string | null }>(this.pool, 'SELECT core_table, core_column, row_count, top_values, refers_to FROM map_profile WHERE run_id = ?', [run.run_id]);
+    const prof = (t: string, c?: string) => profiles.filter((p) => p.core_table === t && (!c || p.core_column === c));
+    const tables: TableMap[] = [];
+    const left: { di: string; core: string }[] = [];
+    // Proposals too close to call: frozen like the rest, and named on the approval card to check.
+    const close: { di: string; core: string }[] = [];
+    const skipped: string[] = [];
+    for (const diTable of SOURCE_TARGETS) {
+      const mine = props.filter((p) => p.di_table === diTable);
+      const keyProp = mine.find((p) => p.di_column === DI_KEYS[diTable]);
+      if (!keyProp) {
+        if (mine.length) skipped.push(diTable);
+        continue;
+      }
+      const main = coreSource(keyProp.core_table);
+      const alias = new Map<string, string>([[keyProp.core_table, 'a']]);
+      let from = `${main.table} a`;
+      // Another core table feeding this DI table joins on its reference to the main table's key, kept to
+      // the one row per key a short code marks (Symitar's primary NAME), when it has more rows than that.
+      const mainRows = Number(prof(keyProp.core_table)[0]?.row_count ?? 0);
+      for (const t of [...new Set(mine.map((p) => p.core_table))].filter((t) => t !== keyProp.core_table)) {
+        const ref = prof(t).find((p) => p.refers_to === `${keyProp.core_table}.${keyProp.core_column}`);
+        if (!ref) {
+          for (const p of mine.filter((x) => x.core_table === t)) left.push({ di: `${diTable}.${p.di_column}`, core: `${t}.${p.core_column}` });
+          continue;
+        }
+        const a = String.fromCharCode(97 + alias.size);
+        alias.set(t, a);
+        const extRows = Number(ref.row_count);
+        let primary = '';
+        if (extRows > mainRows * 1.02) {
+          // Each short code's share of its column's sampled rows, times the table's rows, estimates its rows.
+          const options = prof(t).flatMap((p) => {
+            const top = ((typeof p.top_values === 'string' ? JSON.parse(p.top_values) : p.top_values) ?? []) as { value: string; count: number }[];
+            const seen = top.reduce((s, x) => s + x.count, 0);
+            return seen ? top.map((v) => ({ column: p.core_column, value: v.value, est: (v.count / seen) * extRows })) : [];
+          });
+          const best = options.filter((o2) => Math.abs(o2.est - mainRows) / Math.max(1, mainRows) <= 0.1).sort((x, y) => Math.abs(x.est - mainRows) - Math.abs(y.est - mainRows))[0];
+          if (best) primary = ` AND ${a}.${best.column} = ${/^-?\d+$/.test(best.value) ? best.value : `'${best.value.replace(/'/g, "''")}'`}`;
+        }
+        from += ` JOIN ${coreSource(t).table} ${a} ON ${a}.${ref.core_column} = a.${keyProp.core_column}${primary}`;
+      }
+      if (main.column) from += ` WHERE a.${main.column} = '${main.value!.replace(/'/g, "''")}'`;
+      const columns: ColumnMap[] = [];
+      for (const p of mine) {
+        const a = alias.get(p.core_table);
+        if (!a) continue;
+        if (p.band === 'person' && p !== keyProp) close.push({ di: `${diTable}.${p.di_column}`, core: `${p.core_table}.${p.core_column}` });
+        let how: Transform;
+        if (p.transform === 'code') {
+          const cw = (summary.crosswalks ?? []).find((c) => c.diTable === diTable && c.diColumn === p.di_column);
+          how = { kind: 'code', codes: Object.fromEntries((cw?.codes ?? []).filter((c) => c.value).map((c) => [codeKey(c.code), c.value!])), ...(cw?.set ? { set: cw.set } : {}) };
+        } else how = { kind: p.transform } as Transform;
+        columns.push({ di: p.di_column, their: `${a}.${p.core_column}`, how });
+      }
+      tables.push({ diTable, label: DI_LABELS[diTable] ?? diTable, theirTables: [...alias.keys()].map((t) => coreSource(t).table).filter((t, i, xs) => xs.indexOf(t) === i), from, key: DI_KEYS[diTable]!, columns });
+    }
+    if (!tables.length) throw new CoreError('INVALID', `Run ${run.run_id} has no key for any of DI’s tables, so there’s nothing to freeze.`);
+    const crosswalks = (summary.crosswalks ?? []).filter((c) => tables.some((t) => t.diTable === c.diTable && t.columns.some((x) => x.di === c.diColumn)));
+    return { conn, runId: run.run_id, tables, left, close, skipped, crosswalks, unknown: crosswalks.flatMap((c) => c.codes.filter((x) => !x.value).map((x) => ({ di: `${c.diTable}.${c.diColumn}`, code: x.code, count: x.count }))) };
+  }
+
+  /** Records the latest proposed mapping as the connection's next mapping version. Once per approval. */
+  async freezeFromRun(connectionRef: string | number | undefined, owner: { userId: string; name: string }, meta: { approvalId: string }) {
+    const [done] = await rows<{ version_no: number }>(this.pool, 'SELECT version_no FROM map_version WHERE approval_id = ?', [meta.approvalId]);
+    const c = await this.checkFreeze(connectionRef);
+    if (done) return { ...c, versionNo: done.version_no, replayed: true };
+    const [last] = await rows<{ n: number | null }>(this.pool, 'SELECT MAX(version_no) AS n FROM map_version WHERE connection_id = ?', [c.conn.connectionId]);
+    const versionNo = Number(last?.n ?? 0) + 1;
+    const cols = c.tables.reduce((s, t) => s + t.columns.length, 0);
+    const known = c.crosswalks.reduce((s, x) => s + x.codes.filter((y) => y.value).length, 0);
+    const summary = `Proposed mapping from run ${c.runId}: ${cols} columns, ${known} codes${c.left.length || c.unknown.length ? `; ${c.left.length} columns and ${c.unknown.length} codes left to decide` : ''}`;
+    await this.pool.query("INSERT INTO map_version (connection_id, version_no, source, summary, definition, created_by, created_name, created_at, approval_id) VALUES (?, ?, 'proposed', ?, ?, ?, ?, ?, ?)", [c.conn.connectionId, versionNo, summary.slice(0, 300), JSON.stringify({ tables: c.tables, seen: null }), owner.userId, owner.name, nowSql(), meta.approvalId]);
     return { ...c, versionNo, replayed: false };
   }
 
@@ -1087,8 +1250,10 @@ export class SourceService {
   /**
    * Profiles every column the login can see, read-only: how many rows have a value (00000000 counts
    * as none), distinct values, the commonest values of a short code list, whether values look like
-   * YYYYMMDD dates, numbers, money or 0/1 flags, each table's key, and which columns draw their
-   * values from another table's key.
+   * dates (YYYYMMDD or YYYY-MM-DD), numbers, money, rates or 0/1 and Y/N flags, each table's key, and
+   * which columns draw their values from another table's key. A table that holds two or three kinds
+   * of row told apart by a short code (shares and loans in one table, by account class) is profiled
+   * as one slice per kind, named TABLE[COLUMN=VALUE].
    */
   private async profileCore(core: mysql.Connection): Promise<CoreProfile> {
     const [{ db }] = (await rows<{ db: string }>(core, 'SELECT DATABASE() AS db')) as [{ db: string }];
@@ -1096,7 +1261,8 @@ export class SourceService {
     // A server that ignores the case of table names (Azure's MySQL keeps them in lower case) reports
     // account for ACCOUNT. Such a server takes either spelling, so the vendor's upper case is used throughout.
     const [lc] = await rows<{ v: number }>(core, 'SELECT @@lower_case_table_names AS v').catch(() => []);
-    const cols = Number(lc?.v ?? 0) > 0 ? raw.map((x) => ({ ...x, t: x.t.toUpperCase() })) : raw;
+    const allLower = raw.length > 0 && raw.every((x) => x.t === x.t.toLowerCase());
+    const cols = Number(lc?.v ?? 0) > 0 && !(allLower && raw.every((x) => x.c === x.c.toLowerCase())) ? raw.map((x) => ({ ...x, t: x.t.toUpperCase() })) : raw;
     const tables: CoreTableProfile[] = [];
     const columns: ColumnProfile[] = [];
     const q = (x: string) => `\`${x.replaceAll('`', '')}\``;
@@ -1108,66 +1274,21 @@ export class SourceService {
         tables.push({ table: t, rows: 0, key: null });
         continue;
       }
-      // What the values look like comes from a sample, so a core of millions of rows profiles in seconds.
-      const sampled = Math.min(total, PROFILE_SAMPLE);
-      const src = total > PROFILE_SAMPLE ? `(SELECT * FROM ${q(t)} LIMIT ${PROFILE_SAMPLE}) s` : q(t);
-      const parts = mine.map((x, i) => {
-        const v = `CAST(${q(x.c)} AS CHAR)`;
-        const has = `(${v} IS NOT NULL AND TRIM(${v}) <> '' AND ${v} <> '00000000')`;
-        const num = `${v} REGEXP '^-?[0-9]+(\\\\.[0-9]+)?$'`;
-        return [
-          `SUM(${has}) AS f${i}`,
-          `COUNT(DISTINCT ${v}) AS d${i}`,
-          `SUM(${has} AND ${v} REGEXP '^(19|20)[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$') AS dt${i}`,
-          `SUM(${has} AND ${num}) AS nu${i}`,
-          `SUM(${has} AND ${v} REGEXP '^-?[0-9]+\\\\.[0-9]*[1-9]') AS fr${i}`,
-          `SUM(${has} AND UPPER(TRIM(${v})) IN ('0', '1', 'Y', 'N', 'T', 'F', 'TRUE', 'FALSE')) AS fl${i}`,
-          `MIN(CASE WHEN ${num} THEN ${v} + 0 END) AS mn${i}`,
-          `MAX(CASE WHEN ${num} THEN ${v} + 0 END) AS mx${i}`,
-          `AVG(CASE WHEN ${num} THEN ${v} + 0 END) AS av${i}`,
-          `MIN(CASE WHEN ${has} THEN ${v} END) AS tmn${i}`,
-          `MAX(CASE WHEN ${has} THEN ${v} END) AS tmx${i}`,
-        ].join(', ');
-      });
-      const [agg] = await rows<Record<string, string | number | null>>(core, `SELECT ${parts.join(', ')} FROM ${src}`);
-      const num = (k: string) => Number(agg?.[k] ?? 0);
-      const here: ColumnProfile[] = mine.map((x, i) => {
-        const filled = num(`f${i}`);
-        const share = (k: string) => (filled ? num(k) / filled : 0);
-        const numeric = share(`nu${i}`) >= 0.95;
-        return {
-          table: t,
-          column: x.c,
-          dataType: x.dt,
-          rows: total,
-          sampled,
-          filled,
-          distinct: num(`d${i}`),
-          min: agg?.[numeric ? `mn${i}` : `tmn${i}`] === null || agg?.[numeric ? `mn${i}` : `tmn${i}`] === undefined ? null : String(agg[numeric ? `mn${i}` : `tmn${i}`]).slice(0, 80),
-          max: agg?.[numeric ? `mx${i}` : `tmx${i}`] === null || agg?.[numeric ? `mx${i}` : `tmx${i}`] === undefined ? null : String(agg[numeric ? `mx${i}` : `tmx${i}`]).slice(0, 80),
-          dateShare: share(`dt${i}`),
-          numericShare: share(`nu${i}`),
-          fractionShare: share(`fr${i}`),
-          flagShare: share(`fl${i}`),
-          avg: agg?.[`av${i}`] === null ? null : Number(agg?.[`av${i}`]),
-          top: [],
-        };
-      });
-      for (const c of here) {
-        if (c.distinct > 40 || !c.filled) continue;
-        c.top = (await rows<{ v: string; n: number }>(core, `SELECT CAST(${q(c.column)} AS CHAR) AS v, COUNT(*) AS n FROM ${src} GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 12`)).map((r) => ({ value: String(r.v ?? ''), count: Number(r.n) }));
+      const whole = await this.profileSource(core, t, q(t), '', total, mine);
+      // A short code that splits the rows into kinds with different columns filled is a class column.
+      const split = await this.classColumn(core, t, whole.columns, mine);
+      if (!split) {
+        tables.push({ table: t, rows: total, key: whole.key });
+        columns.push(...whole.columns);
+        continue;
       }
-      // The key: unique in the sample, then checked over every row.
-      let key: string | null = null;
-      for (const c of here.filter((x) => x.distinct === sampled && x.numericShare >= 0.99 && x.filled === sampled)) {
-        const [u] = await rows<{ n: number }>(core, `SELECT COUNT(DISTINCT ${q(c.column)}) AS n FROM ${q(t)}`);
-        if (Number(u?.n) === total) {
-          key = c.column;
-          break;
-        }
+      for (const { value, rows: count } of split.values) {
+        const name = `${t}[${split.column}=${value}]`;
+        const where = `${q(split.column)} = ${core.escape(value)}`;
+        const part = await this.profileSource(core, name, q(t), where, count, mine.filter((x) => x.c !== split.column));
+        tables.push({ table: name, rows: count, key: part.key });
+        columns.push(...part.columns);
       }
-      tables.push({ table: t, rows: total, key });
-      columns.push(...here);
     }
     // Which columns draw their values from another table's key: a sample of up to 5,000 distinct
     // values, compared as text. Short code lists (a branch number) are left out, since small numbers
@@ -1175,12 +1296,16 @@ export class SourceService {
     const keys = tables.filter((t) => t.key);
     // Each key's values, read once (a few hundred thousand at most), so the checks run in memory.
     const keyValues = new Map<string, Set<string>>();
-    for (const k of keys) keyValues.set(k.table, new Set((await rows<{ v: string }>(core, `SELECT CAST(${q(k.key!)} AS CHAR) AS v FROM ${q(k.table)}`)).map((r) => String(r.v))));
+    for (const k of keys) {
+      const s = coreSource(k.table);
+      keyValues.set(k.table, new Set((await rows<{ v: string }>(core, `SELECT CAST(${q(k.key!)} AS CHAR) AS v FROM ${q(s.table)}${s.where ? ` WHERE ${s.where}` : ''}`)).map((r) => String(r.v))));
+    }
     for (const c of columns) {
       const own = tables.find((t) => t.table === c.table);
-      if (own?.key === c.column || c.distinct < 50 || c.dateShare >= 0.9 || c.fractionShare > 0.05) continue;
-      const from = c.rows > PROFILE_SAMPLE ? `(SELECT ${q(c.column)} FROM ${q(c.table)} LIMIT ${PROFILE_SAMPLE}) s` : q(c.table);
-      const sample = (await rows<{ v: string }>(core, `SELECT DISTINCT CAST(${q(c.column)} AS CHAR) AS v FROM ${from} WHERE ${q(c.column)} IS NOT NULL LIMIT 5000`)).map((r) => String(r.v));
+      if (own?.key === c.column || c.distinct < 50 || c.dateShare + (c.isoDateShare ?? 0) >= 0.9 || c.fractionShare > 0.05) continue;
+      const s = coreSource(c.table);
+      const filter = `${s.where ? `${s.where} AND ` : ''}${q(c.column)} IS NOT NULL`;
+      const sample = (await rows<{ v: string }>(core, `SELECT DISTINCT CAST(${q(c.column)} AS CHAR) AS v FROM (SELECT ${q(c.column)} FROM ${q(s.table)} WHERE ${filter} LIMIT ${PROFILE_SAMPLE}) x LIMIT 5000`)).map((r) => String(r.v));
       if (!sample.length) continue;
       let best: ColumnProfile['refersTo'] = null;
       for (const k of keys) {
@@ -1196,6 +1321,98 @@ export class SourceService {
       c.refersTo = best;
     }
     return { tables, columns };
+  }
+
+  /** One table, or one slice of it, profiled from a sample of its rows; and its key, checked over every row. */
+  private async profileSource(core: mysql.Connection, name: string, from: string, where: string, total: number, mine: { c: string; dt: string }[]) {
+    const q = (x: string) => `\`${x.replaceAll('`', '')}\``;
+    // What the values look like comes from a sample, so a core of millions of rows profiles in seconds.
+    // A random sample spread over the whole table (seeded, so a run repeats): the first rows of a
+    // table kept in key order can all be one kind.
+    const frac = total > PROFILE_SAMPLE ? Math.min(1, (PROFILE_SAMPLE * 1.05) / total) : 1;
+    const filter = [where, frac < 1 ? `RAND(7) < ${frac.toFixed(6)}` : ''].filter(Boolean).join(' AND ');
+    const src = `(SELECT * FROM ${from}${filter ? ` WHERE ${filter}` : ''} LIMIT ${PROFILE_SAMPLE}) s`;
+    const [{ n: drawn }] = (await rows<{ n: number }>(core, `SELECT COUNT(*) AS n FROM ${src}`)) as [{ n: number }];
+    const sampled = Math.min(total, Number(drawn));
+    const parts = mine.map((x, i) => {
+      const v = `CAST(${q(x.c)} AS CHAR)`;
+      const has = `(${v} IS NOT NULL AND TRIM(${v}) <> '' AND ${v} <> '00000000')`;
+      const num = `${v} REGEXP '^-?[0-9]+(\\\\.[0-9]+)?$'`;
+      return [
+        `SUM(${has}) AS f${i}`,
+        `COUNT(DISTINCT ${v}) AS d${i}`,
+        `SUM(${has} AND ${v} REGEXP '^(19|20)[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$') AS dt${i}`,
+        `SUM(${has} AND ${v} REGEXP '^(19|20)[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])') AS iso${i}`,
+        `SUM(${has} AND ${num}) AS nu${i}`,
+        `SUM(${has} AND ${v} REGEXP '^-?[0-9]+\\\\.[0-9]*[1-9]') AS fr${i}`,
+        `SUM(${has} AND UPPER(TRIM(${v})) IN ('0', '1', 'Y', 'N', 'T', 'F', 'TRUE', 'FALSE')) AS fl${i}`,
+        `MIN(CASE WHEN ${num} THEN ${v} + 0 END) AS mn${i}`,
+        `MAX(CASE WHEN ${num} THEN ${v} + 0 END) AS mx${i}`,
+        `AVG(CASE WHEN ${num} THEN ${v} + 0 END) AS av${i}`,
+        `MIN(CASE WHEN ${has} THEN ${v} END) AS tmn${i}`,
+        `MAX(CASE WHEN ${has} THEN ${v} END) AS tmx${i}`,
+      ].join(', ');
+    });
+    const [agg] = await rows<Record<string, string | number | null>>(core, `SELECT ${parts.join(', ')} FROM ${src}`);
+    const num = (k: string) => Number(agg?.[k] ?? 0);
+    const pick = (k: string) => (agg?.[k] === null || agg?.[k] === undefined ? null : String(agg[k]).slice(0, 80));
+    const here: ColumnProfile[] = mine.map((x, i) => {
+      const filled = num(`f${i}`);
+      const share = (k: string) => (filled ? num(k) / filled : 0);
+      const numeric = share(`nu${i}`) >= 0.95;
+      return {
+        table: name,
+        column: x.c,
+        dataType: x.dt,
+        rows: total,
+        sampled,
+        filled,
+        distinct: num(`d${i}`),
+        min: pick(numeric ? `mn${i}` : `tmn${i}`),
+        max: pick(numeric ? `mx${i}` : `tmx${i}`),
+        dateShare: share(`dt${i}`),
+        isoDateShare: share(`iso${i}`),
+        numericShare: share(`nu${i}`),
+        fractionShare: share(`fr${i}`),
+        flagShare: share(`fl${i}`),
+        avg: agg?.[`av${i}`] === null ? null : Number(agg?.[`av${i}`]),
+        top: [],
+      };
+    });
+    for (const c of here) {
+      if (c.distinct > 40 || !c.filled) continue;
+      c.top = (await rows<{ v: string; n: number }>(core, `SELECT CAST(${q(c.column)} AS CHAR) AS v, COUNT(*) AS n FROM ${src} GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 12`)).map((r) => ({ value: String(r.v ?? ''), count: Number(r.n) }));
+    }
+    // The key: unique in the sample, then checked over every row.
+    let key: string | null = null;
+    for (const c of here.filter((x) => x.distinct === sampled && x.numericShare >= 0.99 && x.filled === sampled)) {
+      const [u] = await rows<{ n: number }>(core, `SELECT COUNT(DISTINCT ${q(c.column)}) AS n FROM ${from}${where ? ` WHERE ${where}` : ''}`);
+      if (Number(u?.n) === total) {
+        key = c.column;
+        break;
+      }
+    }
+    return { columns: here, key };
+  }
+
+  /**
+   * A column that splits a table into two or three kinds of row: a short code (each value at least 5%
+   * of rows) under which at least two other columns are filled for one kind and empty for another.
+   */
+  private async classColumn(core: mysql.Connection, table: string, profiled: ColumnProfile[], mine: { c: string }[]) {
+    const q = (x: string) => `\`${x.replaceAll('`', '')}\``;
+    for (const c of profiled) {
+      if (c.distinct < 2 || c.distinct > 3 || c.top.length !== c.distinct || c.top.some((t) => t.count < 0.05 * (c.sampled ?? c.rows))) continue;
+      const others = mine.filter((x) => x.c !== c.column);
+      const fill = others.map((x, i) => `SUM(${q(x.c)} IS NOT NULL AND TRIM(CAST(${q(x.c)} AS CHAR)) NOT IN ('', '00000000')) / COUNT(*) AS f${i}`).join(', ');
+      const by = await rows<Record<string, number | string>>(core, `SELECT CAST(${q(c.column)} AS CHAR) AS v, COUNT(*) AS n, ${fill} FROM ${q(table)} GROUP BY 1`);
+      const differs = others.filter((_, i) => {
+        const xs = by.map((r) => Number(r[`f${i}`]));
+        return Math.max(...xs) - Math.min(...xs) >= 0.5;
+      }).length;
+      if (differs >= 2) return { column: c.column, values: by.map((r) => ({ value: String(r.v), rows: Number(r.n) })) };
+    }
+    return null;
   }
 
   /** The regulatory return's latest figures a mapping can be checked against: total loans, total shares and members (a credit union's 5300). */
@@ -1249,7 +1466,7 @@ export class SourceService {
         const diTable = o.properties.get(prop)!.realized_by.map((x) => x.split('.')[0]!).find((t) => (SOURCE_TARGETS as readonly string[]).includes(t));
         const options = first.candidates.filter((c) => c.property === prop && c.diTable === diTable).sort((a, b) => b.score - a.score).slice(0, 4);
         for (const c of options) {
-          const empty = (col: string) => `(\`${col}\` IS NULL OR TRIM(\`${col}\`) IN ('', '00000000'))`;
+          const empty = (col: string) => `(\`${col}\` IS NULL OR TRIM(CAST(\`${col}\` AS CHAR)) IN ('', '00000000'))`;
           // Open rows: no close date (and no charge-off date) as the first pass maps them; members also not flagged as non-members.
           const conds = firstPass.filter((p) => p.coreTable === c.coreTable && ['loan.close_date', 'loan.charge_off_date', 'deposit.close_date'].includes(p.property)).map((p) => empty(p.coreColumn));
           if (prop === 'member.id') {
@@ -1258,7 +1475,9 @@ export class SourceService {
             const close = profile.columns.find((x) => x.table === c.coreTable && x.kind === 'date' && /close/i.test(x.column));
             if (close) conds.push(empty(close.column));
           }
-          const sql = prop === 'member.id' ? `SELECT COUNT(DISTINCT \`${c.coreColumn}\`) AS v FROM \`${c.coreTable}\`` : `SELECT SUM(\`${c.coreColumn}\` + 0) AS v FROM \`${c.coreTable}\``;
+          const src = coreSource(c.coreTable);
+          if (src.where) conds.push(src.where);
+          const sql = prop === 'member.id' ? `SELECT COUNT(DISTINCT \`${c.coreColumn}\`) AS v FROM \`${src.table}\`` : `SELECT SUM(\`${c.coreColumn}\` + 0) AS v FROM \`${src.table}\``;
           const [r] = await rows<{ v: number | null }>(core, `${sql}${conds.length ? ` WHERE ${conds.join(' AND ')}` : ''}`).catch(() => []);
           const v = Number(r?.v ?? 0);
           const pass = fig.amount > 0 && Math.abs(v - fig.amount) / fig.amount <= 0.03;
@@ -1271,6 +1490,16 @@ export class SourceService {
       return { profile, proposals, ties, tableOf: second.tableOf, owner: second.owner };
     });
     const comparison = known.length ? compareWith(result.proposals, known) : null;
+    // For each code column, what its codes mean in DI's terms, from the codes themselves.
+    const crosswalks: Crosswalk[] = [];
+    for (const p of result.proposals.filter((x) => x.transform === 'code')) {
+      const prof = result.profile.columns.find((c) => c.table === p.coreTable && c.column === p.coreColumn);
+      const prop = o.properties.get(p.property)!;
+      const inUse = (await rows<{ v: string }>(this.pool, `SELECT DISTINCT \`${p.diColumn}\` AS v FROM \`${p.diTable}\` WHERE \`${p.diColumn}\` IS NOT NULL LIMIT 60`).catch(() => [])).map((r) => String(r.v));
+      const scale = prof && prof.sampled ? prof.rows / prof.sampled : 1;
+      const codes = (prof?.top ?? []).map((t) => ({ value: t.value, count: Math.round(t.count * scale) }));
+      crosswalks.push({ diTable: p.diTable, diColumn: p.diColumn, core: `${p.coreTable}.${p.coreColumn}`, set: prop.value_set ?? null, codes: proposeCrosswalk(o, prop, codes, inUse) });
+    }
     const bands = { standard: 0, auto: 0, review: 0, person: 0 } as Record<Proposal['band'], number>;
     for (const p of result.proposals) bands[p.band]++;
     const summary = {
@@ -1280,6 +1509,8 @@ export class SourceService {
       comparison: comparison ? { total: comparison.total, right: comparison.right, transformsRight: comparison.transformsRight, missed: comparison.rows.filter((r) => !r.right).map((r) => ({ di: r.di, expected: r.expected, proposed: r.proposed })), extra: comparison.extra.map((p) => `${p.coreTable}.${p.coreColumn} → ${p.diTable}.${p.diColumn}`) } : null,
       descriptions: useDescriptions && !!pack,
       sample: PROFILE_SAMPLE,
+      crosswalks,
+      entities: Object.fromEntries([...result.owner]),
     };
     const [ins] = (await this.pool.query('INSERT INTO map_run (connection_id, system_id, mode, started_at, finished_at, columns_profiled, summary, run_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [conn.connectionId, conn.system.id, opts.hideStandard ? 'measure' : 'propose', started, nowSql(), result.profile.columns.length, JSON.stringify(summary), opts.runBy])) as unknown as [{ insertId: number }];
     const runId = ins.insertId;
@@ -1290,7 +1521,7 @@ export class SourceService {
     const used = new Set(result.proposals.map((p) => `${p.coreTable}.${p.coreColumn}`));
     // Columns with values that fit no DI column: candidates for custom fields, such as tracking records.
     const unmatched = result.profile.columns.filter((c) => c.filled > 0 && !used.has(`${c.table}.${c.column}`) && c.kind !== 'key' && c.kind !== 'reference').map((c) => `${c.table}.${c.column}`);
-    return { runId, connection: conn, mode: opts.hideStandard ? ('measure' as const) : ('propose' as const), profiled: result.profile.columns.length, tables: result.profile.tables, proposals: result.proposals.map((p) => ({ ...p, label: o.properties.get(p.property)?.label ?? p.property })), ties: result.ties, tableOf: result.tableOf, owner: result.owner, comparison, bands, unmatched };
+    return { runId, connection: conn, mode: opts.hideStandard ? ('measure' as const) : ('propose' as const), profiled: result.profile.columns.length, tables: result.profile.tables, proposals: result.proposals.map((p) => ({ ...p, label: o.properties.get(p.property)?.label ?? p.property })), ties: result.ties, tableOf: result.tableOf, owner: result.owner, comparison, bands, unmatched, crosswalks };
   }
 
   /** The latest run's proposals and profiles, for review and explanation. */
@@ -1339,6 +1570,6 @@ export class SourceService {
 /** Alias to table in a mapping's FROM: "ACCOUNT a JOIN NAME n" gives { a: 'ACCOUNT', n: 'NAME' }. */
 function aliases(map: TableMap) {
   const out: Record<string, string> = {};
-  for (const m of map.from.matchAll(/(?:^|\bJOIN\s+)([A-Z][A-Z0-9_]*)\s+([a-z])\b/g)) out[m[2]!] = m[1]!;
+  for (const m of map.from.matchAll(/(?:^|\bJOIN\s+)([A-Za-z][A-Za-z0-9_]*)\s+([a-z])\b/g)) out[m[2]!] = m[1]!;
   return out;
 }

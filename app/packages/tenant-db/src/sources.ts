@@ -181,6 +181,9 @@ export const SOURCES_LANDING_TABLES = SOURCE_TARGETS.map(landingTable);
 
 /** The replica's database name for a tenant schema. */
 export const replicaDatabase = (schema: string) => `${schema}_symitar`;
+/** The second stand-in core (Core Mapping and Ontology, phase 4): a different shape, with no standard mapping. */
+export const secondCoreDatabase = (schema: string) => `${schema}_coreb`;
+export const SECOND_CORE_TABLES = ['person', 'acct'] as const;
 export const CORE_READER = 'core_reader';
 export const coreReaderPassword = () => process.env.DI_CORE_READER_PASSWORD ?? 'core_reader_demo';
 
@@ -211,21 +214,21 @@ export async function createSourceTables(admin: mysql.Connection, schema: string
 }
 
 /**
- * The Symitar-style replica for one tenant, built from its curated tables. Dropped and rebuilt each
- * time. core_reader gets SELECT on it and nothing else.
- */
-/**
  * The raw zone for a tenant: an empty copy of each mapped replica table, in the tenant's database,
  * which a pull fills as it reads the core. The app may replace their rows and nothing else.
  */
-export async function createRawTables(admin: mysql.Connection, schema: string, replica: string) {
-  for (const t of RAW_TABLES) {
+export async function createRawTables(admin: mysql.Connection, schema: string, replica: string, tables: readonly string[] = RAW_TABLES) {
+  for (const t of tables) {
     await admin.query(`DROP TABLE IF EXISTS \`${schema}\`.\`${rawTable(t)}\``);
     await admin.query(`CREATE TABLE \`${schema}\`.\`${rawTable(t)}\` LIKE \`${replica}\`.\`${t}\``);
     await admin.query(`GRANT SELECT, INSERT, DELETE ON \`${schema}\`.\`${rawTable(t)}\` TO 'dinext'@'%'`);
   }
 }
 
+/**
+ * The Symitar-style replica for one tenant, built from its curated tables. Dropped and rebuilt each
+ * time. core_reader gets SELECT on it and nothing else.
+ */
 export async function seedCoreReplica(admin: mysql.Connection, schema: string) {
   const db = replicaDatabase(schema);
   const [[build]] = (await admin.query(`SELECT DATE_FORMAT(as_of_date, '%Y-%m-%d') AS as_of FROM \`${schema}\`.meta_build ORDER BY as_of_date DESC LIMIT 1`)) as unknown as [{ as_of: string }[]];
@@ -286,5 +289,43 @@ export async function seedCoreReplica(admin: mysql.Connection, schema: string) {
   await admin.query(`GRANT SELECT ON \`${db}\`.* TO '${CORE_READER}'@'%'`);
   await createRawTables(admin, schema, db);
   await admin.query(`USE ${src}`);
+  return { database: db, processDate: asOf };
+}
+
+/**
+ * A second stand-in core for one tenant (Core Mapping and Ontology, phase 4), built from the curated
+ * tables like the Symitar replica, in a deliberately different shape. It isn't any vendor's schema and
+ * Kinective has no mapping for it, so DI has to work the mapping out:
+ * - one table, person, for members; one table, acct, for shares and loans alike, told apart by acct_class;
+ * - lower-case snake_case names with their own abbreviations;
+ * - real DATE columns, empty when there's no date, instead of YYYYMMDD text;
+ * - rates as percent decimals (5.2500), not thousandths;
+ * - product and member types as text codes (CHK, MMA, UNSEC, VISA, SEN), and a Y/N non-member flag;
+ * - days past due kept on the loan, beside the next payment's due date.
+ * Keys are DI's own, so a pull reconciles row by row. core_reader gets SELECT on it and nothing else.
+ */
+export async function seedSecondCore(admin: mysql.Connection, schema: string) {
+  const db = secondCoreDatabase(schema);
+  const [[build]] = (await admin.query(`SELECT DATE_FORMAT(as_of_date, '%Y-%m-%d') AS as_of FROM \`${schema}\`.meta_build ORDER BY as_of_date DESC LIMIT 1`)) as unknown as [{ as_of: string }[]];
+  const asOf = build?.as_of ?? '2026-10-25';
+  await admin.query(`DROP DATABASE IF EXISTS \`${db}\``);
+  await admin.query(`CREATE DATABASE \`${db}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
+  const src = `\`${schema}\``;
+  const q = (t: string) => `\`${db}\`.${t}`;
+  await admin.query(`CREATE TABLE ${q('ctl')} (proc_dt DATE NOT NULL, inst_nm VARCHAR(60) NOT NULL)`);
+  await admin.query(`CREATE TABLE ${q('person')} (pers_nbr INT PRIMARY KEY, first_nm VARCHAR(40) NOT NULL, last_nm VARCHAR(40) NOT NULL, birth_dt DATE NULL, mbr_since_dt DATE NULL, home_brch_nbr SMALLINT NOT NULL, mbr_type_cd VARCHAR(4) NOT NULL, hhld_pers_nbr INT NULL, nonmbr_yn CHAR(1) NOT NULL, last_maint_dt DATE NULL)`);
+  await admin.query(`CREATE TABLE ${q('acct')} (acct_class CHAR(2) NOT NULL, acct_nbr INT NOT NULL, pers_nbr INT NOT NULL, brch_nbr SMALLINT NOT NULL, prod_cd VARCHAR(6) NOT NULL, open_dt DATE NULL, close_dt DATE NULL, mat_dt DATE NULL, cur_bal DECIMAL(14,2) NOT NULL, int_rate DECIMAL(7,4) NOT NULL, orig_bal DECIMAL(14,2) NULL, chgoff_dt DATE NULL, ofcr_nbr INT NULL, dlr_nbr INT NULL, days_dlq SMALLINT NULL, next_pmt_due_dt DATE NULL, PRIMARY KEY (acct_class, acct_nbr), KEY ix_acct_pers (pers_nbr))`);
+  await admin.query(`INSERT INTO ${q('ctl')} VALUES (?, ?)`, [asOf, schema]);
+  await admin.query(`INSERT INTO ${q('person')} SELECT party_id, first_name, last_name, birth_date, join_date, primary_branch_id, CASE segment_code WHEN 'Retail' THEN 'RET' WHEN 'Young Adult' THEN 'YA' WHEN 'Senior' THEN 'SEN' WHEN 'Small Business' THEN 'SMB' ELSE 'OTH' END, household_id, IF(is_member = 1, 'N', 'Y'), join_date FROM ${src}.cdm_party`);
+  await admin.query(`INSERT INTO ${q('acct')} SELECT 'DP', account_id, party_id, branch_id, CASE deposit_category WHEN 'Share Savings' THEN 'SAV' WHEN 'Checking' THEN 'CHK' WHEN 'Money Market' THEN 'MMA' WHEN 'Certificates' THEN 'CD' WHEN 'IRA' THEN 'IRA' ELSE 'OTH' END, open_date, close_date, maturity_date, balance, rate, NULL, NULL, NULL, NULL, NULL, NULL FROM ${src}.cdm_deposit_account`);
+  await admin.query(
+    `INSERT INTO ${q('acct')} SELECT 'LN', loan_id, party_id, branch_id, CASE loan_category WHEN 'Auto' THEN 'AUTO' WHEN 'Personal' THEN 'UNSEC' WHEN 'Mortgage' THEN 'MTG' WHEN 'HELOC' THEN 'HELOC' WHEN 'Credit Card' THEN 'VISA' WHEN 'Business' THEN 'BUS' ELSE 'OTH' END,
+       open_date, close_date, NULL, balance, rate, original_amount, charge_off_date, officer_id, IF(is_indirect = 1, 4000 + MOD(loan_id, 37), NULL), days_delinquent, DATE_ADD(DATE_SUB(?, INTERVAL days_delinquent DAY), INTERVAL 1 DAY)
+       FROM ${src}.cdm_loan`,
+    [asOf],
+  );
+  await admin.query(`CREATE USER IF NOT EXISTS '${CORE_READER}'@'%' IDENTIFIED BY ?`, [coreReaderPassword()]);
+  await admin.query(`GRANT SELECT ON \`${db}\`.* TO '${CORE_READER}'@'%'`);
+  await createRawTables(admin, schema, db, SECOND_CORE_TABLES);
   return { database: db, processDate: asOf };
 }

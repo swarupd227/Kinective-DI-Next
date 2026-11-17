@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import { CoreError, MAP_TARGETS, codeSetWords, type ColumnMapRow, type CustomValueType, type DriftItem, type MapPreview, type SourceService } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec, type ModuleView } from './moduleAgent.ts';
+import { heldGuess } from './sources.ts';
 
 const n = (x: number) => x.toLocaleString('en-US');
 const plural = (x: number, one: string, many = `${one}s`) => `${n(x)} ${x === 1 ? one : many}`;
@@ -17,15 +18,15 @@ const text = (field: string, headerName: string) => ({ field, headerName, type: 
 
 /** Proposing a whole mapping for a core (Core Mapping and Ontology, phase 2): discover, review, explain. */
 export const DISCOVER_REQUEST =
-  /\b(?:propose|work out|discover|auto-?map)\b[^.?!]*\bmappings?\b|\bmap (?:our|the|this) (?:new )?(?:core|connection|replica|symitar)(?: connection| replica)?\s*[.?!]?$|\bhow well (?:would|does|can|could) DI map\b|\bwithout (?:its|the|kinective['’]s) (?:standard )?mapping\b|\b(?:proposed|discovered) mappings?\b|\bwhich (?:proposed )?mappings? need(?:s)? (?:me|a person|review|my review)\b|\bwhy (?:did|do|does) (?:you|DI) (?:map|propose|think)\b|\bexplain (?:the )?(?:proposed )?mapping (?:for|of)\b/i;
+  /\b(?:propose|work out|discover|auto-?map)\b[^.?!]*\bmappings?\b|\b(?:map|propose a mapping for) (?:the |our )?[\w -]{2,40} connection\s*[.?!]?$|\bmap (?:our|the|this) (?:new )?(?:core|connection|replica|symitar)(?: connection| replica)?\s*[.?!]?$|\bhow well (?:would|does|can|could) DI map\b|\bwithout (?:its|the|kinective['’]s) (?:standard )?mapping\b|\b(?:proposed|discovered) mappings?\b|\bwhich (?:proposed )?mappings? need(?:s)? (?:me|a person|review|my review)\b|\bwhy (?:did|do|does) (?:you|DI) (?:map|propose|think)\b|\bexplain (?:the )?(?:proposed )?mapping (?:for|of)\b/i;
 
 /** Mapping versions, drift and code crosswalks (Core Mapping and Ontology, phase 3). */
 export const VERSION_REQUEST =
-  /\bmapping versions?\b|\bversions? of the (?:core |symitar )?mapping\b|\b(?:mapping|core|schema) drift\b|\bwhat changed in the core\b|\bheld (?:rows|records|shares|loans)\b|\bmap (?:share|savings|loan|member|account|deposit) (?:type|code) \d+ (?:to|as)\b/i;
+  /\bmapping versions?\b|\bversions? of the (?:core |symitar )?mapping\b|\b(?:mapping|core|schema) drift\b|\bwhat changed in the core\b|\bheld (?:rows|records|shares|loans)\b|\bmap (?:share|savings|loan|member|account|deposit) (?:type|code|product) [A-Za-z0-9_-]{1,12} (?:to|as)\b|\b(?:freeze|approve|use) the proposed mapping\b/i;
 
 /** "Map share type 14 to money market" → the code list, the code and the value. */
 export function crosswalkFrom(text: string): { set: string; code: string; value: string } | null {
-  const m = /\bmap (share|savings|deposit|loan|member|account) (?:type|code) (\d+) (?:to|as) (?:an? |the )?(.+?)\s*[.?!]?$/i.exec(text.trim());
+  const m = /\bmap (share|savings|deposit|loan|member|account) (?:type|code|product) ([A-Za-z0-9_-]{1,12}) (?:to|as) (?:an? |the )?(.+?)\s*[.?!]?$/i.exec(text.trim());
   if (!m) return null;
   const set = /^(?:share|savings|deposit)$/i.test(m[1]!) ? 'shareType' : /^loan$/i.test(m[1]!) ? 'loanType' : 'memberType';
   return { set, code: m[2]!, value: m[3]!.trim() };
@@ -87,6 +88,7 @@ export function coreMappingModule(sources: SourceService | null, today: () => st
       if (parts) return { tool: /\b(?:try|preview|test|what would)\b/i.test(ask) ? 'map_preview' : 'map_add', args: { target: parts.target ?? 'members', label: parts.label, expression: parts.expression, type: parts.type ?? 'text' } };
       const cw = crosswalkFrom(ask);
       if (cw) return { tool: 'map_code', args: cw };
+      if (/\b(?:freeze|approve|use) the proposed mapping\b/i.test(ask)) return { tool: 'map_freeze', args: {} };
       if (VERSION_REQUEST.test(ask)) return { tool: /\bversions?\b/i.test(ask) ? 'map_versions' : 'map_drift', args: {} };
       if (DISCOVER_REQUEST.test(ask)) {
         if (/\bwhy\b|\bexplain\b/i.test(ask)) {
@@ -94,7 +96,10 @@ export function coreMappingModule(sources: SourceService | null, today: () => st
           return column ? { tool: 'map_explain', args: { column } } : { say: 'Which core column? For example, LOAN.DUEDATE.' };
         }
         if (/\bneed(?:s)? (?:me|a person|review|my review)\b|\breview\b/i.test(ask)) return { tool: 'map_review', args: {} };
-        return { tool: 'map_discover', args: /\bhow well\b|\bwithout\b|\bmeasure\b/i.test(ask) ? { measure: true } : {} };
+        // A connection named in the question: "Map the Core B stand-in connection".
+        const named = /\b(?:map|propose a mapping for) (?:the |our )?(.+?) connection\b/i.exec(ask)?.[1]?.trim();
+        const connection = named && !/^(?:core|new|this|our|the)$/i.test(named) ? { connection: named } : {};
+        return { tool: 'map_discover', args: /\bhow well\b|\bwithout\b|\bmeasure\b/i.test(ask) ? { measure: true, ...connection } : connection };
       }
       if (/\bsuggest|\bunmapped\b|\b(?:not|aren['’]?t|isn['’]?t) (?:yet )?mapped\b|\bwhat else\b|\btracking records?\b|\bcustom fields? (?:could|can|should)\b/i.test(ask)) return { tool: 'map_suggest', args: {} };
       return { tool: 'map_list', args: /\bcustom\b/i.test(ask) ? { custom_only: true } : {} };
@@ -229,7 +234,7 @@ const DRIFT_WORD: Record<string, string> = { new_code: 'Code the mapping doesn�
 function versionTools(spec: ModuleSpec, need: (ctx: ModuleContext) => SourceService, today: () => string) {
   const driftLine = (d: DriftItem) => {
     const x = d.detail as { set?: string | null; count?: number; proposal?: { value: string; runnerUp: string | null } | null; landed?: number; reported?: number; code?: string };
-    if (d.kind === 'new_code') return `${codeSetWords(x.set)} ${d.value} in ${d.table}.${d.column}: ${n(x.count ?? 0)} rows held${x.proposal ? `, and they look most like ${x.proposal.value}` : ''}`;
+    if (d.kind === 'new_code') return `${codeSetWords(x.set)} ${d.value} in ${d.table}.${d.column}: ${n(x.count ?? 0)} rows held${x.proposal && heldGuess(x.proposal) ? `; it${heldGuess(x.proposal).replace(/^ looks/, ' looks')}` : ''}`;
     if (d.kind === 'new_column') return `${d.table}.${d.column} appeared in the core; nothing reads it yet`;
     if (d.kind === 'missing_column') return `${d.table}.${d.column} is gone from the core, and the mapping reads it`;
     return `${d.table}.${d.column} landed ${x.landed?.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })} against line ${x.code}’s ${x.reported?.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}`;
@@ -261,19 +266,52 @@ function versionTools(spec: ModuleSpec, need: (ctx: ModuleContext) => SourceServ
         if (!items.length) return { text: `Nothing has changed in the ${connection.name} that the mapping doesn’t expect: no unknown codes, no new or missing columns, and the totals tie out.`, suggestions: ['Show the mapping versions'] };
         const codes = items.filter((d) => d.kind === 'new_code');
         const first = codes[0];
-        const proposal = first ? (first.detail as { set?: string | null; proposal?: { value: string; runnerUp: string | null; evidence: { label: string; held: string; proposed: string }[] } | null }) : null;
-        const why = proposal?.proposal?.evidence.length ? ` Compared with ${proposal.proposal.value}: ${proposal.proposal.evidence.map((e) => `${e.label.toLowerCase()} ${e.held} against ${e.proposed}`).join('; ')}.` : '';
+        const proposal = first ? (first.detail as { set?: string | null; proposal?: { value: string; close?: boolean; options?: string[]; runnerUp: string | null; evidence: { label: string; held: string; proposed: string }[] } | null }) : null;
+        const why = proposal?.proposal?.close && proposal.proposal.evidence.length ? ` Compared with ${proposal.proposal.value}: ${proposal.proposal.evidence.map((e) => `${e.label.toLowerCase()} ${e.held} against ${e.proposed}`).join('; ')}.` : '';
         return {
           text: `**${plural(items.length, 'change')}** in the ${connection.name} to decide: ${items.slice(0, 3).map(driftLine).join('; ')}.${why}${first && proposal?.proposal ? ' Held rows landed without that value, so no report counts them under a wrong name.' : ''}`,
           blocks: [moduleTable(spec, 'What changed in the core', ctx.runId, 'coremap.drift', [text('kind', 'What'), text('where', 'Where'), text('detail', 'Detail'), text('found', 'Found')], items.map((d) => ({ kind: DRIFT_WORD[d.kind] ?? d.kind, where: `${d.table}.${d.column}${d.value && d.kind === 'new_code' ? ` = ${d.value}` : ''}`, detail: driftLine(d), found: d.foundAt })))],
-          suggestions: first && proposal?.proposal && proposal.set ? [`Map ${codeSetWords(proposal.set)} ${first.value} to ${proposal.proposal.value.toLowerCase()}`] : ['Show the mapping versions'],
+          suggestions: first && proposal?.proposal && proposal.set && (proposal.proposal.close || proposal.proposal.options?.length) ? [`Map ${codeSetWords(proposal.set)} ${first.value} to ${(proposal.proposal.close ? proposal.proposal.value : proposal.proposal.options![0]!).toLowerCase()}`] : ['Show the mapping versions'],
         };
       },
     },
     {
+      name: 'map_freeze',
+      description: 'Prepare recording the latest proposed mapping for a core Kinective hasn’t mapped as its next mapping version: the core tables each DI table reads (with joins and the class code that splits a shared table), every proposed column (close calls named), and each code list’s crosswalk; codes nothing fits are held on pulls until someone maps them. Returns approval_required.',
+      input: z.object({ connection: z.string().min(2).max(80).optional() }).strict(),
+      run: async (a: { connection?: string }, ctx: ModuleContext) => {
+        const s = need(ctx);
+        const f = await s.checkFreeze(a.connection);
+        const cols = f.tables.reduce((x, t) => x + t.columns.length, 0);
+        const codes = f.crosswalks.reduce((x, c) => x + c.codes.filter((y) => y.value).length, 0);
+        const heldRows = f.unknown.reduce((x, u) => x + u.count, 0);
+        return {
+          change: {
+            summary: `Use DI’s proposed mapping for the ${f.conn.name}`,
+            changes: [
+              ...f.tables.map((t) => ({ label: TABLE_WORD[t.diTable] ?? t.diTable, before: '—', after: `${t.columns.length} columns from ${t.from}` })),
+              { label: 'Code lists', before: '—', after: `${codes} codes read${f.unknown.length ? `; ${f.unknown.map((u) => u.code).join(', ')} held until mapped (${n(heldRows)} rows)` : ''}` },
+              ...(f.close.length ? [{ label: 'Close calls to check', before: '—', after: f.close.map((c) => `${c.core} → ${c.di}`).join('; ') }] : []),
+              ...(f.skipped.length ? [{ label: 'Not mapped', before: '—', after: `${f.skipped.join(', ')}: no key column was proposed` }] : []),
+            ],
+            text: `I’ll record run ${f.runId}’s proposals as the ${f.conn.name}’s mapping: **${cols} columns** in ${f.tables.length} DI tables, and ${codes} codes.${f.close.length ? ` ${f.close.length} of the columns were close calls; they’re named below, so check them before you approve.` : ''}${f.unknown.length ? ` Rows with ${f.unknown.map((u) => u.code).join(', ')} will be held on each pull until you say what those codes mean.` : ''} Pulls use it from the next one.`,
+            done: `Recorded the proposed mapping for the ${f.conn.name}.`,
+            risk: 'medium' as const,
+            records: cols,
+            apply: { connection: a.connection ?? null },
+          },
+        };
+      },
+      apply: async (p: { connection: string | null }, meta: { approvalId: string }, ctx: ModuleContext): Promise<ModuleView> => {
+        const s = need(ctx);
+        const r = await s.freezeFromRun(p.connection ?? undefined, { userId: ctx.user.id, name: ctx.user.name }, { approvalId: meta.approvalId });
+        return { text: `Recorded **mapping version ${r.versionNo}** for the ${r.conn.name}: ${r.tables.reduce((x, t) => x + t.columns.length, 0)} columns from run ${r.runId}. The next pull uses it.${r.unknown.length ? ` Codes ${r.unknown.map((u) => u.code).join(', ')} are held until mapped.` : ''}`, suggestions: [`Pull from the ${r.conn.name} now`, 'Show the mapping versions'] };
+      },
+    },
+    {
       name: 'map_code',
-      description: 'Prepare adding a code to the core mapping’s crosswalk, such as share type 14 as money market: DI checks the value against DI’s code list, and on approval records a new mapping version; the next pull maps the held rows. set: shareType, loanType or memberType. Returns approval_required.',
-      input: z.object({ set: z.string().min(3).max(40), code: z.string().regex(/^\d{1,6}$/), value: z.string().min(2).max(60) }).strict(),
+      description: 'Prepare adding a code to the core mapping’s crosswalk, such as share type 14 as money market: DI checks the value against DI’s code list, and on approval records a new mapping version; the next pull maps the held rows. set: shareType, loanType or memberType (or the code list’s own name, such as loan_category); code: a number or a short code such as VISA. Returns approval_required.',
+      input: z.object({ set: z.string().min(3).max(40), code: z.string().regex(/^[A-Za-z0-9_-]{1,12}$/), value: z.string().min(2).max(60) }).strict(),
       run: async (a: { set: string; code: string; value: string }, ctx: ModuleContext) => {
         const s = need(ctx);
         const c = await s.checkCrosswalk(a);
@@ -320,10 +358,11 @@ function discoverTools(spec: ModuleSpec, need: (ctx: ModuleContext) => SourceSer
     {
       name: 'map_discover',
       description: 'Propose where each of the core’s columns goes in DI: profiles every column (read-only), lines core tables up with DI’s members, shares and loans, scores each pair on its name, its values, its place in the tables, Kinective’s mapping where there is one, and tie-outs to the 5300, and sorts the proposals into bands. measure: leave Kinective’s mapping out and report how many columns the proposals get right against it. Changes no mapping and no pull.',
-      input: z.object({ measure: z.boolean().optional() }).strict(),
-      run: async (a: { measure?: boolean }, ctx: ModuleContext): Promise<ModuleView> => {
+      input: z.object({ measure: z.boolean().optional(), connection: z.string().min(2).max(80).optional() }).strict(),
+      run: async (a: { measure?: boolean; connection?: string }, ctx: ModuleContext): Promise<ModuleView> => {
         const s = need(ctx);
-        const r = await s.discover({ hideStandard: !!a.measure, runBy: ctx.user.id });
+        const target = a.connection ? (await s.connection(a.connection)).connectionId : undefined;
+        const r = await s.discover({ connectionId: target, hideStandard: !!a.measure, runBy: ctx.user.id });
         const lined = [...r.tableOf].map(([core, di]) => {
           const joined = [...r.owner].filter(([t, o]) => o === core && t !== core).map(([t]) => t);
           return `${core}${joined.length ? ` (with ${joined.join(', ')})` : ''} to ${TABLE_WORD[di] ?? di}`;
@@ -340,6 +379,13 @@ function discoverTools(spec: ModuleSpec, need: (ctx: ModuleContext) => SourceSer
           lined.length ? `The tables line up as ${lined.join('; ')}.` : '',
           ties.length ? `Tie-outs to the 5300: ${ties.map((t) => (t.property === 'member.id' ? tieWord(t) : `${tieName(t.property)} ${tieWord(t)}`)).join('; ')}.` : '',
           a.measure && r.comparison?.rows.some((x) => !x.right) ? `Missed: ${r.comparison.rows.filter((x) => !x.right).map((x) => `${x.di} (expected ${x.expected}, proposed ${x.proposed ?? 'nothing'})`).join('; ')}.` : '',
+          // Code lists, where the core has no standard mapping: which codes DI could read, and which need you.
+          !a.measure && !r.connection.system.mappings?.length && r.crosswalks.length
+            ? `Code lists: ${r.crosswalks.map((c) => {
+                const open = c.codes.filter((x) => !x.value).map((x) => x.code);
+                return `${codeSetWords(c.set)} ${c.codes.length - open.length} of ${c.codes.length} codes read${open.length ? ` (${open.join(', ')} left for you)` : ''}`;
+              }).join('; ')}.`
+            : '',
           !a.measure && r.unmatched.length ? `${n(r.unmatched.length)} columns with values fit no DI column, such as ${r.unmatched.slice(0, 3).join(', ')}; ask which core fields aren’t mapped to make custom fields of them.` : '',
           'Nothing changes until a mapping is approved.',
         ].filter(Boolean);
@@ -350,7 +396,7 @@ function discoverTools(spec: ModuleSpec, need: (ctx: ModuleContext) => SourceSer
             moduleTable(spec, a.measure ? `Proposals against Kinective’s mapping (run ${r.runId})` : `Proposed mapping (run ${r.runId})`, ctx.runId, 'coremap.discover', proposalCols, rows),
             ...(r.ties.length ? [moduleTable(spec, 'Tie-outs to the 5300', ctx.runId, 'coremap.tieout', [text('what', 'Total'), text('column', 'Core column'), text('core', 'In the core'), text('reported', 'On the 5300'), text('result', 'Result')], r.ties.map((t) => ({ what: t.property === 'loan.balance' ? 'Loans' : t.property === 'deposit.balance' ? 'Shares and deposits' : 'Members', column: t.column, core: t.property === 'member.id' ? n(t.core) : usd(t.core), reported: `${t.property === 'member.id' ? n(t.reported) : usd(t.reported)} (line ${t.code})`, result: t.pass ? 'Ties out' : 'Doesn’t tie out' })))] : []),
           ],
-          suggestions: ['Which mappings need me?', ...(r.proposals.find((p) => p.band === 'person') ? [`Why did you map ${r.proposals.find((p) => p.band === 'person')!.coreTable}.${r.proposals.find((p) => p.band === 'person')!.coreColumn}?`] : [])],
+          suggestions: [...(!a.measure && !r.connection.system.mappings?.length ? ['Freeze the proposed mapping'] : []), 'Which mappings need me?', ...(r.proposals.find((p) => p.band === 'person') ? [`Why did you map ${r.proposals.find((p) => p.band === 'person')!.coreTable}.${r.proposals.find((p) => p.band === 'person')!.coreColumn}?`] : [])],
         };
       },
     },

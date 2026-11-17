@@ -11,7 +11,7 @@
 // - tie-out: whether the mapped values add up to the regulatory return (worked out by the caller).
 import type { Ontology, OntologyProperty } from '@dinext/ontology';
 
-export type ColumnKind = 'date' | 'key' | 'reference' | 'flag' | 'money' | 'rate1000' | 'code' | 'number' | 'text' | 'empty';
+export type ColumnKind = 'date' | 'key' | 'reference' | 'flag' | 'money' | 'rate1000' | 'pctrate' | 'code' | 'number' | 'text' | 'empty';
 export type MapTransform = 'same' | 'number' | 'date8' | 'code' | 'rate1000' | 'daysPast' | 'not' | 'nonzero';
 
 export interface ColumnProfile {
@@ -28,6 +28,8 @@ export interface ColumnProfile {
   max: string | null;
   /** Share of filled values that are a valid YYYYMMDD date, a number, a number with a fraction, a 0/1 or Y/N flag. */
   dateShare: number;
+  /** Share of filled values that are an ISO date (YYYY-MM-DD), as a DATE column reads. */
+  isoDateShare?: number;
   numericShare: number;
   fractionShare: number;
   flagShare: number;
@@ -88,11 +90,14 @@ export const BANDS = { auto: 0.9, review: 0.6, margin: 0.05 } as const;
 /** What a column holds, from its profile alone. */
 export function kindOf(c: ColumnProfile): ColumnKind {
   if (!c.filled) return 'empty';
-  if (c.dateShare >= 0.9) return 'date';
+  if (c.dateShare + (c.isoDateShare ?? 0) >= 0.9) return 'date';
   if (c.refersTo && c.refersTo.share >= 0.95) return 'reference';
   const seen = c.sampled ?? c.rows;
   if (c.distinct === seen && c.numericShare >= 0.99 && seen > 1) return 'key';
   if (c.distinct <= 2 && c.flagShare >= 0.99) return 'flag';
+  // Rates kept as percents (5.2500): decimals from 0 to 30, averaging well under 30.
+  const top = Number(c.max);
+  if (c.numericShare >= 0.95 && c.fractionShare > 0.3 && c.distinct >= 20 && Number(c.min) >= 0 && top <= 30 && (c.avg ?? 99) <= 25) return 'pctrate';
   if (c.numericShare >= 0.95 && c.fractionShare > 0.05) return 'money';
   // Rates kept as whole thousandths of a percent (5250 is 5.25%): integers up to 40,000, mostly not zero.
   const hi = Number(c.max);
@@ -203,9 +208,9 @@ const COMPAT: Record<string, Partial<Record<ColumnKind, number>>> = {
   identifier: { key: 1, reference: 0.3, number: 0.2 },
   reference: { reference: 1, code: 0.6, number: 0.4, key: 0.2 },
   date: { date: 1 },
-  money: { money: 1, number: 0.4 },
-  rate: { rate1000: 1, money: 0.3, number: 0.3 },
-  percent: { number: 0.7, money: 0.5 },
+  money: { money: 1, number: 0.4, pctrate: 0.2 },
+  rate: { rate1000: 1, pctrate: 1, money: 0.3, number: 0.3 },
+  percent: { number: 0.7, money: 0.5, pctrate: 0.6 },
   ratio: { number: 0.7, money: 0.5 },
   code: { code: 1, flag: 0.5, number: 0.2 },
   flag: { flag: 1, code: 0.3 },
@@ -214,11 +219,11 @@ const COMPAT: Record<string, Partial<Record<ColumnKind, number>>> = {
   number: { number: 0.7, money: 0.5, code: 0.3 },
   text: { text: 1, code: 0.3 },
 };
-const KIND_WORD: Record<ColumnKind, string> = { date: 'dates', key: 'a unique key', reference: 'references to another table', flag: 'yes or no values', money: 'dollar amounts', rate1000: 'rates in thousandths of a percent', code: 'a short list of codes', number: 'numbers', text: 'text', empty: 'nothing' };
-const KIND_FROM: Record<ColumnKind, string> = { date: 'date', key: 'key', reference: 'reference', flag: 'flag', money: 'money', rate1000: 'number', code: 'code', number: 'number', text: 'text', empty: 'text' };
+const KIND_WORD: Record<ColumnKind, string> = { date: 'dates', key: 'a unique key', reference: 'references to another table', flag: 'yes or no values', money: 'dollar amounts', rate1000: 'rates in thousandths of a percent', pctrate: 'rates as percents', code: 'a short list of codes', number: 'numbers', text: 'text', empty: 'nothing' };
+const KIND_FROM: Record<ColumnKind, string> = { date: 'date', key: 'key', reference: 'reference', flag: 'flag', money: 'money', rate1000: 'number', pctrate: 'number', code: 'code', number: 'number', text: 'text', empty: 'text' };
 
 const plainTransform = (kind: ColumnKind, p: OntologyProperty, c: ColumnProfile): MapTransform =>
-  kind === 'date' ? 'date8' : kind === 'rate1000' ? 'rate1000' : p.type === 'code' ? 'code' : ['key', 'reference', 'money', 'number'].includes(kind) || (c.numericShare >= 0.99 && p.type !== 'text') ? 'number' : 'same';
+  kind === 'date' ? ((c.isoDateShare ?? 0) > c.dateShare ? 'same' : 'date8') : kind === 'rate1000' ? 'rate1000' : kind === 'pctrate' ? 'number' : p.type === 'code' ? 'code' : ['key', 'reference', 'money', 'number'].includes(kind) || (c.numericShare >= 0.99 && p.type !== 'text') ? 'number' : 'same';
 
 export interface ScoreOptions {
   /** Kinective's mapping for this core, "TABLE.COLUMN" to property, used as precedent; omit to hide it. */
@@ -386,4 +391,33 @@ export function compareWith(proposals: Proposal[], known: { diTable: string; diC
   const knownCore = new Set(known.map((k) => k.core));
   const extra = proposals.filter((p) => !knownCore.has(`${p.coreTable}.${p.coreColumn}`) && !known.some((k) => `${k.diTable}.${k.diColumn}` === `${p.diTable}.${p.diColumn}`));
   return { total: rows.length, right: rows.filter((r) => r.right).length, transformsRight: rows.filter((r) => r.right && r.transformRight).length, rows, extra };
+}
+
+/**
+ * What each code of a core's code list means in DI's terms, from the code itself: CHK is checking and
+ * MTG a mortgage, through the ontology's code words; a code that is itself a value's name (IRA, AUTO)
+ * matches directly. inUse: the values DI already holds for this column, preferred among a code's
+ * values (a credit union's "Share Savings" over a bank's "Savings"). Codes nothing fits stay null,
+ * for a person to decide.
+ */
+export function proposeCrosswalk(o: Ontology, property: OntologyProperty, codes: { value: string; count: number }[], inUse: string[] = []) {
+  const vs = property.value_set ? o.valueSets.get(property.value_set) : undefined;
+  if (!vs) return codes.map((c) => ({ code: c.value, count: c.count, value: null as string | null, score: 0 }));
+  const used = new Set(inUse.map((v) => v.toLowerCase()));
+  const wordsOfCode = (code: string) => {
+    const k = code.trim().toLowerCase();
+    const full = o.codeWords.get(k);
+    return full ? wordsOf(full) : wordsOf(k.replace(/[_-]+/g, ' '));
+  };
+  return codes.map((c) => {
+    const w = wordsOfCode(c.value);
+    let best: { value: string; score: number } | null = null;
+    for (const code of Object.values(vs.codes)) {
+      const phrases = [code.label, ...Object.values(code.labels_by_type ?? {}), ...code.values].filter(Boolean) as string[];
+      const score = Math.max(...phrases.map((ph) => f1(w, wordsOf(ph))));
+      const value = code.values.find((v) => used.has(v.toLowerCase())) ?? code.values[0]!;
+      if (score > (best?.score ?? 0)) best = { value, score };
+    }
+    return { code: c.value, count: c.count, value: best && best.score >= 0.6 ? best.value : null, score: Math.round((best?.score ?? 0) * 100) / 100 };
+  });
 }

@@ -45,7 +45,7 @@ import { depositsByParty, ESP_HISTORY_COLUMNS, ESP_HISTORY_DDL, generateExceptio
 import { ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
-import { createSourceTables, seedCoreReplica } from './sources.ts';
+import { createSourceTables, seedCoreReplica, seedSecondCore } from './sources.ts';
 import { ONTOLOGY_COLUMNS, ONTOLOGY_DDL, ONTOLOGY_TABLES, ontology, ontologyRows } from '@dinext/ontology';
 import { createApiTables } from './apis.ts';
 import { createOffcoreTables } from './offcore.ts';
@@ -493,7 +493,11 @@ async function main() {
     for (const ddl of ONTOLOGY_DDL) await admin.query(ddl);
     const onto = ontologyRows(ontology());
     for (const table of ONTOLOGY_TABLES) if (onto[table].length) await insert(admin, table, [...ONTOLOGY_COLUMNS[table]], onto[table], 5_000);
-    if (profile.institutionType === 'credit_union') await seedCoreReplica(admin, profile.schema);
+    if (profile.institutionType === 'credit_union') {
+      await seedCoreReplica(admin, profile.schema);
+      // A second stand-in core in another shape, with no standard mapping (Core Mapping and Ontology, phase 4).
+      await seedSecondCore(admin, profile.schema);
+    }
     console.log(`${profile.key}: ${t.parties.length} parties, ${t.loans.length} loans, ${t.deposits.length} deposit accounts, ${t.histLoan.length} loan history rows, ${rm.interactions.length} interactions in ${((Date.now() - started) / 1000).toFixed(1)}s (${[...laps, `core replica ${((Date.now() - lapAt) / 1000).toFixed(0)}s`].join(', ')})`);
   }
   await admin.end();

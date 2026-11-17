@@ -309,6 +309,10 @@ function differenceTable(spec: ModuleSpec, ctx: ModuleContext, r: PullResult) {
   );
 }
 
+/** What a held code may be: the type its rows look like, when they really do, or DI's types the core hasn't used yet. */
+export const heldGuess = (p: { value: string; close?: boolean; options?: string[] } | null | undefined) =>
+  !p ? '' : p.close && p.value ? ` looks most like ${p.value}` : p.options?.length ? ` could be ${p.options.length === 1 ? p.options[0] : `${p.options.slice(0, -1).join(', ')} or ${p.options[p.options.length - 1]}`}` : '';
+
 function pullView(spec: ModuleSpec, ctx: ModuleContext, r: PullResult, lead: string, offerNext = true): ModuleView {
   const parts = r.tables.map((t) => {
     const odd = [t.newInCore ? `${n(t.newInCore)} only in the core` : '', t.notInCore ? `${n(t.notInCore)} only in DI` : '', t.differ ? `${plural(t.differ, 'row')} with different values` : ''].filter(Boolean);
@@ -320,7 +324,7 @@ function pullView(spec: ModuleSpec, ctx: ModuleContext, r: PullResult, lead: str
   // Mapping version, held rows and drift (Core Mapping and Ontology, phase 3).
   const held = r.held ?? [];
   const heldText = held.length
-    ? ` **${n(held.reduce((s, h) => s + h.count, 0))} rows are held**: ${held.map((h) => `${codeSetWords(h.set)} ${h.code} (${n(h.count)} rows)${h.proposal ? ` looks most like ${h.proposal.value}` : ''}`).join('; ')}. They landed without that value, so nothing counts them under a wrong name; approve what the code means and the next pull maps them.`
+    ? ` **${n(held.reduce((s, h) => s + h.count, 0))} rows are held**: ${held.map((h) => `${codeSetWords(h.set)} ${h.code} (${n(h.count)} rows)${heldGuess(h.proposal)}`).join('; ')}. They landed without that value, so nothing counts them under a wrong name; approve what the code means and the next pull maps them.`
     : '';
   const otherDrift = (r.drift ?? 0) - held.length;
   const versionText = r.version ? ` It used mapping version ${r.version}.` : '';
@@ -328,6 +332,6 @@ function pullView(spec: ModuleSpec, ctx: ModuleContext, r: PullResult, lead: str
   return {
     text: `${lead}Pulled **${n(r.rows)} rows** on ${when(r.at)}${process} and checked them against DI. ${parts.join('. ')}.${odd ? ' Those are the rows to look at before the build uses this source.' : ''}${versionText}${heldText}${otherDrift > 0 ? ` ${plural(otherDrift, 'other change')} in the core to look at.` : ''}${rawText}`,
     blocks: [reconcileTable(spec, ctx, r), ...(odd && offerNext ? [differenceTable(spec, ctx, r)] : [])],
-    suggestions: [...(held[0]?.proposal && held[0].set ? [`Map ${codeSetWords(held[0].set)} ${held[0].code} to ${held[0].proposal.value.toLowerCase()}`] : []), ...(r.drift ? ['What changed in the core?'] : []), ...(odd && !offerNext ? ['Show the rows that differ'] : []), ...next],
+    suggestions: [...(held[0]?.proposal?.close && held[0].set ? [`Map ${codeSetWords(held[0].set)} ${held[0].code} to ${held[0].proposal.value.toLowerCase()}`] : []), ...(r.drift ? ['What changed in the core?'] : []), ...(odd && !offerNext ? ['Show the rows that differ'] : []), ...next],
   };
 }

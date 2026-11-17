@@ -48,7 +48,7 @@ import { SemanticService } from '@dinext/semantic';
 import { notificationsModule } from '@dinext/agents';
 import { EmailOutbox, tenantDomain, type EmailKind } from '@dinext/di-core';
 import type { ReportSettingsView } from '@dinext/block-schemas';
-import { CORE_READER, coreReaderPassword, dbUrl, replicaDatabase, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
+import { CORE_READER, coreReaderPassword, dbUrl, replicaDatabase, secondCoreDatabase, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { PERSONAS, type PersonaId } from './data.ts';
 import { matchesAll, rank } from './search.ts';
 
@@ -141,11 +141,17 @@ const sourceOptions = () => ({ secretKey: secretKeyFrom(), allowedHosts: sourceH
  * and pulled once. A reset by the seed job clears connections, so core mapping is ready again after
  * every deploy. Set DI_DEMO_CONNECT_REPLICA=0 to leave the replica for Sam to connect by hand.
  */
-async function connectDemoReplica(sources: SourceService, database: string, on: string) {
+async function connectDemoReplica(sources: SourceService, database: string, on: string, secondCore?: string) {
   if (process.env.DI_DEMO_CONNECT_REPLICA === '0') return null;
   if ((await sources.connections()).length) return null;
   const admin = PERSONAS.admin.session.user;
   const url = new URL(dbUrl());
+  // The second stand-in core, which Kinective hasn't mapped (Core Mapping and Ontology, phase 4): connected
+  // first, with nothing mapped, so the Symitar replica stays the newest and the one questions default to.
+  if (secondCore) {
+    const s2 = await sources.saveLogin({ system: 'other', host: url.hostname, port: Number(url.port || 3306), database: secondCore, login: CORE_READER, password: coreReaderPassword() }, { userId: admin.id });
+    await sources.create({ credentialId: s2.credentialId, name: 'Core B stand-in', schedule: 'Nightly at 2:00 am', tables: ['cdm_party', 'cdm_deposit_account', 'cdm_loan'] }, { userId: admin.id, name: admin.name }, { approvalId: `demo-coreb-${secondCore}`.slice(0, 40), on }).catch((e: unknown) => console.warn(`[sources] the second stand-in core wasn’t connected: ${(e as Error).message}`));
+  }
   const saved = await sources.saveLogin({ system: coreSystem('symitar')!.id, host: url.hostname, port: Number(url.port || 3306), database, login: CORE_READER, password: coreReaderPassword() }, { userId: admin.id });
   const t = await sources.test(saved.credentialId, admin.id);
   const tables = (t.mappings ?? []).filter((m) => !m.missing.length).map((m) => m.map.diTable);
@@ -435,7 +441,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
     const offcore = hasOffcore ? new OffcoreService(pool, institutionType, () => (buildPool ??= createPool(`${buildDbUrl()}/${t.schema}`, { connectionLimit: 2 })), AS_OF) : null;
     const replica = hasSources && institutionType === 'credit_union' ? replicaDatabase(t.schema) : null;
     if (sources && replica)
-      await connectDemoReplica(sources, replica, new Date().toISOString().slice(0, 10)).then(
+      await connectDemoReplica(sources, replica, new Date().toISOString().slice(0, 10), secondCoreDatabase(t.schema)).then(
         (r) => r && console.log(`[sources] ${t.key}: connected the demo Symitar replica for ${PERSONAS.admin.session.user.name}`),
         (e: unknown) => console.warn(`[sources] ${t.key}: the demo replica wasn’t connected: ${(e as Error).message}`),
       );

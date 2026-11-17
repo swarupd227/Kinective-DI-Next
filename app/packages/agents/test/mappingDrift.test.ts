@@ -104,7 +104,7 @@ describe.skipIf(!up)('a new share type in the core', () => {
 
     const said = await ask('What changed in the core?', 'thr_drift2');
     expect(said.text).toContain('share type 14 in SAVINGS.TYPE');
-    expect(said.text).toContain('look most like Money Market');
+    expect(said.text).toContain('looks most like Money Market');
     expect(said.text).toContain('ACCOUNT.EMAILOPTIN appeared in the core');
   }, 180_000);
 

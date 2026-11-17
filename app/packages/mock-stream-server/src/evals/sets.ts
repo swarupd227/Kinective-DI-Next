@@ -233,6 +233,9 @@ export const EVAL_ITEMS: EvalItem[] = [
   // Mapping versions and drift (phase 3).
   { id: 'GQ-MAP-012', set: 'golden', persona: 'admin', q: 'Show the mapping versions', agent: 'Core Mapping', contains: ['version 1'], approval: 'none' },
   { id: 'GQ-MAP-013', set: 'golden', persona: 'admin', q: 'What changed in the core?', agent: 'Core Mapping', approval: 'none' },
+  // A core Kinective hasn't mapped (phase 4).
+  { id: 'GQ-MAP-014', set: 'golden', persona: 'admin', q: 'Map the Core B stand-in connection', agent: 'Core Mapping', approval: 'none' },
+  { id: 'GQ-MAP-015', set: 'golden', persona: 'admin', q: 'Freeze the proposed mapping', agent: 'Core Mapping' },
   { id: 'GQ-MAP-002', set: 'golden', persona: 'admin', q: 'What core fields aren’t mapped yet?', agent: 'Core Mapping', approval: 'none' },
   { id: 'PM-MAP-001', set: 'permission', persona: 'branch', q: 'Show the Symitar mapping', refused: true, notContains: ['standard columns'], approval: 'none', ref: 'Core mappings are part of the Integrations administrator’s access' },
   // After SVB: 30 days of withdrawals without selling at a loss, and the LCR and NSFR.

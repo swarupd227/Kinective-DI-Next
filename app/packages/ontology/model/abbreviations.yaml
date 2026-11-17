@@ -8,19 +8,26 @@ abbreviations:
   amt: amount
   appl: application
   bal: balance
+  cd: code
   bdate: birth date
   br: branch
+  brch: branch
   brn: branch
   chgoff: charge off
   chrgoff: charge off
+  cur: current
   co: charge off
   cust: customer
   dda: checking
+  dlnq: delinquent
+  dlq: delinquent
+  dlr: dealer
   div: dividend
   dob: birth date
   dt: date
   fname: first name
   hh: household
+  hhld: household
   int: interest
   intrate: interest rate
   lname: last name
@@ -29,12 +36,15 @@ abbreviations:
   mat: maturity
   mbr: member
   nbr: number
+  nm: name
   no: number
   num: number
   ofcr: officer
   officer: officer
   orig: original
+  pers: person
   pmt: payment
+  prod: product
   pymt: payment
   sav: savings
   serial: id
@@ -43,6 +53,26 @@ abbreviations:
   stat: status
   sts: status
   typ: type
+
+# How cores abbreviate the values of code lists (a product code CD is a certificate, though a column
+# named PROD_CD is a product code). Used to propose what each code means; codes not here are left for
+# a person.
+code_words:
+  auto: auto
+  bus: business
+  cd: certificate
+  chk: checking
+  dda: checking
+  heloc: home equity line
+  ira: ira
+  mma: money market
+  mm: money market
+  mort: mortgage
+  mtg: mortgage
+  sav: savings
+  shr: share savings
+  smb: small business
+  ya: young adult
 
 # Words the splitter knows besides every word in the ontology's names and synonyms.
 words: [account, active, amount, balance, birth, branch, change, charge, close, closed, code, control, date, dealer, dividend, due, first, household, id, institution, interest, last, level, loan, maturity, member, name, next, non, number, off, officer, open, ordinal, original, parent, payment, post, process, rate, release, savings, sequence, serial, share, tracking, transaction, type, user, char]

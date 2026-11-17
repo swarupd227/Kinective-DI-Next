@@ -99,7 +99,7 @@ properties:
     id: { label: Share or deposit ID, type: identifier, privacy: none, realized_by: [cdm_deposit_account.account_id, cdm_deposit_terms.account_id] }
     owner: { label: Owner, type: reference, refers_to: member, privacy: none, realized_by: [cdm_deposit_account.party_id] }
     branch: { label: Branch, type: reference, refers_to: branch, privacy: none, realized_by: [cdm_deposit_account.branch_id, hist_deposit_month.branch_id] }
-    category: { label: Share or deposit type, type: code, value_set: deposit_category, privacy: none, synonyms: { credit_union: [share type, deposit type], bank: [deposit type, account type] }, realized_by: [cdm_deposit_account.deposit_category, hist_deposit_month.deposit_category] }
+    category: { label: Share or deposit type, type: code, value_set: deposit_category, privacy: none, synonyms: { credit_union: [share type, deposit type, product type, product code], bank: [deposit type, account type, product type, product code] }, realized_by: [cdm_deposit_account.deposit_category, hist_deposit_month.deposit_category] }
     open_date: { label: Date opened, type: date, privacy: none, constraints: { not_after_as_of: true }, realized_by: [cdm_deposit_account.open_date] }
     close_date: { label: Date closed, type: date, privacy: none, definition: Empty while open., realized_by: [cdm_deposit_account.close_date] }
     maturity_date: { label: Maturity date, type: date, privacy: none, definition: When a certificate matures; empty for shares with no term., realized_by: [cdm_deposit_account.maturity_date] }
@@ -118,7 +118,7 @@ properties:
     borrower: { label: Borrower, type: reference, refers_to: member, privacy: none, realized_by: [cdm_loan.party_id] }
     branch: { label: Branch, type: reference, refers_to: branch, privacy: none, realized_by: [cdm_loan.branch_id, cdm_loan_chargeoff.branch_id, hist_loan_month.branch_id, hist_loan_dq_month.branch_id, hist_lap_month.branch_id] }
     officer: { label: Loan officer, type: reference, refers_to: employee, privacy: none, realized_by: [cdm_loan.officer_id] }
-    category: { label: Loan type, type: code, value_set: loan_category, privacy: none, synonyms: { credit_union: [loan type, loan category], bank: [loan type, loan category, call report category] }, realized_by: [cdm_loan.loan_category, cdm_loan_chargeoff.loan_category, hist_loan_month.loan_category, hist_loan_dq_month.loan_category, hist_lap_month.loan_category] }
+    category: { label: Loan type, type: code, value_set: loan_category, privacy: none, synonyms: { credit_union: [loan type, loan category, product type, product code], bank: [loan type, loan category, call report category, product type, product code] }, realized_by: [cdm_loan.loan_category, cdm_loan_chargeoff.loan_category, hist_loan_month.loan_category, hist_loan_dq_month.loan_category, hist_lap_month.loan_category] }
     is_indirect: { label: Indirect, type: flag, privacy: none, definition: Yes when a dealer arranged the loan., derive: [{ transform: nonzero, from: code, words: [dealer] }], synonyms: { credit_union: [indirect, dealer loan], bank: [indirect, dealer paper] }, realized_by: [cdm_loan.is_indirect, cdm_loan_chargeoff.is_indirect, hist_loan_month.is_indirect, hist_loan_dq_month.is_indirect] }
     open_date: { label: Date opened, type: date, privacy: none, constraints: { not_after_as_of: true }, realized_by: [cdm_loan.open_date] }
     vintage_year: { label: Year opened, type: number, privacy: none, realized_by: [hist_loan_dq_month.vintage_year] }
