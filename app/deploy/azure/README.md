@@ -186,8 +186,6 @@ This block needs nothing from earlier steps: it reads every name from Azure, and
 az account set --subscription "Microsoft Azure Sponsorship"
 (
   set -e
-  # On Windows the CLI otherwise crashes printing the build log's "✓" (the build itself goes on).
-  export PYTHONIOENCODING=utf-8
   RG=rg-dinext-demo; APP=dinext-app; JOB=dinext-seed
   REPO=https://github.com/swarupd227/Kinective-DI-Next.git
   ACR=$(az acr list --resource-group $RG --query "[0].name" -o tsv)
@@ -213,7 +211,15 @@ EOF
   cd ~/Kinective-DI-Next
   TAG=$(git rev-parse --short HEAD)
   [ -n "$TAG" ] || { echo "The clone failed; stopping."; exit 1; }
-  az acr build --registry $ACR --image dinext:$TAG --image dinext:latest --file app/Dockerfile app
+  # The build log isn't streamed: on Windows the CLI crashes printing its "✓" marks. It waits for
+  # the build, then shows the end of the log only if the build failed.
+  echo "Building dinext:$TAG in Azure (about 5 minutes)"
+  RUN=$(az acr build --registry $ACR --image dinext:$TAG --image dinext:latest --file app/Dockerfile --no-logs --query runId -o tsv app)
+  STATUS=$(az acr task show-run --registry $ACR --run-id $RUN --query status -o tsv)
+  if [ "$STATUS" != "Succeeded" ]; then
+    echo "Build $RUN ended $STATUS:"; az acr task logs --registry $ACR --run-id $RUN 2>&1 | tail -40 || true
+    exit 1
+  fi
   ACR_SERVER=$(az acr show --name $ACR --query loginServer -o tsv)
   az containerapp update --name $APP --resource-group $RG --image $ACR_SERVER/dinext:$TAG --output none
   az containerapp job update --name $JOB --resource-group $RG --image $ACR_SERVER/dinext:$TAG --output none
