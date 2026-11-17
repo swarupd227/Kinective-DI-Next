@@ -1,0 +1,162 @@
+# Value sets: code lists with meaning. Each code has a label and the values DI's tables hold for it
+# (values; a credit union and a bank may use different words for one code). A core's own codes map to
+# these through its vendor pack's crosswalk. open: true marks a set whose values come from the
+# institution (regions, products) and aren't fixed here.
+
+value_sets:
+  deposit_category:
+    label: Share or deposit type
+    codes:
+      savings: { label: Savings, labels_by_type: { credit_union: Share savings }, values: [Share Savings, Savings] }
+      checking: { label: Checking, labels_by_type: { credit_union: Share draft }, values: [Checking] }
+      money_market: { label: Money market, values: [Money Market] }
+      certificate: { label: Certificate, labels_by_type: { credit_union: Share certificate, bank: Certificate of deposit }, values: [Certificates, Certificates of Deposit] }
+      ira: { label: IRA, values: [IRA] }
+  loan_category:
+    label: Loan type
+    codes:
+      auto: { label: Auto, values: [Auto] }
+      consumer: { label: Personal or consumer, values: [Personal, Consumer] }
+      mortgage: { label: First mortgage, values: [Mortgage] }
+      heloc: { label: Home equity line, values: [HELOC] }
+      credit_card: { label: Credit card, values: [Credit Card] }
+      business: { label: Business, values: [Business] }
+      commercial_industrial: { label: Commercial and industrial, values: [Commercial & Industrial] }
+      commercial_real_estate: { label: Commercial real estate, values: [Commercial Real Estate] }
+  member_segment:
+    label: Segment
+    codes:
+      retail: { label: Retail or consumer, values: [Retail, Consumer] }
+      young_adult: { label: Young adult, values: [Young Adult] }
+      senior: { label: Senior, values: [Senior] }
+      small_business: { label: Small business, values: [Small Business] }
+      commercial: { label: Commercial, values: [Commercial] }
+  account_ownership:
+    label: Ownership type
+    codes:
+      individual: { label: Individual, values: [Individual] }
+      joint: { label: Joint, values: [Joint] }
+      trust: { label: Trust, values: [Trust] }
+      business: { label: Business, values: [Business] }
+  relationship_code:
+    label: Relationship code
+    codes:
+      individual: { label: Individual, values: [IND] }
+      joint: { label: Joint, values: [JNT] }
+      representative_payee: { label: Representative payee, values: [REP] }
+      trust: { label: Trust, values: [TRS] }
+      business: { label: Business, values: [BUS] }
+  role_on_account:
+    label: Role on an account
+    codes:
+      primary: { label: Primary owner, values: [Primary] }
+      joint: { label: Joint owner, values: [Joint] }
+      beneficiary: { label: Beneficiary, values: [Beneficiary] }
+      trustee: { label: Trustee, values: [Trustee] }
+      representative_payee: { label: Representative payee, values: [Rep payee, Representative payee] }
+      authorized_signer: { label: Authorized signer, values: [Authorized signer, Signer] }
+      co_borrower: { label: Co-borrower, values: [Co-borrower] }
+  holding_kind:
+    label: Holding kind
+    codes:
+      deposit: { label: Share or deposit, values: [deposit] }
+      loan: { label: Loan, values: [loan] }
+  card_kind:
+    label: Card kind
+    codes:
+      debit: { label: Debit, values: [Debit] }
+      credit: { label: Credit, values: [Credit] }
+  card_status:
+    label: Card status
+    codes:
+      active: { label: Active, values: [Active] }
+      closed: { label: Closed, values: [Closed] }
+      issued: { label: 'Issued, not activated', values: ['Issued, not activated'] }
+      reissued: { label: Reissued after a loss, values: [Reissued (reported lost)] }
+  rate_type:
+    label: Rate type
+    codes:
+      fixed: { label: Fixed, values: [Fixed] }
+      variable: { label: Variable, values: [Variable] }
+      either: { label: Fixed or variable, values: [Either] }
+  loan_structure:
+    label: Loan structure
+    codes:
+      amortizing: { label: Amortizing, values: [Amortizing] }
+      line: { label: Line of credit, values: [Line] }
+  delinquency_bucket:
+    label: Delinquency bucket
+    codes:
+      current: { label: Current, values: [Current] }
+      d30: { label: 30 to 59 days, values: ['30–59 days'] }
+      d60: { label: 60 to 89 days, values: ['60–89 days'] }
+      d90: { label: 90 to 179 days, values: ['90–179 days'] }
+      d180: { label: 180 to 359 days, values: ['180–359 days'] }
+      d360: { label: 360 days or more, values: ['360+ days'] }
+      charged_off: { label: Charged off, values: [Charged off] }
+  age_band:
+    label: Age band
+    codes:
+      a18: { label: 18 to 24, values: ['18–24'] }
+      a25: { label: 25 to 34, values: ['25–34'] }
+      a35: { label: 35 to 49, values: ['35–49'] }
+      a50: { label: 50 to 64, values: ['50–64'] }
+      a65: { label: 65 and over, values: ['65+'] }
+  tin_type:
+    label: Tax ID type
+    codes:
+      ssn: { label: Social Security number, values: [SSN] }
+      itin: { label: Individual taxpayer ID, values: [ITIN] }
+      ein: { label: Employer ID, values: [EIN] }
+  employee_role:
+    label: Employee role
+    codes:
+      msr: { label: Member service representative, labels_by_type: { bank: Personal banker }, values: [MSR] }
+      loan_officer: { label: Loan officer, values: [Loan officer] }
+      branch_manager: { label: Branch manager, values: [Branch manager] }
+  contact_channel:
+    label: Contact channel
+    open: true
+    codes:
+      email: { label: Email, values: [Email] }
+      phone: { label: Phone, values: [Phone] }
+      text: { label: Text message, values: [Text, SMS] }
+      mail: { label: Mail, values: [Mail] }
+  risk_rating:
+    label: Risk rating
+    open: true
+    codes:
+      pass: { label: Pass, values: ['1', '2', '3', '4', '5'] }
+      special_mention: { label: Special mention, values: ['6'] }
+      substandard: { label: Substandard, values: ['7'] }
+      doubtful: { label: Doubtful, values: ['8'] }
+      loss: { label: Loss, values: ['9'] }
+  loan_source:
+    label: Loan source
+    open: true
+    codes:
+      core: { label: The core, values: [core] }
+      off_core: { label: An off-core system, values: [off_core, offcore] }
+  cross_sell_group:
+    label: Cross-sell group
+    codes:
+      auto: { label: Auto, values: [AUTO] }
+      business: { label: Business, values: [BUSINESS] }
+      card: { label: Card, values: [CARD] }
+      checking: { label: Checking, values: [CHECKING] }
+      home: { label: Home, values: [HOME] }
+      personal: { label: Personal, values: [PERSONAL] }
+      savings: { label: Savings, values: [SAVINGS] }
+      term: { label: Term, values: [TERM] }
+  region:
+    label: Region
+    open: true
+    codes: {}
+  language:
+    label: Language
+    open: true
+    codes: {}
+  us_state:
+    label: US state
+    open: true
+    codes: {}

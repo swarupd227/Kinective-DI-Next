@@ -30,6 +30,10 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-BI-002', set: 'golden', persona: 'executive', q: 'Show loan growth by branch for Q3 vs Q2', agent: 'Analytics Q&A', contains: ['Westport'], approval: 'none' },
   { id: 'GQ-BI-003', set: 'golden', persona: 'executive', q: 'What is our delinquency ratio?', agent: 'Analytics Q&A', contains: ['%'], approval: 'none' },
   { id: 'GQ-LIN-001', set: 'golden', persona: 'executive', q: 'Where does 60+ delinquency come from?', agent: 'Data Lineage', contains: ['days_delinquent'], approval: 'none' },
+  // The data dictionary: DI's ontology, in each institution's words.
+  { id: 'GQ-ONT-001', set: 'golden', persona: 'executive', q: 'What does DI mean by a share draft?', agent: 'Data Lineage', contains: ['Share draft', 'kind of share'], approval: 'none' },
+  { id: 'GQ-ONT-002', set: 'golden', persona: 'bank_cfo', q: 'Which column holds the loan balance?', agent: 'Data Lineage', contains: ['cdm_loan.balance', 'LOAN.BALANCE'], approval: 'none' },
+  { id: 'GQ-ONT-003', set: 'golden', persona: 'executive', q: 'How much does the data dictionary cover?', agent: 'Data Lineage', contains: ['concepts', 'Symitar'], approval: 'none' },
   { id: 'GQ-GOV-001', set: 'golden', persona: 'executive', q: 'Show AI cost by agent for October', agent: 'AI Governance', contains: ['October 2026'], approval: 'none' },
   { id: 'GQ-CMP-001', set: 'golden', persona: 'executive', q: 'Which regulatory issues are open more than 3 weeks?', agent: 'Compliance & Problem Management', approval: 'none' },
   { id: 'GQ-CR-001', set: 'golden', persona: 'executive', q: 'Are we ready to file Q3?', agent: 'Call Report', contains: ['uncategorized GL accounts'], approval: 'none' },

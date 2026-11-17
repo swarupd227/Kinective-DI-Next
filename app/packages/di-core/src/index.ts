@@ -45,6 +45,7 @@ export { addOnName, LoanServicesService, type AddOn, type AddOnRow } from './loa
 export { MemberProfitService, type MemberProfitRow } from './memberProfit.ts';
 export { EngagementService } from './engagement.ts';
 export { GeographyService } from './geography.ts';
+export { OntologyService, type ConceptView } from './ontologyService.ts';
 export { LIQUIDITY_POLICY, LiquidityService, pctAgainst } from './liquidity.ts';
 export { FundingRiskService, type RunScenario } from './fundingRisk.ts';
 export { NiiService, NII_GROWTH_WATCH } from './nii.ts';

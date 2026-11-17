@@ -1,0 +1,129 @@
+# Jack Henry Symitar: Kinective's standard mapping, as data (phase 1 of the Core Mapping design). DI's
+# pulls build their SQL from this file; nothing here comes from a person or a model at run time.
+#
+# vocabulary: the core's tables and columns DI reads, with what each holds and how it is encoded.
+# tables: per DI table, the core tables joined (from, written by Kinective) and, per DI column, the
+# core column (their, as alias.COLUMN), the transform, and the ontology property it denotes.
+# codes: the institution's type codes, as Kinective records them at onboarding, by code set; each
+# Symitar code crosswalks to a value-set code.
+id: symitar
+label: Jack Henry Symitar
+short: Symitar
+process_date: SELECT PROCESSDATE AS d FROM CONTROL
+
+encodings:
+  yyyymmdd: Dates are YYYYMMDD text; '00000000' means none.
+  thousandths: Rates are thousandths of a percent (5250 is 5.25%).
+
+vocabulary:
+  ACCOUNT:
+    description: The membership record, one per account number.
+    columns:
+      ACCOUNTNUMBER: { description: 'Account number, the membership''s key.' }
+      BRANCH: { description: Branch that owns the membership. }
+      OPENDATE: { description: Date the membership opened., encoding: yyyymmdd }
+      CLOSEDATE: { description: Date the membership closed; none while open., encoding: yyyymmdd }
+      TYPE: { description: 'Account type code, set by the credit union.', code_set: memberType }
+      HOUSEHOLDACCOUNT: { description: Account number of the household head. }
+      NONMEMBER: { description: 1 for a non-member account. }
+  NAME:
+    description: Names on an account; TYPE 0 is the primary name.
+    columns:
+      PARENTACCOUNT: { description: Account number the name belongs to. }
+      TYPE: { description: 'Name type; 0 is primary, others joint, beneficiary and so on.' }
+      FIRST: { description: First name. }
+      LAST: { description: Last name. }
+      BIRTHDATE: { description: Birth date., encoding: yyyymmdd }
+  SAVINGS:
+    description: Shares, one row per share under an account (the share's ID is its suffix).
+    columns:
+      SERIAL: { description: Unique key of the share. }
+      PARENTACCOUNT: { description: Account number the share sits under. }
+      BRANCH: { description: Branch of the share. }
+      TYPE: { description: 'Share type code, set by the credit union.', code_set: shareType }
+      OPENDATE: { description: Date opened., encoding: yyyymmdd }
+      CLOSEDATE: { description: Date closed; none while open., encoding: yyyymmdd }
+      MATURITYDATE: { description: Certificate maturity date., encoding: yyyymmdd }
+      BALANCE: { description: Current balance. }
+      DIVRATE: { description: Dividend rate., encoding: thousandths }
+  LOAN:
+    description: Loans, one row per loan under an account (the loan's ID is its suffix).
+    columns:
+      SERIAL: { description: Unique key of the loan. }
+      PARENTACCOUNT: { description: Account number the loan sits under. }
+      BRANCH: { description: Branch of the loan. }
+      LOANOFFICER: { description: Loan officer's number. }
+      TYPE: { description: 'Loan type code, set by the credit union.', code_set: loanType }
+      DEALERNUMBER: { description: Dealer that arranged the loan; 0 for direct loans. }
+      OPENDATE: { description: Date opened., encoding: yyyymmdd }
+      CLOSEDATE: { description: Date closed; none while open., encoding: yyyymmdd }
+      CHARGEOFFDATE: { description: Date charged off., encoding: yyyymmdd }
+      ORIGINALBALANCE: { description: Amount lent. }
+      BALANCE: { description: Current balance. }
+      INTERESTRATE: { description: Interest rate., encoding: thousandths }
+      DUEDATE: { description: Next payment due date., encoding: yyyymmdd }
+  CONTROL:
+    description: The core's control record.
+    columns:
+      PROCESSDATE: { description: The core's current processing date. }
+  ACCOUNTTRACKING:
+    description: Tracking records, the credit union's own fields on an account, by tracking TYPE. Not in the standard mapping; mapped field by field as custom mappings.
+    columns:
+      PARENTACCOUNT: { description: Account number the record belongs to. }
+      TYPE: { description: 'Tracking type, defined by the credit union.' }
+
+codes:
+  memberType: { code_set_of: member_segment, crosswalk: { Retail: retail, Young Adult: young_adult, Senior: senior, Small Business: small_business } }
+  shareType: { code_set_of: deposit_category, crosswalk: { Share Savings: savings, Checking: checking, Money Market: money_market, Certificates: certificate, IRA: ira } }
+  loanType: { code_set_of: loan_category, crosswalk: { Auto: auto, Personal: consumer, Mortgage: mortgage, HELOC: heloc, Credit Card: credit_card, Business: business } }
+
+tables:
+  - di_table: cdm_party
+    label: Members
+    their_tables: [ACCOUNT, NAME]
+    from: ACCOUNT a JOIN NAME n ON n.PARENTACCOUNT = a.ACCOUNTNUMBER AND n.TYPE = 0
+    key: party_id
+    columns:
+      - { di: party_id, their: a.ACCOUNTNUMBER, how: number, denotes: member.id }
+      - { di: first_name, their: n.FIRST, denotes: member.first_name }
+      - { di: last_name, their: n.LAST, denotes: member.last_name }
+      - { di: birth_date, their: n.BIRTHDATE, how: date8, denotes: member.birth_date }
+      - { di: join_date, their: a.OPENDATE, how: date8, denotes: member.join_date }
+      - { di: primary_branch_id, their: a.BRANCH, how: number, denotes: member.home_branch }
+      - { di: segment_code, their: a.TYPE, how: code, codes: memberType, denotes: member.segment }
+      - { di: household_id, their: a.HOUSEHOLDACCOUNT, how: number, denotes: member.household }
+      - { di: is_member, their: a.NONMEMBER, how: not, denotes: member.is_member }
+  - di_table: cdm_deposit_account
+    label: Deposit accounts
+    their_tables: [SAVINGS]
+    from: SAVINGS s
+    key: account_id
+    columns:
+      - { di: account_id, their: s.SERIAL, how: number, denotes: deposit.id }
+      - { di: party_id, their: s.PARENTACCOUNT, how: number, denotes: deposit.owner }
+      - { di: branch_id, their: s.BRANCH, how: number, denotes: deposit.branch }
+      - { di: deposit_category, their: s.TYPE, how: code, codes: shareType, denotes: deposit.category }
+      - { di: open_date, their: s.OPENDATE, how: date8, denotes: deposit.open_date }
+      - { di: close_date, their: s.CLOSEDATE, how: date8, denotes: deposit.close_date }
+      - { di: maturity_date, their: s.MATURITYDATE, how: date8, denotes: deposit.maturity_date }
+      - { di: balance, their: s.BALANCE, how: number, denotes: deposit.balance }
+      - { di: rate, their: s.DIVRATE, how: rate1000, denotes: deposit.rate }
+  - di_table: cdm_loan
+    label: Loan accounts
+    their_tables: [LOAN]
+    from: LOAN l
+    key: loan_id
+    columns:
+      - { di: loan_id, their: l.SERIAL, how: number, denotes: loan.id }
+      - { di: party_id, their: l.PARENTACCOUNT, how: number, denotes: loan.borrower }
+      - { di: branch_id, their: l.BRANCH, how: number, denotes: loan.branch }
+      - { di: officer_id, their: l.LOANOFFICER, how: number, denotes: loan.officer }
+      - { di: loan_category, their: l.TYPE, how: code, codes: loanType, denotes: loan.category }
+      - { di: is_indirect, their: l.DEALERNUMBER, how: nonzero, denotes: loan.is_indirect }
+      - { di: open_date, their: l.OPENDATE, how: date8, denotes: loan.open_date }
+      - { di: close_date, their: l.CLOSEDATE, how: date8, denotes: loan.close_date }
+      - { di: charge_off_date, their: l.CHARGEOFFDATE, how: date8, denotes: loan.charge_off_date }
+      - { di: original_amount, their: l.ORIGINALBALANCE, how: number, denotes: loan.original_amount }
+      - { di: balance, their: l.BALANCE, how: number, denotes: loan.balance }
+      - { di: rate, their: l.INTERESTRATE, how: rate1000, denotes: loan.rate }
+      - { di: days_delinquent, their: l.DUEDATE, how: daysPast, denotes: loan.days_delinquent }

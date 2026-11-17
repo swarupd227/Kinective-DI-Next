@@ -1,0 +1,244 @@
+# Properties: what each class carries, the kind of value (its semantic type), who may see it (privacy),
+# the checks a value must pass, and the DI columns that hold it (realized_by, as table.column).
+#
+# Semantic types: identifier, reference (names another class: refers_to), text, code (value_set),
+# money, rate (percent a year), percent, ratio, count, date, flag, score, number.
+# Privacy: direct (identifies a person by itself), quasi (identifies in combination), financial, none.
+# A column appears under exactly one property; the build fails on a hub column that has none.
+
+properties:
+  member:
+    id: { label: Member ID, type: identifier, privacy: none, definition: DI's key for a party., realized_by: [cdm_party.party_id, cdm_party_detail.party_id, cdm_party_address.party_id, cdm_party_contact.party_id] }
+    member_number: { label: Member number, labels_by_type: { bank: Customer number }, type: identifier, privacy: quasi, definition: The number the institution and the party know the relationship by., synonyms: { credit_union: [member number, membership number], bank: [customer number, CIF number] }, realized_by: [cdm_party_detail.member_number] }
+    first_name: { label: First name, type: text, privacy: direct, realized_by: [cdm_party.first_name] }
+    middle_name: { label: Middle name, type: text, privacy: direct, realized_by: [cdm_party_detail.middle_name] }
+    last_name: { label: Last name, type: text, privacy: direct, realized_by: [cdm_party.last_name] }
+    preferred_name: { label: Preferred name, type: text, privacy: direct, realized_by: [cdm_party_detail.preferred_name] }
+    name_prefix: { label: Name prefix, type: text, privacy: none, realized_by: [cdm_party_detail.name_prefix] }
+    name_suffix: { label: Name suffix, type: text, privacy: none, realized_by: [cdm_party_detail.name_suffix] }
+    birth_date: { label: Birth date, type: date, privacy: direct, constraints: { not_after_as_of: true }, realized_by: [cdm_party.birth_date] }
+    age_band: { label: Age band, type: code, value_set: age_band, privacy: quasi, realized_by: [hist_member_month.age_band] }
+    join_date: { label: Date joined, labels_by_type: { bank: Customer since }, type: date, privacy: none, constraints: { not_after_as_of: true }, synonyms: { credit_union: [joined, member since, join date], bank: [customer since, relationship start] }, realized_by: [cdm_party.join_date] }
+    home_branch: { label: Home branch, type: reference, refers_to: branch, privacy: none, realized_by: [cdm_party.primary_branch_id, hist_party_month.branch_id, hist_member_month.branch_id] }
+    segment: { label: Segment, type: code, value_set: member_segment, privacy: none, realized_by: [cdm_party.segment_code] }
+    household: { label: Household, type: reference, refers_to: household, privacy: none, realized_by: [cdm_party.household_id] }
+    is_member: { label: Is a member, labels_by_type: { bank: Is a customer }, type: flag, privacy: none, definition: 'Yes when the party holds a membership or account; no for a non-member, such as a joint owner only.', realized_by: [cdm_party.is_member] }
+    tin_type: { label: Tax ID type, type: code, value_set: tin_type, privacy: none, realized_by: [cdm_party_detail.tin_type] }
+    ssn_last4: { label: Last four of SSN, type: identifier, privacy: direct, realized_by: [cdm_party_detail.ssn_last4] }
+    language: { label: Preferred language, type: code, value_set: language, privacy: none, realized_by: [cdm_party_detail.language] }
+    deceased_date: { label: Date of death, type: date, privacy: quasi, realized_by: [cdm_party_detail.deceased_date] }
+    marketing_opt_out: { label: Opted out of marketing, type: flag, privacy: none, synonyms: { credit_union: [opt out, do not market, no marketing], bank: [opt out, do not market] }, realized_by: [cdm_party_detail.marketing_opt_out] }
+    home_phone: { label: Home phone, type: text, privacy: direct, realized_by: [cdm_party_detail.home_phone] }
+    work_phone: { label: Work phone, type: text, privacy: direct, realized_by: [cdm_party_detail.work_phone] }
+    work_phone_ext: { label: Work phone extension, type: text, privacy: quasi, realized_by: [cdm_party_detail.work_phone_ext] }
+    alt_email: { label: Second email, type: text, privacy: direct, realized_by: [cdm_party_detail.alt_email] }
+    email: { label: Email, type: text, privacy: direct, realized_by: [cdm_party_contact.email] }
+    phone: { label: Phone, type: text, privacy: direct, realized_by: [cdm_party_contact.phone] }
+    preferred_channel: { label: Preferred channel, type: code, value_set: contact_channel, privacy: none, realized_by: [cdm_party_contact.preferred_channel] }
+    street: { label: Street address, type: text, privacy: direct, realized_by: [cdm_party_address.street, cdm_party_address.street2] }
+    city: { label: City, type: text, privacy: quasi, realized_by: [cdm_party_address.city] }
+    state: { label: State, type: code, value_set: us_state, privacy: none, realized_by: [cdm_party_address.state] }
+    zip: { label: ZIP code, type: text, privacy: quasi, realized_by: [cdm_party_address.zip] }
+    count: { label: Number of members, labels_by_type: { bank: Number of customers }, type: count, aggregate: true, privacy: none, realized_by: [hist_party_month.member_count, hist_member_month.member_count] }
+    new_count: { label: New members, labels_by_type: { bank: New customers }, type: count, aggregate: true, privacy: none, realized_by: [hist_party_month.new_member_count] }
+    closed_count: { label: Members who left, labels_by_type: { bank: Customers who left }, type: count, aggregate: true, privacy: none, realized_by: [hist_party_month.closed_member_count] }
+    with_checking: { label: Members with checking, type: count, aggregate: true, privacy: none, realized_by: [hist_member_month.with_checking] }
+    with_direct_deposit: { label: Members with direct deposit, type: count, aggregate: true, privacy: none, realized_by: [hist_member_month.with_direct_deposit] }
+    with_loan: { label: Members with a loan, type: count, aggregate: true, privacy: none, realized_by: [hist_member_month.with_loan] }
+    digital_active: { label: Members active in digital banking, type: count, aggregate: true, privacy: none, realized_by: [hist_member_month.digital_active] }
+    product_count: { label: Products held, type: count, aggregate: true, privacy: none, realized_by: [hist_member_month.product_count] }
+
+  household:
+    id: { label: Household ID, type: identifier, privacy: none, realized_by: [cdm_household.household_id] }
+    name: { label: Household name, type: text, privacy: direct, realized_by: [cdm_household.name] }
+    head: { label: Head of household, type: reference, refers_to: member, privacy: none, realized_by: [cdm_household.head_party_id] }
+    member_count: { label: People in the household, type: count, privacy: none, realized_by: [cdm_household.members] }
+    street: { label: Household street, type: text, privacy: direct, realized_by: [cdm_household.street] }
+    city: { label: Household city, type: text, privacy: quasi, realized_by: [cdm_household.city] }
+    state: { label: Household state, type: code, value_set: us_state, privacy: none, realized_by: [cdm_household.state] }
+    zip: { label: Household ZIP code, type: text, privacy: quasi, realized_by: [cdm_household.zip] }
+    formed_date: { label: Date formed, type: date, privacy: none, realized_by: [cdm_household.formed_date] }
+    open_deposits: { label: Open shares or deposits, type: count, aggregate: true, privacy: none, realized_by: [cdm_household.open_deposits] }
+    open_loans: { label: Open loans, type: count, aggregate: true, privacy: none, realized_by: [cdm_household.open_loans] }
+    deposit_balance: { label: Household deposits, type: money, aggregate: true, privacy: financial, realized_by: [cdm_household.deposit_balance] }
+    loan_balance: { label: Household loans, type: money, aggregate: true, privacy: financial, realized_by: [cdm_household.loan_balance] }
+    product_count: { label: Household products, type: count, aggregate: true, privacy: none, realized_by: [cdm_household.product_count] }
+
+  account:
+    number: { label: Account number, labels_by_type: { credit_union: Membership number }, type: identifier, privacy: quasi, definition: The membership or account number holdings sit under., realized_by: [cdm_account.account_number, cdm_account_holding.account_number] }
+    primary_owner: { label: Primary owner, type: reference, refers_to: member, privacy: none, realized_by: [cdm_account.primary_party_id] }
+    type: { label: Ownership type, type: code, value_set: account_ownership, privacy: none, realized_by: [cdm_account.account_type] }
+    branch: { label: Branch, type: reference, refers_to: branch, privacy: none, realized_by: [cdm_account.branch_id] }
+    opened_by: { label: Opened by, type: reference, refers_to: employee, privacy: none, realized_by: [cdm_account.opened_by_employee_id] }
+    open_date: { label: Date opened, type: date, privacy: none, constraints: { not_after_as_of: true }, realized_by: [cdm_account.open_date] }
+    close_date: { label: Date closed, type: date, privacy: none, definition: Empty while the account is open., realized_by: [cdm_account.close_date] }
+    estatements: { label: E-statements, type: flag, privacy: none, realized_by: [cdm_account.estatements] }
+    estatements_eligible: { label: Eligible for e-statements, type: flag, privacy: none, realized_by: [cdm_account.estatements_eligible] }
+    e_notice: { label: Electronic notices, type: flag, privacy: none, realized_by: [cdm_account.e_notice] }
+    is_rep_payee: { label: Representative payee account, type: flag, privacy: none, realized_by: [cdm_account.is_rep_payee] }
+    open_deposits: { label: Open shares or deposits, type: count, aggregate: true, privacy: none, realized_by: [cdm_account.open_deposits] }
+    open_loans: { label: Open loans, type: count, aggregate: true, privacy: none, realized_by: [cdm_account.open_loans] }
+    deposit_balance: { label: Deposits on the account, type: money, aggregate: true, privacy: financial, realized_by: [cdm_account.deposit_balance] }
+    loan_balance: { label: Loans on the account, type: money, aggregate: true, privacy: financial, realized_by: [cdm_account.loan_balance] }
+    title: { label: Account title, type: text, privacy: direct, realized_by: [cdm_account.title] }
+    relationship_code: { label: Relationship code, type: code, value_set: relationship_code, privacy: none, realized_by: [cdm_account.relationship_code] }
+
+  holding:
+    kind: { label: Holding kind, type: code, value_set: holding_kind, privacy: none, realized_by: [cdm_account_holding.account_kind, cdm_account_owner.account_kind, cdm_account_product.account_kind, cdm_product_detail.account_kind] }
+    id: { label: Holding ID, type: identifier, privacy: none, definition: "The share, deposit or loan's key, by holding kind.", realized_by: [cdm_account_holding.account_id, cdm_account_owner.account_id, cdm_account_product.account_id] }
+    suffix: { label: Suffix, type: identifier, privacy: none, definition: The share or loan ID within the account (Symitar's suffix)., realized_by: [cdm_account_holding.suffix] }
+    holding_number: { label: Holding number, type: identifier, privacy: none, realized_by: [cdm_account_holding.holding_number] }
+    servicing_branch: { label: Servicing branch, type: reference, refers_to: branch, privacy: none, realized_by: [cdm_account_holding.servicing_branch_id] }
+    product: { label: Product, type: reference, refers_to: product, privacy: none, realized_by: [cdm_account_product.product_id] }
+
+  account_role:
+    party: { label: Party, type: reference, refers_to: party, privacy: none, realized_by: [cdm_account_owner.party_id] }
+    role: { label: Role, type: code, value_set: role_on_account, privacy: none, realized_by: [cdm_account_owner.role] }
+
+  deposit:
+    id: { label: Share or deposit ID, type: identifier, privacy: none, realized_by: [cdm_deposit_account.account_id, cdm_deposit_terms.account_id] }
+    owner: { label: Owner, type: reference, refers_to: member, privacy: none, realized_by: [cdm_deposit_account.party_id] }
+    branch: { label: Branch, type: reference, refers_to: branch, privacy: none, realized_by: [cdm_deposit_account.branch_id, hist_deposit_month.branch_id] }
+    category: { label: Share or deposit type, type: code, value_set: deposit_category, privacy: none, synonyms: { credit_union: [share type, deposit type], bank: [deposit type, account type] }, realized_by: [cdm_deposit_account.deposit_category, hist_deposit_month.deposit_category] }
+    open_date: { label: Date opened, type: date, privacy: none, constraints: { not_after_as_of: true }, realized_by: [cdm_deposit_account.open_date] }
+    close_date: { label: Date closed, type: date, privacy: none, definition: Empty while open., realized_by: [cdm_deposit_account.close_date] }
+    maturity_date: { label: Maturity date, type: date, privacy: none, definition: When a certificate matures; empty for shares with no term., realized_by: [cdm_deposit_account.maturity_date] }
+    balance: { label: Balance, type: money, privacy: financial, constraints: { min: -100000 }, synonyms: { credit_union: [shares, share balance, savings balance], bank: [deposits, deposit balance] }, realized_by: [cdm_deposit_account.balance, hist_deposit_month.balance] }
+    rate: { label: Dividend or interest rate, labels_by_type: { credit_union: Dividend rate, bank: Interest rate }, type: rate, privacy: none, constraints: { min: 0, max: 20 }, synonyms: { credit_union: [dividend rate, APY], bank: [interest rate, APY] }, realized_by: [cdm_deposit_account.rate, hist_deposit_month.rate_weighted] }
+    count: { label: Number of shares or deposits, type: count, aggregate: true, privacy: none, realized_by: [hist_deposit_month.account_count] }
+
+  deposit_terms:
+    original_amount: { label: Opening amount, type: money, privacy: financial, realized_by: [cdm_deposit_terms.original_amount] }
+    term_months: { label: Term in months, type: count, privacy: none, constraints: { min: 0, max: 120 }, realized_by: [cdm_deposit_terms.term_months] }
+    auto_renew: { label: Renews automatically, type: flag, privacy: none, realized_by: [cdm_deposit_terms.auto_renew] }
+    auto_renew_amount: { label: Renewing amount, type: money, privacy: financial, realized_by: [cdm_deposit_terms.auto_renew_amount] }
+
+  loan:
+    id: { label: Loan ID, type: identifier, privacy: none, realized_by: [cdm_loan.loan_id, cdm_loan_terms.loan_id, cdm_loan_chargeoff.loan_id, cdm_loan_recovery.loan_id] }
+    borrower: { label: Borrower, type: reference, refers_to: member, privacy: none, realized_by: [cdm_loan.party_id] }
+    branch: { label: Branch, type: reference, refers_to: branch, privacy: none, realized_by: [cdm_loan.branch_id, cdm_loan_chargeoff.branch_id, hist_loan_month.branch_id, hist_loan_dq_month.branch_id, hist_lap_month.branch_id] }
+    officer: { label: Loan officer, type: reference, refers_to: employee, privacy: none, realized_by: [cdm_loan.officer_id] }
+    category: { label: Loan type, type: code, value_set: loan_category, privacy: none, synonyms: { credit_union: [loan type, loan category], bank: [loan type, loan category, call report category] }, realized_by: [cdm_loan.loan_category, cdm_loan_chargeoff.loan_category, hist_loan_month.loan_category, hist_loan_dq_month.loan_category, hist_lap_month.loan_category] }
+    is_indirect: { label: Indirect, type: flag, privacy: none, definition: Yes when a dealer arranged the loan., synonyms: { credit_union: [indirect, dealer loan], bank: [indirect, dealer paper] }, realized_by: [cdm_loan.is_indirect, cdm_loan_chargeoff.is_indirect, hist_loan_month.is_indirect, hist_loan_dq_month.is_indirect] }
+    open_date: { label: Date opened, type: date, privacy: none, constraints: { not_after_as_of: true }, realized_by: [cdm_loan.open_date] }
+    vintage_year: { label: Year opened, type: number, privacy: none, realized_by: [hist_loan_dq_month.vintage_year] }
+    close_date: { label: Date closed, type: date, privacy: none, definition: Empty while open., realized_by: [cdm_loan.close_date] }
+    charge_off_date: { label: Date charged off, type: date, privacy: none, realized_by: [cdm_loan.charge_off_date, cdm_loan_chargeoff.charge_off_date] }
+    original_amount: { label: Original amount, type: money, privacy: financial, constraints: { min: 0 }, realized_by: [cdm_loan.original_amount] }
+    balance: { label: Balance, type: money, privacy: financial, constraints: { min: 0 }, synonyms: { credit_union: [loans, loan balance, outstanding], bank: [loans, loan balance, outstanding, principal] }, realized_by: [cdm_loan.balance, hist_loan_month.balance, hist_loan_dq_month.balance] }
+    rate: { label: Interest rate, type: rate, privacy: none, constraints: { min: 0, max: 30 }, realized_by: [cdm_loan.rate] }
+    days_delinquent: { label: Days past due, type: count, privacy: financial, constraints: { min: 0 }, synonyms: { credit_union: [days delinquent, past due, late], bank: [days past due, past due, late] }, realized_by: [cdm_loan.days_delinquent] }
+    delinquency_bucket: { label: Delinquency bucket, type: code, value_set: delinquency_bucket, privacy: none, realized_by: [hist_loan_dq_month.bucket] }
+    credit_score: { label: Credit score at origination, type: score, privacy: financial, constraints: { min: 300, max: 850 }, realized_by: [cdm_loan.credit_score] }
+    ltv: { label: Loan to value, type: percent, privacy: none, constraints: { min: 0, max: 200 }, realized_by: [cdm_loan.ltv] }
+    term_months: { label: Term in months, type: count, privacy: none, constraints: { min: 0, max: 480 }, realized_by: [cdm_loan.term_months] }
+    risk_rating: { label: Risk rating, type: code, value_set: risk_rating, privacy: none, realized_by: [cdm_loan.risk_rating] }
+    source: { label: Loan source, type: code, value_set: loan_source, privacy: none, definition: 'Where the loan was booked from, such as the core or an off-core system.', realized_by: [cdm_loan.source] }
+    count: { label: Number of loans, type: count, aggregate: true, privacy: none, realized_by: [hist_loan_month.loan_count, hist_loan_dq_month.loan_count] }
+    delinquent_60_balance: { label: Balance 60 or more days past due, type: money, aggregate: true, privacy: financial, realized_by: [hist_loan_month.delinquent_60_balance] }
+    new_amount: { label: New loans made, type: money, aggregate: true, privacy: financial, realized_by: [hist_loan_month.new_loan_amount] }
+    new_count: { label: Number of new loans, type: count, aggregate: true, privacy: none, realized_by: [hist_loan_month.new_loan_count] }
+    new_rate: { label: Rate on new loans, type: rate, aggregate: true, privacy: none, realized_by: [hist_loan_month.new_rate_weighted] }
+
+  loan_terms:
+    structure: { label: Structure, type: code, value_set: loan_structure, privacy: none, realized_by: [cdm_loan_terms.structure] }
+    rate_type: { label: Rate type, type: code, value_set: rate_type, privacy: none, realized_by: [cdm_loan_terms.rate_type] }
+    apr: { label: APR, type: rate, privacy: none, constraints: { min: 0, max: 36 }, realized_by: [cdm_loan_terms.apr] }
+    payment_amount: { label: Payment, type: money, privacy: financial, constraints: { min: 0 }, realized_by: [cdm_loan_terms.payment_amount] }
+    payment_due_date: { label: Next payment due, type: date, privacy: none, realized_by: [cdm_loan_terms.payment_due_date] }
+    next_rate_change: { label: Next rate change, type: date, privacy: none, realized_by: [cdm_loan_terms.next_rate_change] }
+    credit_limit: { label: Credit limit, type: money, privacy: financial, constraints: { min: 0 }, realized_by: [cdm_loan_terms.credit_limit] }
+    dti: { label: Debt to income, type: percent, privacy: financial, constraints: { min: 0, max: 100 }, realized_by: [cdm_loan_terms.dti] }
+    pmi: { label: Mortgage insurance, type: flag, privacy: none, realized_by: [cdm_loan_terms.pmi] }
+    escrow_balance: { label: Escrow balance, type: money, privacy: financial, realized_by: [cdm_loan_terms.escrow_balance] }
+    maturity_date: { label: Maturity date, type: date, privacy: none, realized_by: [cdm_loan_terms.maturity_date] }
+    dealer: { label: Dealer, type: reference, refers_to: dealer, privacy: none, realized_by: [cdm_loan_terms.dealer_id] }
+
+  charge_off:
+    amount: { label: Amount charged off, type: money, privacy: financial, constraints: { min: 0 }, realized_by: [cdm_loan_chargeoff.amount] }
+
+  recovery:
+    id: { label: Recovery ID, type: identifier, privacy: none, realized_by: [cdm_loan_recovery.recovery_id] }
+    date: { label: Date recovered, type: date, privacy: none, realized_by: [cdm_loan_recovery.recovery_date] }
+    amount: { label: Amount recovered, type: money, privacy: financial, constraints: { min: 0 }, realized_by: [cdm_loan_recovery.amount] }
+
+  application:
+    count: { label: Loan applications, type: count, aggregate: true, privacy: none, realized_by: [hist_lap_month.application_count] }
+    decided_count: { label: Applications decided, type: count, aggregate: true, privacy: none, realized_by: [hist_lap_month.decided_count] }
+    approved_count: { label: Applications approved, type: count, aggregate: true, privacy: none, realized_by: [hist_lap_month.approved_count] }
+
+  card:
+    id: { label: Card ID, type: identifier, privacy: none, realized_by: [cdm_card.card_id, cdm_card_terms.card_id] }
+    holder: { label: Cardholder, type: reference, refers_to: member, privacy: none, realized_by: [cdm_card.party_id] }
+    kind: { label: Card kind, type: code, value_set: card_kind, privacy: none, realized_by: [cdm_card.kind] }
+    last4: { label: Last four digits, type: identifier, privacy: quasi, realized_by: [cdm_card.last4] }
+    status: { label: Card status, type: code, value_set: card_status, privacy: none, realized_by: [cdm_card.status] }
+    opened: { label: Date issued, type: date, privacy: none, realized_by: [cdm_card.opened] }
+    activated: { label: Date activated, type: date, privacy: none, realized_by: [cdm_card.activated] }
+    closed: { label: Date closed, type: date, privacy: none, realized_by: [cdm_card.closed] }
+    account: { label: Linked holding, type: reference, refers_to: holding, privacy: none, realized_by: [cdm_card.account_id] }
+    product: { label: Card product, type: reference, refers_to: card_product, privacy: none, realized_by: [cdm_card_terms.card_product_id] }
+    expires: { label: Expires, type: date, privacy: none, realized_by: [cdm_card_terms.expires] }
+    linked_accounts: { label: Linked holdings, type: count, privacy: none, realized_by: [cdm_card_terms.linked_accounts] }
+
+  card_product:
+    id: { label: Card product ID, type: identifier, privacy: none, realized_by: [cdm_card_product.card_product_id] }
+    name: { label: Name, type: text, privacy: none, realized_by: [cdm_card_product.name] }
+    kind: { label: Card kind, type: code, value_set: card_kind, privacy: none, realized_by: [cdm_card_product.kind] }
+    network: { label: Network, type: text, privacy: none, realized_by: [cdm_card_product.network] }
+    annual_fee: { label: Annual fee, type: money, privacy: none, realized_by: [cdm_card_product.annual_fee] }
+    rewards: { label: Rewards, type: text, privacy: none, realized_by: [cdm_card_product.rewards] }
+
+  product:
+    id: { label: Product ID, type: identifier, privacy: none, realized_by: [cdm_loan_product.product_id, cdm_deposit_product.product_id, cdm_product_detail.product_id] }
+    name: { label: Product name, type: text, privacy: none, realized_by: [cdm_loan_product.name, cdm_deposit_product.name] }
+    description: { label: Description, type: text, privacy: none, realized_by: [cdm_product_detail.description] }
+    active: { label: Offered now, type: flag, privacy: none, realized_by: [cdm_product_detail.active] }
+    rate_type: { label: Rate type, type: code, value_set: rate_type, privacy: none, realized_by: [cdm_product_detail.rate_type] }
+    term_months: { label: Term in months, type: count, privacy: none, realized_by: [cdm_product_detail.term_months] }
+    membership_share: { label: Membership share, type: flag, privacy: none, definition: Yes for the share that makes a person a member (credit unions)., realized_by: [cdm_product_detail.membership_share] }
+    used_auto: { label: Used auto, type: flag, privacy: none, realized_by: [cdm_product_detail.used_auto] }
+    conditionally_cancellable: { label: Conditionally cancellable, type: flag, privacy: none, realized_by: [cdm_product_detail.conditionally_cancellable] }
+    cross_sell_group: { label: Cross-sell group, type: code, value_set: cross_sell_group, privacy: none, realized_by: [cdm_product_detail.cross_sell_group] }
+    conversation_starter: { label: Conversation starter, type: text, privacy: none, realized_by: [cdm_product_detail.conversation_starter] }
+
+  deposit_product:
+    category: { label: Share or deposit type, type: code, value_set: deposit_category, privacy: none, realized_by: [cdm_deposit_product.deposit_category] }
+    interest_bearing: { label: Pays dividends or interest, type: flag, privacy: none, realized_by: [cdm_deposit_product.interest_bearing] }
+    minimum_balance: { label: Minimum balance, type: money, privacy: none, realized_by: [cdm_deposit_product.minimum_balance] }
+    monthly_fee: { label: Monthly fee, type: money, privacy: none, realized_by: [cdm_deposit_product.monthly_fee] }
+
+  loan_product:
+    category: { label: Loan type, type: code, value_set: loan_category, privacy: none, realized_by: [cdm_loan_product.loan_category] }
+    reg_amount_code: { label: Regulatory amount line, type: reference, refers_to: regulatory_line, privacy: none, definition: The 5300 or Call Report line the product's balances report on., realized_by: [cdm_loan_product.reg_amount_code] }
+    reg_count_code: { label: Regulatory count line, type: reference, refers_to: regulatory_line, privacy: none, realized_by: [cdm_loan_product.reg_count_code] }
+    secured: { label: Secured, type: flag, privacy: none, realized_by: [cdm_loan_product.secured] }
+    revolving: { label: Revolving, type: flag, privacy: none, realized_by: [cdm_loan_product.revolving] }
+
+  credit_score:
+    party: { label: Person, type: reference, refers_to: person, privacy: none, realized_by: [cdm_credit_score_history.party_id] }
+    as_of: { label: As of, type: date, privacy: none, realized_by: [cdm_credit_score_history.as_of] }
+    score_type: { label: Score model, type: text, privacy: none, realized_by: [cdm_credit_score_history.score_type] }
+    score: { label: Score, type: score, privacy: financial, constraints: { min: 300, max: 850 }, realized_by: [cdm_credit_score_history.score] }
+    source: { label: Bureau, type: text, privacy: none, realized_by: [cdm_credit_score_history.source] }
+
+  branch:
+    id: { label: Branch ID, type: identifier, privacy: none, realized_by: [cdm_location.int_id] }
+    name: { label: Branch name, type: text, privacy: none, realized_by: [cdm_location.name] }
+    region: { label: Region, type: code, value_set: region, privacy: none, realized_by: [cdm_location.region] }
+    opened_date: { label: Date opened, type: date, privacy: none, realized_by: [cdm_location.opened_date] }
+
+  employee:
+    id: { label: Employee ID, type: identifier, privacy: none, realized_by: [cdm_employee.employee_id] }
+    name: { label: Name, type: text, privacy: quasi, realized_by: [cdm_employee.display_name] }
+    role: { label: Role, type: code, value_set: employee_role, privacy: none, realized_by: [cdm_employee.role] }
+    branch: { label: Branch, type: reference, refers_to: branch, privacy: none, realized_by: [cdm_employee.branch_id] }
+
+  reporting_period:
+    month_end: { label: Month-end, type: date, privacy: none, realized_by: [hist_loan_month.month_end, hist_loan_dq_month.month_end, hist_deposit_month.month_end, hist_party_month.month_end, hist_member_month.month_end, hist_lap_month.month_end] }
+    quarter_end: { label: Quarter-end, type: date, privacy: none, realized_by: [cr_value.quarter_end] }
+    as_of_date: { label: As of, type: date, privacy: none, definition: The date the nightly build reflects., realized_by: [meta_build.as_of_date] }
+
+  regulatory_line:
+    code: { label: Line code, type: code, privacy: none, definition: The 5300 account code or Call Report MDRM code., realized_by: [cr_value.code] }
+    amount: { label: Amount reported, type: money, aggregate: true, privacy: none, realized_by: [cr_value.amount] }

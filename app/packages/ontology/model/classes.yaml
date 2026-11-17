@@ -1,0 +1,230 @@
+# DI Next ontology: the concepts credit unions and banks deal in, and how they relate (design: Core
+# Mapping and Ontology, phase 1). Kinective-owned and versioned like the semantic model. A concept is
+# admitted only when a DI table, metric, report or rule needs it.
+#
+# labels_by_type gives each institution's own word; synonyms are scoped the same way. Relations name
+# another class; the loader fails on one that doesn't exist.
+version: 1.0.0
+
+classes:
+  # ---- Parties and roles ----------------------------------------------------------------------
+  party:
+    label: Party
+    definition: A person or organization the institution has a relationship with, or could have.
+  person:
+    label: Person
+    parent: party
+    definition: A natural person.
+  organization:
+    label: Organization
+    parent: party
+    definition: A business, trust, government body or other non-person party.
+  member:
+    label: Member
+    labels_by_type: { credit_union: Member, bank: Customer }
+    parent: party
+    definition: A party with a relationship at the institution. At a credit union, a member owns a share in it; at a bank, a customer holds an account.
+    synonyms:
+      credit_union: [member, membership, owner]
+      bank: [customer, client, relationship]
+    relations:
+      - { predicate: belongs_to, to: household }
+      - { predicate: served_at, to: branch }
+      - { predicate: works_for, to: employer }
+      - { predicate: has_score, to: credit_score }
+  household:
+    label: Household
+    definition: People at one address treated as one relationship, with a head of household.
+    relations:
+      - { predicate: headed_by, to: member }
+  account_role:
+    label: Role on an account
+    definition: How a party stands on an account or holding, such as primary owner, joint owner, trustee, representative payee or authorized signer.
+    relations:
+      - { predicate: played_by, to: party }
+      - { predicate: on, to: account }
+  insider:
+    label: Insider
+    parent: person
+    definition: A director, executive officer, principal shareholder or employee whose loans fall under NCUA 701.21(d) at a credit union or Regulation O at a bank.
+    synonyms:
+      credit_union: [insider, official, director]
+      bank: [insider, Regulation O, Reg O, director]
+  employer:
+    label: Employer
+    parent: organization
+    definition: The organization a person works for, as recorded on their profile.
+  seg:
+    label: Select employee group
+    labels_by_type: { credit_union: SEG, bank: Commercial relationship }
+    parent: organization
+    definition: An employer whose employees are eligible for membership, with a sponsor contact and payroll deduction.
+    synonyms:
+      credit_union: [SEG, select employee group, employer group, field of membership]
+    relations:
+      - { predicate: employs, to: member }
+
+  # ---- Accounts and holdings ------------------------------------------------------------------
+  account:
+    label: Account
+    labels_by_type: { credit_union: Membership account, bank: Account relationship }
+    definition: The membership or account number that sits between a party and their shares, deposits and loans.
+    synonyms:
+      credit_union: [membership, membership number, account number, member number]
+      bank: [account number, relationship, CIF]
+    relations:
+      - { predicate: owned_by, to: member }
+      - { predicate: contains, to: holding }
+      - { predicate: opened_at, to: branch }
+  holding:
+    label: Holding
+    definition: One share, deposit, loan or card held under an account; the unit products, balances and rates belong to.
+    relations:
+      - { predicate: held_in, to: account }
+      - { predicate: instance_of, to: product }
+      - { predicate: has, to: transaction }
+  deposit:
+    label: Share or deposit
+    labels_by_type: { credit_union: Share, bank: Deposit }
+    parent: holding
+    definition: Money a party keeps at the institution, payable on demand or at a set maturity.
+    synonyms:
+      credit_union: [share, shares, share account, savings]
+      bank: [deposit, deposits, deposit account]
+    relations:
+      - { predicate: governed_by, to: deposit_terms }
+  certificate:
+    label: Certificate
+    labels_by_type: { credit_union: Share certificate, bank: Certificate of deposit }
+    parent: deposit
+    definition: A deposit for a fixed term at a fixed rate, with a penalty for early withdrawal.
+    synonyms:
+      credit_union: [share certificate, certificate, certs]
+      bank: [CD, certificate of deposit, time deposit]
+  checking:
+    label: Checking
+    labels_by_type: { credit_union: Share draft, bank: Checking }
+    parent: deposit
+    definition: A transaction deposit account with checks, debit card and payments.
+    synonyms:
+      credit_union: [share draft, checking, draft account]
+      bank: [checking, DDA, demand deposit]
+  loan:
+    label: Loan
+    parent: holding
+    definition: Money lent to a party, repaid with interest on agreed terms.
+    synonyms:
+      credit_union: [loan, loans, lending]
+      bank: [loan, loans, credit, note]
+    relations:
+      - { predicate: governed_by, to: loan_terms }
+      - { predicate: secured_by, to: collateral }
+      - { predicate: originated_by, to: employee }
+      - { predicate: arranged_by, to: dealer }
+      - { predicate: written_off_as, to: charge_off }
+  line_of_credit:
+    label: Line of credit
+    parent: loan
+    definition: A revolving loan the borrower draws on up to a credit limit, such as a HELOC or a credit card.
+  card:
+    label: Card
+    parent: holding
+    definition: A debit or credit card issued to a party, linked to their accounts.
+  deposit_terms:
+    label: Deposit terms
+    definition: The contract terms on a share or deposit, such as term, opening amount and renewal.
+  loan_terms:
+    label: Loan terms
+    definition: The contract terms on a loan, such as structure, rate type, APR, payment and maturity.
+  collateral:
+    label: Collateral
+    definition: Property pledged to secure a loan, with its value, lien position and eligibility to pledge onward.
+  dealer:
+    label: Dealer
+    parent: organization
+    definition: A dealer that arranges indirect loans on the institution's behalf.
+
+  # ---- Products ---------------------------------------------------------------------------------
+  product:
+    label: Product
+    definition: What the institution offers, with its rates, terms and fees; every holding is an instance of one.
+  deposit_product:
+    label: Share or deposit product
+    labels_by_type: { credit_union: Share product, bank: Deposit product }
+    parent: product
+    definition: A share or deposit product, such as regular savings, checking, money market or a certificate.
+  loan_product:
+    label: Loan product
+    parent: product
+    definition: A loan product, such as a new auto loan or a business line of credit, with its regulatory reporting codes.
+  card_product:
+    label: Card product
+    parent: product
+    definition: A debit or credit card program, with its network, fees and rewards.
+
+  # ---- Activity and outcomes --------------------------------------------------------------------
+  transaction:
+    label: Transaction
+    definition: A posted movement of money on a holding, with its channel and code.
+  charge_off:
+    label: Charge-off
+    definition: A loan, or an overdrawn share, written off as a loss.
+  recovery:
+    label: Recovery
+    definition: Money collected on a loan after it was charged off.
+    relations:
+      - { predicate: recovers, to: charge_off }
+  credit_score:
+    label: Credit score
+    definition: A credit bureau score for a person at a date.
+  delinquency:
+    label: Delinquency
+    definition: How far a loan is behind on its payments, in days past due and in the reporting buckets.
+  application:
+    label: Application
+    definition: A request to join, or to borrow, with its status and decision.
+  alert:
+    label: Alert
+    definition: An event on an account or a person worth acting on, such as a large deposit or a maturing certificate.
+  campaign:
+    label: Campaign
+    definition: A marketing campaign and each send to a person.
+
+  # ---- The institution --------------------------------------------------------------------------
+  institution:
+    label: Institution
+    parent: organization
+    definition: The credit union or bank DI serves.
+  branch:
+    label: Branch
+    definition: A location of the institution that owns accounts and relationships, grouped into regions.
+    synonyms:
+      credit_union: [branch, office, location]
+      bank: [branch, banking center, office]
+  employee:
+    label: Employee
+    parent: person
+    definition: A person who works at the institution, such as a member service representative or loan officer.
+  census_tract:
+    label: Census tract
+    definition: A census tract with its FFIEC income level, used for lending in low- and moderate-income areas.
+
+  # ---- Reporting --------------------------------------------------------------------------------
+  reporting_period:
+    label: Reporting period
+    definition: A month-end, quarter-end or build date that a figure is stated as of.
+  regulatory_return:
+    label: Regulatory return
+    labels_by_type: { credit_union: NCUA 5300 Call Report, bank: FFIEC Call Report }
+    definition: The quarterly return filed with the regulator.
+    synonyms:
+      credit_union: ['5300', call report, NCUA 5300]
+      bank: [call report, FFIEC 041, FFIEC 031, FFIEC report]
+  regulatory_line:
+    label: Regulatory line
+    definition: One line of the regulatory return, identified by its account code (5300) or MDRM code (Call Report).
+    relations:
+      - { predicate: part_of, to: regulatory_return }
+  custom_field:
+    label: Custom field
+    definition: A value an institution maps in beyond Kinective's standard mapping, such as a Symitar tracking record.

@@ -10,6 +10,7 @@ import mysql from 'mysql2/promise';
 import { landingTable, SYMITAR_CODES, type Pool } from '@dinext/tenant-db';
 import { CoreError } from './referrals.ts';
 import { compileMapExpr, MapExprError } from './mapExpr.ts';
+import { ontology } from '@dinext/ontology';
 
 const rows = async <T>(pool: Pool | mysql.Connection, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
 
@@ -54,71 +55,24 @@ export interface CoreSystem {
 }
 
 const invert = (codes: Record<string, number>) => Object.fromEntries(Object.entries(codes).map(([k, v]) => [String(v), k]));
-const c = (di: string, their: string, how: Transform = { kind: 'same' }): ColumnMap => ({ di, their, how });
+/** A core's standard mapping, from its vendor pack in the ontology (packages/ontology/model/vendors). */
+const fromPack = (id: string, codes: Record<string, Record<string, number>>): TableMap[] => {
+  const pack = ontology().vendors.get(id);
+  if (!pack) return [];
+  return pack.tables.map((t) => ({
+    diTable: t.di_table,
+    label: t.label,
+    theirTables: t.their_tables,
+    from: t.from,
+    key: t.key,
+    columns: t.columns.map((c): ColumnMap => ({ di: c.di, their: c.their, how: c.how === 'code' ? { kind: 'code', codes: invert(codes[c.codes!] ?? {}) } : ({ kind: c.how } as Transform) })),
+  }));
+};
 
-const SYMITAR: TableMap[] = [
-  {
-    diTable: 'cdm_party',
-    label: 'Members',
-    theirTables: ['ACCOUNT', 'NAME'],
-    from: 'ACCOUNT a JOIN NAME n ON n.PARENTACCOUNT = a.ACCOUNTNUMBER AND n.TYPE = 0',
-    key: 'party_id',
-    columns: [
-      c('party_id', 'a.ACCOUNTNUMBER', { kind: 'number' }),
-      c('first_name', 'n.FIRST'),
-      c('last_name', 'n.LAST'),
-      c('birth_date', 'n.BIRTHDATE', { kind: 'date8' }),
-      c('join_date', 'a.OPENDATE', { kind: 'date8' }),
-      c('primary_branch_id', 'a.BRANCH', { kind: 'number' }),
-      c('segment_code', 'a.TYPE', { kind: 'code', codes: invert(SYMITAR_CODES.memberType) }),
-      c('household_id', 'a.HOUSEHOLDACCOUNT', { kind: 'number' }),
-      c('is_member', 'a.NONMEMBER', { kind: 'not' }),
-    ],
-  },
-  {
-    diTable: 'cdm_deposit_account',
-    label: 'Deposit accounts',
-    theirTables: ['SAVINGS'],
-    from: 'SAVINGS s',
-    key: 'account_id',
-    columns: [
-      c('account_id', 's.SERIAL', { kind: 'number' }),
-      c('party_id', 's.PARENTACCOUNT', { kind: 'number' }),
-      c('branch_id', 's.BRANCH', { kind: 'number' }),
-      c('deposit_category', 's.TYPE', { kind: 'code', codes: invert(SYMITAR_CODES.shareType) }),
-      c('open_date', 's.OPENDATE', { kind: 'date8' }),
-      c('close_date', 's.CLOSEDATE', { kind: 'date8' }),
-      c('maturity_date', 's.MATURITYDATE', { kind: 'date8' }),
-      c('balance', 's.BALANCE', { kind: 'number' }),
-      c('rate', 's.DIVRATE', { kind: 'rate1000' }),
-    ],
-  },
-  {
-    diTable: 'cdm_loan',
-    label: 'Loan accounts',
-    theirTables: ['LOAN'],
-    from: 'LOAN l',
-    key: 'loan_id',
-    columns: [
-      c('loan_id', 'l.SERIAL', { kind: 'number' }),
-      c('party_id', 'l.PARENTACCOUNT', { kind: 'number' }),
-      c('branch_id', 'l.BRANCH', { kind: 'number' }),
-      c('officer_id', 'l.LOANOFFICER', { kind: 'number' }),
-      c('loan_category', 'l.TYPE', { kind: 'code', codes: invert(SYMITAR_CODES.loanType) }),
-      c('is_indirect', 'l.DEALERNUMBER', { kind: 'nonzero' }),
-      c('open_date', 'l.OPENDATE', { kind: 'date8' }),
-      c('close_date', 'l.CLOSEDATE', { kind: 'date8' }),
-      c('charge_off_date', 'l.CHARGEOFFDATE', { kind: 'date8' }),
-      c('original_amount', 'l.ORIGINALBALANCE', { kind: 'number' }),
-      c('balance', 'l.BALANCE', { kind: 'number' }),
-      c('rate', 'l.INTERESTRATE', { kind: 'rate1000' }),
-      c('days_delinquent', 'l.DUEDATE', { kind: 'daysPast' }),
-    ],
-  },
-];
+const SYMITAR: TableMap[] = fromPack('symitar', SYMITAR_CODES);
 
 export const CORE_SYSTEMS: CoreSystem[] = [
-  { id: 'symitar', label: 'Jack Henry Symitar', short: 'Symitar', mappings: SYMITAR, processDate: 'SELECT PROCESSDATE AS d FROM CONTROL' },
+  { id: 'symitar', label: 'Jack Henry Symitar', short: 'Symitar', mappings: SYMITAR, processDate: ontology().vendors.get('symitar')?.process_date },
   { id: 'dna', label: 'Fiserv DNA', short: 'DNA' },
   { id: 'keystone', label: 'Corelation KeyStone', short: 'KeyStone' },
   { id: 'premier', label: 'Fiserv Premier', short: 'Premier' },

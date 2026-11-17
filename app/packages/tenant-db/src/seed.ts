@@ -46,6 +46,7 @@ import { ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } 
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
 import { createSourceTables, seedCoreReplica } from './sources.ts';
+import { ONTOLOGY_COLUMNS, ONTOLOGY_DDL, ONTOLOGY_TABLES, ontology, ontologyRows } from '@dinext/ontology';
 import { createApiTables } from './apis.ts';
 import { createOffcoreTables } from './offcore.ts';
 import { ML_DDL, ML_WRITE_TABLES, SNAPSHOT_COLUMNS, generateSnapshots } from './ml.ts';
@@ -488,6 +489,10 @@ async function main() {
       if (rows.length) await insert(admin, table, [...ESP_BUSINESS_COLUMNS[table]], rows as unknown[][], 10_000);
     }
     stepDone('phase 8');
+    // The ontology: concepts, the DI columns and metrics that hold them, code lists and the core vendors' vocabularies.
+    for (const ddl of ONTOLOGY_DDL) await admin.query(ddl);
+    const onto = ontologyRows(ontology());
+    for (const table of ONTOLOGY_TABLES) if (onto[table].length) await insert(admin, table, [...ONTOLOGY_COLUMNS[table]], onto[table], 5_000);
     if (profile.institutionType === 'credit_union') await seedCoreReplica(admin, profile.schema);
     console.log(`${profile.key}: ${t.parties.length} parties, ${t.loans.length} loans, ${t.deposits.length} deposit accounts, ${t.histLoan.length} loan history rows, ${rm.interactions.length} interactions in ${((Date.now() - started) / 1000).toFixed(1)}s (${[...laps, `core replica ${((Date.now() - lapAt) / 1000).toFixed(0)}s`].join(', ')})`);
   }

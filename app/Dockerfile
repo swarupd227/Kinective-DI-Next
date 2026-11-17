@@ -12,6 +12,7 @@ COPY packages/block-schemas/package.json packages/block-schemas/
 COPY packages/blocks/package.json packages/blocks/
 COPY packages/di-core/package.json packages/di-core/
 COPY packages/mock-stream-server/package.json packages/mock-stream-server/
+COPY packages/ontology/package.json packages/ontology/
 COPY packages/semantic/package.json packages/semantic/
 COPY packages/stream-client/package.json packages/stream-client/
 COPY packages/tenant-db/package.json packages/tenant-db/

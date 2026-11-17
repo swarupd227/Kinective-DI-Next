@@ -2,7 +2,7 @@
 // only, and every figure and graph is written by code. The model chooses the tool and nothing else.
 import { z } from 'zod';
 import type { AuditLogPage, AuditRunTrace, LineageGraphBlock } from '@dinext/block-schemas';
-import { CoreError, type GovernanceService, type LineageService, type UsageGroup } from '@dinext/di-core';
+import { CoreError, type ConceptView, type GovernanceService, type LineageService, type OntologyService, type UsageGroup } from '@dinext/di-core';
 import { newBlockId } from './answer.ts';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
@@ -11,25 +11,53 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString
 
 // ---- lineage ----------------------------------------------------------------------------------
 
-export function lineageModule(lineage: LineageService): ModuleSpec {
+/** Data dictionary questions the ontology answers: what a word means in DI, which column holds it, which core column it comes from. */
+export const ONTOLOGY_REQUEST = /\bwhat (?:does|do) (?:DI|we|you) mean by\b|\b(?:which|what) (?:DI )?(?:columns?|fields?) (?:holds?|has|have|stores?|keeps?|contains?)\b|\b(?:which|what) (?:symitar|core) (?:columns?|fields?)\b|\bdata dictionary\b|\bontology\b|\bwhat do (?:banks|credit unions) call\b/i;
+
+/** The word or phrase a data dictionary question is about; '' for the dictionary as a whole. */
+export function ontologyTerm(text: string) {
+  const t = clean(text).replace(/["“”]/g, '');
+  const pick = [
+    /\bmean by (?:an? |the )?(.+)$/i,
+    /\b(?:columns?|fields?) (?:holds?|has|have|stores?|keeps?|contains?) (?:an? |the )?(.+?)(?: in DI)?$/i,
+    /\b(?:symitar|core) (?:columns?|fields?) (?:is|are|holds?|has|for|gives?) (?:an? |the )?(.+)$/i,
+    /\bwhat do (?:banks|credit unions) call (?:an? |the )?(.+)$/i,
+    /\b(?:look up|define|entry for|is) (?:an? |the )?(.+?) in the (?:data dictionary|ontology)$/i,
+    /\b(?:data dictionary|ontology) (?:entry )?for (?:an? |the )?(.+)$/i,
+  ];
+  for (const re of pick) {
+    const m = re.exec(t);
+    if (m?.[1]) return m[1].trim();
+  }
+  return '';
+}
+
+export function lineageModule(lineage: LineageService, onto: OntologyService | null = null): ModuleSpec {
   const noAccess = 'Data lineage isn’t part of your DI access.';
   const need = (ctx: ModuleContext) => {
     if (!ctx.modules.includes('lineage')) throw new CoreError('NO_ACCESS', noAccess);
   };
+  const ontoSources = [{ kind: 'table' as const, label: 'DI ontology', ref: 'table:onto_concept' }];
   const spec: ModuleSpec = {
     id: 'lineage',
     prefix: 'lin',
     agent: 'Data Lineage',
-    request: /^(?![\s\S]*\b(?:diversif\w*|share of revenue|how much|mix|fee income|non-?interest income|noninterest income)\b)[\s\S]*?\bwhere does\b.*\bcome from\b|\blineage\b|\btrace\b.*\bsources?\b|\bwhat breaks if\b|\bwhat depends on\b/i,
+    request: new RegExp(`${/^(?![\s\S]*\b(?:diversif\w*|share of revenue|how much|mix|fee income|non-?interest income|noninterest income)\b)[\s\S]*?\bwhere does\b.*\bcome from\b|\blineage\b|\btrace\b.*\bsources?\b|\bwhat breaks if\b|\bwhat depends on\b/.source}|${ONTOLOGY_REQUEST.source}`, 'i'),
     noAccess,
     sources: [{ kind: 'table', label: 'Lineage catalog', ref: 'table:meta_lineage' }],
     prompt: ({ tenant, user, title }) => `You are the Data Lineage agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) wants to know where data comes from.
 
 - "Where does 60+ delinquency come from?", "Trace total loan balance to its source": lin_trace with the measure in their words.
 - "What breaks if we change cdm_loan.days_delinquent?": lin_impact.
-- The graph comes from lineage metadata. Never work out lineage from table or column names. Connection secrets are never shown.`,
+- "What does DI mean by a share draft?", "Which column holds the loan balance?", "Which Symitar column is the dividend rate?", "What do banks call a share certificate?": onto_lookup with the word or phrase.
+- "How much does the data dictionary cover?": onto_coverage.
+- The graph comes from lineage metadata, and meanings from DI's ontology. Never work out lineage or a meaning from table or column names. Connection secrets are never shown.`,
     plan: (text) => {
       const t = clean(text);
+      if (onto && ONTOLOGY_REQUEST.test(t)) {
+        const term = ontologyTerm(t);
+        return term ? { tool: 'onto_lookup', args: { term } } : { tool: 'onto_coverage', args: {} };
+      }
       if (/\bwhat breaks if\b|\bwhat depends on\b/i.test(t)) {
         const target = /\b([a-z]+_[a-z_]+(?:\.[a-z_0-9]+)?)\b/.exec(t)?.[1];
         return target ? { tool: 'lin_impact', args: { target } } : { say: 'Which table or column do you mean?' };
@@ -73,7 +101,91 @@ export function lineageModule(lineage: LineageService): ModuleSpec {
       },
     ],
   };
+  if (onto) spec.tools.push(ontoLookupTool(spec, onto, need, ontoSources), ontoCoverageTool(spec, onto, need, ontoSources));
   return spec;
+}
+
+// ---- the data dictionary: DI's ontology ---------------------------------------------------------
+
+const KIND_WORD: Record<ConceptView['kind'], string> = { class: 'a concept', property: 'a property', value_set: 'a code list', value: 'a code' };
+const TYPE_WORD: Record<string, string> = { identifier: 'an identifier', reference: 'a link to another record', text: 'text', code: 'a code', money: 'dollars', rate: 'a yearly rate', percent: 'a percent', ratio: 'a ratio', count: 'a count', date: 'a date', flag: 'yes or no', score: 'a score', number: 'a number' };
+const PRIVACY_WORD: Record<string, string> = { direct: 'identifies a person on its own', quasi: 'can identify a person together with other fields', financial: 'is financial information', none: '' };
+const list = (xs: string[], n = 4) => (xs.length <= n ? xs.join(', ') : `${xs.slice(0, n).join(', ')} and ${xs.length - n} more`);
+
+function ontoLookupTool(spec: ModuleSpec, onto: OntologyService, need: (ctx: ModuleContext) => void, sources: ModuleSpec['sources']) {
+  return {
+    name: 'onto_lookup',
+    description: 'Look a word, a DI column (cdm_loan.balance) or a core column (LOAN.BALANCE) up in DI’s ontology: what it means at this institution, its other names, the DI columns that hold it, the measures that use it, its codes, and the core columns it comes from.',
+    input: z.object({ term: z.string().min(2).max(80) }).strict(),
+    run: async (a: { term: string }, ctx: ModuleContext) => {
+      need(ctx);
+      const found = await onto.lookup(a.term);
+      if (!found) return { text: 'DI’s data dictionary isn’t loaded for this institution yet.' };
+      if (!found.length) return { text: `“${a.term}” isn’t in DI’s data dictionary. Try another word for it, a DI column such as cdm_loan.balance, or a core column such as LOAN.BALANCE.`, suggestions: ['How much does the data dictionary cover?'] };
+      const c = found[0]!;
+      const def = c.definition ? `: ${c.definition.charAt(0).toLowerCase()}${c.definition.slice(1).replace(/\.$/, '')}.` : '.';
+      const name = `**${c.label}**${c.elsewhere ? ` (“${c.elsewhere.term}” at a ${c.elsewhere.type === 'bank' ? 'bank' : 'credit union'})` : ''}`;
+      const opening =
+        c.kind === 'class'
+          ? c.parent ? `${name} is a kind of ${c.parent.label.toLowerCase()}${def}` : `${name}: ${c.definition ? c.definition.charAt(0).toLowerCase() + c.definition.slice(1) : 'a concept in DI’s data dictionary.'}`
+          : c.kind === 'property'
+            ? `${name} is a property of a ${c.parent?.label.toLowerCase() ?? 'record'}${def}`
+            : c.kind === 'value'
+              ? `${name} is a code on DI’s ${c.valueSet?.label.toLowerCase() ?? 'code'} list${c.codes[0]?.values.length ? `, held in DI as ${list(c.codes[0].values.map((v) => `“${v}”`))}` : ''}.`
+              : `${name} is ${KIND_WORD[c.kind]} in DI’s data dictionary${def}`;
+      const others = [...new Set(found.slice(1).map((f) => f.label))].filter((l) => l !== c.label);
+      const parts = [
+        opening,
+        c.kind === 'property' && c.semanticType ? `It holds ${TYPE_WORD[c.semanticType] ?? c.semanticType}${c.privacy && PRIVACY_WORD[c.privacy] ? ` and ${PRIVACY_WORD[c.privacy]}` : ''}.` : '',
+        c.synonyms.length ? `Also called ${list(c.synonyms.map((s) => `“${s}”`))}.` : '',
+        c.columns.length ? `DI keeps it in ${list(c.columns.map((x) => `\`${x}\``), 3)}.` : '',
+        c.metrics.length ? `${c.metrics.length === 1 ? 'One measure uses it' : `${c.metrics.length} measures use it`}: ${list(c.metrics.map((m) => m.label), 3)}.` : '',
+        c.core.length ? `From the core: ${list(c.core.map((x) => `${x.system} \`${x.column}\``), 3)}.` : '',
+        c.kind === 'class' && c.properties.length ? `It has ${plural(c.properties.length, 'property', 'properties')}.` : '',
+        others.length ? `Other matches: ${list(others, 4)}.` : '',
+      ].filter(Boolean);
+      const blocks = [];
+      const detail = [
+        ...c.columns.map((x) => ({ kind: 'DI column', name: x, note: '' })),
+        ...c.metrics.map((m) => ({ kind: 'Measure', name: m.label, note: m.name })),
+        ...c.core.map((x) => ({ kind: `${x.system} column`, name: x.column, note: x.description ?? '' })),
+        ...c.relations.map((r) => ({ kind: 'Related', name: r.label, note: r.predicate })),
+        ...c.properties.map((p) => ({ kind: 'Property', name: p.label, note: p.id })),
+      ];
+      if (detail.length) blocks.push(moduleTable(spec, `${c.label} in DI`, ctx.runId, 'catalog.ontology.concept', [{ field: 'kind', headerName: 'Kind', type: 'text' }, { field: 'name', headerName: 'Name', type: 'text' }, { field: 'note', headerName: 'Detail', type: 'text' }], detail));
+      if (c.codes.length) blocks.push(moduleTable(spec, `${c.label}: codes`, ctx.runId, 'catalog.ontology.codes', [{ field: 'label', headerName: 'Code', type: 'text' }, { field: 'values', headerName: 'Values in DI', type: 'text' }], c.codes.map((x) => ({ label: x.label, values: x.values.join(', ') }))));
+      const next = c.metrics[0] ? [`Where does ${c.metrics[0].label.toLowerCase()} come from?`] : [];
+      return { text: parts.join(' '), blocks, sources, suggestions: [...next, 'How much does the data dictionary cover?'] };
+    },
+  };
+}
+
+function ontoCoverageTool(spec: ModuleSpec, onto: OntologyService, need: (ctx: ModuleContext) => void, sources: ModuleSpec['sources']) {
+  return {
+    name: 'onto_coverage',
+    description: 'How much of DI the data dictionary (DI’s ontology) covers: concepts, properties, code lists, DI columns bound, measures tied to a concept, and core columns mapped by vendor.',
+    input: z.object({}).strict(),
+    run: async (_: unknown, ctx: ModuleContext) => {
+      need(ctx);
+      const x = await onto.coverage();
+      if (!x) return { text: 'DI’s data dictionary isn’t loaded for this institution yet.' };
+      const vendors = x.vendors.map((v) => `${v.system === 'symitar' ? 'Symitar' : v.system}, ${v.columns} columns`).join('; ');
+      return {
+        text: `DI’s data dictionary (version ${x.version}) has **${x.classes} concepts** and **${x.properties} properties**, with ${x.valueSets} code lists and ${x.codes} codes. It ties **${x.columns.toLocaleString('en-US')} DI columns** to what they mean and **${x.metrics} measures** to what they measure.${vendors ? ` Core mappings as data: ${vendors}.` : ''} The build fails if a main table gains a column the dictionary doesn’t cover.`,
+        blocks: [moduleTable(spec, 'What the data dictionary covers', ctx.runId, 'catalog.ontology.coverage', [{ field: 'what', headerName: 'What', type: 'text' }, { field: 'count', headerName: 'Count', type: 'count' }], [
+          { what: 'Concepts', count: x.classes },
+          { what: 'Properties', count: x.properties },
+          { what: 'Code lists', count: x.valueSets },
+          { what: 'Codes', count: x.codes },
+          { what: 'DI columns bound', count: x.columns },
+          { what: 'Measures tied to a concept', count: x.metrics },
+          ...x.vendors.map((v) => ({ what: `${v.system === 'symitar' ? 'Symitar' : v.system} columns mapped`, count: v.columns })),
+        ])],
+        sources,
+        suggestions: ['What does DI mean by a share draft?', 'Which Symitar column is the loan balance?'],
+      };
+    },
+  };
 }
 
 // ---- AI usage and governance --------------------------------------------------------------------

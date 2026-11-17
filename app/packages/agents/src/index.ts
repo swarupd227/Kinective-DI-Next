@@ -10,7 +10,7 @@ export { ModuleGateway, moduleCard, moduleTable, runModule, runModuleOffline, ty
 export { complianceModule, proposeCategory } from './compliance.ts';
 export { onboardingModule, talkingPoint } from './onboarding.ts';
 export { dataLogsModule } from './dataLogs.ts';
-export { governanceModule, lineageModule } from './governance.ts';
+export { governanceModule, lineageModule, ONTOLOGY_REQUEST, ontologyTerm } from './governance.ts';
 export { calendarModule, filesModule, parseWhen, spokenWhen, type When } from './workspace.ts';
 export { dataLoadModule, loadTarget } from './dataLoad.ts';
 export { indirectModule, prospectingModule } from './growth.ts';
