@@ -88,3 +88,15 @@
   text-align: right;
   overflow-wrap: anywhere;
 }
+
+/* The space a grid takes while its code loads. */
+.loading {
+  min-height: 120px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-subtle);
+}
+
+.fixed > .loading {
+  height: 100%;
+}

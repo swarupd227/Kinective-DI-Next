@@ -3,7 +3,10 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { promisify } from 'node:util';
+import { brotliCompress, brotliCompressSync, constants as zlib, gzip, gzipSync } from 'node:zlib';
 import { extname, join, resolve, sep } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { ListBlock, ReferralAction } from '@dinext/block-schemas';
@@ -323,8 +326,17 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
       res.end();
       return;
     }
-    res.writeHead(status, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(body));
+    const text = JSON.stringify(body);
+    // A table or a report can be hundreds of kilobytes of JSON: compressed, it reaches a phone far sooner.
+    const enc = text.length > COMPRESS_FROM ? encodingFor(res.req) : null;
+    if (enc) {
+      const packed = enc === 'br' ? brotliCompressSync(text, { params: { [zlib.BROTLI_PARAM_QUALITY]: 5 } }) : gzipSync(text, { level: 6 });
+      res.writeHead(status, { 'content-type': 'application/json', 'content-encoding': enc, 'content-length': packed.length, vary: 'Accept-Encoding' });
+      res.end(packed);
+      return;
+    }
+    res.writeHead(status, { 'content-type': 'application/json', vary: 'Accept-Encoding' });
+    res.end(text);
   };
 
   const readBody = async <T>(req: IncomingMessage): Promise<T> => {
@@ -933,7 +945,8 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
     }
   }
 
-  const wss = new WebSocketServer({ noServer: true });
+  // Answers stream their tables and charts over the socket; compressed, they arrive sooner on a phone.
+  const wss = new WebSocketServer({ noServer: true, perMessageDeflate: { threshold: COMPRESS_FROM, serverNoContextTakeover: true, clientNoContextTakeover: true, zlibDeflateOptions: { level: 6 } } });
   server.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url ?? '/', `http://localhost:${port}`);
     const ticket = url.searchParams.get('ticket') ?? '';
@@ -1029,9 +1042,49 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
 
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json', '.woff2': 'font/woff2', '.woff': 'font/woff', '.map': 'application/json', '.webmanifest': 'application/manifest+json' };
 
-/** Serves the built shell. Unknown paths get index.html, so deep links such as /c/thr_x work (spec 11.4). */
+/** Smaller than this, compressing saves less than it costs. */
+const COMPRESS_FROM = 1024;
+const COMPRESSIBLE = new Set(['.html', '.js', '.css', '.svg', '.json', '.map', '.webmanifest']);
+const brotli = promisify(brotliCompress);
+const gzipAsync = promisify(gzip);
+
+/** The compression the browser accepts, Brotli first. */
+function encodingFor(req: IncomingMessage | undefined): 'br' | 'gzip' | null {
+  const accepts = String(req?.headers['accept-encoding'] ?? '');
+  return /\bbr\b/.test(accepts) ? 'br' : /\bgzip\b/.test(accepts) ? 'gzip' : null;
+}
+
+/**
+ * Serves the built shell. Unknown paths get index.html, so deep links such as /c/thr_x work (spec 11.4).
+ * Code and styles go compressed (Brotli, or gzip), each file compressed once and kept: uncompressed, a
+ * phone downloads several megabytes before a chart or table can draw.
+ */
 function staticFiles(dir: string) {
   const root = resolve(dir);
+  const packed = new Map<string, Promise<Buffer>>();
+  const pack = (file: string, enc: 'br' | 'gzip') => {
+    const key = `${enc}:${file}`;
+    let p = packed.get(key);
+    if (!p) {
+      p = readFile(file).then((b) => (enc === 'br' ? brotli(b, { params: { [zlib.BROTLI_PARAM_QUALITY]: 11, [zlib.BROTLI_PARAM_SIZE_HINT]: b.length } }) : gzipAsync(b, { level: 9 })));
+      p.catch(() => packed.delete(key));
+      packed.set(key, p);
+    }
+    return p;
+  };
+  // Compressed ahead, in the background, so the first visitor after a deploy doesn't wait for it.
+  const warm = (d: string) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const f = join(d, e.name);
+      if (e.isDirectory()) warm(f);
+      else if (COMPRESSIBLE.has(extname(f)) && statSync(f).size > COMPRESS_FROM) for (const enc of ['br', 'gzip'] as const) void pack(f, enc).catch(() => {});
+    }
+  };
+  try {
+    warm(root);
+  } catch {
+    // An unreadable folder is served file by file as asked.
+  }
   return (path: string, res: ServerResponse) => {
     let decoded = '/';
     try {
@@ -1043,14 +1096,30 @@ function staticFiles(dir: string) {
     const inside = target.startsWith(root + sep) || target === root;
     const file = inside && existsSync(target) && statSync(target).isFile() ? target : join(root, 'index.html');
     const hashed = file.includes(`${sep}assets${sep}`);
-    res.writeHead(200, {
+    const headers = {
       'content-type': TYPES[extname(file)] ?? 'application/octet-stream',
       // Hashed assets never change; the page itself is always revalidated.
       'cache-control': hashed ? 'public, max-age=31536000, immutable' : 'no-cache',
       'x-content-type-options': 'nosniff',
       'referrer-policy': 'same-origin',
-    });
-    createReadStream(file).pipe(res);
+      vary: 'Accept-Encoding',
+    };
+    const enc = COMPRESSIBLE.has(extname(file)) && statSync(file).size > COMPRESS_FROM ? encodingFor(res.req) : null;
+    if (!enc) {
+      res.writeHead(200, headers);
+      createReadStream(file).pipe(res);
+      return;
+    }
+    void pack(file, enc).then(
+      (body) => {
+        res.writeHead(200, { ...headers, 'content-encoding': enc, 'content-length': body.length });
+        res.end(body);
+      },
+      () => {
+        res.writeHead(200, headers);
+        createReadStream(file).pipe(res);
+      },
+    );
   };
 }
 

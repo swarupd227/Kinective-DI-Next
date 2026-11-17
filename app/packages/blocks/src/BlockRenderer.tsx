@@ -26,7 +26,20 @@ const MemberCardView = lazy(() => import('./member/MemberCardView.tsx').then((m)
 const Member360View = lazy(() => import('./member/Member360View.tsx').then((m) => ({ default: m.Member360View })));
 const ReportCanvasView = lazy(() => import('./report/ReportCanvasView.tsx').then((m) => ({ default: m.ReportCanvasView })));
 
+/**
+ * Fetches the code for the blocks nearly every answer shows (text, charts, tables), so it is ready when
+ * the answer arrives instead of being asked for after it. The grid (about 1 MB) only where it is drawn:
+ * a phone shows most tables as cards.
+ */
+export function preloadBlocks({ grid }: { grid: boolean }) {
+  void import('./text/TextBlockView.tsx').catch(() => {});
+  void import('./chart/ChartView.tsx').catch(() => {});
+  void import('./table/TableView.tsx').catch(() => {});
+  if (grid) void import('./table/DataGrid.tsx').catch(() => {});
+}
+
 export interface BlockRendererProps {
+
   /** A complete block, or a streaming envelope whose data is still being patched. */
   block: Block | StreamingEnvelope;
   status?: FrameStatus;

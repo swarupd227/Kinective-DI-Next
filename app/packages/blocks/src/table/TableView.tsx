@@ -1,13 +1,19 @@
 // Table block (FE-GEN-004): the client builds the grid from the declared columns only; the server
 // never sends grid options. Lazy-loaded so AG Grid stays out of the shell's initial bundle.
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import type { TableBlock } from '@dinext/block-schemas';
 import { Download } from 'lucide-react';
 import { Button, Menu, TextInput } from '@dinext/ui';
 import { useBlockHost } from '../context.tsx';
 import { formatInstant, formatValue } from '../format.ts';
-import DataGrid from './DataGrid.tsx';
 import styles from './TableView.module.css';
+
+// AG Grid (about 1 MB of code and styles) loads only when a grid is drawn: a phone shows most tables
+// as cards and never needs it. preloadBlocks() fetches it ahead on a wider screen.
+const DataGrid = lazy(() => import('./DataGrid.tsx'));
+/** Rough grid heights, so the space is held while the grid loads and nothing jumps. */
+const HEADER_PX = 48;
+const ROW_PX = 40;
 
 // Enough for a team or a branch list to read in the conversation without a scrollbar inside it.
 const MAX_AUTO_HEIGHT_ROWS = 25;
@@ -98,7 +104,9 @@ export default function TableView({ block }: { block: TableBlock }) {
         <Stacked columns={visible} rows={found} label={block.title ?? 'Table'} />
       ) : (
         <div className={autoHeight ? undefined : styles.fixed}>
-          <DataGrid columns={columns} rows={rows} sort={sort} layout={autoHeight ? 'auto' : 'fill'} quickFilter={query.trim() || undefined} ariaLabel={block.title ?? 'Table'} />
+          <Suspense fallback={<div className={styles.loading} style={autoHeight ? { height: HEADER_PX + Math.max(rows.length, 1) * ROW_PX } : undefined} role="status" aria-label={`Loading ${name}`} />}>
+            <DataGrid columns={columns} rows={rows} sort={sort} layout={autoHeight ? 'auto' : 'fill'} quickFilter={query.trim() || undefined} ariaLabel={block.title ?? 'Table'} />
+          </Suspense>
         </div>
       )}
       {block.data.rowCount > rows.length && (

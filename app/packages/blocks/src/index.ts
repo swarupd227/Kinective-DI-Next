@@ -1,4 +1,4 @@
-export { BlockRenderer, type BlockRendererProps } from './BlockRenderer.tsx';
+export { BlockRenderer, preloadBlocks, type BlockRendererProps } from './BlockRenderer.tsx';
 export { PlanStepsView } from './plan/PlanStepsView.tsx';
 export { DiTakeView } from './take/DiTakeView.tsx';
 export { BlockFrame, type FrameStatus } from './frame/BlockFrame.tsx';

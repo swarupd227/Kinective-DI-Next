@@ -53,6 +53,21 @@ export function AppShell() {
 
   useEffect(() => setMobileNav(false), [location.pathname, setMobileNav]);
 
+  // The chart and table code is fetched while the first page settles, so an answer's charts and tables
+  // draw as soon as it arrives. Not on a data-saving connection; the grid only where it is drawn.
+  useEffect(() => {
+    const save = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData;
+    if (save) return;
+    const grid = !window.matchMedia?.('(width <= 640px)').matches;
+    const go = () => void import('@dinext/blocks').then((m) => m.preloadBlocks({ grid })).catch(() => {});
+    const idle = window.requestIdleCallback?.(go, { timeout: 2000 });
+    const timer = idle === undefined ? window.setTimeout(go, 1000) : undefined;
+    return () => {
+      if (idle !== undefined) window.cancelIdleCallback?.(idle);
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, []);
+
   // A view opened beside a task belongs to that task; leaving it for a page leaves the view too.
   const besideTask = workspace?.kind === 'page';
   useEffect(() => {
