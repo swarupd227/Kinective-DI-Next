@@ -762,7 +762,11 @@ export class SourceService {
    */
   private async profileCore(core: mysql.Connection): Promise<CoreProfile> {
     const [{ db }] = (await rows<{ db: string }>(core, 'SELECT DATABASE() AS db')) as [{ db: string }];
-    const cols = await rows<{ t: string; c: string; dt: string }>(core, 'SELECT TABLE_NAME AS t, COLUMN_NAME AS c, DATA_TYPE AS dt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME, ORDINAL_POSITION', [db]);
+    const raw = await rows<{ t: string; c: string; dt: string }>(core, 'SELECT TABLE_NAME AS t, COLUMN_NAME AS c, DATA_TYPE AS dt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME, ORDINAL_POSITION', [db]);
+    // A server that ignores the case of table names (Azure's MySQL keeps them in lower case) reports
+    // account for ACCOUNT. Such a server takes either spelling, so the vendor's upper case is used throughout.
+    const [lc] = await rows<{ v: number }>(core, 'SELECT @@lower_case_table_names AS v').catch(() => []);
+    const cols = Number(lc?.v ?? 0) > 0 ? raw.map((x) => ({ ...x, t: x.t.toUpperCase() })) : raw;
     const tables: CoreTableProfile[] = [];
     const columns: ColumnProfile[] = [];
     const q = (x: string) => `\`${x.replaceAll('`', '')}\``;
