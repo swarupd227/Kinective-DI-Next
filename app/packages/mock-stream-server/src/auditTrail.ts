@@ -25,7 +25,7 @@ interface Line {
   runId?: string;
   question?: string;
   maskedIdentifiers?: number;
-  route?: { intent?: string; agent?: string; confidence?: number | null; mode?: string; label?: string };
+  route?: { intent?: string; agent?: string; confidence?: number | null; mode?: string; label?: string; concepts?: string[] };
   outcome?: string;
   error?: string;
   modelVersion?: string;
@@ -194,7 +194,7 @@ export class AuditTrail {
       question: l.question ?? '',
       maskedIdentifiers: l.maskedIdentifiers ?? 0,
       agent: agentOf(l),
-      route: { intent: l.route?.intent ?? 'unclear', agent: l.route?.agent ?? 'none', confidence: l.route?.confidence ?? null, mode: l.route?.mode ?? 'live' },
+      route: { intent: l.route?.intent ?? 'unclear', agent: l.route?.agent ?? 'none', confidence: l.route?.confidence ?? null, mode: l.route?.mode ?? 'live', ...(l.route?.concepts?.length ? { concepts: l.route.concepts } : {}) },
       outcome: l.outcome ?? 'answer',
       error: l.error,
       modelVersion: l.modelVersion,

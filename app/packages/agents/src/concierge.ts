@@ -28,6 +28,7 @@ import type { RunSink, StepUpdate } from './sink.ts';
 import { runToday, TODAY_REQUEST, type TodayOutcome } from './today.ts';
 import { RETENTION_AGENT, RETENTION_REQUEST, runRetention, runRetentionOffline, type RetentionInput, type RetentionOutcome } from './retention.ts';
 import { runModule, runModuleOffline, type ModuleContext, type ModuleGateway, type ModuleOutcome, type ModuleSpec } from './moduleAgent.ts';
+import { conceptTags, readConcepts, type Concept } from './concepts.ts';
 import { asksAboutStaff, GI_AGENT, GI_REQUEST, incentivesSources, runIncentives, runIncentivesOffline, type IncentivesInput, type IncentivesOutcome } from './incentives.ts';
 
 /** Agents the Concierge can route to. Scripted ones are placeholders until their slices land. */
@@ -282,6 +283,8 @@ export class Concierge {
     let outcome: AuditRecord['outcome'] = 'answer';
     let numericRemovals: string[] = [];
     let classification: Classification | null = null;
+    // The ontology classes the question names (loan, deposit, member): a second signal for routing, and the audit's record of it.
+    let concepts: Concept[] = [];
     let moduleAgent: string | undefined;
     let error: string | undefined;
     let screened = prescreen(turn.text, this.counter);
@@ -298,6 +301,7 @@ export class Concierge {
         outcome = 'not_supported';
         return { kind: 'handled' };
       }
+      concepts = readConcepts(screened.text, turn.tenant.institutionType, svc?.dimensionValues ?? {}).concepts;
       // A goal in progress takes the next message: an added instruction, an answer, or a change to the note.
       const goal = this.goalThreads.get(turn.threadId);
       if (goal?.status === 'running') {
@@ -444,7 +448,7 @@ export class Concierge {
       const aboutStaff = turn.apps.includes('gi') && !memberChip && asksAboutStaff(screened.text, turn.tenant.staff ?? []);
       classification = aboutStaff
         ? { intent: 'module_task', agent: 'goals_incentives', confidence: 1, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' }
-        : this.deps.model && !GI_REQUEST.test(screened.text) && !RETENTION_REQUEST.test(screened.text) && !GOAL_REQUEST.test(screened.text) && !INBOX_REQUEST.test(screened.text) && !PIPELINE_REQUEST.test(screened.text) ? await this.classify(turn, screened.text, usage) : keywordClassify(screened.text, memberChip);
+        : this.deps.model && !GI_REQUEST.test(screened.text) && !RETENTION_REQUEST.test(screened.text) && !GOAL_REQUEST.test(screened.text) && !INBOX_REQUEST.test(screened.text) && !PIPELINE_REQUEST.test(screened.text) ? await this.classify(turn, screened.text, usage, concepts) : keywordClassify(screened.text, memberChip);
       // A vague "Build me a report" goes to the Report Builder, which asks what the report should show.
       if (classification.agent === 'report_builder' && BUILD_REPORT.test(screened.text)) classification = { ...classification, needs_clarification: false, confidence: Math.max(classification.confidence, CONFIDENCE_THRESHOLD) };
       if (classification.needs_clarification || classification.confidence < CONFIDENCE_THRESHOLD) {
@@ -550,7 +554,7 @@ export class Concierge {
           const history = this.memory.get(turn.threadId) ?? [];
           const ctx = { purviewBranches: turn.purviewBranches, canViewSql: turn.canViewSql };
           if (!this.deps.model) {
-            const r = await runOffline(screened.text, svc, ctx, turn.runId, sink);
+            const r = await runOffline(screened.text, svc, ctx, turn.runId, sink, turn.tenant.institutionType);
             outcome = r.outcome;
             if (r.outcome === 'unmatched') await this.deps.audit.unmatched({ tenant: turn.tenant.key, question: screened.text, unknownTerms: r.catalog.unknownTerms, closest: r.catalog.metrics.map((m) => m.name) });
             return { kind: 'handled' };
@@ -663,7 +667,7 @@ export class Concierge {
           runId: turn.runId,
           question: screened.text,
           maskedIdentifiers: screened.findings.length,
-          route: { intent: classification?.intent ?? 'unclear', agent: classification?.agent ?? 'none', confidence: classification?.confidence ?? null, mode: this.deps.model ? 'live' : 'offline', label: moduleAgent },
+          route: { intent: classification?.intent ?? 'unclear', agent: classification?.agent ?? 'none', confidence: classification?.confidence ?? null, mode: this.deps.model ? 'live' : 'offline', label: moduleAgent, ...(concepts.length ? { concepts: conceptTags(concepts) } : {}) },
           toolCalls,
           outcome,
           numericRemovals,
@@ -1107,14 +1111,16 @@ export class Concierge {
     return { status: 200, body, resolved: decision };
   }
 
-  private async classify(turn: ConciergeTurn, text: string, usage: Usage[]): Promise<Classification> {
+  private async classify(turn: ConciergeTurn, text: string, usage: Usage[], concepts: Concept[] = []): Promise<Classification> {
     const history = (this.memory.get(turn.threadId) ?? []).slice(-2).map((h) => h.question);
     const draft = this.referralThreads.get(turn.threadId)?.status === 'drafted' ? 'A referral draft is waiting for the user’s approval in this thread; requests to change or cancel it go to referral.\n\n' : '';
     const chip = turn.context.findLast((c) => c.type === 'member');
     const member = chip ? `A ${turn.tenant.institutionType === 'bank' ? 'customer' : 'member'} is in context: ${chip.label}.\n\n` : '';
     const open = this.reportThreads.get(turn.threadId)?.current ? 'A report is open in this thread; changes to it, saving, scheduling and exporting go to report_builder.\n\n' : '';
     const shown = describeRecent((this.recent.get(turn.threadId) ?? []).filter((r) => r.said || r.shown.length || r.people.length));
-    const user = `${draft}${open}${member}${shown || (history.length ? `Earlier in this conversation the user asked: ${history.map((h) => `"${h}"`).join('; ')}\n\n` : '')}<message>${text}</message>`;
+    // What DI's ontology read in the message, as a hint: "Visa balances" are loans, "DDA" is a deposit type.
+    const read = concepts.length ? `DI's ontology reads these concepts in the message: ${concepts.map((c) => `"${c.said}" is ${c.kind === 'value' ? `${c.value} (${c.set?.replace(/_/g, ' ')})` : c.label.toLowerCase()}, about ${c.class.replace(/_/g, ' ')}`).join('; ')}.\n\n` : '';
+    const user = `${draft}${open}${member}${read}${shown || (history.length ? `Earlier in this conversation the user asked: ${history.map((h) => `"${h}"`).join('; ')}\n\n` : '')}<message>${text}</message>`;
     try {
       const r = await this.deps.model!.structured({ role: 'router_fast', system: routerPrompt(turn), user, schema: Classification });
       usage.push(r.usage);

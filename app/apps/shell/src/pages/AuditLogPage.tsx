@@ -340,6 +340,7 @@ function Trace({ t, mine }: { t: AuditRunTrace; mine: boolean }) {
               <dd>
                 {t.route.intent.replaceAll('_', ' ')}
                 {t.route.confidence !== null ? `, ${Math.round(t.route.confidence * 100)}% sure` : ''}
+                {t.route.concepts?.length ? `; about ${t.route.concepts.map((c) => c.replaceAll('_', ' ')).join(', ')}` : ''}
               </dd>
               <dt>Mode</dt>
               <dd>{t.route.mode === 'live' ? 'Live model' : t.route.mode === 'offline' ? 'Offline planner, no model' : t.route.mode}</dd>

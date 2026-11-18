@@ -474,7 +474,7 @@ export interface AuditRunTrace {
   /** Identifiers such as account numbers masked before the question reached any model. */
   maskedIdentifiers: number;
   agent: string;
-  route: { intent: string; agent: string; confidence: number | null; mode: string };
+  route: { intent: string; agent: string; confidence: number | null; mode: string; concepts?: string[] };
   outcome: string;
   error?: string;
   modelVersion?: string;

@@ -14,6 +14,25 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString
 /** Data dictionary questions the ontology answers: what a word means in DI, which column holds it, which core column it comes from. */
 export const ONTOLOGY_REQUEST = /\bwhat (?:does|do) (?:DI|we|you) mean by\b|\b(?:which|what) (?:DI )?(?:columns?|fields?) (?:holds?|has|have|stores?|keeps?|contains?)\b|\b(?:which|what) (?:symitar|core) (?:columns?|fields?)\b|\bdata dictionary\b|\bontology\b|\bwhat do (?:banks|credit unions) call\b/i;
 
+/**
+ * Impact by meaning or by core column (phase 5): "What changes if the core changes how it codes loan
+ * type?", "What breaks if LOAN.TYPE changes?". A DI table.column goes to lin_impact as before.
+ */
+export const CONCEPT_IMPACT = /\bwhat (?:changes|breaks|moves|is affected|would change|would break|depends on)\b[^?]*?\b(?:if|when)\b[^?]*\b(?:core|symitar|codes?|coded|column|field)\b|\bwhat breaks if\b[^?]*\b[A-Z][A-Z0-9_]*\.[A-Z][A-Z0-9_]*\b|\bimpact of (?:a |the )?(?:core|symitar)\b/i;
+
+/** What an impact question is about: a core column (LOAN.TYPE) as written, or the concept in plain words ("loan type"). */
+export function impactSubject(text: string) {
+  const t = clean(text).replace(/["“”]/g, '');
+  const core = /\b([A-Z][A-Z0-9_]*\.[A-Z][A-Z0-9_]*)\b/.exec(t);
+  if (core) return core[1]!;
+  const after = /\b(?:if|when)\b(.+)$/i.exec(t)?.[1] ?? /\bimpact of\b(.+)$/i.exec(t)?.[1] ?? '';
+  return after
+    .replace(/\b(?:the|our|a|an|its|their|it|we|they|(?:the )?core(?: system)?|symitar|vendor)\b/gi, ' ')
+    .replace(/\b(?:changes?|changed|changing|renames?|renamed|drops?|dropped|adds?|added|new|how|codes?|coded|coding|column|field|values?|list|is|are|was|were|to|for|in|of|way|starts?|stops?)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /** The word or phrase a data dictionary question is about; '' for the dictionary as a whole. */
 export function ontologyTerm(text: string) {
   const t = clean(text).replace(/["“”]/g, '');
@@ -42,13 +61,14 @@ export function lineageModule(lineage: LineageService, onto: OntologyService | n
     id: 'lineage',
     prefix: 'lin',
     agent: 'Data Lineage',
-    request: new RegExp(`${/^(?![\s\S]*\b(?:diversif\w*|share of revenue|how much|mix|fee income|non-?interest income|noninterest income)\b)[\s\S]*?\bwhere does\b.*\bcome from\b|\blineage\b|\btrace\b.*\bsources?\b|\bwhat breaks if\b|\bwhat depends on\b/.source}|${ONTOLOGY_REQUEST.source}`, 'i'),
+    request: new RegExp(`${/^(?![\s\S]*\b(?:diversif\w*|share of revenue|how much|mix|fee income|non-?interest income|noninterest income)\b)[\s\S]*?\bwhere does\b.*\bcome from\b|\blineage\b|\btrace\b.*\bsources?\b|\bwhat breaks if\b|\bwhat depends on\b/.source}|${ONTOLOGY_REQUEST.source}|${CONCEPT_IMPACT.source}`, 'i'),
     noAccess,
     sources: [{ kind: 'table', label: 'Lineage catalog', ref: 'table:meta_lineage' }],
     prompt: ({ tenant, user, title }) => `You are the Data Lineage agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) wants to know where data comes from.
 
 - "Where does 60+ delinquency come from?", "Trace total loan balance to its source": lin_trace with the measure in their words.
 - "What breaks if we change cdm_loan.days_delinquent?": lin_impact.
+- "What changes if the core changes how it codes loan type?", "What breaks if LOAN.TYPE changes?": onto_impact with the concept in plain words or the core column as written.
 - "What does DI mean by a share draft?", "Which column holds the loan balance?", "Which Symitar column is the dividend rate?", "What do banks call a share certificate?": onto_lookup with the word or phrase.
 - "How much does the data dictionary cover?": onto_coverage.
 - The graph comes from lineage metadata, and meanings from DI's ontology. Never work out lineage or a meaning from table or column names. Connection secrets are never shown.`,
@@ -57,6 +77,11 @@ export function lineageModule(lineage: LineageService, onto: OntologyService | n
       if (onto && ONTOLOGY_REQUEST.test(t)) {
         const term = ontologyTerm(t);
         return term ? { tool: 'onto_lookup', args: { term } } : { tool: 'onto_coverage', args: {} };
+      }
+      const diTarget = /\b[a-z]+_[a-z_]+(?:\.[a-z_0-9]+)?\b/.test(t);
+      if (onto && !diTarget && CONCEPT_IMPACT.test(t)) {
+        const subject = impactSubject(t);
+        return subject.length >= 2 ? { tool: 'onto_impact', args: { subject } } : { say: 'Which concept or core column do you mean, such as loan type or LOAN.TYPE?' };
       }
       if (/\bwhat breaks if\b|\bwhat depends on\b/i.test(t)) {
         const target = /\b([a-z]+_[a-z_]+(?:\.[a-z_0-9]+)?)\b/.exec(t)?.[1];
@@ -101,8 +126,54 @@ export function lineageModule(lineage: LineageService, onto: OntologyService | n
       },
     ],
   };
-  if (onto) spec.tools.push(ontoLookupTool(spec, onto, need, ontoSources), ontoCoverageTool(spec, onto, need, ontoSources));
+  if (onto) spec.tools.push(ontoLookupTool(spec, onto, need, ontoSources), ontoCoverageTool(spec, onto, need, ontoSources), ontoImpactTool(spec, onto, lineage, need, ontoSources));
   return spec;
+}
+
+/**
+ * Impact by meaning (phase 5): from a concept or a core column, through the ontology to every DI column
+ * that holds it, then the lineage of each to the measures and reports that read it. The ontology gives
+ * the columns; lineage gives what reads them. Neither is guessed from names.
+ */
+function ontoImpactTool(spec: ModuleSpec, onto: OntologyService, lineage: LineageService, need: (ctx: ModuleContext) => void, sources: ModuleSpec['sources']) {
+  return {
+    name: 'onto_impact',
+    description: 'What changes if a concept or a core column changes ("loan type", LOAN.TYPE): the DI columns that hold it, by DI’s ontology, and the measures and reports that read those columns, by lineage.',
+    input: z.object({ subject: z.string().min(2).max(80) }).strict(),
+    run: async (a: { subject: string }, ctx: ModuleContext) => {
+      need(ctx);
+      const found = await onto.lookup(a.subject);
+      if (!found) return { text: 'DI’s data dictionary isn’t loaded for this institution yet.' };
+      // The property the words name; a code list or a code stands for the property that holds it.
+      const prop = found.find((c) => c.kind === 'property' && c.columns.length) ?? null;
+      if (!prop) {
+        const near = found[0];
+        return { text: near ? `**${near.label}** is ${KIND_WORD[near.kind]} in DI’s data dictionary, not a field DI holds, so no column changes with it. Name a field, such as loan type or LOAN.TYPE.` : `“${a.subject}” isn’t in DI’s data dictionary. Try a field, such as loan type, or a core column, such as LOAN.TYPE.`, suggestions: ['How much does the data dictionary cover?'] };
+      }
+      const byMetric = new Map<string, { label: string; through: Set<string> }>();
+      const reports = new Set<string>();
+      const dims = new Set<string>();
+      for (const col of prop.columns) {
+        const r = await lineage.impact(col).catch((e: unknown) => (e instanceof CoreError && e.code === 'NOT_FOUND' ? null : Promise.reject(e)));
+        if (!r) continue;
+        for (const m of r.metrics) (byMetric.get(m.name) ?? byMetric.set(m.name, { label: m.label, through: new Set() }).get(m.name)!).through.add(col);
+        r.reports.forEach((x) => reports.add(x));
+        r.dimensions.forEach((d) => dims.add(d.label.toLowerCase()));
+      }
+      const core = prop.core.map((c) => `${c.system} ${c.column}`);
+      const from = core.length ? ` (from ${list(core, 3)})` : '';
+      const codes = prop.semanticType === 'code' ? ' A code the mapping doesn’t know is held on the next pull and proposed for a person to map, so it never reaches a report as the wrong type.' : '';
+      const text = byMetric.size
+        ? `**${prop.label}**${from} is held in ${plural(prop.columns.length, 'DI column')}. A change to it moves **${plural(byMetric.size, 'measure')}** and **${plural(reports.size, 'report')}**${dims.size ? `, through the ${list([...dims])} breakdown` : ''}.${codes}`
+        : `**${prop.label}**${from} is held in ${plural(prop.columns.length, 'DI column')} (${list(prop.columns)}), and no measure in the catalog reads them. That doesn’t prove nothing else does.`;
+      const rows = [...[...byMetric.values()].map((m) => ({ kind: 'Measure', name: m.label, through: [...m.through].join(', ') })), ...[...reports].sort().map((name) => ({ kind: 'Report', name, through: '' }))];
+      return {
+        text,
+        blocks: rows.length ? [moduleTable({ ...spec, sources }, `What changes with ${prop.label.toLowerCase()}`, ctx.runId, 'onto.impact', [{ field: 'kind', headerName: 'Kind', type: 'text' }, { field: 'name', headerName: 'Name', type: 'text' }, { field: 'through', headerName: 'Through', type: 'text' }], rows)] : [],
+        suggestions: [`What does DI mean by ${prop.label.toLowerCase()}?`],
+      };
+    },
+  };
 }
 
 // ---- the data dictionary: DI's ontology ---------------------------------------------------------

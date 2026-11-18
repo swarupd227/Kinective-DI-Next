@@ -7,6 +7,7 @@ import type { Block } from '@dinext/block-schemas';
 import { SemanticError, SemanticQueryRequest, type CatalogResult, type MetricDefinition, type SemanticResult, type SemanticService } from '@dinext/semantic';
 import { allowedNumberSources, AnswerError, buildBlock, noticeBlock, resolveRef, SubmitAnswer, verifyNarrative, type Resolved } from './answer.ts';
 import type { ToolCallRecord } from './audit.ts';
+import { conceptLine, readConcepts, type Concept } from './concepts.ts';
 import type { ModelClient, Usage } from './model.ts';
 import type { RunSink } from './sink.ts';
 
@@ -41,6 +42,8 @@ export interface AnalyticsOutcome {
   numericRemovals: string[];
   memory?: MemoryTurn;
   catalog: CatalogResult;
+  /** What DI's ontology read in the question, for the audit. */
+  concepts?: Concept[];
   error?: string;
 }
 
@@ -125,13 +128,13 @@ ${dims}
 Semantic model version ${m.version}.`;
 }
 
-function userMessage(input: AnalyticsInput, catalog: CatalogResult) {
+function userMessage(input: AnalyticsInput, catalog: CatalogResult, concepts: Concept[] = []) {
   const history = input.history
     .slice(-4)
     .map((h, i) => `<turn index="${i + 1}">\nQuestion: ${h.question}\nQueries: ${JSON.stringify(h.requests)}\nAnswer given: ${h.answer}\n</turn>`)
     .join('\n');
   return `${input.earlier ?? ''}${history ? `Conversation so far:\n${history}\n\n` : ''}${input.contextLabels.length ? `The user has this in context: ${input.contextLabels.join('; ')}.\n\n` : ''}<data source="semantic.search" trust="data">
-${JSON.stringify({ matched: catalog.matched, metrics: catalog.metrics.map((h) => ({ name: h.name, score: h.score })), dimensions: catalog.dimensions.map((h) => h.name), values: catalog.values, unknown_terms: catalog.unknownTerms })}
+${JSON.stringify({ matched: catalog.matched, metrics: catalog.metrics.map((h) => ({ name: h.name, score: h.score })), dimensions: catalog.dimensions.map((h) => h.name), values: catalog.values, unknown_terms: catalog.unknownTerms, ...(concepts.length ? { concepts: concepts.map((c) => ({ said: c.said, means: c.kind === 'value' ? `${c.value} (${c.set?.replace(/_/g, ' ')})` : c.label, kind: c.kind })) } : {}) })}
 </data>
 
 Question from ${input.user.name} (${input.user.title}): ${input.question}`;
@@ -202,15 +205,20 @@ export async function runAnalytics(input: AnalyticsInput, deps: { model: ModelCl
   const plan = sink.plan('Answering from governed data', AGENT_NAME, [{ id: 'match', label: 'Matching your question to banking definitions', agent: AGENT_NAME, state: 'running', operation: 'semantic.search' }]);
 
   // Resolve (spec 16.8): deterministic catalog search, shared with the model as data.
-  const catalog = svc.search([input.question, ...input.contextLabels].join(' '));
+  // DI's ontology reads the person's words first (phase 5): "DDA" is Checking, "owners" are members,
+  // "past due" is days past due. The catalog searches with both; the person's words still decide.
+  const asked = [input.question, ...input.contextLabels].join(' ');
+  const { concepts, hints } = readConcepts(asked, input.tenant.institutionType, svc.dimensionValues);
+  const catalog = svc.search(asked, hints);
   const top = catalog.metrics[0];
-  sink.step(plan, { id: 'match', state: 'done', resultSummary: catalog.matched ? `${svc.model.metrics[top!.name]!.label}${catalog.dimensions[0] ? `, by ${catalog.dimensions[0].label.toLowerCase()}` : ''}` : 'No defined metric matches yet' });
+  const read = conceptLine(concepts);
+  sink.step(plan, { id: 'match', state: 'done', resultSummary: `${catalog.matched ? `${svc.model.metrics[top!.name]!.label}${catalog.dimensions[0] ? `, by ${catalog.dimensions[0].label.toLowerCase()}` : ''}` : 'No defined metric matches yet'}${read ? `; read ${read}` : ''}` });
 
   // "Is the data current?" is about the build, not a metric: it gets the build's dates, never a refusal.
   const fresh = freshnessAnswer(input.question, svc);
   if (fresh) {
     await sink.text(fresh, AGENT_NAME);
-    return { outcome: 'answer', toolCalls, usage, numericRemovals: [], catalog };
+    return { outcome: 'answer', toolCalls, usage, numericRemovals: [], catalog, concepts };
   }
 
   // A first question that matches nothing in the catalog is refused without a model call (AI-GRD-052).
@@ -231,20 +239,20 @@ export async function runAnalytics(input: AnalyticsInput, deps: { model: ModelCl
         options: closest.map((label, i) => ({ id: `o${i + 1}`, label })),
       }),
     );
-    return { outcome: 'unmatched', toolCalls, usage, numericRemovals: [], catalog };
+    return { outcome: 'unmatched', toolCalls, usage, numericRemovals: [], catalog, concepts };
   }
 
   const deadline = new AbortController();
   const timer = setTimeout(() => deadline.abort(), TURN_BUDGET_MS);
   const signal = AbortSignal.any([deadline.signal, sink.signal]);
-  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: 'user', content: userMessage(input, catalog) }];
+  const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: 'user', content: userMessage(input, catalog, concepts) }];
   let stepIndex = 0;
   let submitRetries = 0;
   let jsonRetries = 0;
 
   try {
     for (;;) {
-      if (signal.aborted) return { outcome: sink.signal.aborted ? 'cancelled' : 'failed', toolCalls, usage, numericRemovals: [], catalog, error: sink.signal.aborted ? undefined : 'Turn time limit reached' };
+      if (signal.aborted) return { outcome: sink.signal.aborted ? 'cancelled' : 'failed', toolCalls, usage, numericRemovals: [], catalog, concepts, error: sink.signal.aborted ? undefined : 'Turn time limit reached' };
       let message: Anthropic.Beta.BetaMessage;
       try {
         const turn = await deps.model.turn({ role: 'specialist_strong', system: systemPrompt(svc, input), messages, tools: TOOLS, signal });
@@ -259,7 +267,7 @@ export async function runAnalytics(input: AnalyticsInput, deps: { model: ModelCl
 
       if (message.stop_reason === 'refusal') {
         await sink.block(noticeBlock('not_supported', 'I can’t help with that request. I can answer questions about your institution’s data.', AGENT_NAME, input.runId));
-        return { outcome: 'not_supported', toolCalls, usage, numericRemovals: [], catalog };
+        return { outcome: 'not_supported', toolCalls, usage, numericRemovals: [], catalog, concepts };
       }
       const uses = message.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === 'tool_use');
       if (!uses.length) {
@@ -344,7 +352,7 @@ export async function runAnalytics(input: AnalyticsInput, deps: { model: ModelCl
             continue;
           }
           record(true);
-          finished = { ...outcome, toolCalls, usage, catalog, memory: outcome.outcome === 'answer' ? { question: input.question, requests, answer: outcome.answerText } : undefined };
+          finished = { ...outcome, toolCalls, usage, catalog, concepts, memory: outcome.outcome === 'answer' ? { question: input.question, requests, answer: outcome.answerText } : undefined };
           continue;
         }
 
@@ -356,7 +364,7 @@ export async function runAnalytics(input: AnalyticsInput, deps: { model: ModelCl
       messages.push({ role: 'user', content: toolResults });
     }
   } catch (err) {
-    if (sink.signal.aborted) return { outcome: 'cancelled', toolCalls, usage, numericRemovals: [], catalog };
+    if (sink.signal.aborted) return { outcome: 'cancelled', toolCalls, usage, numericRemovals: [], catalog, concepts };
     throw err;
   } finally {
     clearTimeout(timer);

@@ -30,6 +30,26 @@ export interface CatalogResult {
 
 export const MATCH_THRESHOLD = 3;
 
+/**
+ * What DI's ontology read in the question (Core Mapping and Ontology, phase 5): the catalog's own words
+ * for the person's ("DDA" is the value Checking), words it now understands, and metrics that read a
+ * property the question names ("past due" is days past due). Hints add to the search; they never
+ * replace the person's words.
+ */
+export interface CatalogHints {
+  /** Words to search with as well: dimension values and labels. */
+  terms?: string[];
+  /** The person's words the ontology understood, so they don't count as unknown. */
+  known?: string[];
+  /** Metrics that read a property the question names, once per property: one that reads two named properties gains twice. */
+  metrics?: string[];
+  /** Words to add only when nothing matches without them: the class of a value named alone ("CDs" is a share). */
+  fallback?: string[];
+}
+
+/** A metric that reads a property the question names gains this much: enough to settle a near tie, not to beat a named metric. */
+const HINT_BOOST = 2.5;
+
 const STOP = new Set(['the', 'a', 'an', 'of', 'for', 'by', 'in', 'on', 'to', 'and', 'or', 'what', 'how', 'is', 'are', 'was', 'were', 'our', 'my', 'me', 'show', 'give', 'tell', 'did', 'do', 'does', 'vs', 'versus', 'compared', 'with', 'last', 'this', 'per', 'each', 'all', 'at', 'from', 'over', 'which', 'many', 'much',
   // Everyday grammar, so "How many members do we have?" is not refused for "we" and "have".
   'we', 'us', 'i', 'you', 'your', 'they', 'their', 'it', 'its', 'have', 'has', 'had', 'got', 'get', 'be', 'been', 'being', 'there', 'that', 'these', 'those', 'any', 'so', 'just', 'right', 'whats', 'hows', 'currently',
@@ -65,8 +85,16 @@ function scoreItem(queryTokens: string[], queryText: string, fields: { name: str
   return Math.round(score * 10) / 10;
 }
 
-export function searchCatalog(model: SemanticModel, query: string, dimensionValues: Record<string, string[]>): CatalogResult {
+export function searchCatalog(model: SemanticModel, asked: string, dimensionValues: Record<string, string[]>, hints: CatalogHints = {}): CatalogResult {
+  if (hints.fallback?.length) {
+    const { fallback, ...rest } = hints;
+    const plain = searchCatalog(model, asked, dimensionValues, rest);
+    return (plain.metrics[0]?.score ?? 0) >= MATCH_THRESHOLD ? plain : searchCatalog(model, asked, dimensionValues, { ...rest, terms: [...(rest.terms ?? []), ...fallback] });
+  }
+  const query = hints.terms?.length ? `${asked} ${hints.terms.join(' ')}` : asked;
   const qt = tokens(query);
+  const boosted = new Map<string, number>();
+  for (const m of hints.metrics ?? []) boosted.set(m, (boosted.get(m) ?? 0) + 1);
   const metrics = Object.values(model.metrics)
     .map((m) => ({
       kind: 'metric' as const,
@@ -74,7 +102,7 @@ export function searchCatalog(model: SemanticModel, query: string, dimensionValu
       label: m.label,
       description: m.description,
       // "Certificate share" isn't "certificates maturing": a metric that names its key words needs one.
-      score: m.requiresAny.length && !m.requiresAny.some((w) => query.toLowerCase().includes(w)) ? 0 : scoreItem(qt, query, m),
+      score: m.requiresAny.length && !m.requiresAny.some((w) => query.toLowerCase().includes(w)) ? 0 : scoreItem(qt, query, m) + HINT_BOOST * (boosted.get(m.name) ?? 0),
       dimensionsAllowed: m.dimensionsAllowed,
       trendable: !m.currentOnly,
     }))
@@ -98,11 +126,14 @@ export function searchCatalog(model: SemanticModel, query: string, dimensionValu
   // A score alone can be carried by one generic word ("share" in "wallet share"). The question must
   // also be mostly made of words the catalog understands, or the agent says it cannot map it.
   const known = vocabulary(model, dimensionValues);
-  const unknown = qt.filter((t) => !known.has(t) && !/^\d+$/.test(t));
+  const understood = new Set((hints.known ?? []).flatMap((w) => tokens(w)));
+  // Coverage is of the person's own words; the hint terms are the catalog's and always known.
+  const asks = tokens(asked);
+  const unknown = asks.filter((t) => !known.has(t) && !understood.has(t) && !/^\d+$/.test(t));
   // The reply quotes the person's own words ("funds", "basis"), never the stems the match used ("fund", "basi").
-  const said = query.toLowerCase().replace(/['’]s\b/g, '').replace(/[^a-z0-9+&\s-]/g, ' ').split(/[\s-]+/).filter((w) => w && !STOP.has(w));
+  const said = asked.toLowerCase().replace(/['’]s\b/g, '').replace(/[^a-z0-9+&\s-]/g, ' ').split(/[\s-]+/).filter((w) => w && !STOP.has(w));
   const asSaid = [...new Set(unknown.map((t) => said.find((w) => stem(w) === t) ?? t))];
-  const coverage = qt.length ? 1 - unknown.length / qt.length : 0;
+  const coverage = asks.length ? 1 - unknown.length / asks.length : 0;
   return { metrics, dimensions, values: values.slice(0, 8), matched: (metrics[0]?.score ?? 0) >= MATCH_THRESHOLD && coverage >= 0.6, unknownTerms: asSaid };
 }
 

@@ -48,7 +48,7 @@ const PropertySchema = z.object({
 const ValueSetSchema = z.object({
   label: z.string(),
   open: z.boolean().default(false),
-  codes: z.record(ident, z.object({ label: z.string(), labels_by_type: byType, values: z.array(z.string()).min(1) }).strict()),
+  codes: z.record(ident, z.object({ label: z.string(), labels_by_type: byType, synonyms, values: z.array(z.string()).min(1) }).strict()),
 }).strict();
 
 export const TRANSFORMS = ['same', 'number', 'date8', 'code', 'rate1000', 'daysPast', 'not', 'nonzero'] as const;

@@ -7,19 +7,19 @@ value_sets:
   deposit_category:
     label: Share or deposit type
     codes:
-      savings: { label: Savings, labels_by_type: { credit_union: Share savings }, values: [Share Savings, Savings] }
-      checking: { label: Checking, labels_by_type: { credit_union: Share draft }, values: [Checking] }
-      money_market: { label: Money market, values: [Money Market] }
-      certificate: { label: Certificate, labels_by_type: { credit_union: Share certificate, bank: Certificate of deposit }, values: [Certificates, Certificates of Deposit] }
-      ira: { label: IRA, values: [IRA] }
+      savings: { label: Savings, labels_by_type: { credit_union: Share savings }, synonyms: { credit_union: [regular share, primary share, savings account], bank: [savings account, statement savings] }, values: [Share Savings, Savings] }
+      checking: { label: Checking, labels_by_type: { credit_union: Share draft }, synonyms: { credit_union: [share draft, checking account, demand deposit], bank: [checking account, demand deposit, share draft] }, values: [Checking] }
+      money_market: { label: Money market, synonyms: { credit_union: [money market account, money market share], bank: [money market account, money market deposit account] }, values: [Money Market] }
+      certificate: { label: Certificate, labels_by_type: { credit_union: Share certificate, bank: Certificate of deposit }, synonyms: { credit_union: [term share, time deposit, certificate of deposit], bank: [time deposit, term deposit, share certificate] }, values: [Certificates, Certificates of Deposit] }
+      ira: { label: IRA, synonyms: { credit_union: [retirement account, individual retirement account], bank: [retirement account, individual retirement account] }, values: [IRA] }
   loan_category:
     label: Loan type
     codes:
-      auto: { label: Auto, values: [Auto] }
-      consumer: { label: Personal or consumer, values: [Personal, Consumer] }
-      mortgage: { label: First mortgage, values: [Mortgage] }
-      heloc: { label: Home equity line, values: [HELOC] }
-      credit_card: { label: Credit card, values: [Credit Card] }
+      auto: { label: Auto, synonyms: { credit_union: [car loan, vehicle loan, auto loan], bank: [car loan, vehicle loan, auto loan] }, values: [Auto] }
+      consumer: { label: Personal or consumer, synonyms: { credit_union: [personal loan, signature loan, unsecured loan, unsecured], bank: [personal loan, consumer loan, unsecured loan, unsecured] }, values: [Personal, Consumer] }
+      mortgage: { label: First mortgage, synonyms: { credit_union: [home loan, first mortgage, real estate loan], bank: [home loan, first mortgage, residential mortgage] }, values: [Mortgage] }
+      heloc: { label: Home equity line, synonyms: { credit_union: [home equity, home equity line of credit], bank: [home equity, home equity line of credit] }, values: [HELOC] }
+      credit_card: { label: Credit card, synonyms: { credit_union: [visa, mastercard, credit card loan], bank: [visa, mastercard, credit card loan] }, values: [Credit Card] }
       business: { label: Business, values: [Business] }
       commercial_industrial: { label: Commercial and industrial, values: [Commercial & Industrial] }
       commercial_real_estate: { label: Commercial real estate, values: [Commercial Real Estate] }
@@ -27,9 +27,9 @@ value_sets:
     label: Segment
     codes:
       retail: { label: Retail or consumer, values: [Retail, Consumer] }
-      young_adult: { label: Young adult, values: [Young Adult] }
-      senior: { label: Senior, values: [Senior] }
-      small_business: { label: Small business, values: [Small Business] }
+      young_adult: { label: Young adult, synonyms: { credit_union: [young adults, youth], bank: [young adults, youth] }, values: [Young Adult] }
+      senior: { label: Senior, synonyms: { credit_union: [seniors, retiree, retirees], bank: [seniors, retiree, retirees] }, values: [Senior] }
+      small_business: { label: Small business, synonyms: { credit_union: [small businesses], bank: [small businesses] }, values: [Small Business] }
       commercial: { label: Commercial, values: [Commercial] }
   account_ownership:
     label: Ownership type
@@ -140,7 +140,7 @@ value_sets:
   cross_sell_group:
     label: Cross-sell group
     codes:
-      auto: { label: Auto, values: [AUTO] }
+      auto: { label: Auto, synonyms: { credit_union: [car loan, vehicle loan, auto loan], bank: [car loan, vehicle loan, auto loan] }, values: [AUTO] }
       business: { label: Business, values: [BUSINESS] }
       card: { label: Card, values: [CARD] }
       checking: { label: Checking, values: [CHECKING] }

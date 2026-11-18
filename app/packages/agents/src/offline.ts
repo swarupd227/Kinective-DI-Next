@@ -3,6 +3,7 @@
 import type { CatalogResult, SemanticQueryInput, SemanticService } from '@dinext/semantic';
 import { buildBlock, formatMetric, noticeBlock } from './answer.ts';
 import { freshnessAnswer } from './analytics.ts';
+import { conceptLine, readConcepts } from './concepts.ts';
 import type { RunSink } from './sink.ts';
 
 export const OFFLINE_AGENT = 'Analytics Q&A (offline)';
@@ -26,9 +27,12 @@ export function planOffline(question: string, catalog: CatalogResult, svc: Seman
   return { metrics: [metric.name], dimensions: dimension ? [dimension] : [], filters, time, order: dimension && !time ? [{ field: metric.name, dir: 'desc' }] : [], limit: 50 };
 }
 
-export async function runOffline(question: string, svc: SemanticService, ctx: { purviewBranches?: string[]; canViewSql: boolean }, runId: string, sink: RunSink) {
+export async function runOffline(question: string, svc: SemanticService, ctx: { purviewBranches?: string[]; canViewSql: boolean }, runId: string, sink: RunSink, type: 'credit_union' | 'bank' = 'credit_union') {
   sink.routing(OFFLINE_AGENT, 'Language model unavailable: deterministic planner');
-  const catalog = svc.search(question);
+  // DI's ontology reads the words first, as in the live agent: "CDs" are Certificates, "owners" are members.
+  const { concepts, hints } = readConcepts(question, type, svc.dimensionValues);
+  const catalog = svc.search(question, hints);
+  const read = conceptLine(concepts);
   const fresh = freshnessAnswer(question, svc);
   if (fresh) {
     await sink.text(fresh, OFFLINE_AGENT);
@@ -45,13 +49,16 @@ export async function runOffline(question: string, svc: SemanticService, ctx: { 
   const dim = result.columns.find((c) => c.kind === 'dimension');
   const hasPeriod = result.columns.some((c) => c.kind === 'period');
   const first = result.rows[0];
+  // The filter is said, so "How much is in CDs?" doesn't read as the whole share balance.
+  const only = request.filters?.length ? ` for ${request.filters.map((f) => f.values.join(', ')).join(' and ')}` : '';
+  const said = read ? ` (I read ${read}.)` : '';
   const summary = !first
     ? `No rows matched.`
     : dim && !hasPeriod
-      ? `**${metric.label}** by ${dim.label.toLowerCase()}: **${first[dim.key]}** is highest at **${formatMetric(Number(first[metric.key]), metric.format!)}**.`
+      ? `**${metric.label}**${only} by ${dim.label.toLowerCase()}: **${first[dim.key]}** is highest at **${formatMetric(Number(first[metric.key]), metric.format!)}**.${said}`
       : hasPeriod
-        ? `**${metric.label}** for ${result.periods![0]!.label} to ${result.periods![result.periods!.length - 1]!.label}.`
-        : `**${metric.label}** is **${formatMetric(Number(first[metric.key]), metric.format!)}**.`;
+        ? `**${metric.label}**${only} for ${result.periods![0]!.label} to ${result.periods![result.periods!.length - 1]!.label}.${said}`
+        : `**${metric.label}**${only} is **${formatMetric(Number(first[metric.key]), metric.format!)}**.${said}`;
   await sink.text(summary, OFFLINE_AGENT, [{ kind: 'metric', label: `${metric.label} (definition)`, ref: `metric:${metric.key}` }]);
   if (result.rows.length > 1) {
     const x = hasPeriod && !dim ? 'period' : dim!.key;

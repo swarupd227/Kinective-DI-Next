@@ -103,7 +103,7 @@ properties:
     open_date: { label: Date opened, type: date, privacy: none, constraints: { not_after_as_of: true }, realized_by: [cdm_deposit_account.open_date] }
     close_date: { label: Date closed, type: date, privacy: none, definition: Empty while open., realized_by: [cdm_deposit_account.close_date] }
     maturity_date: { label: Maturity date, type: date, privacy: none, definition: When a certificate matures; empty for shares with no term., realized_by: [cdm_deposit_account.maturity_date] }
-    balance: { label: Balance, type: money, privacy: financial, constraints: { min: -100000 }, synonyms: { credit_union: [shares, share balance, savings balance], bank: [deposits, deposit balance] }, realized_by: [cdm_deposit_account.balance, hist_deposit_month.balance] }
+    balance: { label: Balance, type: money, privacy: financial, constraints: { min: -100000 }, synonyms: { credit_union: [shares, share balance, savings balance, balance], bank: [deposits, deposit balance, balance] }, realized_by: [cdm_deposit_account.balance, hist_deposit_month.balance] }
     rate: { label: Dividend or interest rate, labels_by_type: { credit_union: Dividend rate, bank: Interest rate }, type: rate, privacy: none, constraints: { min: 0, max: 20 }, synonyms: { credit_union: [dividend rate, APY], bank: [interest rate, APY] }, realized_by: [cdm_deposit_account.rate, hist_deposit_month.rate_weighted] }
     count: { label: Number of shares or deposits, type: count, aggregate: true, privacy: none, realized_by: [hist_deposit_month.account_count] }
 
@@ -125,7 +125,7 @@ properties:
     close_date: { label: Date closed, type: date, privacy: none, definition: Empty while open., realized_by: [cdm_loan.close_date] }
     charge_off_date: { label: Date charged off, type: date, privacy: none, realized_by: [cdm_loan.charge_off_date, cdm_loan_chargeoff.charge_off_date] }
     original_amount: { label: Original amount, type: money, privacy: financial, constraints: { min: 0 }, realized_by: [cdm_loan.original_amount] }
-    balance: { label: Balance, type: money, privacy: financial, constraints: { min: 0 }, synonyms: { credit_union: [loans, loan balance, outstanding], bank: [loans, loan balance, outstanding, principal] }, realized_by: [cdm_loan.balance, hist_loan_month.balance, hist_loan_dq_month.balance] }
+    balance: { label: Balance, type: money, privacy: financial, constraints: { min: 0 }, synonyms: { credit_union: [loans, loan balance, outstanding, balance], bank: [loans, loan balance, outstanding, principal, balance] }, realized_by: [cdm_loan.balance, hist_loan_month.balance, hist_loan_dq_month.balance] }
     rate: { label: Interest rate, type: rate, privacy: none, constraints: { min: 0, max: 30 }, realized_by: [cdm_loan.rate] }
     days_delinquent: { label: Days past due, type: count, privacy: financial, constraints: { min: 0 }, derive: [{ transform: daysPast, from: date, words: [due, next due, payment due] }], synonyms: { credit_union: [days delinquent, past due, late], bank: [days past due, past due, late] }, realized_by: [cdm_loan.days_delinquent] }
     delinquency_bucket: { label: Delinquency bucket, type: code, value_set: delinquency_bucket, privacy: none, realized_by: [hist_loan_dq_month.bucket] }

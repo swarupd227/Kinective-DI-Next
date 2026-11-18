@@ -25,7 +25,7 @@ export interface AuditRecord {
   /** The question after pre-screen masking; raw identifiers are never written (AI-GRD-031). */
   question: string;
   maskedIdentifiers: number;
-  route: { intent: string; agent: string; confidence: number | null; mode: 'live' | 'offline' | 'deterministic'; label?: string };
+  route: { intent: string; agent: string; confidence: number | null; mode: 'live' | 'offline' | 'deterministic'; label?: string; /** The ontology classes the question named (loan, deposit, member). */ concepts?: string[] };
   toolCalls: ToolCallRecord[];
   outcome: 'answer' | 'unmatched' | 'clarify' | 'not_supported' | 'no_access' | 'failed' | 'cancelled' | 'scripted' | 'approval_requested' | 'not_found';
   numericRemovals: string[];

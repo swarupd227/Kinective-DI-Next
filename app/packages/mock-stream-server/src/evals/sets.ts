@@ -34,6 +34,14 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-ONT-001', set: 'golden', persona: 'executive', q: 'What does DI mean by a share draft?', agent: 'Data Lineage', contains: ['Share draft', 'kind of share'], approval: 'none' },
   { id: 'GQ-ONT-002', set: 'golden', persona: 'bank_cfo', q: 'Which column holds the loan balance?', agent: 'Data Lineage', contains: ['cdm_loan.balance', 'LOAN.BALANCE'], approval: 'none' },
   { id: 'GQ-ONT-003', set: 'golden', persona: 'executive', q: 'How much does the data dictionary cover?', agent: 'Data Lineage', contains: ['concepts', 'Symitar'], approval: 'none' },
+  // The ontology across agents (phase 5): everyday words reach the defined metric and its filter, and
+  // impact questions go from a concept or a core column to the measures and reports that move.
+  { id: 'GQ-ONT-004', set: 'golden', persona: 'executive', q: 'How much do members have in term shares?', agent: 'Analytics Q&A', contains: ['Certificates'], approval: 'none' },
+  { id: 'GQ-ONT-005', set: 'golden', persona: 'executive', q: 'How many owners do we have?', agent: 'Analytics Q&A', contains: ['Members'], approval: 'none' },
+  { id: 'GQ-ONT-006', set: 'golden', persona: 'executive', q: 'Car loan balances', agent: 'Analytics Q&A', contains: ['Auto'], approval: 'none' },
+  { id: 'GQ-ONT-007', set: 'golden', persona: 'bank_cfo', q: 'How much is in DDA accounts?', agent: 'Analytics Q&A', contains: ['Checking'], approval: 'none' },
+  { id: 'GQ-ONT-008', set: 'golden', persona: 'executive', q: 'What changes if the core changes how it codes loan type?', agent: 'Data Lineage', contains: ['Loan type', 'LOAN.TYPE', 'measures'], approval: 'none' },
+  { id: 'GQ-ONT-009', set: 'golden', persona: 'executive', q: 'What breaks if LOAN.TYPE changes?', agent: 'Data Lineage', contains: ['Loan type', 'reports'], approval: 'none' },
   { id: 'GQ-GOV-001', set: 'golden', persona: 'executive', q: 'Show AI cost by agent for October', agent: 'AI Governance', contains: ['October 2026'], approval: 'none' },
   { id: 'GQ-CMP-001', set: 'golden', persona: 'executive', q: 'Which regulatory issues are open more than 3 weeks?', agent: 'Compliance & Problem Management', approval: 'none' },
   { id: 'GQ-CR-001', set: 'golden', persona: 'executive', q: 'Are we ready to file Q3?', agent: 'Call Report', contains: ['uncategorized GL accounts'], approval: 'none' },

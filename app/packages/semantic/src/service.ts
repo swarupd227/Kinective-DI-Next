@@ -4,7 +4,7 @@
 import { listRecords, recordKindFor, type RecordKind, type RecordsResult } from './records.ts';
 import { createHash } from 'node:crypto';
 import type { Pool } from 'mysql2/promise';
-import { searchCatalog, type CatalogResult } from './catalog.ts';
+import { searchCatalog, type CatalogHints, type CatalogResult } from './catalog.ts';
 import { compile, type CompileEnv, type Period } from './compile.ts';
 import { loadModel, type InstitutionType, type Metric, type MetricFormat, type SemanticModel } from './model.ts';
 import { SemanticError, SemanticQueryRequest, type QueryContext, type SemanticQueryInput } from './request.ts';
@@ -108,8 +108,8 @@ export class SemanticService {
     return recordKindFor(this.env, metric);
   }
 
-  search(query: string): CatalogResult {
-    return searchCatalog(this.model, query, this.dimensionValues);
+  search(query: string, hints?: CatalogHints): CatalogResult {
+    return searchCatalog(this.model, query, this.dimensionValues, hints);
   }
 
   definition(name: string): MetricDefinition {

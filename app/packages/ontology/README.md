@@ -45,6 +45,15 @@ For it the engine learned: ISO dates and percent rates; a seeded random profile 
 
 Measured against an answer key the engine never sees: 27 of 31 DI columns right on the first run, 31 of 31 after adding common abbreviations it lacked (prod, cd for code, dlr, dlq, brch, hhld, nm, pers, cur) and "product type" as a synonym of the share and loan type. Code words for values were written with this core in view. After freezing, shares reconcile row for row; loans and member types with codes DI couldn't read are held until mapped, and two approvals bring loans to row-for-row.
 
+## The ontology across agents (phase 5)
+
+`src/concepts.ts` finds the concepts a question names, by phrase, with no model: a code by its label, its other names (`synonyms` on each code in `model/values.yaml`) or a core's abbreviation (`code_words`), as the value the institution's data holds ("DDA", "share drafts" and "checking" are Checking); a class by its scoped synonyms ("owners" are members at a credit union, not at a bank); a property a metric reads ("past due" is days past due). The longest phrase from the left wins ("car loan balances" is a car loan), a code beats a class that shares its words, and a word with two meanings ("balances") takes the one whose class the rest of the question names, or is left out.
+- **Analytics Q&A** searches the catalog with the person's words plus what the concepts add: the value to filter by, a class's own word, a lift for the metrics that read a named property, and the value's class (share, loan, member) only when nothing else matches. Words the ontology understood don't count as unknown, so "How much is in DDA accounts?" is answered instead of refused. The plan step says how the words were read; the offline planner does the same and names the filter it applied.
+- **Routing**: the classes named go to the router as a hint and into the audit's "Routed as" line.
+- **Data Lineage**: "What changes if the core changes how it codes loan type?" or "What breaks if LOAN.TYPE changes?" goes from the concept or core column, through the ontology, to every DI column that holds it, then by lineage to the measures and reports that read those columns, including through a dimension (loan category).
+
+On 19 everyday phrasings at a credit union and a bank, the catalog search answered 13 of 19 at a credit union and 13 of 19 at a bank before, and 18 and 17 after; the ones left are a figure nothing defines (dividends paid) and "owners" at a bank. Code synonyms were written with these phrasings in view.
+
 ## Not yet
 
-FIBO alignment (the `fibo` field is empty until each reference is checked); using the ontology in other agents (phase 5). The raw zone's tables are created with each stand-in core at seed time, so a real new core's raw tables need a seed step too.
+FIBO alignment (the `fibo` field is empty until each reference is checked); data quality checks and privacy masking from the ontology's constraints and privacy classes, and Member 360 roles (phase 6). The raw zone's tables are created with each stand-in core at seed time, so a real new core's raw tables need a seed step too.

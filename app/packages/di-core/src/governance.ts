@@ -38,7 +38,9 @@ export const LINEAGE_CATALOG: Record<string, CatalogEntry> = {
 export interface LineageModel {
   sources: Record<string, { table: string; alias: string }>;
   measures: Record<string, { exprs: Record<string, string> }>;
-  metrics: Record<string, { name: string; label: string; description: string; regulatoryBasis?: string; synonyms: string[]; measures: string[] }>;
+  metrics: Record<string, { name: string; label: string; description: string; regulatoryBasis?: string; synonyms: string[]; measures: string[]; dimensionsAllowed?: string[] }>;
+  /** Dimensions, for impact: a column a dimension reads changes every figure split or filtered by it. */
+  dimensions?: Record<string, { name: string; label: string; exprs: Record<string, string> }>;
 }
 
 export type DqState = { state: 'passed' | 'failed' | 'unknown'; passed: number; failed: number };
@@ -172,16 +174,25 @@ export class LineageService {
   async impact(target: string) {
     const t = target.toLowerCase().trim();
     const [table, column] = t.includes('.') ? (t.split('.') as [string, string]) : [t, undefined];
+    const reads = (tbl: string, cols: Set<string>) => (column ? tbl === table && cols.has(column) : tbl === table || cols.has(table));
+    // A column a dimension reads (loan type, branch) changes every figure broken down or filtered by it.
+    const dimensions = column
+      ? Object.values(this.model.dimensions ?? {}).filter((d) =>
+          Object.entries(d.exprs).some(([source, expr]) => {
+            const s = this.model.sources[source];
+            return !!s && reads(s.table, new Set(columnsIn(expr, s.alias)));
+          }),
+        )
+      : [];
+    const byDimension = new Set(dimensions.map((d) => d.name));
     const metrics = Object.values(this.model.metrics).filter((m) => {
-      for (const [tbl, cols] of this.columnsFor(m.measures)) {
-        if (column ? tbl === table && cols.has(column) : tbl === table || cols.has(table)) return true;
-      }
-      return false;
+      for (const [tbl, cols] of this.columnsFor(m.measures)) if (reads(tbl, cols)) return true;
+      return (m.dimensionsAllowed ?? []).some((d) => byDimension.has(d));
     });
     if (!metrics.length) throw new CoreError('NOT_FOUND', `Nothing in the catalog reads ${target}. That doesn’t prove nothing else does.`);
     const templates = await rows<{ name: string; definition: unknown }>(this.pool, 'SELECT name, definition FROM esp_report_templates');
     const reports = templates.filter((r) => metrics.some((m) => JSON.stringify(r.definition).includes(`"${m.name}"`))).map((r) => r.name);
-    return { metrics, reports };
+    return { metrics, reports, dimensions: dimensions.map((d) => ({ name: d.name, label: d.label })) };
   }
 }
 

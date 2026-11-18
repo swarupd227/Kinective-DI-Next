@@ -126,6 +126,8 @@ export function ontologyRows(o: Ontology, metrics = metricBindings(o)) {
       addTerm(c.label, id, 'all', 'label');
       if (c.labels_by_type?.credit_union) addTerm(c.labels_by_type.credit_union, id, 'credit_union', 'label');
       if (c.labels_by_type?.bank) addTerm(c.labels_by_type.bank, id, 'bank', 'label');
+      for (const s of c.synonyms?.credit_union ?? []) addTerm(s, id, 'credit_union', 'synonym');
+      for (const s of c.synonyms?.bank ?? []) addTerm(s, id, 'bank', 'synonym');
       for (const dv of c.values) {
         value.set(`${vs.id}|${dv}`, [vs.id, code, c.label, dv]);
         addTerm(dv, id, 'all', 'value');
