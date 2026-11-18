@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import { CoreError, MAP_TARGETS, codeSetWords, type ColumnMapRow, type CustomValueType, type DriftItem, type MapPreview, type SourceService } from '@dinext/di-core';
 import { moduleTable, type ModuleContext, type ModuleSpec, type ModuleView } from './moduleAgent.ts';
+import { IDENTIFYING, maskValue, ontology, propertyNamed } from '@dinext/ontology';
 import { heldGuess } from './sources.ts';
 
 const n = (x: number) => x.toLocaleString('en-US');
@@ -43,6 +44,19 @@ export function mappingFrom(text: string): { expression: string; label: string; 
   const type: CustomValueType | undefined = t === 'yes or no' || t === 'yes/no' || t === 'flag' ? 'flag' : t === 'text' || t === 'number' || t === 'date' ? t : undefined;
   const target = m[4] ? (/^deposit/i.test(m[4]) ? 'deposits' : m[4].toLowerCase()) : undefined;
   return { expression: m[1]!.trim(), label: m[2]!.trim(), ...(type ? { type } : {}), ...(target ? { target } : {}) };
+}
+
+/**
+ * A preview's values, masked when the field's name is one DI's ontology classes as identifying a person
+ * ("Email address", "date of birth"), with the sentence that says so (phase 6). Counts stay as they are.
+ */
+function guarded(label: string, p: MapPreview): { p: MapPreview; note: string } {
+  const prop = propertyNamed(ontology(), label);
+  if (!prop || !IDENTIFYING.has(prop.privacy)) return { p, note: '' };
+  return {
+    p: { ...p, top: p.top.map((t) => ({ ...t, value: maskValue(t.value) })), sample: p.sample.map((x) => ({ ...x, value: maskValue(x.value) })) },
+    note: ` Values are masked: DI’s data dictionary classes ${prop.label.toLowerCase()} as identifying a person.`,
+  };
 }
 
 export function coreMappingModule(sources: SourceService | null, today: () => string): ModuleSpec {
@@ -144,9 +158,9 @@ export function coreMappingModule(sources: SourceService | null, today: () => st
         input: z.object({ target: z.enum(['members', 'deposits', 'loans']), label: z.string().min(2).max(60), expression: z.string().min(3).max(400), type: z.enum(['text', 'number', 'date', 'flag']) }).strict(),
         run: async (a: { target: string; label: string; expression: string; type: CustomValueType }, ctx): Promise<ModuleView> => {
           const s = need(ctx);
-          const p = await s.previewMap({ target: a.target, expression: a.expression, valueType: a.type });
+          const { p, note } = guarded(a.label, await s.previewMap({ target: a.target, expression: a.expression, valueType: a.type }));
           return {
-            text: `Mapped as **${a.label}** (${typeName(a.type)}), this gives **${n(p.filled)} of ${n(p.total)} ${TARGET_LABEL[a.target]}** a value (${pct(p.filled, p.total)}), ${n(p.distinct)} different ${p.distinct === 1 ? 'value' : 'values'}${p.top[0] ? `, most often “${p.top[0].value}”` : ''}. Nothing is saved; ask me to map it to add it.`,
+            text: `Mapped as **${a.label}** (${typeName(a.type)}), this gives **${n(p.filled)} of ${n(p.total)} ${TARGET_LABEL[a.target]}** a value (${pct(p.filled, p.total)}), ${n(p.distinct)} different ${p.distinct === 1 ? 'value' : 'values'}${p.top[0] ? `, most often “${p.top[0].value}”` : ''}.${note} Nothing is saved; ask me to map it to add it.`,
             blocks: previewTable(spec, ctx.runId, p),
             suggestions: [`Map ${a.expression} to ${a.label} as ${a.type === 'flag' ? 'a yes or no' : a.type}${a.target !== 'members' ? ` on ${a.target}` : ''}`],
           };
@@ -159,7 +173,7 @@ export function coreMappingModule(sources: SourceService | null, today: () => st
         run: async (a: { target: string; label: string; expression: string; type: CustomValueType; note?: string }, ctx) => {
           const s = need(ctx);
           if (!TYPES.includes(a.type) || !MAP_TARGETS[a.target]) throw new CoreError('INVALID', 'A custom field goes on members, deposits or loans, as text, a number, a date or a yes or no.');
-          const p = await s.previewMap({ target: a.target, expression: a.expression, valueType: a.type });
+          const { p, note } = guarded(a.label, await s.previewMap({ target: a.target, expression: a.expression, valueType: a.type }));
           if (!p.filled) throw new CoreError('INVALID', `That expression gives no ${TARGET_LABEL[a.target]} a value, so I won’t add it. Try it with a preview and check the core’s codes.`);
           const existing = (await s.columnMaps()).find((r) => r.origin === 'Custom' && r.target === a.target && r.label.toLowerCase() === a.label.toLowerCase());
           return {
@@ -172,7 +186,7 @@ export function coreMappingModule(sources: SourceService | null, today: () => st
                 { label: 'Commonest values', before: '—', after: p.top.slice(0, 4).map((t) => `${t.value} (${n(t.count)})`).join(', ') || '—' },
                 { label: 'Takes effect', before: '—', after: 'From the next pull from the core' },
               ],
-              text: `I tried it on the core: **${n(p.filled)} of ${n(p.total)} ${TARGET_LABEL[a.target]}** get a value, most often “${p.top[0]?.value ?? '—'}”. Once you approve, DI reads it on every pull from the core, starting with the next. Kinective’s standard columns aren’t touched.`,
+              text: `I tried it on the core: **${n(p.filled)} of ${n(p.total)} ${TARGET_LABEL[a.target]}** get a value, most often “${p.top[0]?.value ?? '—'}”.${note} Once you approve, DI reads it on every pull from the core, starting with the next. Kinective’s standard columns aren’t touched.`,
               done: `Added the custom mapping **${a.label}**.`,
               risk: 'medium',
               records: p.filled,
@@ -441,7 +455,9 @@ function discoverTools(spec: ModuleSpec, need: (ctx: ModuleContext) => SourceSer
         if (!pr) return { text: `${a.column} isn’t among the ${n(run.profiled)} columns run ${run.runId} profiled.` };
         const sample = run.summary.sample ?? pr.rows;
         const seen = pr.rows > sample ? `In a sample of ${n(sample)} of its ${n(pr.rows)} rows, ${pr.core} has a value on ${n(pr.filled)}` : `${pr.core} has a value on ${n(pr.filled)} of ${n(pr.rows)} rows`;
-        const what = `${seen}, ${n(pr.distinct)} different values${pr.min !== null ? ` from ${pr.min} to ${pr.max}` : ''}; DI reads it as ${pr.kind === 'rate1000' ? 'rates in thousandths of a percent' : pr.kind}${pr.refersTo ? `, pointing at ${pr.refersTo}` : ''}.`;
+        // The range is shown only when the column isn't proposed as something that identifies a person (phase 6).
+        const identifying = p ? IDENTIFYING.has(ontology().properties.get(p.property)?.privacy ?? '') : false;
+        const what = `${seen}, ${n(pr.distinct)} different values${pr.min === null ? '' : identifying ? ' (their range isn’t shown: DI’s data dictionary classes it as identifying a person)' : ` from ${pr.min} to ${pr.max}`}; DI reads it as ${pr.kind === 'rate1000' ? 'rates in thousandths of a percent' : pr.kind}${pr.refersTo ? `, pointing at ${pr.refersTo}` : ''}.`;
         if (!p) return { text: `${what} It fits no DI column well enough to propose, so it’s a candidate for a custom field.`, suggestions: ['What core fields aren’t mapped yet?'] };
         const sig = p.signals;
         const parts = [`**${p.core} → ${p.di}** (${p.label}), score ${p.score.toFixed(2)}, ${BAND_WORD[p.band]?.toLowerCase() ?? p.band}.`, what, p.signals.why.length ? `Because ${p.signals.why.length > 1 ? `${p.signals.why.slice(0, -1).join(', ')} and ${p.signals.why[p.signals.why.length - 1]}` : p.signals.why[0]}.` : '', p.runnerUp ? `Runner-up: ${p.runnerUp.coreColumn} → ${p.runnerUp.diColumn} at ${p.runnerUp.score.toFixed(2)}.` : ''];

@@ -96,6 +96,18 @@ describe.skipIf(!up)('Core Mapping against the replica', () => {
     expect(bad.text).toMatch(/can’t be used: “;” isn’t part/);
   }, 60_000);
 
+  it('masks the values of a field the data dictionary classes as identifying a person (phase 6)', async () => {
+    const p = await run('Try mapping FIRST_OF(NAME, BIRTHDATE, PARENTACCOUNT = a.ACCOUNTNUMBER AND ORDINAL = 0) to birth date as text', 'thr_map_mask');
+    expect(p.text).toContain('Values are masked: DI’s data dictionary classes birth date as identifying a person.');
+    const sample = p.blocks.find((b) => b.type === 'table' && b.title === 'Ten records from the core') as Extract<Block, { type: 'table' }>;
+    const values = sample.data.rows!.map((r) => String(r.value));
+    expect(values.length).toBeGreaterThan(0);
+    for (const v of values) expect(v, v).toMatch(/^•{6}\d{2}$/);
+    // A field that doesn't identify anyone is shown as it is.
+    const consent = await run(`Try mapping ${CONSENT} to email consent as a yes or no`, 'thr_map_mask2');
+    expect(consent.text).not.toContain('masked');
+  }, 60_000);
+
   it('adds a mapping on approval, brings its values in on the pull, then removes it', async () => {
     const add = await run(`Map ${CONSENT} to email consent as a yes or no`, 'thr_map3');
     expect(add.out.outcome).toBe('approval');

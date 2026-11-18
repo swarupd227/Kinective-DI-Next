@@ -439,6 +439,8 @@ async function main() {
     // Off-core loans: DI's store, and the build account that publishes them into cdm_loan.
     await createOffcoreTables(admin, profile.schema);
     for (const table of [...ML_WRITE_TABLES, ...DMN_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE, DELETE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
+    // Data quality checks from the ontology: the app reruns them and replaces its own results (phase 6).
+    await admin.query(`GRANT INSERT, DELETE ON \`${profile.schema}\`.\`ops_dq_check\` TO 'dinext'@'%'`);
     // Rows already written above, read back for the phases that build on them.
     const back = async (sql: string) => ((await admin.query({ sql, rowsAsArray: true }).catch(() => [[]])) as unknown as [unknown[][]])[0];
     stepDone('the rest');

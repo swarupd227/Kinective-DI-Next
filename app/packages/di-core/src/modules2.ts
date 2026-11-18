@@ -5,6 +5,7 @@ import type { Pool } from '@dinext/tenant-db';
 import { carryUp, crParents, CR_LOAN_TYPES } from '@dinext/tenant-db';
 import { CoreError, memberNumber, type CoreContext } from './referrals.ts';
 import { outreachSuppression } from './suppression.ts';
+import { ontologyRule } from './ontologyDq.ts';
 
 const day = (v: unknown) => String(v instanceof Date ? v.toISOString() : v).slice(0, 10);
 const rows = async <T>(pool: Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
@@ -64,7 +65,7 @@ export class OperationsService {
 
   async checks(onlyFailed: boolean) {
     const all = await rows<Record<string, unknown>>(this.pool, 'SELECT * FROM ops_dq_check ORDER BY domain, dimension');
-    const items = all.map((c) => ({ domain: c.domain as string, dimension: c.dimension as string, name: CHECK_NAMES[c.name as string] ?? (c.name as string), rule: c.name as string, passed: c.status === 'Pass', rowsFailed: c.rows_failed as number }));
+    const items = all.map((c) => ({ domain: c.domain as string, dimension: c.dimension as string, name: CHECK_NAMES[c.name as string] ?? (c.name as string), rule: ontologyRule(c.name as string) ?? (c.name as string), passed: c.status === 'Pass', rowsFailed: c.rows_failed as number }));
     return { total: items.length, failed: items.filter((c) => !c.passed).length, items: onlyFailed ? items.filter((c) => !c.passed) : items };
   }
 

@@ -6,6 +6,7 @@
 import type { Pool } from '@dinext/tenant-db';
 import { CoreError } from './referrals.ts';
 import { describeRule, occurrences, parseRule, ruleJson, type Recurrence } from './recurrence.ts';
+import { identifyingColumns, ontology } from '@dinext/ontology';
 
 const rows = async <T>(pool: Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
 
@@ -395,7 +396,15 @@ export const SAVED_QUERIES: SavedQuery[] = [
 
 /** Curated tables only. Contact details, interactions and everything operational stay out. */
 const CURATED = /^(cdm_(location|employee|party|loan|deposit_account)|hist_\w+_month)$/;
-const SENSITIVE = /\b(birth_date|household_id|email|phone|ssn|tax_id)\b/i;
+/**
+ * Columns that identify a person stay out: those DI's ontology classes as identifying, alone (direct) or
+ * with other fields (quasi), in the tables queries may read (phase 6), and the few kept out before the
+ * ontology classed them (household and tax ids).
+ */
+const ALWAYS_OUT = ['birth_date', 'household_id', 'email', 'phone', 'ssn', 'tax_id'];
+let sensitive: RegExp | null = null;
+const SENSITIVE = () =>
+  (sensitive ??= new RegExp(`\\b(${[...new Set([...identifyingColumns(ontology()).filter((c) => CURATED.test(c.split('.')[0]!)).map((c) => c.split('.')[1]!), ...ALWAYS_OUT])].join('|')})\\b`, 'i'));
 const FORBIDDEN = /\b(into|outfile|dumpfile|for\s+update|lock\s+in|sleep|benchmark|load_file|get_lock|information_schema|performance_schema|mysql|sys)\b/i;
 const MAX_ROWS = 500;
 
@@ -420,7 +429,8 @@ export class QueryService {
     if (sql.includes(';')) throw refuse('Run one statement at a time.');
     if (/--|\/\*|#/.test(sql)) throw refuse('Remove the comments and run it again.');
     if (FORBIDDEN.test(sql)) throw refuse('That query uses something that isn’t allowed here.');
-    if (SENSITIVE.test(sql)) throw refuse('That column holds personal data, so it can’t be queried here.');
+    const personal = SENSITIVE().exec(sql)?.[1];
+    if (personal) throw refuse(`${personal.toLowerCase()} holds personal data that can identify a person, so it can’t be queried here.`);
     if (/\bselect\s+(distinct\s+)?\*|\.\*/i.test(sql)) throw refuse('Name the columns you need instead of using *.');
     // Names are checked across the whole statement, strings included: stripping strings here would let
     // an escaped quote hide a table. A false refusal is the cheaper mistake.

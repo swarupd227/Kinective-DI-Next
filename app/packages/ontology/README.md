@@ -54,6 +54,12 @@ Measured against an answer key the engine never sees: 27 of 31 DI columns right 
 
 On 19 everyday phrasings at a credit union and a bank, the catalog search answered 13 of 19 at a credit union and 13 of 19 at a bank before, and 18 and 17 after; the ones left are a figure nothing defines (dividends paid) and "owners" at a bank. Code synonyms were written with these phrasings in view.
 
+## Data quality and privacy (phase 6)
+
+`src/quality.ts` turns each property's `constraints` and fixed code list into checks on every DI column that holds it: a range (`cdm_loan.rate between 0 and 30`, "Every loan interest rate is between 0% and 30%"), no date after the data's as-of date, and every code on its list (open lists are left alone). `di-core/src/ontologyDq.ts` runs them on the institution's current `cdm_*` tables when the app starts and records the results in `ops_dq_check` beside the seeded checks, so the data quality page, Operations ("Which checks failed?") and lineage's checks by domain read them with no change. A rerun replaces its own rows, and a seeded check whose result was written by hand is dropped once a real check covers it (deposits opening in the future; negative days past due). On the synthetic warehouses all 44 checks pass; the seed grants the app INSERT and DELETE on `ops_dq_check` only.
+
+Privacy classes now decide, not just describe: the Query Browser refuses any column the ontology classes as identifying a person (direct or quasi) in the tables it may read, naming the column, as well as the ones it refused before; a custom mapping's preview masks its values when the field's name is one the ontology classes as identifying ("birth date"); and `map_explain` leaves out the range of a core column proposed as one.
+
 ## Not yet
 
-FIBO alignment (the `fibo` field is empty until each reference is checked); data quality checks and privacy masking from the ontology's constraints and privacy classes, and Member 360 roles (phase 6). The raw zone's tables are created with each stand-in core at seed time, so a real new core's raw tables need a seed step too.
+FIBO alignment (the `fibo` field is empty until each reference is checked); Member 360 roles and person matching from the ontology; masking by privacy class everywhere a value is shown (Member 360 and records still use their own rules); checks on history tables. The raw zone's tables are created with each stand-in core at seed time, so a real new core's raw tables need a seed step too.
