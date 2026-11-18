@@ -10,13 +10,13 @@ properties:
   member:
     id: { label: Member ID, type: identifier, privacy: none, definition: DI's key for a party., realized_by: [cdm_party.party_id, cdm_party_detail.party_id, cdm_party_address.party_id, cdm_party_contact.party_id] }
     member_number: { label: Member number, labels_by_type: { bank: Customer number }, type: identifier, privacy: quasi, definition: The number the institution and the party know the relationship by., synonyms: { credit_union: [member number, membership number], bank: [customer number, CIF number] }, realized_by: [cdm_party_detail.member_number] }
-    first_name: { label: First name, type: text, privacy: direct, realized_by: [cdm_party.first_name] }
+    first_name: { label: First name, type: text, privacy: direct, match: { weight: 0.15, how: name }, realized_by: [cdm_party.first_name] }
     middle_name: { label: Middle name, type: text, privacy: direct, realized_by: [cdm_party_detail.middle_name] }
-    last_name: { label: Last name, type: text, privacy: direct, realized_by: [cdm_party.last_name] }
+    last_name: { label: Last name, type: text, privacy: direct, match: { weight: 0.25, how: name }, realized_by: [cdm_party.last_name] }
     preferred_name: { label: Preferred name, type: text, privacy: direct, realized_by: [cdm_party_detail.preferred_name] }
     name_prefix: { label: Name prefix, type: text, privacy: none, realized_by: [cdm_party_detail.name_prefix] }
     name_suffix: { label: Name suffix, type: text, privacy: none, realized_by: [cdm_party_detail.name_suffix] }
-    birth_date: { label: Birth date, type: date, privacy: direct, constraints: { not_after_as_of: true }, realized_by: [cdm_party.birth_date] }
+    birth_date: { label: Birth date, type: date, privacy: direct, match: { weight: 0.3, how: date }, constraints: { not_after_as_of: true }, realized_by: [cdm_party.birth_date] }
     age_band: { label: Age band, type: code, value_set: age_band, privacy: quasi, realized_by: [hist_member_month.age_band] }
     join_date: { label: Date joined, labels_by_type: { bank: Customer since }, type: date, privacy: none, constraints: { not_after_as_of: true }, definition: 'When the membership or relationship opened.', synonyms: { credit_union: [joined, member since, join date, membership open date], bank: [customer since, relationship start, relationship open date] }, realized_by: [cdm_party.join_date] }
     home_branch: { label: Home branch, type: reference, refers_to: branch, privacy: none, realized_by: [cdm_party.primary_branch_id, hist_party_month.branch_id, hist_member_month.branch_id] }
@@ -24,7 +24,7 @@ properties:
     household: { label: Household, type: reference, refers_to: household, privacy: none, realized_by: [cdm_party.household_id] }
     is_member: { label: Is a member, labels_by_type: { bank: Is a customer }, type: flag, privacy: none, definition: 'Yes when the party holds a membership or account; no for a non-member, such as a joint owner only.', derive: [{ transform: not, from: flag, words: [non member, nonmember] }], realized_by: [cdm_party.is_member] }
     tin_type: { label: Tax ID type, type: code, value_set: tin_type, privacy: none, realized_by: [cdm_party_detail.tin_type] }
-    ssn_last4: { label: Last four of SSN, type: identifier, privacy: direct, realized_by: [cdm_party_detail.ssn_last4] }
+    ssn_last4: { label: Last four of SSN, type: identifier, privacy: direct, match: { weight: 0.25, how: exact }, realized_by: [cdm_party_detail.ssn_last4] }
     language: { label: Preferred language, type: code, value_set: language, privacy: none, realized_by: [cdm_party_detail.language] }
     deceased_date: { label: Date of death, type: date, privacy: quasi, realized_by: [cdm_party_detail.deceased_date] }
     marketing_opt_out: { label: Opted out of marketing, type: flag, privacy: none, synonyms: { credit_union: [opt out, do not market, no marketing], bank: [opt out, do not market] }, realized_by: [cdm_party_detail.marketing_opt_out] }
@@ -32,13 +32,13 @@ properties:
     work_phone: { label: Work phone, type: text, privacy: direct, realized_by: [cdm_party_detail.work_phone] }
     work_phone_ext: { label: Work phone extension, type: text, privacy: quasi, realized_by: [cdm_party_detail.work_phone_ext] }
     alt_email: { label: Second email, type: text, privacy: direct, realized_by: [cdm_party_detail.alt_email] }
-    email: { label: Email, type: text, privacy: direct, realized_by: [cdm_party_contact.email] }
-    phone: { label: Phone, type: text, privacy: direct, realized_by: [cdm_party_contact.phone] }
+    email: { label: Email, type: text, privacy: direct, match: { weight: 0.15, how: text }, realized_by: [cdm_party_contact.email] }
+    phone: { label: Phone, type: text, privacy: direct, match: { weight: 0.1, how: digits }, realized_by: [cdm_party_contact.phone] }
     preferred_channel: { label: Preferred channel, type: code, value_set: contact_channel, privacy: none, realized_by: [cdm_party_contact.preferred_channel] }
-    street: { label: Street address, type: text, privacy: direct, realized_by: [cdm_party_address.street, cdm_party_address.street2] }
+    street: { label: Street address, type: text, privacy: direct, match: { weight: 0.1, how: text }, realized_by: [cdm_party_address.street, cdm_party_address.street2] }
     city: { label: City, type: text, privacy: quasi, realized_by: [cdm_party_address.city] }
     state: { label: State, type: code, value_set: us_state, privacy: none, realized_by: [cdm_party_address.state] }
-    zip: { label: ZIP code, type: text, privacy: quasi, realized_by: [cdm_party_address.zip] }
+    zip: { label: ZIP code, type: text, privacy: quasi, match: { weight: 0.05, how: exact }, realized_by: [cdm_party_address.zip] }
     count: { label: Number of members, labels_by_type: { bank: Number of customers }, type: count, aggregate: true, privacy: none, realized_by: [hist_party_month.member_count, hist_member_month.member_count] }
     new_count: { label: New members, labels_by_type: { bank: New customers }, type: count, aggregate: true, privacy: none, realized_by: [hist_party_month.new_member_count] }
     closed_count: { label: Members who left, labels_by_type: { bank: Customers who left }, type: count, aggregate: true, privacy: none, realized_by: [hist_party_month.closed_member_count] }

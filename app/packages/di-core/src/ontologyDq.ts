@@ -3,7 +3,7 @@
 // institution's current tables and recorded beside the other checks in ops_dq_check, where the data
 // quality page, Operations and lineage already read them.
 import { ontology, ontologyChecks, type OntologyCheck } from '@dinext/ontology';
-import type { Pool } from '@dinext/tenant-db';
+import { MODULE_FIXTURES, type Pool } from '@dinext/tenant-db';
 import { LINEAGE_CATALOG } from './governance.ts';
 
 type InstitutionType = 'credit_union' | 'bank';
@@ -65,8 +65,11 @@ export async function runOntologyChecks(pool: Pool, type: InstitutionType): Prom
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
-    const names = [...checks.map((c) => c.name), ...results.map((r) => SUPERSEDES[r.rule]).filter((x): x is string => !!x)];
-    if (names.length) await conn.query(`DELETE FROM ops_dq_check WHERE name IN (${names.map(() => '?').join(', ')})`, names);
+    // Every row but the seeded checks is this runner's, under whatever name an earlier version gave it;
+    // a seeded check a real one now covers goes too.
+    const replaced = new Set(results.map((r) => SUPERSEDES[r.rule]).filter((x): x is string => !!x));
+    const keep = MODULE_FIXTURES.checks.map((c) => String(c[2])).filter((rule) => !replaced.has(rule));
+    await conn.query(`DELETE FROM ops_dq_check WHERE name NOT IN (${keep.map(() => '?').join(', ')})`, keep);
     if (results.length) await conn.query('INSERT INTO ops_dq_check (domain, dimension, name, status, rows_failed) VALUES ?', [results.map((r) => [r.domain, r.dimension, r.name, r.rowsFailed ? 'Fail' : 'Pass', r.rowsFailed])]);
     await conn.commit();
   } catch (e) {

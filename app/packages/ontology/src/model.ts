@@ -41,6 +41,8 @@ const PropertySchema = z.object({
   constraints: z.object({ min: z.number().optional(), max: z.number().optional(), not_after_as_of: z.boolean().optional() }).strict().optional(),
   synonyms,
   /** How a core column of another kind can give this property: a due date gives days past due. */
+  /** How much this property says two records are one person, and how its values compare (phase 7). */
+  match: z.object({ weight: z.number().gt(0).max(1), how: z.enum(['name', 'date', 'text', 'digits', 'exact']) }).strict().optional(),
   derive: z.array(z.object({ transform: z.enum(['same', 'number', 'date8', 'code', 'rate1000', 'daysPast', 'not', 'nonzero']), from: z.enum(['date', 'flag', 'code', 'number', 'money', 'text', 'key', 'reference']), words: z.array(z.string()).min(1) }).strict()).default([]),
   realized_by: z.array(column).min(1),
 }).strict();
@@ -48,7 +50,7 @@ const PropertySchema = z.object({
 const ValueSetSchema = z.object({
   label: z.string(),
   open: z.boolean().default(false),
-  codes: z.record(ident, z.object({ label: z.string(), labels_by_type: byType, synonyms, values: z.array(z.string()).min(1) }).strict()),
+  codes: z.record(ident, z.object({ label: z.string(), labels_by_type: byType, synonyms, definition: z.string().optional(), values: z.array(z.string()).min(1) }).strict()),
 }).strict();
 
 export const TRANSFORMS = ['same', 'number', 'date8', 'code', 'rate1000', 'daysPast', 'not', 'nonzero'] as const;
@@ -92,6 +94,8 @@ export interface Ontology {
   words: Set<string>;
   /** How cores abbreviate code values (CHK: checking), for proposing a code crosswalk. */
   codeWords: Map<string, string>;
+  /** Familiar forms of first names (bob: robert), both ways, for matching people (phase 7). */
+  nicknames: Map<string, Set<string>>;
 }
 
 /** The core tables in a vendor mapping's FROM, by alias: "ACCOUNT a JOIN NAME n ON ..." gives a and n. */
@@ -173,8 +177,19 @@ export function loadOntology(dir = MODEL_DIR): Ontology {
     }
   }
   if (errors.length) throw new Error(`The ontology doesn't load:\n- ${errors.join('\n- ')}`);
-  const abbr = z.object({ abbreviations: z.record(z.string().regex(/^[a-z]+$/), z.string()), code_words: z.record(z.string().regex(/^[a-z]+$/), z.string()).default({}), words: z.array(z.string().regex(/^[a-z]+$/)) }).strict().parse(read(join(dir, 'abbreviations.yaml')));
-  return { version: top.version, classes, properties, valueSets, vendors, columnIndex, abbreviations: new Map(Object.entries(abbr.abbreviations)), words: new Set(abbr.words), codeWords: new Map(Object.entries(abbr.code_words)) };
+  const abbr = z.object({ abbreviations: z.record(z.string().regex(/^[a-z]+$/), z.string()), code_words: z.record(z.string().regex(/^[a-z]+$/), z.string()).default({}), nicknames: z.record(z.string().regex(/^[a-z]+$/), z.array(z.string().regex(/^[a-z]+$/))).default({}), words: z.array(z.string().regex(/^[a-z]+$/)) }).strict().parse(read(join(dir, 'abbreviations.yaml')));
+  return { version: top.version, classes, properties, valueSets, vendors, columnIndex, abbreviations: new Map(Object.entries(abbr.abbreviations)), words: new Set(abbr.words), codeWords: new Map(Object.entries(abbr.code_words)), nicknames: nicknameIndex(abbr.nicknames) };
+}
+
+/** Each name to every name it can stand for: robert to bob and bobby, and bob back to robert. */
+function nicknameIndex(list: Record<string, string[]>) {
+  const out = new Map<string, Set<string>>();
+  const link = (a: string, b: string) => (out.get(a) ?? out.set(a, new Set()).get(a)!).add(b);
+  for (const [formal, familiar] of Object.entries(list)) for (const f of familiar) {
+    link(formal, f);
+    link(f, formal);
+  }
+  return out;
 }
 
 let cached: Ontology | null = null;

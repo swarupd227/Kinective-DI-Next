@@ -47,6 +47,7 @@ export { EngagementService } from './engagement.ts';
 export { GeographyService } from './geography.ts';
 export { OntologyService, type ConceptView } from './ontologyService.ts';
 export { runOntologyChecks, ontologyRule, type OntologyCheckResult } from './ontologyDq.ts';
+export { PeopleService, roleOf, scoreIdentity, SAME_PERSON, POSSIBLE_MATCH, type AccountRoles, type AccountParty, type Identity, type MatchResult } from './people.ts';
 export { BANDS, Vocabulary, assign, compareWith, kindOf, scoreAll, type ColumnProfile as CoreColumnProfile, type CoreProfile, type Proposal } from './mappingEngine.ts';
 export { LIQUIDITY_POLICY, LiquidityService, pctAgainst } from './liquidity.ts';
 export { FundingRiskService, type RunScenario } from './fundingRisk.ts';

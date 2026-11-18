@@ -42,6 +42,9 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-ONT-007', set: 'golden', persona: 'bank_cfo', q: 'How much is in DDA accounts?', agent: 'Analytics Q&A', contains: ['Checking'], approval: 'none' },
   { id: 'GQ-ONT-008', set: 'golden', persona: 'executive', q: 'What changes if the core changes how it codes loan type?', agent: 'Data Lineage', contains: ['Loan type', 'LOAN.TYPE', 'measures'], approval: 'none' },
   { id: 'GQ-ONT-009', set: 'golden', persona: 'executive', q: 'What breaks if LOAN.TYPE changes?', agent: 'Data Lineage', contains: ['Loan type', 'reports'], approval: 'none' },
+  // People and roles from the ontology (phase 7).
+  { id: 'GQ-PPL-001', set: 'golden', persona: 'executive', q: 'Which membership applicants are already members?', agent: 'Identity and Roles', contains: ['membership applicants', 'same person', 'birth date 30%'], approval: 'none' },
+  { id: 'GQ-PPL-002', set: 'golden', persona: 'executive', q: 'Who is on loan 13?', agent: 'Identity and Roles', contains: ['primary owner'], approval: 'none' },
   { id: 'GQ-GOV-001', set: 'golden', persona: 'executive', q: 'Show AI cost by agent for October', agent: 'AI Governance', contains: ['October 2026'], approval: 'none' },
   { id: 'GQ-CMP-001', set: 'golden', persona: 'executive', q: 'Which regulatory issues are open more than 3 weeks?', agent: 'Compliance & Problem Management', approval: 'none' },
   { id: 'GQ-CR-001', set: 'golden', persona: 'executive', q: 'Are we ready to file Q3?', agent: 'Call Report', contains: ['uncategorized GL accounts'], approval: 'none' },

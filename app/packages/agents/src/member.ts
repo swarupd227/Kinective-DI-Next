@@ -1,7 +1,7 @@
 // Member blocks (spec 8.24, 9.4): the member_card and the member_360, written by code from the DI
 // Core profile. The model never fills these in; it only writes the talking points beside them.
 import type { DiTake, ListBlock, Member360Block, MemberCardBlock, MemberScore, TextBlock } from '@dinext/block-schemas';
-import { OPPORTUNITY_THRESHOLD, type MemberProfile, type PartyMatch, type Topic } from '@dinext/di-core';
+import { OPPORTUNITY_THRESHOLD, roleOf, type MemberProfile, type PartyMatch, type Topic } from '@dinext/di-core';
 import { newBlockId, TENANT_UTC_OFFSET } from './answer.ts';
 
 export const RELATIONSHIP_AGENT = 'Relationship';
@@ -149,7 +149,8 @@ export function termsDetail(a: MemberProfile['loans'][number]): string | null {
 
 function ownersDetail(p: MemberProfile, suffix: string, base: string | null): { detail?: string } {
   const others = p.coOwners.filter((c) => c.suffix === suffix);
-  const who = others.length ? others.map((c) => `${c.role === 'Beneficiary' ? 'beneficiary' : c.role === 'Authorized signer' ? 'signer' : 'with'} ${c.name}`).join(', ') : '';
+  // Roles in the ontology's words (phase 7): a joint owner reads "with", the rest by their role.
+  const who = others.length ? others.map((c) => `${roleOf(c.role).id === 'joint' ? 'with' : roleOf(c.role).label.toLowerCase()} ${c.name}`).join(', ') : '';
   const text = [base, who && `${who.charAt(0).toUpperCase()}${who.slice(1)}`].filter(Boolean).join('. ');
   return text ? { detail: text.slice(0, 80) } : {};
 }

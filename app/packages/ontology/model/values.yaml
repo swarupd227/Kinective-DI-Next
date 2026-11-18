@@ -49,13 +49,13 @@ value_sets:
   role_on_account:
     label: Role on an account
     codes:
-      primary: { label: Primary owner, values: [Primary] }
-      joint: { label: Joint owner, values: [Joint] }
-      beneficiary: { label: Beneficiary, values: [Beneficiary] }
-      trustee: { label: Trustee, values: [Trustee] }
-      representative_payee: { label: Representative payee, values: [Rep payee, Representative payee] }
-      authorized_signer: { label: Authorized signer, values: [Authorized signer, Signer] }
-      co_borrower: { label: Co-borrower, values: [Co-borrower] }
+      primary: { label: Primary owner, definition: Owns the account and is responsible for it; statements and tax forms go to them., values: [Primary] }
+      joint: { label: Joint owner, definition: Owns the account equally with the primary owner and can transact on it., values: [Joint] }
+      beneficiary: { label: Beneficiary, definition: Receives the funds when the owner dies; has no access before then., values: [Beneficiary] }
+      trustee: { label: Trustee, definition: Manages the account for a trust under the trust's terms., values: [Trustee] }
+      representative_payee: { label: Representative payee, definition: Receives and manages benefit payments on the owner's behalf; must use them for the owner., values: [Rep payee, Representative payee] }
+      authorized_signer: { label: Authorized signer, definition: Can transact on the account but doesn't own it., values: [Authorized signer, Signer] }
+      co_borrower: { label: Co-borrower, definition: Equally responsible for repaying the loan., values: [Co-borrower] }
   holding_kind:
     label: Holding kind
     codes:

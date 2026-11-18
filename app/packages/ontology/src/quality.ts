@@ -30,7 +30,8 @@ const lower = (s: string) => (/^[A-Z][a-z]/.test(s) ? s.charAt(0).toLowerCase() 
 /** The thing a property belongs to, in plain words, for a check's name: "loan", "share or deposit". */
 const owner = (o: Ontology, p: OntologyProperty, type: InstitutionType) => {
   const c = o.classes.get(p.class);
-  return lower(c?.labels_by_type?.[type] ?? c?.label ?? p.class.replace(/_/g, ' '));
+  // A loan's terms are the loan's: "loan APR", not "loan terms APR".
+  return lower(c?.labels_by_type?.[type] ?? c?.label ?? p.class.replace(/_/g, ' ')).replace(/ (?:terms|details?)$/, '');
 };
 
 /**
