@@ -224,7 +224,7 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
             { label: 'Segment', value: p.segment },
             { label: `${p.person === 'customer' ? 'Customer' : 'Member'} since`, value: longDate(p.joined) },
             { label: 'Preferred contact', value: p.contact.preferred },
-            { label: 'Born', value: `${longDate(p.identity.birthDate)} (age ${p.identity.age}, ${p.identity.generation})` },
+            { label: 'Born', value: `${p.identity.born} (age ${p.identity.age}, ${p.identity.generation})` },
             { label: 'Credit score', value: p.creditScore ? `${p.creditScore.score}, from ${p.creditScore.from}, ${longDate(p.creditScore.asOf)}` : 'None on file' },
             { label: 'Latest survey', value: survey ? `${survey.score} of 10, ${survey.kind.toLowerCase()}, ${longDate(survey.date)}${survey.comment ? `: “${survey.comment}”` : ''}`.slice(0, 120) : 'None answered' },
             { label: 'Identity last verified', value: p.lastVerification ? `${longDate(p.lastVerification.at.slice(0, 10))}, ${p.lastVerification.channel.toLowerCase()}, ${p.lastVerification.result.toLowerCase()} (${p.lastVerification.by})` : 'Not verified in DI' },

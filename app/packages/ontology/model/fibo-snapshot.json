@@ -2,216 +2,496 @@
  "source": "https://github.com/edmcouncil/fibo",
  "commit": "33a92cd34285d532c158da97bb42add089f135d3",
  "read": "2026-11-18",
- "classes": {
+ "terms": {
   "BE/OwnershipAndControl/Executives/Signatory": {
+   "kind": "class",
    "label": "signatory",
    "definition": "responsible party authorized to sign agreements on behalf of themselves, another person, or an organization",
-   "file": "BE/OwnershipAndControl/Executives.rdf"
+   "file": "BE/OwnershipAndControl/Executives.rdf",
+   "prefix": "fibo-be-oac-exec"
   },
   "BE/Trusts/Trusts/Trustee": {
+   "kind": "class",
    "label": "trustee",
    "definition": "party that holds and manages assets for the benefit of another",
-   "file": "BE/Trusts/Trusts.rdf"
+   "file": "BE/Trusts/Trusts.rdf",
+   "prefix": "fibo-be-tr-tr"
   },
   "FBC/DebtAndEquities/CreditEvents/WriteDown": {
+   "kind": "class",
    "label": "write-down",
    "definition": "obligation-specific credit event whereby the book value of the obligation, such as the outstanding principal amount, is reduced",
-   "file": "FBC/DebtAndEquities/CreditEvents.rdf"
+   "file": "FBC/DebtAndEquities/CreditEvents.rdf",
+   "prefix": "fibo-fbc-dae-cre"
   },
   "FBC/DebtAndEquities/Debt/Borrower": {
+   "kind": "class",
    "label": "borrower",
    "definition": "party to a credit agreement that is obligated to repay the amount borrowed (principal) with interest and other fees according to the terms of the instrument",
-   "file": "FBC/DebtAndEquities/Debt.rdf"
+   "file": "FBC/DebtAndEquities/Debt.rdf",
+   "prefix": "fibo-fbc-dae-dbt"
   },
   "FBC/DebtAndEquities/Debt/Collateral": {
+   "kind": "class",
    "label": "collateral",
    "definition": "something pledged as security to ensure fulfillment of an obligation to another party, to lend money, extend credit, or provision securities",
-   "file": "FBC/DebtAndEquities/Debt.rdf"
+   "file": "FBC/DebtAndEquities/Debt.rdf",
+   "prefix": "fibo-fbc-dae-dbt"
   },
   "FBC/DebtAndEquities/Debt/DebtTerms": {
+   "kind": "class",
    "label": "debt terms",
    "definition": "contract terms that specify the formal rights and obligations of borrower and lender under a contract in which funds are lent from the one party to the other",
-   "file": "FBC/DebtAndEquities/Debt.rdf"
+   "file": "FBC/DebtAndEquities/Debt.rdf",
+   "prefix": "fibo-fbc-dae-dbt"
   },
   "FBC/DebtAndEquities/Debt/FixedInterestRate": {
+   "kind": "class",
    "label": "fixed interest rate",
    "definition": "interest rate that does not fluctuate over the lifetime of a loan or other debt instrument",
-   "file": "FBC/DebtAndEquities/Debt.rdf"
+   "file": "FBC/DebtAndEquities/Debt.rdf",
+   "prefix": "fibo-fbc-dae-dbt"
+  },
+  "FBC/DebtAndEquities/Debt/hasCreditLimit": {
+   "kind": "property",
+   "label": "has credit limit",
+   "definition": "specifies the maximum amount of credit that may be borrowed with respect to a specific agreement (e.g. for line of credit)",
+   "file": "FBC/DebtAndEquities/Debt.rdf",
+   "prefix": "fibo-fbc-dae-dbt"
+  },
+  "FBC/DebtAndEquities/Debt/hasInterestRate": {
+   "kind": "property",
+   "label": "has interest rate",
+   "definition": "relates something, such as an agreement, or debt instrument, to the rate (typically annual) of interest that is to be paid by the debtor to the creditor on the debt",
+   "file": "FBC/DebtAndEquities/Debt.rdf",
+   "prefix": "fibo-fbc-dae-dbt"
+  },
+  "FBC/DebtAndEquities/Debt/hasMaturityDate": {
+   "kind": "property",
+   "label": "has maturity date",
+   "definition": "indicates the date on which the principal amount of an instrument is due to be repaid to the investor and interest or coupon payments stop, and/or the date on which the instrument may be redeemed",
+   "file": "FBC/DebtAndEquities/Debt.rdf",
+   "prefix": "fibo-fbc-dae-dbt"
   },
   "FBC/DebtAndEquities/Debt/RevolvingLineOfCredit": {
+   "kind": "class",
    "label": "revolving line of credit",
    "definition": "credit facility that enables the borrower to withdraw funds, repay, and withdraw again",
-   "file": "FBC/DebtAndEquities/Debt.rdf"
+   "file": "FBC/DebtAndEquities/Debt.rdf",
+   "prefix": "fibo-fbc-dae-dbt"
   },
   "FBC/DebtAndEquities/Debt/VariableInterestRate": {
+   "kind": "class",
    "label": "variable interest rate",
    "definition": "an interest rate that is allowed to vary over the maturity of a loan or other debt instrument",
-   "file": "FBC/DebtAndEquities/Debt.rdf"
+   "file": "FBC/DebtAndEquities/Debt.rdf",
+   "prefix": "fibo-fbc-dae-dbt"
   },
   "FBC/FunctionalEntities/FinancialServicesEntities/Bank": {
+   "kind": "class",
    "label": "bank",
    "definition": "depository institution, usually a corporation, that accepts deposits, makes loans, pays checks, and performs related services, for individual members of the public, businesses or other organizations",
-   "file": "FBC/FunctionalEntities/FinancialServicesEntities.rdf"
+   "file": "FBC/FunctionalEntities/FinancialServicesEntities.rdf",
+   "prefix": "fibo-fbc-fct-fse"
   },
   "FBC/FunctionalEntities/FinancialServicesEntities/BankingProduct": {
+   "kind": "class",
    "label": "banking product",
    "definition": "product provided to consumers and businesses by a depository institution",
-   "file": "FBC/FunctionalEntities/FinancialServicesEntities.rdf"
+   "file": "FBC/FunctionalEntities/FinancialServicesEntities.rdf",
+   "prefix": "fibo-fbc-fct-fse"
   },
   "FBC/FunctionalEntities/FinancialServicesEntities/CreditUnion": {
+   "kind": "class",
    "label": "credit union",
    "definition": "not-for-profit depository institution that makes personal loans and offers other consumer banking services, organized for the purpose of promoting thrift among its members and creating a source of credit for provident or productive purposes",
-   "file": "FBC/FunctionalEntities/FinancialServicesEntities.rdf"
+   "file": "FBC/FunctionalEntities/FinancialServicesEntities.rdf",
+   "prefix": "fibo-fbc-fct-fse"
   },
   "FBC/FunctionalEntities/NorthAmericanEntities/USFinancialServicesEntities/BranchOfADepositoryInstitution": {
+   "kind": "class",
    "label": "branch of a depository institution",
    "definition": "any office or any place of business located in any State of the United States at which deposits are received",
-   "file": "FBC/FunctionalEntities/NorthAmericanEntities/USFinancialServicesEntities.rdf"
+   "file": "FBC/FunctionalEntities/NorthAmericanEntities/USFinancialServicesEntities.rdf",
+   "prefix": "fibo-fbc-fct-usfse"
   },
   "FBC/ProductsAndServices/ClientsAndAccounts/Account": {
+   "kind": "class",
    "label": "account",
    "definition": "container for records associated with a business arrangement for regular transactions and services",
-   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf"
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf",
+   "prefix": "fibo-fbc-pas-caa"
   },
   "FBC/ProductsAndServices/ClientsAndAccounts/AccountHolder": {
+   "kind": "class",
    "label": "account holder",
    "definition": "party that owns an account",
-   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf"
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf",
+   "prefix": "fibo-fbc-pas-caa"
   },
   "FBC/ProductsAndServices/ClientsAndAccounts/CustomerAccount": {
+   "kind": "class",
    "label": "customer account",
    "definition": "account that represents an identified, named collection of balances and cumulative totals used to summarize customer transaction-related activity over a designated period of time",
-   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf"
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf",
+   "prefix": "fibo-fbc-pas-caa"
   },
   "FBC/ProductsAndServices/ClientsAndAccounts/DepositAccount": {
+   "kind": "class",
    "label": "deposit account",
    "definition": "account that provides a record of money placed with a depository institution for safekeeping and management",
-   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf"
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf",
+   "prefix": "fibo-fbc-pas-caa"
+  },
+  "FBC/ProductsAndServices/ClientsAndAccounts/hasBalance": {
+   "kind": "property",
+   "label": "has balance",
+   "definition": "relates an account to the net amount of money available in that account",
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf",
+   "prefix": "fibo-fbc-pas-caa"
+  },
+  "FBC/ProductsAndServices/ClientsAndAccounts/hasCloseDate": {
+   "kind": "property",
+   "label": "has close date",
+   "definition": "relates something to the date that it was closed",
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf",
+   "prefix": "fibo-fbc-pas-caa"
+  },
+  "FBC/ProductsAndServices/ClientsAndAccounts/hasOpenDate": {
+   "kind": "property",
+   "label": "has open date",
+   "definition": "relates something to the date that it was created",
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf",
+   "prefix": "fibo-fbc-pas-caa"
+  },
+  "FBC/ProductsAndServices/ClientsAndAccounts/hasPaymentDueDate": {
+   "kind": "property",
+   "label": "has payment due date",
+   "definition": "indicates the date by which payment of some amount must be made to the creditor",
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf",
+   "prefix": "fibo-fbc-pas-caa"
+  },
+  "FBC/ProductsAndServices/ClientsAndAccounts/hasPrimaryAccountHolder": {
+   "kind": "property",
+   "label": "has primary account holder",
+   "definition": "relates an account to a client or customer that is considered the primary owner of the account",
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf",
+   "prefix": "fibo-fbc-pas-caa"
   },
   "FBC/ProductsAndServices/ClientsAndAccounts/IndividualTransaction": {
+   "kind": "class",
    "label": "individual transaction",
    "definition": "event that has a monetary impact and is documented in the records associated with an account",
-   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf"
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf",
+   "prefix": "fibo-fbc-pas-caa"
   },
   "FBC/ProductsAndServices/ClientsAndAccounts/NonTransactionDepositAccount": {
+   "kind": "class",
    "label": "non-transaction deposit account",
    "definition": "any deposit account that is not explicitly considered a transaction account",
-   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf"
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf",
+   "prefix": "fibo-fbc-pas-caa"
   },
   "FBC/ProductsAndServices/ClientsAndAccounts/TimeDepositAccount": {
+   "kind": "class",
    "label": "time deposit account",
    "definition": "deposit account that the depositor does not have a right, and is not permitted, to make withdrawals from within six days after the date of deposit unless the deposit is subject to an early withdrawal penalty of at least seven days' simple interest on amounts withdrawn within the first six days after deposit",
-   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf"
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf",
+   "prefix": "fibo-fbc-pas-caa"
   },
   "FBC/ProductsAndServices/ClientsAndAccounts/TransactionDepositAccount": {
+   "kind": "class",
    "label": "transaction deposit account",
    "definition": "deposit account from which the depositor / account holder is permitted to make transfers or withdrawals by negotiable / transferable instruments, payment orders of withdrawal, telephone transfers, and so forth, and that may be accessible via an electronic device such as an automated teller machine (ATM), remote service unit (RSU), mobile device, and by debit card",
-   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf"
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf",
+   "prefix": "fibo-fbc-pas-caa"
   },
   "FBC/ProductsAndServices/FinancialProductsAndServices/Dealer": {
+   "kind": "class",
    "label": "dealer",
    "definition": "any party that purchases goods or services for resale and acts on their own behalf in a transaction",
-   "file": "FBC/ProductsAndServices/FinancialProductsAndServices.rdf"
+   "file": "FBC/ProductsAndServices/FinancialProductsAndServices.rdf",
+   "prefix": "fibo-fbc-pas-fpas"
+  },
+  "FND/AgentsAndPeople/People/hasDateOfBirth": {
+   "kind": "property",
+   "label": "has date of birth",
+   "definition": "identifies the date on which an individual was born",
+   "file": "FND/AgentsAndPeople/People.rdf",
+   "prefix": "fibo-fnd-aap-ppl"
+  },
+  "FND/AgentsAndPeople/People/hasDateOfDeath": {
+   "kind": "property",
+   "label": "has date of death",
+   "definition": "identifies the date on which an individual died",
+   "file": "FND/AgentsAndPeople/People.rdf",
+   "prefix": "fibo-fnd-aap-ppl"
+  },
+  "FND/AgentsAndPeople/People/hasFirstName": {
+   "kind": "property",
+   "label": "has first name",
+   "definition": "indicates the given name or first name of a person, that is, the name chosen for them at birth or changed by them subsequently from the name given at birth",
+   "file": "FND/AgentsAndPeople/People.rdf",
+   "prefix": "fibo-fnd-aap-ppl"
+  },
+  "FND/AgentsAndPeople/People/hasLastName": {
+   "kind": "property",
+   "label": "has last name",
+   "definition": "indicates the name shared in common to identify the members of a family, as distinguished from each member's given name",
+   "file": "FND/AgentsAndPeople/People.rdf",
+   "prefix": "fibo-fnd-aap-ppl"
+  },
+  "FND/AgentsAndPeople/People/hasMiddleNameOrInitial": {
+   "kind": "property",
+   "label": "has middle name or initial",
+   "definition": "one or more additional names or initial letters for names that occur between a person's first and last name",
+   "file": "FND/AgentsAndPeople/People.rdf",
+   "prefix": "fibo-fnd-aap-ppl"
+  },
+  "FND/AgentsAndPeople/People/hasNamePrefix": {
+   "kind": "property",
+   "label": "has name prefix",
+   "definition": "indicates a character or sequence of characters, preceding a person's name, that provides additional information about the person, such as a form of address representing a title, honorific, or military rank",
+   "file": "FND/AgentsAndPeople/People.rdf",
+   "prefix": "fibo-fnd-aap-ppl"
+  },
+  "FND/AgentsAndPeople/People/hasNameSuffix": {
+   "kind": "property",
+   "label": "has name suffix",
+   "definition": "indicates a character or sequence of characters, following a person's name, that provides additional information about the person, such as their position, educational degree, accreditation, office, or honor",
+   "file": "FND/AgentsAndPeople/People.rdf",
+   "prefix": "fibo-fnd-aap-ppl"
   },
   "FND/AgentsAndPeople/People/Person": {
+   "kind": "class",
    "label": "person",
    "definition": "individual human being, with consciousness of self",
-   "file": "FND/AgentsAndPeople/People.rdf"
+   "file": "FND/AgentsAndPeople/People.rdf",
+   "prefix": "fibo-fnd-aap-ppl"
   },
   "FND/Agreements/Agreements/Beneficiary": {
+   "kind": "class",
    "label": "beneficiary",
    "definition": "party that receives some benefit or advantage or profits from something",
-   "file": "FND/Agreements/Agreements.rdf"
+   "file": "FND/Agreements/Agreements.rdf",
+   "prefix": "fibo-fnd-agr-agr"
+  },
+  "FND/Agreements/Contracts/hasTerm": {
+   "kind": "property",
+   "label": "has term",
+   "definition": "indicates a fixed or limited period for which something, e.g., a contract, an investment, or an offer, lasts or is intended to last",
+   "file": "FND/Agreements/Contracts.rdf",
+   "prefix": "fibo-fnd-agr-ctr"
+  },
+  "FND/Arrangements/Ratings/hasRatingScore": {
+   "kind": "property",
+   "label": "has rating score",
+   "definition": "indicates the grade or score associated with a rating with respect to a particular rating scale",
+   "file": "FND/Arrangements/Ratings.rdf",
+   "prefix": "fibo-fnd-arr-rt"
   },
   "FND/Arrangements/Ratings/QuantitativeRatingScore": {
+   "kind": "class",
    "label": "quantitative rating score",
    "definition": "rating score that is a simple numeric value on some scale, such as a credit rating for an individual",
-   "file": "FND/Arrangements/Ratings.rdf"
+   "file": "FND/Arrangements/Ratings.rdf",
+   "prefix": "fibo-fnd-arr-rt"
   },
   "FND/Arrangements/Reporting/Report": {
+   "kind": "class",
    "label": "report",
    "definition": "document that provides a structured description of something, prepared on ad hoc, periodic, recurring, regular, or as required basis",
-   "file": "FND/Arrangements/Reporting.rdf"
+   "file": "FND/Arrangements/Reporting.rdf",
+   "prefix": "fibo-fnd-arr-rep"
+  },
+  "FND/DatesAndTimes/FinancialDates/hasAsOfDate": {
+   "kind": "property",
+   "label": "has as-of date",
+   "definition": "relates something to the date on which it is accurate or valid (e.g. a credit report has an asOfDate that means the date when the information was drawn)",
+   "file": "FND/DatesAndTimes/FinancialDates.rdf",
+   "prefix": "fibo-fnd-dt-fd"
   },
   "FND/Organizations/FormalOrganizations/Employee": {
+   "kind": "class",
    "label": "employee",
    "definition": "person in the service of another under any contract of hire, express or implied, oral or written, where the employer has the right to control and direct that person in the material details of how the work is to be performed",
-   "file": "FND/Organizations/FormalOrganizations.rdf"
+   "file": "FND/Organizations/FormalOrganizations.rdf",
+   "prefix": "fibo-fnd-org-fm"
   },
   "FND/Organizations/FormalOrganizations/Employer": {
+   "kind": "class",
    "label": "employer",
    "definition": "party that provides compensation, including wages or a salary and potentially other benefits, in exchange for work performed by one or more people, and that has the right to control and direct the employee in the material details of how the work is to be performed",
-   "file": "FND/Organizations/FormalOrganizations.rdf"
+   "file": "FND/Organizations/FormalOrganizations.rdf",
+   "prefix": "fibo-fnd-org-fm"
+  },
+  "FND/Places/Addresses/hasPostalCode": {
+   "kind": "property",
+   "label": "has postal code",
+   "definition": "the postal code of this address as specified by the local postal service",
+   "file": "FND/Places/Addresses.rdf",
+   "prefix": "fibo-fnd-plc-adr"
+  },
+  "FND/Places/Addresses/hasStreetAddress": {
+   "kind": "property",
+   "label": "has street address",
+   "definition": "indicates a fully-specified address component that consists of a primary address number, predirectional, street name, suffix, postdirectional, and an optional secondary unit",
+   "file": "FND/Places/Addresses.rdf",
+   "prefix": "fibo-fnd-plc-adr"
+  },
+  "FND/Places/VirtualPlaces/hasElectronicMailAddress": {
+   "kind": "property",
+   "label": "has electronic mail address",
+   "definition": "specifies an electronic messaging endpoint at which some entity may be located or contacted or may receive correspondence",
+   "file": "FND/Places/VirtualPlaces.rdf",
+   "prefix": "fibo-fnd-plc-vrt"
+  },
+  "FND/Places/VirtualPlaces/hasTelephoneNumber": {
+   "kind": "property",
+   "label": "has telephone number",
+   "definition": "indicates a virtual address composed of a sequence of digits and symbols that may be assigned to a fixed-line telephone subscriber station, a wireless electronic telephony device, such as a radio telephone or a mobile telephone, or other similar device or service",
+   "file": "FND/Places/VirtualPlaces.rdf",
+   "prefix": "fibo-fnd-plc-vrt"
+  },
+  "FND/ProductsAndServices/PaymentsAndSchedules/hasPaymentAmount": {
+   "kind": "property",
+   "label": "has payment amount",
+   "definition": "specifies the amount of money involved in a payment",
+   "file": "FND/ProductsAndServices/PaymentsAndSchedules.rdf",
+   "prefix": "fibo-fnd-pas-psch"
   },
   "FND/ProductsAndServices/ProductsAndServices/Customer": {
+   "kind": "class",
    "label": "customer",
    "definition": "party that receives or consumes products (goods or services) and has the ability to choose between different products and suppliers",
-   "file": "FND/ProductsAndServices/ProductsAndServices.rdf"
+   "file": "FND/ProductsAndServices/ProductsAndServices.rdf",
+   "prefix": "fibo-fnd-pas-pas"
+  },
+  "LOAN/LoansGeneral/LoanApplications/hasOriginalLoanDebtToIncomeRatio": {
+   "kind": "property",
+   "label": "has original loan debt-to-income ratio",
+   "definition": "indicates the debt-to-income (DTI) ratio at the time when the loan was advanced; for combined income",
+   "file": "LOAN/LoansGeneral/LoanApplications.rdf",
+   "prefix": "fibo-loan-ln-app"
   },
   "LOAN/LoansGeneral/LoanApplications/LoanApplication": {
+   "kind": "class",
    "label": "loan application",
    "definition": "request by a potential borrower to a potential lender to borrow money containing information used to decide whether to grant the loan",
-   "file": "LOAN/LoansGeneral/LoanApplications.rdf"
+   "file": "LOAN/LoansGeneral/LoanApplications.rdf",
+   "prefix": "fibo-loan-ln-app"
+  },
+  "LOAN/LoansGeneral/Loans/hasLoanBalance": {
+   "kind": "property",
+   "label": "has loan balance",
+   "definition": "indicates the balance with respect to the principal on the loan as of some date",
+   "file": "LOAN/LoansGeneral/Loans.rdf",
+   "prefix": "fibo-loan-ln-ln"
+  },
+  "LOAN/LoansGeneral/Loans/hasPrincipalAmount": {
+   "kind": "property",
+   "label": "has principal amount",
+   "definition": "indicates the nominal amount of the loan that must be paid at or before maturity",
+   "file": "LOAN/LoansGeneral/Loans.rdf",
+   "prefix": "fibo-loan-ln-ln"
   },
   "LOAN/LoansGeneral/Loans/Loan": {
+   "kind": "class",
    "label": "loan",
    "definition": "debt instrument whereby one party extends money or credit to another party (or parties) with the understanding that the borrowed money will be repaid according to the terms of the contract",
-   "file": "LOAN/LoansGeneral/Loans.rdf"
+   "file": "LOAN/LoansGeneral/Loans.rdf",
+   "prefix": "fibo-loan-ln-ln"
+  },
+  "LOAN/LoansGeneral/Loans/LoanToValueRatio": {
+   "kind": "class",
+   "label": "loan-to-value ratio",
+   "definition": "ratio, expressed as a percentage, between the principal amount of the loan and the appraised value of the asset securing the financing",
+   "file": "LOAN/LoansGeneral/Loans.rdf",
+   "prefix": "fibo-loan-ln-ln"
+  },
+  "LOAN/LoansSpecific/CardAccounts/CardExpirationDate": {
+   "kind": "class",
+   "label": "card expiration date",
+   "definition": "date on which a given payment card expires",
+   "file": "LOAN/LoansSpecific/CardAccounts.rdf",
+   "prefix": "fibo-loan-spc-crd"
   },
   "LOAN/LoansSpecific/CardAccounts/CardProduct": {
+   "kind": "class",
    "label": "card product",
    "definition": "financial product involving the issuance of credit, debit, or other payment cards",
-   "file": "LOAN/LoansSpecific/CardAccounts.rdf"
+   "file": "LOAN/LoansSpecific/CardAccounts.rdf",
+   "prefix": "fibo-loan-spc-crd"
   },
   "LOAN/LoansSpecific/CardAccounts/CreditCard": {
+   "kind": "class",
    "label": "credit card",
    "definition": "card issued by a financial service provider that enables the cardholder to borrow funds",
-   "file": "LOAN/LoansSpecific/CardAccounts.rdf"
+   "file": "LOAN/LoansSpecific/CardAccounts.rdf",
+   "prefix": "fibo-loan-spc-crd"
   },
   "LOAN/LoansSpecific/CardAccounts/CreditCardAccount": {
+   "kind": "class",
    "label": "credit card account",
    "definition": "card account whose terms and conditions are defined in a credit card agreement that is represented by a credit card",
-   "file": "LOAN/LoansSpecific/CardAccounts.rdf"
+   "file": "LOAN/LoansSpecific/CardAccounts.rdf",
+   "prefix": "fibo-loan-spc-crd"
   },
   "LOAN/LoansSpecific/CardAccounts/DebitCard": {
+   "kind": "class",
    "label": "debit card",
    "definition": "payment card issued by a financial service provider that enables the cardholder to access funds in a demand deposit account",
-   "file": "LOAN/LoansSpecific/CardAccounts.rdf"
+   "file": "LOAN/LoansSpecific/CardAccounts.rdf",
+   "prefix": "fibo-loan-spc-crd"
   },
   "LOAN/LoansSpecific/CardAccounts/PaymentCard": {
+   "kind": "class",
    "label": "payment card",
    "definition": "legal document issued by a financial services provider that enables the cardholder to access the funds in the customer's designated bank accounts, or through a credit account and make payments by electronic funds transfer and access automated teller machines (ATMs)",
-   "file": "LOAN/LoansSpecific/CardAccounts.rdf"
+   "file": "LOAN/LoansSpecific/CardAccounts.rdf",
+   "prefix": "fibo-loan-spc-crd"
   },
   "LOAN/LoansSpecific/CommercialLoans/CommercialLoan": {
+   "kind": "class",
    "label": "commercial loan",
    "definition": "loan extended to a corporation, commercial enterprise, joint venture, or other organization as opposed to a consumer",
-   "file": "LOAN/LoansSpecific/CommercialLoans.rdf"
+   "file": "LOAN/LoansSpecific/CommercialLoans.rdf",
+   "prefix": "fibo-loan-spc-com"
   },
   "LOAN/LoansSpecific/ConsumerLoans/ConsumerLoan": {
+   "kind": "class",
    "label": "consumer loan",
    "definition": "loan to one or more individuals for household, family, or other personal expenditures, excluding mortgages and student loans",
-   "file": "LOAN/LoansSpecific/ConsumerLoans.rdf"
+   "file": "LOAN/LoansSpecific/ConsumerLoans.rdf",
+   "prefix": "fibo-loan-spc-cns"
   },
   "LOAN/LoansSpecific/ConsumerLoans/HomeEquityLineOfCredit": {
+   "kind": "class",
    "label": "home equity line of credit",
    "definition": "line of credit granted to a homeowner secured by the equity value in a borrower's home or other property",
-   "file": "LOAN/LoansSpecific/ConsumerLoans.rdf"
+   "file": "LOAN/LoansSpecific/ConsumerLoans.rdf",
+   "prefix": "fibo-loan-spc-cns"
   },
   "LOAN/LoansSpecific/ConsumerLoans/MotorVehicleLoan": {
+   "kind": "class",
    "label": "motor vehicle loan",
    "definition": "collateralized, simple-interest loan that is repaid in monthly installments over a period of typically three to five years, for the purpose of purchasing a vehicle",
-   "file": "LOAN/LoansSpecific/ConsumerLoans.rdf"
+   "file": "LOAN/LoansSpecific/ConsumerLoans.rdf",
+   "prefix": "fibo-loan-spc-cns"
   },
   "LOAN/LoansSpecific/LoanProducts/LoanProduct": {
+   "kind": "class",
    "label": "loan product",
    "definition": "financial product that is realized as a loan that a party may acquire from a lending institution with specific characteristics and terms",
-   "file": "LOAN/LoansSpecific/LoanProducts.rdf"
+   "file": "LOAN/LoansSpecific/LoanProducts.rdf",
+   "prefix": "fibo-loan-spc-prod"
   },
   "LOAN/RealEstateLoans/Mortgages/ClosedEndMortgageLoan": {
+   "kind": "class",
    "label": "closed-end mortgage loan",
    "definition": "loan secured by real estate with no ability for the borrower to receive additional funds under the loan at a later date",
-   "file": "LOAN/RealEstateLoans/Mortgages.rdf"
+   "file": "LOAN/RealEstateLoans/Mortgages.rdf",
+   "prefix": "fibo-loan-reln-mtg"
   }
  }
 }

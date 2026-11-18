@@ -3,7 +3,7 @@
 // Bin and restoring from it. Routing and the offline planner need no warehouse; the rest runs against
 // the seeded one. No model calls.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ApprovalStore, TableService, keyNamed, shareTargetNamed, tableNamed } from '@dinext/di-core';
+import { ApprovalStore, TableService, keyNamed, shareTargetNamed, tableCatalog, tableNamed } from '@dinext/di-core';
 import { createPool, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { ModuleGateway, NO_TABLE_EDITS, calendarModule, filesModule, runModuleOffline, tablesModule, workflowBuilderModule, type ModuleContext, type ModuleOutcome, type ModuleSpec, type ModuleTurn, type RunSink } from '../src/index.ts';
 
@@ -149,8 +149,11 @@ describe.skipIf(!up)('Tables against the warehouse', () => {
     expect(all.columns.find((c) => c.column === 'Product')!.top.length).toBeGreaterThan(0);
     const members = await svc.stats('members', {});
     expect(members.columns.map((c) => c.field)).not.toEqual(expect.arrayContaining(['birth_date']));
-    expect(await said(turn('Profile the members table'))).toContain('Personal columns (name, birth date, household) are left out');
+    expect(await said(turn('Profile the members table'))).toContain('Personal columns (birth date, first name, last name, name) are left out');
     expect(await said(turn('Column stats for the birth date column in members'))).toContain('personal data');
+    // The personal columns come from DI's ontology, not a list kept here (phase 10).
+    expect(tableCatalog('member').find((t) => t.id === 'members')!.personal).toEqual(['birth date', 'first name', 'last name', 'name']);
+    expect(tableCatalog('member').find((t) => t.id === 'loan_accounts')!.personal).toEqual([]);
     expect(await said(turn('Column stats for balance'))).toMatch(/^\*\*Balance\*\* in Loan Accounts: 100% filled/);
     expect(await said(turn('Profile the loan accounts table', []))).toContain('isn’t part of your DI access');
   });

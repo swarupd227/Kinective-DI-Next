@@ -1,7 +1,7 @@
 // Data quality and privacy from the ontology (design: Core Mapping and Ontology, phase 6). Each
 // property's constraints and code list become checks on the DI columns that hold it, and its privacy
 // class says which columns identify a person. Pure: the checks are run by di-core.
-import type { Ontology, OntologyProperty } from './model.ts';
+import type { Mask, Ontology, OntologyProperty } from './model.ts';
 
 import type { InstitutionType } from './concepts.ts';
 
@@ -106,3 +106,44 @@ export const maskValue = (v: unknown) => {
   }
   return `${s.charAt(0)}•••`;
 };
+
+// ---- Showing personal values by privacy class (phase 10) -------------------------------------------
+
+/**
+ * A value as its mask allows (`mask` on each identifying property): Member 360, Tables and any other
+ * place a person's details appear call this rather than keeping their own rules.
+ */
+export function showAs(mask: Mask, v: unknown): string {
+  const s = v instanceof Date ? v.toISOString().slice(0, 10) : String(v ?? '');
+  if (!s || mask === 'full') return s;
+  const digits = s.replace(/\D/g, '');
+  switch (mask) {
+    case 'hidden':
+      return '•••';
+    case 'last4':
+      return digits.length >= 4 ? (/^[\d\s()+.-]+$/.test(s) && digits.length >= 10 ? `(•••) •••-${digits.slice(-4)}` : `…${digits.slice(-4)}`) : '•••';
+    case 'year':
+      return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 4) : '•••';
+    case 'email': {
+      const at = s.indexOf('@');
+      return at > 0 ? `${s.charAt(0)}•••${s.slice(at)}` : `${s.charAt(0)}•••`;
+    }
+    case 'first3':
+      return digits.length >= 5 ? `${digits.slice(0, 3)}••` : '•••';
+    case 'street':
+      return s.replace(/^\s*\d+[A-Za-z]?\b\s*/, '••• ');
+  }
+}
+
+/** How a property's values are shown: its mask, or in full when it can't identify anyone. */
+export const maskOf = (o: Ontology, propertyId: string): Mask => o.properties.get(propertyId)?.mask ?? (IDENTIFYING.has(o.properties.get(propertyId)?.privacy ?? '') ? 'hidden' : 'full');
+
+/** A property's value as it may be shown. */
+export const showProperty = (o: Ontology, propertyId: string, v: unknown) => showAs(maskOf(o, propertyId), v);
+
+/** A DI column's value as it may be shown; a column the ontology doesn't bind is shown as is. */
+export const showColumn = (o: Ontology, column: string, v: unknown) => {
+  const id = o.columnIndex.get(column.toLowerCase());
+  return id ? showProperty(o, id, v) : v instanceof Date ? v.toISOString().slice(0, 10) : String(v ?? '');
+};
+

@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import type { AuditLogPage, AuditRunTrace, LineageGraphBlock } from '@dinext/block-schemas';
 import { CoreError, type ConceptView, type GovernanceService, type LineageService, type OntologyService, type UsageGroup } from '@dinext/di-core';
+import { ontology } from '@dinext/ontology';
 import { newBlockId } from './answer.ts';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
@@ -12,7 +13,10 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString
 // ---- lineage ----------------------------------------------------------------------------------
 
 /** Data dictionary questions the ontology answers: what a word means in DI, which column holds it, which core column it comes from. */
-export const ONTOLOGY_REQUEST = /\bwhat (?:does|do) (?:DI|we|you) mean by\b|\b(?:which|what) (?:DI )?(?:columns?|fields?) (?:holds?|has|have|stores?|keeps?|contains?)\b|\b(?:which|what) (?:symitar|core) (?:columns?|fields?)\b|\bdata dictionary\b|\bontology\b|\bfibo\b|\bwhat do (?:banks|credit unions) call\b/i;
+/** Asking for the ontology as a file (phase 10): "Export the ontology as OWL", "Download the data dictionary as Turtle". */
+export const OWL_EXPORT = /\b(?:export|download|give me|get)\b[^?]*\b(?:ontology|data dictionary)\b[^?]*\b(?:owl|turtle|rdf|file|protégé|protege)\b|\b(?:owl|turtle|rdf)\b[^?]*\b(?:file|export|download)\b[^?]*\b(?:ontology|data dictionary)\b/i;
+
+export const ONTOLOGY_REQUEST = /\bwhat (?:does|do) (?:DI|we|you) mean by\b|\b(?:which|what) (?:DI )?(?:columns?|fields?) (?:holds?|has|have|stores?|keeps?|contains?)\b|\b(?:which|what) (?:symitar|core) (?:columns?|fields?)\b|\bdata dictionary\b|\bontology\b|\bfibo\b|\bowl\b|\bwhat do (?:banks|credit unions) call\b/i;
 
 /**
  * Impact by meaning or by core column (phase 5): "What changes if the core changes how it codes loan
@@ -76,9 +80,11 @@ export function lineageModule(lineage: LineageService, onto: OntologyService | n
 - "What does DI mean by a share draft?", "Which column holds the loan balance?", "Which Symitar column is the dividend rate?", "What do banks call a share certificate?": onto_lookup with the word or phrase.
 - "What is a share certificate in FIBO?", "What does FIBO call a HELOC?": onto_lookup with the word or phrase; the answer names the FIBO class and how closely it matches.
 - "How much does the data dictionary cover?", "How does DI line up with FIBO?": onto_coverage.
+- "Export the ontology as OWL", "Download the data dictionary for Protégé": onto_export.
 - The graph comes from lineage metadata, and meanings from DI's ontology. Never work out lineage or a meaning from table or column names. Connection secrets are never shown.`,
     plan: (text) => {
       const t = clean(text);
+      if (onto && OWL_EXPORT.test(t)) return { tool: 'onto_export', args: {} };
       if (onto && ONTOLOGY_REQUEST.test(t)) {
         const term = ontologyTerm(t);
         return term && !/^(?:DI|we|us|our (?:data|ontology|data dictionary)|(?:the|DI'?s) (?:data dictionary|ontology))$/i.test(term) ? { tool: 'onto_lookup', args: { term } } : { tool: 'onto_coverage', args: {} };
@@ -131,7 +137,7 @@ export function lineageModule(lineage: LineageService, onto: OntologyService | n
       },
     ],
   };
-  if (onto) spec.tools.push(ontoLookupTool(spec, onto, need, ontoSources), ontoCoverageTool(spec, onto, need, ontoSources), ontoImpactTool(spec, onto, lineage, need, ontoSources));
+  if (onto) spec.tools.push(ontoLookupTool(spec, onto, need, ontoSources), ontoCoverageTool(spec, onto, need, ontoSources), ontoImpactTool(spec, onto, lineage, need, ontoSources), ontoExportTool(need, ontoSources));
   return spec;
 }
 
@@ -187,6 +193,7 @@ const KIND_WORD: Record<ConceptView['kind'], string> = { class: 'a concept', pro
 const TYPE_WORD: Record<string, string> = { identifier: 'an identifier', reference: 'a link to another record', text: 'text', code: 'a code', money: 'dollars', rate: 'a yearly rate', percent: 'a percent', ratio: 'a ratio', count: 'a count', date: 'a date', flag: 'yes or no', score: 'a score', number: 'a number' };
 const PRIVACY_WORD: Record<string, string> = { direct: 'identifies a person on its own', quasi: 'can identify a person together with other fields', financial: 'is financial information', none: '' };
 const FIBO_MATCH: Record<ConceptView['fibo'][number]['match'], string> = { exact: 'the same meaning', close: 'close in meaning', broader: 'FIBO’s broader term', narrower: 'FIBO’s narrower term' };
+const MASK_WORD: Record<NonNullable<ConceptView['mask']>, string> = { full: 'DI shows it in full to people who may see the record', last4: 'DI shows only its last four digits', year: 'DI shows only the year', email: 'DI shows only its first letter and domain', first3: 'DI shows only its first three digits', street: 'DI shows the street without the house number', hidden: 'DI never shows it' };
 const fiboLine = (c: ConceptView) =>
   c.fibo.length ? `In FIBO, the industry’s standard financial ontology, it is ${list(c.fibo.map((f) => `*${f.label}* (${FIBO_MATCH[f.match]})`), 2)}.` : c.fiboNone ?? '';
 const list = (xs: string[], n = 4) => (xs.length <= n ? xs.join(', ') : `${xs.slice(0, n).join(', ')} and ${xs.length - n} more`);
@@ -221,6 +228,7 @@ function ontoLookupTool(spec: ModuleSpec, onto: OntologyService, need: (ctx: Mod
         c.metrics.length ? `${c.metrics.length === 1 ? 'One measure uses it' : `${c.metrics.length} measures use it`}: ${list(c.metrics.map((m) => m.label), 3)}.` : '',
         c.core.length ? `From the core: ${list(c.core.map((x) => `${x.system} \`${x.column}\``), 3)}.` : '',
         fiboLine(c),
+        c.mask ? `${MASK_WORD[c.mask]}.` : '',
         c.kind === 'class' && c.properties.length ? `It has ${plural(c.properties.length, 'property', 'properties')}.` : '',
         others.length ? `Other matches: ${list(others, 4)}.` : '',
       ].filter(Boolean);
@@ -241,6 +249,26 @@ function ontoLookupTool(spec: ModuleSpec, onto: OntologyService, need: (ctx: Mod
   };
 }
 
+/** The ontology as a file (phase 10): OWL in Turtle, with every FIBO mapping, from the server. */
+function ontoExportTool(need: (ctx: ModuleContext) => void, sources: ModuleSpec['sources']) {
+  return {
+    name: 'onto_export',
+    description: 'A link to download DI’s ontology as OWL (Turtle): its concepts, properties, code lists, privacy classes, the DI columns that hold each, and every FIBO mapping, for Protégé, a triple store or a data catalog.',
+    input: z.object({}).strict(),
+    run: async (_: unknown, ctx: ModuleContext) => {
+      need(ctx);
+      const o = ontology();
+      const codes = [...o.valueSets.values()].reduce((n, vs) => n + Object.keys(vs.codes).length, 0);
+      const mapped = [...o.classes.values(), ...o.properties.values(), ...[...o.valueSets.values()].flatMap((vs) => Object.values(vs.codes))].filter((x) => x.fibo).length;
+      return {
+        text: `Here is DI’s ontology (version ${o.version}) as OWL, in Turtle: [di-ontology-${o.version}.ttl](/v1/exports/di-ontology.ttl). It has ${o.classes.size} concepts, ${o.properties.size} properties and ${codes} codes in ${o.valueSets.size} code lists, each property with its privacy class and the DI columns that hold it, and ${mapped} SKOS mappings to FIBO, checked against FIBO ${o.fibo.commit.slice(0, 7)}. It opens in Protégé or loads into any triple store; it names FIBO’s classes rather than importing FIBO.`,
+        sources,
+        suggestions: ['How does DI line up with FIBO?', 'What is a share draft in FIBO?'],
+      };
+    },
+  };
+}
+
 function ontoCoverageTool(spec: ModuleSpec, onto: OntologyService, need: (ctx: ModuleContext) => void, sources: ModuleSpec['sources']) {
   return {
     name: 'onto_coverage',
@@ -252,7 +280,7 @@ function ontoCoverageTool(spec: ModuleSpec, onto: OntologyService, need: (ctx: M
       if (!x) return { text: 'DI’s data dictionary isn’t loaded for this institution yet.' };
       const vendors = x.vendors.map((v) => `${v.system === 'symitar' ? 'Symitar' : v.system}, ${v.columns} columns`).join('; ');
       return {
-        text: `DI’s data dictionary (version ${x.version}) has **${x.classes} concepts** and **${x.properties} properties**, with ${x.valueSets} code lists and ${x.codes} codes. It ties **${x.columns.toLocaleString('en-US')} DI columns** to what they mean and **${x.metrics} measures** to what they measure.${vendors ? ` Core mappings as data: ${vendors}.` : ''} ${x.fibo.classes ? ` **${x.fibo.classes} of ${x.classes} concepts** and ${x.fibo.codes} codes are linked to FIBO, the industry’s standard financial ontology, each checked against FIBO’s own definition.` : ''} The build fails if a main table gains a column the dictionary doesn’t cover.`,
+        text: `DI’s data dictionary (version ${x.version}) has **${x.classes} concepts** and **${x.properties} properties**, with ${x.valueSets} code lists and ${x.codes} codes. It ties **${x.columns.toLocaleString('en-US')} DI columns** to what they mean and **${x.metrics} measures** to what they measure.${vendors ? ` Core mappings as data: ${vendors}.` : ''}${x.fibo.classes ? ` **${x.fibo.classes} of ${x.classes} concepts**, ${x.fibo.properties} properties and ${x.fibo.codes} codes are linked to FIBO, the industry’s standard financial ontology, each checked against FIBO’s own definition.` : ''} The build fails if a main table gains a column the dictionary doesn’t cover.`,
         blocks: [moduleTable(spec, 'What the data dictionary covers', ctx.runId, 'catalog.ontology.coverage', [{ field: 'what', headerName: 'What', type: 'text' }, { field: 'count', headerName: 'Count', type: 'count' }], [
           { what: 'Concepts', count: x.classes },
           { what: 'Properties', count: x.properties },
@@ -261,6 +289,7 @@ function ontoCoverageTool(spec: ModuleSpec, onto: OntologyService, need: (ctx: M
           { what: 'DI columns bound', count: x.columns },
           { what: 'Measures tied to a concept', count: x.metrics },
           { what: 'Concepts linked to FIBO', count: x.fibo.classes },
+          { what: 'Properties linked to FIBO', count: x.fibo.properties },
           { what: 'Codes linked to FIBO', count: x.fibo.codes },
           ...x.vendors.map((v) => ({ what: `${v.system === 'symitar' ? 'Symitar' : v.system} columns mapped`, count: v.columns })),
         ])],

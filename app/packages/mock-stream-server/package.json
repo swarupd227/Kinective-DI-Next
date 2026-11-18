@@ -17,6 +17,7 @@
     "@dinext/agents": "0.1.0",
     "@dinext/block-schemas": "0.1.0",
     "@dinext/di-core": "0.1.0",
+    "@dinext/ontology": "0.1.0",
     "@dinext/semantic": "0.1.0",
     "@dinext/tenant-db": "0.1.0",
     "@dinext/voice": "0.1.0",

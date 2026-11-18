@@ -44,6 +44,9 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-ONT-009', set: 'golden', persona: 'executive', q: 'What breaks if LOAN.TYPE changes?', agent: 'Data Lineage', contains: ['Loan type', 'reports'], approval: 'none' },
   // FIBO alignment (phase 9): the dictionary names the FIBO class and how closely it matches.
   { id: 'GQ-ONT-010', set: 'golden', persona: 'executive', q: 'What is a share certificate in FIBO?', agent: 'Data Lineage', contains: ['Share certificate', 'time deposit account', 'close in meaning'], approval: 'none' },
+  // Phase 10: FIBO for properties, a personal value's mask, and the ontology as OWL.
+  { id: 'GQ-ONT-011', set: 'golden', persona: 'executive', q: 'What does DI mean by birth date?', agent: 'Data Lineage', contains: ['date of birth', 'DI shows only the year'], approval: 'none' },
+  { id: 'GQ-ONT-012', set: 'golden', persona: 'executive', q: 'Export the ontology as OWL', agent: 'Data Lineage', contains: ['/v1/exports/di-ontology.ttl', 'SKOS mappings to FIBO'], approval: 'none' },
   // People and roles from the ontology (phase 7).
   { id: 'GQ-PPL-001', set: 'golden', persona: 'executive', q: 'Which membership applicants are already members?', agent: 'Identity and Roles', contains: ['membership applicants', 'same person', 'birth date 30%'], approval: 'none' },
   { id: 'GQ-PPL-002', set: 'golden', persona: 'executive', q: 'Who is on loan 13?', agent: 'Identity and Roles', contains: ['primary owner'], approval: 'none' },

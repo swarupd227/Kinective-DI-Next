@@ -74,7 +74,7 @@ for (const DB of ['dinext_t_test_cu', 'dinext_t_test_bank']) {
       const pickOne = async (sql: string) => Number(((await pool.query(sql)) as unknown as [{ id: number }[]])[0][0]?.id ?? 0);
       const borrower = await pickOne('SELECT l.party_id AS id FROM cdm_loan l JOIN cdm_loan_terms t ON t.loan_id = l.loan_id WHERE l.close_date IS NULL AND l.charge_off_date IS NULL AND l.balance > 0 AND l.days_delinquent = 0 ORDER BY l.loan_id LIMIT 1');
       const p = await svc.profile(borrower, {});
-      expect(p.details?.place).toMatch(/^[A-Za-z .]+, [A-Z]{2} \d{5}$/);
+      expect(p.details?.place).toMatch(/^[A-Za-z .]+, [A-Z]{2} \d{3}••$/);
       const current = p.loans.find((l) => !l.daysPastDue && l.terms)!;
       expect(termsDetail(current)).toMatch(/^(Limit \$[\d,]+; )?\$[\d,]+\.\d{2} due [A-Z][a-z]{2} \d{1,2}$/);
       const block = member360(p, 'r');

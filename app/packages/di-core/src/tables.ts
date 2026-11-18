@@ -7,6 +7,7 @@
 import type { Pool } from '@dinext/tenant-db';
 import { CoreError, type CoreContext } from './referrals.ts';
 import { USER_CLASSES } from './modules2.ts';
+import { IDENTIFYING, ontology, showColumn } from '@dinext/ontology';
 
 const rows = async <T>(pool: Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
 const moved = (r: unknown) => (r as { affectedRows: number }).affectedRows;
@@ -32,7 +33,7 @@ export interface CatalogTable {
   columns: CatalogColumn[];
   /** Columns that join to other tables, and whether each is unique here. */
   keys: Record<string, { unique: boolean }>;
-  /** Personal columns, never profiled, shown or merged. */
+  /** Personal columns, never profiled, shown or merged: what DI's ontology classes as identifying a person in the tables read (phase 10). */
   personal: string[];
   /** Largest first, so a capped copy keeps what matters most. */
   order: string;
@@ -45,8 +46,36 @@ export const VIEW_ROW_CAP = 500;
 
 const day = (sql: string) => `DATE_FORMAT(${sql}, '%Y-%m-%d')`;
 
+/** The warehouse tables a catalog table reads, by alias: "cdm_party p JOIN cdm_location b" gives p and b. */
+const tablesRead = (from: string) => new Map([...from.matchAll(/\b((?:cdm|hist)_[a-z_]+)\s+(?:AS\s+)?([a-z])\b/gi)].map((m) => [m[2]!, m[1]!]));
+
+/** The words for each personal column of the tables a catalog table reads, from the ontology: "birth date", "email". */
+export function personalOf(from: string) {
+  const o = ontology();
+  const read = new Set(tablesRead(from).values());
+  const out = new Set<string>();
+  for (const [col, id] of o.columnIndex) {
+    const p = o.properties.get(id)!;
+    if (read.has(col.split('.')[0]!) && IDENTIFYING.has(p.privacy)) out.add(p.label.toLowerCase());
+  }
+  // People ask for a name, not a first or last name.
+  if (out.has('first name') || out.has('last name')) out.add('name');
+  return [...out].sort();
+}
+
+/** The warehouse column a catalog column shows, when it shows one as it is (p.birth_date, or a date of it). */
+export function columnShown(from: string, sql: string) {
+  const m = /^(?:DATE_FORMAT\()?([a-z])\.([a-z_0-9]+)/.exec(sql);
+  const table = m ? tablesRead(from).get(m[1]!) : undefined;
+  return table ? `${table}.${m![2]}` : null;
+}
+
 /** The curated tables, for a credit union's members or a bank's customers. */
 export function tableCatalog(person: 'member' | 'customer' = 'member'): CatalogTable[] {
+  return curated(person).map((t) => ({ ...t, personal: personalOf(t.from) }));
+}
+
+function curated(person: 'member' | 'customer'): CatalogTable[] {
   const Person = person === 'member' ? 'Member' : 'Customer';
   const memberId: CatalogColumn = { field: 'member_id', headerName: `${Person} ID`, type: 'text', sql: '', id: true };
   const branch: CatalogColumn = { field: 'branch', headerName: 'Branch', type: 'text', sql: 'b.name' };
@@ -93,7 +122,7 @@ export function tableCatalog(person: 'member' | 'customer' = 'member'): CatalogT
       order: 'p.join_date DESC, p.party_id',
       columns: [{ ...memberId, sql: 'p.party_id' }, branch, { field: 'joined', headerName: 'Joined', type: 'date', sql: day('p.join_date') }, { field: 'segment', headerName: 'Segment', type: 'text', sql: 'p.segment_code' }, { field: 'kind', headerName: 'Type', type: 'text', sql: `IF(p.is_member = 1, '${Person}', 'Non-${person}')` }],
       keys: { member_id: { unique: true }, branch: { unique: false } },
-      personal: ['name', 'birth date', 'household'],
+      personal: [],
     },
     {
       id: 'branches',
@@ -314,13 +343,37 @@ export class TableService {
     const t = this.table(tableId);
     const q = this.select(t, ctx);
     const found = await rows<Record<string, unknown>>(this.pool, `${q.sql} ORDER BY ${t.order} LIMIT ${Math.min(cap, SNAPSHOT_ROW_CAP)}`, q.params);
-    return { label: t.label, columns: t.columns.map(({ field, headerName, type }) => ({ field, headerName, type })), rows: found.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, value(v)]))), rowCount: await this.count(t.id, ctx) };
+    const show = this.shown([t]);
+    return { label: t.label, columns: t.columns.map(({ field, headerName, type }) => ({ field, headerName, type })), rows: found.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, show(k, v)]))), rowCount: await this.count(t.id, ctx) };
+  }
+
+  /**
+   * A value as it may be shown: a column holding a person's details is masked as DI's ontology says
+   * (phase 10), so a column added to the catalog later can't show more than its privacy class allows.
+   */
+  private shown(tables: CatalogTable[]) {
+    const masked = new Map<string, string>();
+    for (const [i, t] of tables.entries()) for (const c of t.columns) {
+      const col = columnShown(t.from, c.sql);
+      const id = col ? ontology().columnIndex.get(col) : undefined;
+      if (col && id && IDENTIFYING.has(ontology().properties.get(id)!.privacy)) masked.set(i === 0 ? c.field : `${t.id}__${c.field}`, col);
+    }
+    return (k: string, v: unknown) => {
+      const col = masked.get(k);
+      return col && v !== null && v !== undefined ? showColumn(ontology(), col, v) : value(v);
+    };
   }
 
   /** Each column's type, how full it is, distinct values, range or top values. Personal columns are never in it. */
   async stats(tableId: string, ctx: CoreContext, column?: string): Promise<{ table: CatalogTable; rows: number; columns: ColumnStat[] }> {
     const t = this.table(tableId);
-    const cols = column ? t.columns.filter((c) => words(`${c.headerName} ${c.field}`).some((w) => words(column).includes(w))) : t.columns;
+    // A column holding a person's details is never profiled: its top values would give them away.
+    const profiled = t.columns.filter((c) => {
+      const col = columnShown(t.from, c.sql);
+      const id = col ? ontology().columnIndex.get(col) : undefined;
+      return !(id && IDENTIFYING.has(ontology().properties.get(id)!.privacy));
+    });
+    const cols = column ? profiled.filter((c) => words(`${c.headerName} ${c.field}`).some((w) => words(column).includes(w))) : profiled;
     if (!cols.length) {
       const personal = t.personal.find((p) => column && column.toLowerCase().includes(p));
       throw new CoreError(personal ? 'INVALID' : 'NOT_FOUND', personal ? `${t.label} ${personal} is personal data, so it isn’t profiled.` : `${t.label} has no column called “${column}”. Its columns are ${t.columns.map((c) => c.headerName).join(', ')}.`);
@@ -387,7 +440,8 @@ export class TableService {
     const columns = this.mergeColumns(m.left, m.right, m.key);
     const found = await rows<Record<string, unknown>>(this.pool, `SELECT a.*, ${m.right.columns.filter((c) => c.field !== m.key).map((c) => `b.\`${m.right.id}__${c.field}\``).join(', ')} ${m.sql} ORDER BY a.\`${m.left.columns[0]!.field}\` LIMIT ${Math.min(cap, SNAPSHOT_ROW_CAP)}`, m.params);
     const [r] = await rows<{ n: number }>(this.pool, `SELECT COUNT(*) AS n ${m.sql}`, m.params);
-    return { label: `${m.left.label} with ${m.right.label}`, columns, rows: found.map((x) => Object.fromEntries(Object.entries(x).map(([k, v]) => [k, value(v)]))), rowCount: Number(r?.n ?? found.length) };
+    const show = this.shown([m.left, m.right]);
+    return { label: `${m.left.label} with ${m.right.label}`, columns, rows: found.map((x) => Object.fromEntries(Object.entries(x).map(([k, v]) => [k, show(k, v)]))), rowCount: Number(r?.n ?? found.length) };
   }
 
   // ---- saved views and snapshots ----------------------------------------------------------------

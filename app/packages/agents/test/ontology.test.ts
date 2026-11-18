@@ -7,7 +7,7 @@ import { validateBlock, type Block } from '@dinext/block-schemas';
 import { ApprovalStore, LineageService, OntologyService } from '@dinext/di-core';
 import { loadModel } from '@dinext/semantic';
 import { tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
-import { lineageModule, ModuleGateway, ONTOLOGY_REQUEST, ontologyTerm, runModuleOffline, type ModuleSpec, type ModuleTurn, type RunSink } from '../src/index.ts';
+import { lineageModule, ModuleGateway, ONTOLOGY_REQUEST, ontologyTerm, OWL_EXPORT, runModuleOffline, type ModuleSpec, type ModuleTurn, type RunSink } from '../src/index.ts';
 
 const loaded = async (schema: string) => (await warehouseAvailable(schema)) && tenantPool(schema).query('SELECT 1 FROM onto_concept LIMIT 1').then(() => true, () => false);
 const CU = 'dinext_t_test_cu';
@@ -34,6 +34,8 @@ describe('data dictionary questions', () => {
       ['What does FIBO call a HELOC?', 'HELOC'],
       ['FIBO term for collateral', 'collateral'],
     ];
+    for (const q of ['Export the ontology as OWL', 'Download the data dictionary as Turtle', 'Give me the ontology file for Protégé']) expect(OWL_EXPORT.test(q), q).toBe(true);
+    for (const q of ['What does DI mean by a share draft?', 'Export the loans table', 'How does DI line up with FIBO?']) expect(OWL_EXPORT.test(q), q).toBe(false);
     for (const [q, term] of cases) {
       expect(ONTOLOGY_REQUEST.test(q), q).toBe(true);
       expect(ontologyTerm(q), q).toBe(term);
@@ -135,7 +137,19 @@ describe.skipIf(!up)('the data dictionary against the warehouse', () => {
     const h = await ask(cu, 'What does FIBO call a household?', 'o6');
     expect(h.texts[0]).toContain('FIBO has no household');
     const c = await ask(bank, 'How does DI line up with FIBO?', 'o7');
-    expect(c.texts[0]).toMatch(/\*\*\d+ of \d+ concepts\*\* and \d+ codes are linked to FIBO/);
+    expect(c.texts[0]).toMatch(/\*\*\d+ of \d+ concepts\*\*, \d+ properties and \d+ codes are linked to FIBO/);
+    expect(c.texts[0]).not.toContain('  ');
+  });
+
+  it('names FIBO’s property for a property, and says how a personal value is shown (phase 10)', async () => {
+    const r = await ask(bank, 'Which column holds the loan balance?', 'o8');
+    expect(r.texts[0]).toContain('In FIBO, the industry’s standard financial ontology, it is *loan balance* (the same meaning).');
+    const b = await ask(cu, 'What does DI mean by birth date?', 'o9');
+    expect(b.texts[0]).toContain('*date of birth* (the same meaning)');
+    expect(b.texts[0]).toContain('DI shows only the year.');
+    const e = await ask(cu, 'Export the ontology as OWL', 'o10');
+    expect(e.texts[0]).toMatch(/\[di-ontology-[\d.]+\.ttl\]\(\/v1\/exports\/di-ontology\.ttl\)/);
+    expect(e.texts[0]).toMatch(/\d+ SKOS mappings to FIBO/);
   });
 
   it('says plainly when a word isn’t in the dictionary', async () => {

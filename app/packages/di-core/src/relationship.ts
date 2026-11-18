@@ -3,6 +3,7 @@
 // rule holds for classic screens, APIs and agents (BE-RM-001, AI-TRG-020).
 import { createCipheriv, createDecipheriv, createHash } from 'node:crypto';
 import { SCORE_MODELS, type Pool, type ScoreFactor } from '@dinext/tenant-db';
+import { ontology, showProperty } from '@dinext/ontology';
 import { CLOSED_STAGES, CoreError, type CoreContext, type PartyHit } from './referrals.ts';
 
 // ---- opaque member tokens ----------------------------------------------------------------------
@@ -118,7 +119,8 @@ export interface MemberProfile {
   contact: { email: string; phone: string; preferred: string };
   household: { name: string | null; branch: string | null; last4: string | null; inPurview: boolean }[];
   /** Birth date, age and generation, from the member file. */
-  identity: { birthDate: string; age: number; generation: string };
+  /** Born: the birth date as its privacy class allows (the year), with the age and generation worked out from the full date. */
+  identity: { born: string; age: number; generation: string };
   /** The latest credit score on file, from the person's most recent loan. */
   creditScore: { score: number; asOf: string; from: string } | null;
   /** Loans charged off, with when and the amount lent. */
@@ -633,7 +635,8 @@ export class RelationshipService {
         items: apps.map((a) => ({ product: a.product, amount: a.amount, status: a.status_group, detail: a.status_detail, applied: a.applied_date, decided: a.decided_date })),
       },
       interactions: { total: (count?.n ?? 0) + declines.length + logged.length, items: interactions },
-      contact: { email: maskEmail(base.email), phone: `(•••) •••-${base.phone.slice(-4)}`, preferred: base.preferred_channel },
+      // Shown as DI's ontology says each can be (phase 10): j•••@mail.com, (•••) •••-4821.
+      contact: { email: showProperty(ontology(), 'member.email', base.email), phone: showProperty(ontology(), 'member.phone', base.phone), preferred: base.preferred_channel },
       // Household members outside the purview are counted, never named (spec 20.7).
       household: household.map((h) => {
         const inPurview = !ctx.purviewBranches || ctx.purviewBranches.includes(h.branch);
@@ -644,7 +647,7 @@ export class RelationshipService {
         const b = new Date(`${birthDate}T00:00:00Z`);
         const a = new Date(`${asOf}T00:00:00Z`);
         const age = a.getUTCFullYear() - b.getUTCFullYear() - (a.getUTCMonth() < b.getUTCMonth() || (a.getUTCMonth() === b.getUTCMonth() && a.getUTCDate() < b.getUTCDate()) ? 1 : 0);
-        return { birthDate, age, generation: generationOf(birthDate) };
+        return { born: showProperty(ontology(), 'member.birth_date', birthDate), age, generation: generationOf(birthDate) };
       })(),
       creditScore: score?.credit_score ? { score: score.credit_score, asOf: day10(score.open_date), from: `the ${label(score.loan_category).toLowerCase()} application` } : null,
       chargeOffs: { count: chargedOff.length, original: chargedOff.reduce((s, x) => s + Number(x.original_amount), 0), items: chargedOff.map((x) => ({ product: label(x.loan_category), chargedOff: day10(x.charge_off_date), original: Number(x.original_amount), amount: x.amount === null ? null : Number(x.amount), recovered: Number(x.recovered ?? 0) })) },
@@ -668,7 +671,7 @@ export class RelationshipService {
       coOwners: coOwnerRows.map((c) => ({ suffix: String(c.account_id % 10_000).padStart(4, '0'), name: `${c.first_name} ${c.last_name}`, role: c.role })),
       creditHistory: creditRows.map((c) => ({ date: day10(c.as_of), type: c.score_type, score: Number(c.score), source: c.source })),
       ...(detailRow
-        ? { details: { preferredName: detailRow.preferred_name, language: detailRow.language, deceased: detailRow.deceased_date ? day10(detailRow.deceased_date) : null, marketingOptOut: Number(detailRow.marketing_opt_out) === 1, place: `${detailRow.city}, ${detailRow.state} ${detailRow.zip}`, householdName: detailRow.household } }
+        ? { details: { preferredName: detailRow.preferred_name, language: detailRow.language, deceased: detailRow.deceased_date ? day10(detailRow.deceased_date) : null, marketingOptOut: Number(detailRow.marketing_opt_out) === 1, place: `${detailRow.city}, ${detailRow.state} ${showProperty(ontology(), 'member.zip', detailRow.zip)}`, householdName: detailRow.household } }
         : {}),
       lastVerification: verified ? { at: String(verified.verified_at instanceof Date ? verified.verified_at.toISOString() : verified.verified_at).slice(0, 16).replace(' ', 'T'), channel: verified.channel, result: verified.result, by: verified.by_name } : null,
     };
@@ -729,7 +732,3 @@ export class RelationshipService {
   }
 }
 
-function maskEmail(email: string) {
-  const [user, domain] = email.split('@');
-  return `${user!.charAt(0)}•••@${domain}`;
-}

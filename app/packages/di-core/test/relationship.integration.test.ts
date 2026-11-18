@@ -83,6 +83,9 @@ describe.skipIf(!available)('relationship.profile.get (FE-RM-001, BE-RM-001)', (
     expect(p.opportunities.map((o) => o.product)).toEqual(['Checking', 'Credit card']);
     expect(p.contact.email).toBe('s•••@example.com');
     expect(p.contact.phone).toMatch(/^\(•••\) •••-\d{4}$/);
+    // The birth date shows only its year, as DI's ontology classes it (phase 10); the age is still worked out from the full date.
+    expect(p.identity.born).toMatch(/^(19|20)\d\d$/);
+    expect(p.identity.age).toBeGreaterThan(17);
     // Maria Gomez shares the household but banks at Downtown: counted, never named.
     expect(p.household).toEqual([{ name: null, branch: null, last4: null, inPurview: false }]);
     expect((await rm.profile(1, {})).household[0]).toMatchObject({ name: 'Maria Gomez', inPurview: true });

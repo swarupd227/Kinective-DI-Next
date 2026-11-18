@@ -14,15 +14,16 @@ describe('FIBO alignment', () => {
   const links = [
     ...[...o.classes.values()].flatMap((c) => (c.fibo ?? []).map((l) => ({ at: c.id, ...l }))),
     ...[...o.valueSets.values()].flatMap((vs) => Object.entries(vs.codes).flatMap(([code, c]) => (c.fibo ?? []).map((l) => ({ at: `${vs.id}.${code}`, ...l })))),
+    ...[...o.properties.values()].flatMap((p) => (p.fibo ?? []).map((l) => ({ at: p.id, ...l }))),
   ];
 
   it('was read from FIBO at one commit, with a label for every class linked', () => {
     expect(o.fibo.source).toBe('https://github.com/edmcouncil/fibo');
     expect(o.fibo.commit).toMatch(/^[0-9a-f]{40}$/);
-    for (const l of links) expect(o.fibo.classes[l.id]?.label, l.id).toBeTruthy();
+    for (const l of links) expect(o.fibo.terms[l.id]?.label, l.id).toBeTruthy();
     // The snapshot holds what's linked and nothing else, so a dropped link doesn't leave a stale entry.
-    expect(new Set(links.map((l) => l.id))).toEqual(new Set(Object.keys(o.fibo.classes)));
-    expect(Object.values(o.fibo.classes).every((c) => c.file === `${Object.keys(o.fibo.classes).find((k) => o.fibo.classes[k] === c)!.replace(/\/[^/]+$/, '')}.rdf`)).toBe(true);
+    expect(new Set(links.map((l) => l.id))).toEqual(new Set(Object.keys(o.fibo.terms)));
+    expect(Object.values(o.fibo.terms).every((c) => c.file === `${Object.keys(o.fibo.terms).find((k) => o.fibo.terms[k] === c)!.replace(/\/[^/]+$/, '')}.rdf`)).toBe(true);
   });
 
   it('links most classes, and says why FIBO has nothing for the rest', () => {
@@ -44,7 +45,21 @@ describe('FIBO alignment', () => {
     expect(at('loan_category.auto')).toEqual(['MotorVehicleLoan exact']);
     // A membership application is broader than FIBO's loan application.
     expect(at('application')).toEqual(['LoanApplication narrower']);
-    expect(o.fibo.classes['FBC/ProductsAndServices/ClientsAndAccounts/TransactionDepositAccount']!.definition).toMatch(/transfers or withdrawals/);
+    expect(o.fibo.terms['FBC/ProductsAndServices/ClientsAndAccounts/TransactionDepositAccount']!.definition).toMatch(/transfers or withdrawals/);
+  });
+
+  it('links properties to FIBO properties, or to the class FIBO models a value as (phase 10)', () => {
+    const at = (id: string) => links.filter((l) => l.at === id).map((l) => `${l.id.split('/').pop()} ${l.match}`);
+    expect(at('loan.balance')).toEqual(['hasLoanBalance exact']);
+    expect(at('loan.rate')).toEqual(['hasInterestRate exact']);
+    expect(at('deposit.balance')).toEqual(['hasBalance exact']);
+    expect(at('member.birth_date')).toEqual(['hasDateOfBirth exact']);
+    expect(at('loan.ltv')).toEqual(['LoanToValueRatio exact']);
+    expect(o.fibo.terms['LOAN/LoansGeneral/Loans/hasLoanBalance']).toMatchObject({ kind: 'property', label: 'has loan balance' });
+    expect(o.fibo.terms['LOAN/LoansGeneral/Loans/LoanToValueRatio']!.kind).toBe('class');
+    // A class or a code links to classes only; FIBO's properties are for DI's properties.
+    for (const l of links.filter((x) => !o.properties.has(x.at))) expect(o.fibo.terms[l.id]!.kind, `${l.at} ${l.id}`).toBe('class');
+    expect([...o.properties.values()].filter((p) => p.fibo).length).toBeGreaterThanOrEqual(40);
   });
 
   it('fails to load when a link names a class the snapshot lacks, or a class has neither links nor a reason', () => {
@@ -52,7 +67,7 @@ describe('FIBO alignment', () => {
     try {
       cpSync(MODEL, dir, { recursive: true });
       const snap = JSON.parse(readFileSync(join(dir, 'fibo-snapshot.json'), 'utf8'));
-      delete snap.classes['FBC/ProductsAndServices/ClientsAndAccounts/TransactionDepositAccount'];
+      delete snap.terms['FBC/ProductsAndServices/ClientsAndAccounts/TransactionDepositAccount'];
       writeFileSync(join(dir, 'fibo-snapshot.json'), JSON.stringify(snap));
       const yaml = readFileSync(join(dir, 'classes.yaml'), 'utf8');
       writeFileSync(join(dir, 'classes.yaml'), yaml.replace(/\n {4}fibo_none: 'FIBO has no household[^\n]*/, ''));

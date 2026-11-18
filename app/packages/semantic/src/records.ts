@@ -1,8 +1,9 @@
 // The records behind a number: the loans, accounts or members a metric counts, under the same filters
 // and purview, with the condition taken from the governed measure itself ("delinquent" is whatever the
 // measure says it is). Read-only, largest first, capped, and members are named only for people whose
-// access includes member details.
+// access includes member details. What's shown of a person follows DI's ontology (phase 10).
 import type { Pool } from '@dinext/tenant-db';
+import { ontology, showProperty } from '@dinext/ontology';
 import { setting, type CompileEnv } from './compile.ts';
 import { SemanticError } from './request.ts';
 
@@ -83,7 +84,9 @@ export async function listRecords(pool: Pool, env: CompileEnv, req: { metric: st
   const [found] = (await pool.query(`SELECT ${cols.select}, pm.party_id AS member_id, pm.first_name, pm.last_name, loc.name AS branch ${from} ORDER BY ${cols.balance ?? `${source.alias}.join_date DESC`}${cols.balance ? ' DESC' : ''} LIMIT ${limit}`, params)) as unknown as [Record<string, unknown>[]];
   const day = (v: unknown) => (v ? String(v instanceof Date ? v.toISOString() : v).slice(0, 10) : null);
   const rows = found.map((r) => {
-    const member = ctx.memberDetails ? `${r.first_name} ${r.last_name} (…${String(r.member_id).padStart(4, '0').slice(-4)})` : `Member …${String(r.member_id).padStart(4, '0').slice(-4)}`;
+    const o = ontology();
+    const ref = showProperty(o, 'member.member_number', String(r.member_id).padStart(4, '0'));
+    const member = ctx.memberDetails ? `${showProperty(o, 'member.first_name', r.first_name)} ${showProperty(o, 'member.last_name', r.last_name)} (${ref})` : `Member ${ref}`;
     const base: Record<string, string | number | null> = { id: Number(r.id), member, branch: String(r.branch), category: String(r.category ?? '') };
     if (kind === 'loans') return { ...base, balance: Number(r.balance), rate: Number(r.rate), days_past_due: Number(r.days_past_due), opened: day(r.opened), credit: r.credit_score !== null && r.credit_score !== undefined ? String(r.credit_score) : r.risk_rating ? `Rated ${r.risk_rating}` : '', ltv: r.ltv !== null && r.ltv !== undefined ? `${Math.round(Number(r.ltv))}%` : '', term: r.term_months ? `${r.term_months} mo` : 'Revolving' };
     if (kind === 'accounts') return { ...base, balance: Number(r.balance), rate: Number(r.rate), matures: day(r.matures), opened: day(r.opened) };

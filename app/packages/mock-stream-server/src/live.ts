@@ -1,6 +1,7 @@
 // Live agents for the Experience Layer: the DI Concierge on Claude, answering from the semantic layer
 // over the synthetic tenant warehouse. Starts only when the warehouse is reachable; without an API
 // key the Concierge runs its deterministic offline planner (spec 23.6.4).
+import { ontology, ontologyTurtle } from '@dinext/ontology';
 import { randomBytes } from 'node:crypto';
 import type { ApprovalCardBlock, ApprovalDecisionRequest, Block, KpiGroupBlock, ListBlock, Member360Block, SearchResult, StreamEvent, StreamingEnvelope, TableData } from '@dinext/block-schemas';
 import { activityModule, salesOverridesModule, stockExtraAnalyses, referralDeskModule, cfoModule, shareModule, ceclModule, loanGrowthModule, predictiveModule, glModule, interactionModule, referralReportModule, pipelineForecastModule, salesScorecardModule, portfolioModule, portfolioAnalyses, concentrationModule, concentrationAnalyses, bsaModule, bsaAnalyses, opRiskModule, opRiskAnalyses, capitalPlanModule, capitalPlanAnalyses, coreMappingModule, budgetModule, profitAnalyses, profitabilityModule } from '@dinext/agents';
@@ -239,6 +240,8 @@ export interface LiveRuntime {
   tableExport(persona: PersonaId, table: TableExport, format: 'xlsx' | 'csv'): Promise<{ fileName: string; contentType: string; body: Buffer } | null>;
   /** The Call Report as files for the preparer: the item-and-value data file, or the review workbook. */
   callReportFile(persona: PersonaId, kind: CallReportFileKind): Promise<{ fileName: string; contentType: string; body: Buffer } | null>;
+  /** DI's ontology as OWL in Turtle, with its FIBO mappings, for anyone with data lineage (phase 10). */
+  ontologyOwl(persona: PersonaId): Promise<{ fileName: string; contentType: string; body: Buffer } | null>;
   /** Keeps an upload as Staged for its uploader; nothing is in a folder until a save is approved (spec 8.15). */
   stageFile(persona: PersonaId, f: { name: string; body: Buffer }): Promise<{ fileId: number; name: string; type: string; sizeKb: number } | null>;
   /** Stages the demo servicer spreadsheet of off-core loans for the person, as if they had uploaded it. */
@@ -905,6 +908,15 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       await gw.store.countDownload(exportId);
       void audit.event({ eventType: 'report.export.downloaded', tenant: tenantFor(persona)!.runtime.key, userId: s.user.id, threadId: '', runId: '', approvalId: '', exportId, templateId: e.templateId, format: e.format, controls: e.controls });
       return renderExport(canvas, e.format, { tenant: tenantFor(persona)!.runtime.name, user: s.user.name });
+    },
+
+    async ontologyOwl(persona) {
+      const t = tenantFor(persona);
+      const p = PERSONAS[persona];
+      if (!t || !(p.modules ?? []).includes('lineage')) return null;
+      const o = ontology();
+      void audit.event({ eventType: 'ontology.owl.downloaded', tenant: t.runtime.key, userId: p.session.user.id, threadId: '', runId: '', approvalId: '', version: o.version });
+      return { fileName: `di-ontology-${o.version}.ttl`, contentType: 'text/turtle; charset=utf-8', body: Buffer.from(ontologyTurtle(o), 'utf8') };
     },
 
     async callReportFile(persona, kind) {

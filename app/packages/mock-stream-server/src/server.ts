@@ -721,6 +721,14 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         res.end(f.body);
         return;
       }
+      // DI's ontology as OWL (phase 10): not personal data, but only for people with data lineage.
+      if (method === 'GET' && path === '/v1/exports/di-ontology.ttl') {
+        const f = await live?.ontologyOwl(persona());
+        if (!f) return json(res, 404, { code: 'NOT_FOUND' });
+        res.writeHead(200, { 'content-type': f.contentType, 'content-disposition': `attachment; filename="${f.fileName}"`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+        res.end(f.body);
+        return;
+      }
       const exportFile = /^\/v1\/exports\/([^/]+)$/.exec(path);
       if (method === 'GET' && exportFile) {
         try {

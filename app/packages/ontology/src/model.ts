@@ -23,15 +23,25 @@ export const PRIVACY = ['direct', 'quasi', 'financial', 'none'] as const;
  * A link to FIBO, the EDM Council's Financial Industry Business Ontology (phase 9), by the class's path
  * under https://spec.edmcouncil.org/fibo/ontology/. match reads as SKOS mapping does: exact (the same
  * meaning), close (the same in most uses), broader (FIBO's class is broader than DI's) or narrower.
- * type limits it to a credit union or a bank. Every link must be in model/fibo-snapshot.json.
+ * type limits it to a credit union or a bank. A class or code links to FIBO classes; a property to a
+ * FIBO property (hasLoanBalance) or, where FIBO models the value as a class, that class (LoanToValueRatio).
+ * Every link must be in model/fibo-snapshot.json.
  */
 const FiboLink = z.object({
-  id: z.string().regex(/^(?:FND|FBC|BE|LOAN|SEC|IND|DER|BP|CAE|MD)(?:\/[A-Za-z]+)+\/[A-Z][A-Za-z0-9-]*$/),
+  id: z.string().regex(/^(?:FND|FBC|BE|LOAN|SEC|IND|DER|BP|CAE|MD)(?:\/[A-Za-z]+)+\/[A-Za-z][A-Za-z0-9-]*$/),
   match: z.enum(['exact', 'close', 'broader', 'narrower']),
   type: z.enum(['credit_union', 'bank']).optional(),
 }).strict();
 export type FiboLink = z.infer<typeof FiboLink>;
 export const FIBO_BASE = 'https://spec.edmcouncil.org/fibo/ontology/';
+
+/**
+ * How a value that can identify a person is shown wherever DI shows one (phase 10): in full; its last
+ * four digits (…4821); the year of a date (1968); an email's first letter and domain (j•••@mail.com);
+ * a ZIP's first three digits (021••); a street without its number (••• Maple Ave); or not at all.
+ */
+export const MASKS = ['full', 'last4', 'year', 'email', 'first3', 'street', 'hidden'] as const;
+export type Mask = (typeof MASKS)[number];
 
 const ClassSchema = z.object({
   label: z.string(),
@@ -58,6 +68,9 @@ const PropertySchema = z.object({
   synonyms,
   /** How a core column of another kind can give this property: a due date gives days past due. */
   /** How much this property says two records are one person, and how its values compare (phase 7). */
+  /** How a value is shown; every direct or quasi identifier must say (phase 10). */
+  mask: z.enum(MASKS).optional(),
+  fibo: z.array(FiboLink).min(1).optional(),
   match: z.object({ weight: z.number().gt(0).max(1), how: z.enum(['name', 'date', 'text', 'digits', 'exact']) }).strict().optional(),
   derive: z.array(z.object({ transform: z.enum(['same', 'number', 'date8', 'code', 'rate1000', 'daysPast', 'not', 'nonzero']), from: z.enum(['date', 'flag', 'code', 'number', 'money', 'text', 'key', 'reference']), words: z.array(z.string()).min(1) }).strict()).default([]),
   realized_by: z.array(column).min(1),
@@ -122,7 +135,8 @@ export interface FiboSnapshot {
   source: string;
   commit: string;
   read: string;
-  classes: Record<string, { label: string; definition: string | null; file: string }>;
+  /** FIBO classes and properties by path, with FIBO's own prefix for the module each is in (fibo-fbc-pas-caa). */
+  terms: Record<string, { kind: 'class' | 'property'; label: string; definition: string | null; file: string; prefix: string }>;
 }
 
 /** The core tables in a vendor mapping's FROM, by alias: "ACCOUNT a JOIN NAME n ON ..." gives a and n. */
@@ -206,13 +220,17 @@ export function loadOntology(dir = MODEL_DIR): Ontology {
   // Every FIBO link names a class in the snapshot read from FIBO's source; every class has links or a reason.
   const fibo = JSON.parse(readFileSync(join(dir, 'fibo-snapshot.json'), 'utf8')) as FiboSnapshot;
   const checkFibo = (what: string, links: FiboLink[] | undefined) => {
-    for (const l of links ?? []) if (!fibo.classes[l.id]) errors.push(`${what}: FIBO ${l.id} isn't in fibo-snapshot.json (run scripts/fibo-snapshot.ts)`);
+    for (const l of links ?? []) if (!fibo.terms[l.id]) errors.push(`${what}: FIBO ${l.id} isn't in fibo-snapshot.json (run scripts/fibo-snapshot.ts)`);
   };
   for (const c of classes.values()) {
     if (!c.fibo === !c.fibo_none) errors.push(`class ${c.id}: needs fibo links or fibo_none with the reason, not ${c.fibo ? 'both' : 'neither'}`);
     checkFibo(`class ${c.id}`, c.fibo);
   }
   for (const vs of valueSets.values()) for (const [code, c] of Object.entries(vs.codes)) checkFibo(`${vs.id}.${code}`, c.fibo);
+  for (const p of properties.values()) {
+    checkFibo(p.id, p.fibo);
+    if ((p.privacy === 'direct' || p.privacy === 'quasi') && !p.mask) errors.push(`${p.id}: can identify a person (${p.privacy}), so it needs mask saying how it's shown`);
+  }
   if (errors.length) throw new Error(`The ontology doesn't load:\n- ${errors.join('\n- ')}`);
   const abbr = z.object({ abbreviations: z.record(z.string().regex(/^[a-z]+$/), z.string()), code_words: z.record(z.string().regex(/^[a-z]+$/), z.string()).default({}), nicknames: z.record(z.string().regex(/^[a-z]+$/), z.array(z.string().regex(/^[a-z]+$/))).default({}), address_words: z.record(z.string().regex(/^[a-z]+$/), z.string().regex(/^[a-z]+$/)).default({}), words: z.array(z.string().regex(/^[a-z]+$/)) }).strict().parse(read(join(dir, 'abbreviations.yaml')));
   return { version: top.version, classes, properties, valueSets, vendors, columnIndex, abbreviations: new Map(Object.entries(abbr.abbreviations)), words: new Set(abbr.words), codeWords: new Map(Object.entries(abbr.code_words)), nicknames: nicknameIndex(abbr.nicknames), addressWords: new Map(Object.entries(abbr.address_words)), fibo };
