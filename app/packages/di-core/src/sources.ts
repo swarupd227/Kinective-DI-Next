@@ -573,7 +573,7 @@ export class SourceService {
       const processDate = await this.processDate(conn, login.system);
       let mappings: MappingCheck[] | null = null;
       if (login.system.mappings) {
-        const cols = await rows<{ t: string; c: string }>(conn, 'SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ?', [login.database]);
+        const cols = await rows<{ t: string; c: string }>(conn, 'SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND EXTRA NOT LIKE \'%INVISIBLE%\'', [login.database]);
         const have = new Set(cols.map((x) => `${x.t}.${x.c}`.toUpperCase()));
         mappings = login.system.mappings.map((map) => {
           const alias = aliases(map);
@@ -680,7 +680,7 @@ export class SourceService {
         // The core's columns now, against the ones the mapping was made for.
         const [{ db }] = (await rows<{ db: string }>(core, 'SELECT DATABASE() AS db')) as [{ db: string }];
         const now = new Map<string, Set<string>>();
-        for (const r of await rows<{ t: string; c: string }>(core, 'SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ?', [db])) (now.get(r.t.toUpperCase()) ?? now.set(r.t.toUpperCase(), new Set()).get(r.t.toUpperCase())!).add(r.c.toUpperCase());
+        for (const r of await rows<{ t: string; c: string }>(core, 'SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND EXTRA NOT LIKE \'%INVISIBLE%\'', [db])) (now.get(r.t.toUpperCase()) ?? now.set(r.t.toUpperCase(), new Set()).get(r.t.toUpperCase())!).add(r.c.toUpperCase());
         const missing: string[] = [];
         for (const map of maps) {
           const al = aliases(map);
@@ -965,7 +965,7 @@ export class SourceService {
     // Only the columns both sides have: a column new in the core is drift to decide on, not a reason to fail the pull.
     const mine = new Set((await rows<{ c: string }>(this.pool, 'SELECT COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?', [target])).map((r) => r.c.toUpperCase()));
     const [{ db }] = (await rows<{ db: string }>(core, 'SELECT DATABASE() AS db')) as [{ db: string }];
-    const theirs = (await rows<{ c: string }>(core, 'SELECT COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND UPPER(TABLE_NAME) = ? ORDER BY ORDINAL_POSITION', [db, coreTable.toUpperCase()])).map((r) => r.c).filter((c) => mine.has(c.toUpperCase()));
+    const theirs = (await rows<{ c: string }>(core, 'SELECT COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND EXTRA NOT LIKE \'%INVISIBLE%\' AND UPPER(TABLE_NAME) = ? ORDER BY ORDINAL_POSITION', [db, coreTable.toUpperCase()])).map((r) => r.c).filter((c) => mine.has(c.toUpperCase()));
     if (!theirs.length) return 0;
     const found = await rows<Record<string, Raw>>(core, `SELECT ${theirs.map((c) => `\`${c.replaceAll('`', '')}\``).join(', ')} FROM \`${coreTable.replaceAll('`', '')}\``);
     const conn = await this.pool.getConnection();
@@ -1151,7 +1151,7 @@ export class SourceService {
     const map = conn.system.mappings!.find((m) => m.diTable === diTable)!;
     return this.withCore(credentialId, async (core) => {
       const [{ db }] = (await rows<{ db: string }>(core, 'SELECT DATABASE() AS db')) as [{ db: string }];
-      const cols = await rows<{ t: string; c: string }>(core, 'SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ?', [db]);
+      const cols = await rows<{ t: string; c: string }>(core, 'SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND EXTRA NOT LIKE \'%INVISIBLE%\'', [db]);
       const columns: Record<string, string[]> = {};
       for (const x of cols) (columns[x.t.toUpperCase()] ??= []).push(x.c.toUpperCase());
       let sql: string;
@@ -1257,7 +1257,7 @@ export class SourceService {
    */
   private async profileCore(core: mysql.Connection): Promise<CoreProfile> {
     const [{ db }] = (await rows<{ db: string }>(core, 'SELECT DATABASE() AS db')) as [{ db: string }];
-    const raw = await rows<{ t: string; c: string; dt: string }>(core, 'SELECT TABLE_NAME AS t, COLUMN_NAME AS c, DATA_TYPE AS dt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME, ORDINAL_POSITION', [db]);
+    const raw = await rows<{ t: string; c: string; dt: string }>(core, 'SELECT TABLE_NAME AS t, COLUMN_NAME AS c, DATA_TYPE AS dt FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND EXTRA NOT LIKE \'%INVISIBLE%\' ORDER BY TABLE_NAME, ORDINAL_POSITION', [db]);
     // A server that ignores the case of table names (Azure's MySQL keeps them in lower case) reports
     // account for ACCOUNT. Such a server takes either spelling, so the vendor's upper case is used throughout.
     const [lc] = await rows<{ v: number }>(core, 'SELECT @@lower_case_table_names AS v').catch(() => []);
