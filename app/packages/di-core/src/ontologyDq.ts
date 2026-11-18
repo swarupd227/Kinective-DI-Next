@@ -45,11 +45,12 @@ function named(checks: OntologyCheck[]) {
 }
 
 /**
- * Runs the ontology's checks on the current cdm_* tables and replaces their earlier results. Read-only
- * on the data; writes only its own rows in ops_dq_check. Returns each result.
+ * Runs the ontology's checks on the current cdm_* tables and the month-end hist_* rollups (phase 8),
+ * and replaces their earlier results. Read-only on the data; writes only its own rows in ops_dq_check.
+ * Returns each result.
  */
 export async function runOntologyChecks(pool: Pool, type: InstitutionType): Promise<OntologyCheckResult[]> {
-  const tables = new Set((await rows<{ t: string }>(pool, "SELECT table_name AS t FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name LIKE 'cdm\\_%'")).map((r) => r.t.toLowerCase()));
+  const tables = new Set((await rows<{ t: string }>(pool, "SELECT table_name AS t FROM information_schema.tables WHERE table_schema = DATABASE() AND (table_name LIKE 'cdm\\_%' OR table_name LIKE 'hist\\_%')")).map((r) => r.t.toLowerCase()));
   const [build] = await rows<{ as_of_date: unknown }>(pool, 'SELECT as_of_date FROM meta_build ORDER BY as_of_date DESC LIMIT 1').catch(() => []);
   const asOf = build ? (build.as_of_date instanceof Date ? build.as_of_date.toISOString() : String(build.as_of_date)).slice(0, 10) : new Date().toISOString().slice(0, 10);
   const checks = named(ontologyChecks(ontology(), tables, type));

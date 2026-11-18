@@ -45,6 +45,7 @@ export const EVAL_ITEMS: EvalItem[] = [
   // People and roles from the ontology (phase 7).
   { id: 'GQ-PPL-001', set: 'golden', persona: 'executive', q: 'Which membership applicants are already members?', agent: 'Identity and Roles', contains: ['membership applicants', 'same person', 'birth date 30%'], approval: 'none' },
   { id: 'GQ-PPL-002', set: 'golden', persona: 'executive', q: 'Who is on loan 13?', agent: 'Identity and Roles', contains: ['primary owner'], approval: 'none' },
+  { id: 'GQ-PPL-003', set: 'golden', persona: 'executive', q: 'How well does person matching handle typos?', agent: 'Identity and Roles', contains: ['Allowing for slips', 'Two slips at once'], approval: 'none' },
   { id: 'GQ-GOV-001', set: 'golden', persona: 'executive', q: 'Show AI cost by agent for October', agent: 'AI Governance', contains: ['October 2026'], approval: 'none' },
   { id: 'GQ-CMP-001', set: 'golden', persona: 'executive', q: 'Which regulatory issues are open more than 3 weeks?', agent: 'Compliance & Problem Management', approval: 'none' },
   { id: 'GQ-CR-001', set: 'golden', persona: 'executive', q: 'Are we ready to file Q3?', agent: 'Call Report', contains: ['uncategorized GL accounts'], approval: 'none' },

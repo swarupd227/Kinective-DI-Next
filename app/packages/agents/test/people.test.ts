@@ -9,6 +9,7 @@ import { ontology } from '@dinext/ontology';
 import { tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { ModuleGateway, runModuleOffline, type ModuleTurn, type RunSink } from '../src/index.ts';
 import { PEOPLE_REQUEST, peopleModule } from '../src/people.ts';
+import { jaroWinkler, oneSlipApart } from '../../di-core/src/people.ts';
 
 describe('roles and identity in the ontology', () => {
   it('reads each role DI holds as the ontology’s role, with what it allows', () => {
@@ -108,5 +109,60 @@ describe.skipIf(!up)('against both warehouses', () => {
     const said = await ask(pools[0]!, 'credit_union', 'Which membership applicants are already members?', 'p4');
     expect(said.text).toMatch(/^Of \*\*[\d,]+ membership applicants\*\*, DI matched \*\*[\d,]+\*\* to a member it already holds as the same person, each the member the application is recorded against/);
     expect(said.text).toContain('birth date 30%, last name 25%');
+  }, 120_000);
+});
+
+describe('matching that allows for slips (phase 8)', () => {
+  const rec = { first: 'Robert', last: 'Chen', birth: '1984-02-11', email: 'r.chen@example.com', street: '12 Elm St', zip: '06880' };
+
+  it('rates a typo as close and a different name as far', () => {
+    expect(jaroWinkler('martinez', 'martniez')).toBeGreaterThan(0.92);
+    expect(jaroWinkler('johnson', 'jonson')).toBeGreaterThan(0.92);
+    expect(jaroWinkler('nguyen', 'nolan')).toBeLessThan(0.92);
+    // A dropped letter near the end scores lower, so one slip apart counts too.
+    expect(oneSlipApart('greene', 'grene')).toBe(true);
+    expect(oneSlipApart('yamamoto', 'ymamoto')).toBe(true);
+    expect(oneSlipApart('chen', 'chne')).toBe(true);
+    expect(oneSlipApart('smith', 'smyth')).toBe(true);
+    expect(oneSlipApart('smith', 'jones')).toBe(false);
+    expect(oneSlipApart('anderson', 'andersen ')).toBe(false);
+    expect(jaroWinkler('smith', 'smith')).toBe(1);
+  });
+
+  it('gives partial credit for a misspelled name, a swapped day and month, and a street written out', () => {
+    const typo = scoreIdentity({ ...rec, last: 'Chne' }, rec);
+    expect(typo.agreed).toContain('last name (spelled differently)');
+    expect(scoreIdentity({ ...rec, last: 'Chne' }, rec, { fuzzy: false }).agreed).not.toContain('last name (spelled differently)');
+    expect(typo.score).toBeGreaterThan(scoreIdentity({ ...rec, last: 'Chne' }, rec, { fuzzy: false }).score);
+    expect(scoreIdentity({ ...rec, birth: '1984-11-02' }, rec).agreed).toContain('birth date (day and month swapped)');
+    // "Street" and "St" are one word to the ontology, matching exactly or not.
+    expect(scoreIdentity({ ...rec, street: '12 Elm Street' }, rec, { fuzzy: false }).agreed).toContain('street');
+    expect(scoreIdentity({ ...rec, street: '12 Elms St' }, rec).agreed).toContain('street (spelled differently)');
+    // A different house number is a different address, however alike the street.
+    expect(scoreIdentity({ ...rec, street: '14 Elm St' }, rec).agreed.some((a) => a.startsWith('street'))).toBe(false);
+  });
+});
+
+describe.skipIf(!up)('the matching trial against both warehouses', () => {
+  it('decides more altered records on its own and none wrongly, and leaves made-up people new', async () => {
+    for (const [schema, type] of [[CU, 'credit_union'], [BANK, 'bank']] as const) {
+      const pool = tenantPool(schema);
+      try {
+        const r = await new PeopleService(pool, type).matchTrial(40);
+        const by = (k: string) => r.kinds.find((x) => x.kind === k)!;
+        for (const k of r.kinds) {
+          expect(k.fuzzy.wrong, `${type} ${k.kind}`).toBe(0);
+          expect(k.fuzzy.missed, `${type} ${k.kind}`).toBe(0);
+          expect(k.fuzzy.same, `${type} ${k.kind}`).toBeGreaterThanOrEqual(k.exact.same);
+        }
+        expect(by('Last name misspelled').exact.same, type).toBe(0);
+        expect(by('Last name misspelled').fuzzy.same, type).toBeGreaterThanOrEqual(32);
+        expect(by('Birth day and month swapped').fuzzy.same, type).toBe(40);
+        expect(r.strangers.fuzzy.same, type).toBe(0);
+        expect(r.strangers.fuzzy.wrong, type).toBeLessThanOrEqual(2);
+      } finally {
+        await pool.end();
+      }
+    }
   }, 120_000);
 });

@@ -104,7 +104,8 @@ properties:
     close_date: { label: Date closed, type: date, privacy: none, definition: Empty while open., realized_by: [cdm_deposit_account.close_date] }
     maturity_date: { label: Maturity date, type: date, privacy: none, definition: When a certificate matures; empty for shares with no term., realized_by: [cdm_deposit_account.maturity_date] }
     balance: { label: Balance, type: money, privacy: financial, constraints: { min: -100000 }, synonyms: { credit_union: [shares, share balance, savings balance, balance], bank: [deposits, deposit balance, balance] }, realized_by: [cdm_deposit_account.balance, hist_deposit_month.balance] }
-    rate: { label: Dividend or interest rate, labels_by_type: { credit_union: Dividend rate, bank: Interest rate }, type: rate, privacy: none, constraints: { min: 0, max: 20 }, synonyms: { credit_union: [dividend rate, APY], bank: [interest rate, APY] }, realized_by: [cdm_deposit_account.rate, hist_deposit_month.rate_weighted] }
+    rate: { label: Dividend or interest rate, labels_by_type: { credit_union: Dividend rate, bank: Interest rate }, type: rate, privacy: none, constraints: { min: 0, max: 20 }, synonyms: { credit_union: [dividend rate, APY], bank: [interest rate, APY] }, realized_by: [cdm_deposit_account.rate] }
+    rate_weighted_sum: { label: Balance-weighted rate total, type: number, aggregate: true, privacy: none, definition: 'Each account''s balance times its rate, added up; divided by the balance it gives the average rate weighted by balance. Not a rate itself (phase 8: the range check on rates found it bound as one).', realized_by: [hist_deposit_month.rate_weighted] }
     count: { label: Number of shares or deposits, type: count, aggregate: true, privacy: none, realized_by: [hist_deposit_month.account_count] }
 
   deposit_terms:
@@ -138,7 +139,7 @@ properties:
     delinquent_60_balance: { label: Balance 60 or more days past due, type: money, aggregate: true, privacy: financial, realized_by: [hist_loan_month.delinquent_60_balance] }
     new_amount: { label: New loans made, type: money, aggregate: true, privacy: financial, realized_by: [hist_loan_month.new_loan_amount] }
     new_count: { label: Number of new loans, type: count, aggregate: true, privacy: none, realized_by: [hist_loan_month.new_loan_count] }
-    new_rate: { label: Rate on new loans, type: rate, aggregate: true, privacy: none, realized_by: [hist_loan_month.new_rate_weighted] }
+    new_rate: { label: Amount-weighted rate total on new loans, type: number, aggregate: true, privacy: none, definition: 'Each new loan''s amount times its rate, added up; divided by the amount it gives the average rate on new loans. Not a rate itself.', realized_by: [hist_loan_month.new_rate_weighted] }
 
   loan_terms:
     structure: { label: Structure, type: code, value_set: loan_structure, privacy: none, realized_by: [cdm_loan_terms.structure] }

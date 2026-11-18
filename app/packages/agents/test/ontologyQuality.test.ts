@@ -25,6 +25,13 @@ describe('checks the ontology implies', () => {
     expect(codes.params).toEqual(expect.arrayContaining(['Auto', 'Mortgage', 'Commercial Real Estate']));
   });
 
+  it('checks the month-end rollups too, but not a weighted total as if it were a rate (phase 8)', () => {
+    const hist = ontologyChecks(ontology(), new Set(['hist_deposit_month', 'hist_loan_month']), 'credit_union');
+    expect(hist.map((c) => c.rule)).toEqual(expect.arrayContaining(['hist_loan_month.loan_category on the loan category list', 'hist_deposit_month.balance at least -100000']));
+    expect(hist.some((c) => c.column === 'rate_weighted' || c.column === 'new_rate_weighted')).toBe(false);
+    expect(ontology().columnIndex.get('hist_deposit_month.rate_weighted')).toBe('deposit.rate_weighted_sum');
+  });
+
   it('checks only the tables the institution has, and leaves open code lists alone', () => {
     expect(checks.every((c) => tables.has(c.table))).toBe(true);
     expect(ontologyChecks(ontology(), new Set(['cdm_loan']), 'bank').every((c) => c.table === 'cdm_loan')).toBe(true);

@@ -96,6 +96,8 @@ export interface Ontology {
   codeWords: Map<string, string>;
   /** Familiar forms of first names (bob: robert), both ways, for matching people (phase 7). */
   nicknames: Map<string, Set<string>>;
+  /** One spelling for the words of a street address (street: st), for matching people (phase 8). */
+  addressWords: Map<string, string>;
 }
 
 /** The core tables in a vendor mapping's FROM, by alias: "ACCOUNT a JOIN NAME n ON ..." gives a and n. */
@@ -177,8 +179,8 @@ export function loadOntology(dir = MODEL_DIR): Ontology {
     }
   }
   if (errors.length) throw new Error(`The ontology doesn't load:\n- ${errors.join('\n- ')}`);
-  const abbr = z.object({ abbreviations: z.record(z.string().regex(/^[a-z]+$/), z.string()), code_words: z.record(z.string().regex(/^[a-z]+$/), z.string()).default({}), nicknames: z.record(z.string().regex(/^[a-z]+$/), z.array(z.string().regex(/^[a-z]+$/))).default({}), words: z.array(z.string().regex(/^[a-z]+$/)) }).strict().parse(read(join(dir, 'abbreviations.yaml')));
-  return { version: top.version, classes, properties, valueSets, vendors, columnIndex, abbreviations: new Map(Object.entries(abbr.abbreviations)), words: new Set(abbr.words), codeWords: new Map(Object.entries(abbr.code_words)), nicknames: nicknameIndex(abbr.nicknames) };
+  const abbr = z.object({ abbreviations: z.record(z.string().regex(/^[a-z]+$/), z.string()), code_words: z.record(z.string().regex(/^[a-z]+$/), z.string()).default({}), nicknames: z.record(z.string().regex(/^[a-z]+$/), z.array(z.string().regex(/^[a-z]+$/))).default({}), address_words: z.record(z.string().regex(/^[a-z]+$/), z.string().regex(/^[a-z]+$/)).default({}), words: z.array(z.string().regex(/^[a-z]+$/)) }).strict().parse(read(join(dir, 'abbreviations.yaml')));
+  return { version: top.version, classes, properties, valueSets, vendors, columnIndex, abbreviations: new Map(Object.entries(abbr.abbreviations)), words: new Set(abbr.words), codeWords: new Map(Object.entries(abbr.code_words)), nicknames: nicknameIndex(abbr.nicknames), addressWords: new Map(Object.entries(abbr.address_words)) };
 }
 
 /** Each name to every name it can stand for: robert to bob and bobby, and bob back to robert. */

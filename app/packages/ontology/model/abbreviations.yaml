@@ -129,5 +129,28 @@ nicknames:
   victoria: [vicky, tori]
   william: [bill, will, billy, liam]
 
+# One spelling for each word of a street address, so "12 Elm Street" and "12 Elm St" match (phase 8).
+address_words:
+  street: st
+  avenue: ave
+  av: ave
+  road: rd
+  drive: dr
+  lane: ln
+  boulevard: blvd
+  court: ct
+  place: pl
+  terrace: ter
+  circle: cir
+  highway: hwy
+  parkway: pkwy
+  north: n
+  south: s
+  east: e
+  west: w
+  apartment: apt
+  suite: ste
+  unit: apt
+
 # Words the splitter knows besides every word in the ontology's names and synonyms.
 words: [account, active, amount, balance, birth, branch, change, charge, close, closed, code, control, date, dealer, dividend, due, first, household, id, institution, interest, last, level, loan, maturity, member, name, next, non, number, off, officer, open, ordinal, original, parent, payment, post, process, rate, release, savings, sequence, serial, share, tracking, transaction, type, user, char]

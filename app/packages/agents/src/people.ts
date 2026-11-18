@@ -14,7 +14,7 @@ const text = (field: string, headerName: string) => ({ field, headerName, type: 
 
 /** "Who is on account 12345?", "Everyone with a say over account …4821", "Which applicants are already members?" */
 export const PEOPLE_REQUEST =
-  /\bwho(?:['’]s| is| are)? on (?:the |this )?(?:account|loan|share|certificate)\b|\b(?:everyone|everybody|who) (?:has|with) a say over\b|\broles? on (?:the |this |an )?account\b|\b(?:already|existing) (?:a )?(?:members?|customers?)\b[^?]*\bapplicants?\b|\bapplicants?\b[^?]*\b(?:already|existing) (?:a )?(?:members?|customers?)\b|\bmatch (?:the )?(?:membership |new |account )?applicants\b|\bsame person\b|\bduplicate (?:members|customers|people)\b/i;
+  /\bwho(?:['’]s| is| are)? on (?:the |this )?(?:account|loan|share|certificate)\b|\b(?:everyone|everybody|who) (?:has|with) a say over\b|\broles? on (?:the |this |an )?account\b|\b(?:already|existing) (?:a )?(?:members?|customers?)\b[^?]*\bapplicants?\b|\bapplicants?\b[^?]*\b(?:already|existing) (?:a )?(?:members?|customers?)\b|\bmatch (?:the )?(?:membership |new |account )?applicants\b|\bsame person\b|\bduplicate (?:members|customers|people)\b|\b(?:test|trial|try) (?:the )?(?:person |people )?matching\b|\bmatching (?:trial|test)\b|\bhow (?:well|good) (?:does|is) (?:person |people )?matching\b/i;
 
 /** The identity weights, in words, from the ontology: "birth date 30%, last name 25%". */
 function weightsLine() {
@@ -46,9 +46,11 @@ export function peopleModule(svc: PeopleService, person: 'member' | 'customer'):
 
 - "Who is on account 12345?", "Everyone with a say over account …4821": ppl_on_account with the number as given.
 - "Which membership applicants are already ${persons}?", "Match the applicants": ppl_match_applicants.
+- "How well does person matching handle typos?", "Test person matching": ppl_match_trial.
 - Roles and what each allows come from DI's ontology; matches are scored on the identity properties it weights. Never guess a role or a match.`,
     plan: (t) => {
       const acct = /\b(?:account|loan|share|certificate)\b[^0-9]*?(?:…|\.\.\.|ending (?:in )?)?\s*(\d{1,12})\b/i.exec(t) ?? /(?:…|\.\.\.)\s*(\d{4})\b/.exec(t) ?? /\b(\d{4,12})\b/.exec(t);
+      if (/\b(?:test|trial|try)\b[^?]*\bmatching\b|\bmatching (?:trial|test)\b|\bhow (?:well|good)\b[^?]*\bmatching\b/i.test(t)) return { tool: 'ppl_match_trial', args: {} };
       if (/\bapplicants?\b|\bsame person\b|\bduplicate\b/i.test(t)) return { tool: 'ppl_match_applicants', args: {} };
       const kind = /\bloans?\b/i.test(t) ? 'loan' : /\b(?:share|deposit|savings|checking|certificate|CD|IRA|money market)\b/i.test(t) ? 'deposit' : undefined;
       return acct ? { tool: 'ppl_on_account', args: { account: acct[1]!, ...(kind ? { kind } : {}) } } : { say: 'Which account? Give its number, or its last four digits.' };
@@ -98,6 +100,36 @@ export function peopleModule(svc: PeopleService, person: 'member' | 'customer'):
             blocks: review.length
               ? [moduleTable(spec, 'Possible matches to check', ctx.runId, 'people.match', [text('applicant', 'Applicant'), text('known', `Closest ${person}`), text('score', 'Score'), text('agreed', 'Agrees on')], review.map((x) => ({ applicant: x.name, known: x.result.name ?? '', score: `${Math.round(x.result.score * 100)}%`, agreed: x.result.agreed.join(', ') })))]
               : [],
+          };
+        },
+      },
+      {
+        name: 'ppl_match_trial',
+        description: `A trial of person matching on altered copies of real ${persons} (a misspelled name, a familiar first name, a street written out, a move, a birth date with day and month swapped) and on made-up people: how often matching exactly and matching that allows for slips each decide right, leave it to a person, or go wrong. Nothing is stored.`,
+        input: z.object({}).strict(),
+        run: async (_a: Record<string, never>, ctx: ModuleContext) => {
+          need(ctx);
+          const r = await svc.matchTrial(100);
+          const tried = r.kinds.reduce((x, k) => x + k.fuzzy.tried, 0);
+          const sum = (key: 'same' | 'possible' | 'wrong', mode: 'exact' | 'fuzzy') => r.kinds.reduce((x, k) => x + k[mode][key], 0);
+          const wrong = sum('wrong', 'fuzzy') + r.strangers.fuzzy.wrong;
+          const gained = r.kinds.filter((k) => k.fuzzy.same > k.exact.same).map((k) => `${k.kind.toLowerCase()} (${n(k.exact.same)} to ${n(k.fuzzy.same)} of ${n(k.fuzzy.tried)})`);
+          const parts = [
+            `I altered **${n(tried)} real ${persons}’ records** the way people slip on forms, and made up **${n(r.strangers.fuzzy.tried)} people** who aren’t ${persons}. Allowing for slips, DI decided **${n(sum('same', 'fuzzy'))}** of the altered records were the right ${person} on its own, left **${n(sum('possible', 'fuzzy'))}** for a person to check, and matched **${wrong ? n(wrong) : 'none'}** to the wrong ${person}${r.strangers.fuzzy.wrong ? ' or a made-up person to a real one' : ''}.`,
+            `Matching exactly, as before, decided ${n(sum('same', 'exact'))} on its own and left ${n(sum('possible', 'exact'))} to check.`,
+            gained.length ? `Allowing for slips helps most with ${gained.join(' and ')}.` : '',
+            'Two slips at once, such as a misspelled last name after a move, still go to a person.',
+          ];
+          const pct = (t: { tried: number; same: number }) => (t.tried ? `${Math.round((t.same / t.tried) * 100)}%` : '—');
+          const strangers = (t: { tried: number; wrong: number }) => `${n(t.tried - t.wrong)} of ${n(t.tried)} left new`;
+          return {
+            text: parts.filter(Boolean).join(' '),
+            blocks: [
+              moduleTable(spec, 'Person matching on altered records', ctx.runId, 'people.match_trial', [text('kind', 'Change to the record'), text('exact', 'Decided, matching exactly'), text('fuzzy', 'Decided, allowing for slips'), text('check', 'Left to check'), text('wrong', 'Wrong')], [
+                ...r.kinds.map((k) => ({ kind: k.kind, exact: pct(k.exact), fuzzy: pct(k.fuzzy), check: n(k.fuzzy.possible), wrong: n(k.fuzzy.wrong) })),
+                { kind: r.strangers.kind, exact: strangers(r.strangers.exact), fuzzy: strangers(r.strangers.fuzzy), check: n(r.strangers.fuzzy.possible), wrong: n(r.strangers.fuzzy.wrong) },
+              ]),
+            ],
           };
         },
       },
