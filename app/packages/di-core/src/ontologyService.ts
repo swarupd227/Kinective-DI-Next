@@ -3,6 +3,7 @@
 // that measure it, its code list, and the core columns it comes from. Read only; every answer is
 // worked out from onto_* and core_* rows, never from a column's name.
 import type { Pool } from '@dinext/tenant-db';
+import { FIBO_BASE, ontology, type FiboLink } from '@dinext/ontology';
 
 type InstitutionType = 'credit_union' | 'bank';
 const rows = async <T>(pool: Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
@@ -27,6 +28,10 @@ export interface ConceptView {
   /** A class's properties and relations. */
   properties: { id: string; label: string }[];
   relations: { predicate: string; to: string; label: string }[];
+  /** The FIBO classes it matches at this institution type (phase 9): how closely, FIBO's label and the class's IRI. */
+  fibo: { iri: string; label: string; match: 'exact' | 'close' | 'broader' | 'narrower' }[];
+  /** Why FIBO has nothing for a class, when it has none. */
+  fiboNone: string | null;
   /** For a code: the code list it is on. */
   valueSet?: { id: string; label: string } | null;
   /** When the word asked about is the other institution type's: "share certificate" at a bank. */
@@ -125,6 +130,13 @@ export class OntologyService {
     measured.sort((a, b) => (breadth.get(a.object_id) ?? 0) - (breadth.get(b.object_id) ?? 0) || (a.detail ?? '').localeCompare(b.detail ?? ''));
     const props = c.kind === 'class' ? await rows<{ concept_id: string; label: string; label_cu: string | null; label_bank: string | null }>(this.pool, "SELECT concept_id, label, label_cu, label_bank FROM onto_concept WHERE kind = 'property' AND parent_id = ? ORDER BY concept_id", [id]) : [];
     const relTargets = edges.filter((e) => !['subclass_of', 'has_property', 'realized_by', 'measured_by', 'denoted_by', 'in_value_set', 'refers_to'].includes(e.predicate));
+    // FIBO links come from the loaded model (phase 9), so they need no reseed.
+    const o = ontology();
+    const cls = c.kind === 'class' ? o.classes.get(id) : undefined;
+    const code = c.kind === 'value' && c.value_set ? o.valueSets.get(c.value_set)?.codes[id.slice(c.value_set.length + 1)] : undefined;
+    const fibo = ((cls?.fibo ?? code?.fibo ?? []) as FiboLink[])
+      .filter((l) => !l.type || l.type === this.type)
+      .map((l) => ({ iri: `${FIBO_BASE}${l.id}`, label: o.fibo.classes[l.id]?.label ?? l.id.slice(l.id.lastIndexOf('/') + 1), match: l.match }));
     const targetLabels = relTargets.length ? await rows<{ concept_id: string; label: string; label_cu: string | null; label_bank: string | null }>(this.pool, `SELECT concept_id, label, label_cu, label_bank FROM onto_concept WHERE concept_id IN (${relTargets.map(() => '?').join(',')})`, relTargets.map((e) => e.object_id)) : [];
     return {
       id: c.concept_id,
@@ -140,6 +152,8 @@ export class OntologyService {
       core,
       codes,
       properties: props.map((p) => ({ id: p.concept_id, label: this.label(p) })),
+      fibo,
+      fiboNone: cls?.fibo_none ?? null,
       valueSet: c.kind === 'value' && parent ? { id: parent.concept_id, label: this.label(parent) } : null,
       relations: relTargets.map((e) => {
         const t = targetLabels.find((x) => x.concept_id === e.object_id);
@@ -156,7 +170,9 @@ export class OntologyService {
     const [metrics] = await rows<{ n: number }>(this.pool, "SELECT COUNT(DISTINCT object_id) AS n FROM onto_edge WHERE predicate = 'measured_by'");
     const vendors = await rows<{ system_id: string; n: number }>(this.pool, 'SELECT system_id, COUNT(*) AS n FROM core_denotes GROUP BY system_id');
     const [version] = await rows<{ v: string }>(this.pool, 'SELECT MAX(model_version) AS v FROM onto_concept');
+    const o = ontology();
+    const f = { class: [...o.classes.values()].filter((x) => x.fibo).length, value: [...o.valueSets.values()].flatMap((vs) => Object.values(vs.codes)).filter((x) => x.fibo).length };
     const k = Object.fromEntries(kinds.map((r) => [r.kind, Number(r.n)]));
-    return { version: version?.v ?? null, classes: k.class ?? 0, properties: k.property ?? 0, valueSets: k.value_set ?? 0, codes: k.value ?? 0, columns: Number(cols?.n ?? 0), metrics: Number(metrics?.n ?? 0), vendors: vendors.map((v) => ({ system: v.system_id, columns: Number(v.n) })) };
+    return { version: version?.v ?? null, classes: k.class ?? 0, properties: k.property ?? 0, valueSets: k.value_set ?? 0, codes: k.value ?? 0, columns: Number(cols?.n ?? 0), metrics: Number(metrics?.n ?? 0), fibo: { classes: f.class ?? 0, codes: f.value ?? 0 }, vendors: vendors.map((v) => ({ system: v.system_id, columns: Number(v.n) })) };
   }
 }

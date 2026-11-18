@@ -12,7 +12,7 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString
 // ---- lineage ----------------------------------------------------------------------------------
 
 /** Data dictionary questions the ontology answers: what a word means in DI, which column holds it, which core column it comes from. */
-export const ONTOLOGY_REQUEST = /\bwhat (?:does|do) (?:DI|we|you) mean by\b|\b(?:which|what) (?:DI )?(?:columns?|fields?) (?:holds?|has|have|stores?|keeps?|contains?)\b|\b(?:which|what) (?:symitar|core) (?:columns?|fields?)\b|\bdata dictionary\b|\bontology\b|\bwhat do (?:banks|credit unions) call\b/i;
+export const ONTOLOGY_REQUEST = /\bwhat (?:does|do) (?:DI|we|you) mean by\b|\b(?:which|what) (?:DI )?(?:columns?|fields?) (?:holds?|has|have|stores?|keeps?|contains?)\b|\b(?:which|what) (?:symitar|core) (?:columns?|fields?)\b|\bdata dictionary\b|\bontology\b|\bfibo\b|\bwhat do (?:banks|credit unions) call\b/i;
 
 /**
  * Impact by meaning or by core column (phase 5): "What changes if the core changes how it codes loan
@@ -41,6 +41,10 @@ export function ontologyTerm(text: string) {
     /\b(?:columns?|fields?) (?:holds?|has|have|stores?|keeps?|contains?) (?:an? |the )?(.+?)(?: in DI)?$/i,
     /\b(?:symitar|core) (?:columns?|fields?) (?:is|are|holds?|has|for|gives?) (?:an? |the )?(.+)$/i,
     /\bwhat do (?:banks|credit unions) call (?:an? |the )?(.+)$/i,
+    /\bwhat (?:does|is) fibo(?:'s| name| term| class)? (?:call|for) (?:an? |the )?(.+)$/i,
+    /\b(?:what|which) (?:is|class is) (?:an? |the )?(.+?) in fibo$/i,
+    /\bfibo (?:term|class|name|equivalent|match) (?:for|of) (?:an? |the )?(.+)$/i,
+    /\b(?:how does|does) (?:an? |the |DI'?s )?(.+?) (?:map|line up|match|correspond) (?:to|with) fibo$/i,
     /\b(?:look up|define|entry for|is) (?:an? |the )?(.+?) in the (?:data dictionary|ontology)$/i,
     /\b(?:data dictionary|ontology) (?:entry )?for (?:an? |the )?(.+)$/i,
   ];
@@ -70,13 +74,14 @@ export function lineageModule(lineage: LineageService, onto: OntologyService | n
 - "What breaks if we change cdm_loan.days_delinquent?": lin_impact.
 - "What changes if the core changes how it codes loan type?", "What breaks if LOAN.TYPE changes?": onto_impact with the concept in plain words or the core column as written.
 - "What does DI mean by a share draft?", "Which column holds the loan balance?", "Which Symitar column is the dividend rate?", "What do banks call a share certificate?": onto_lookup with the word or phrase.
-- "How much does the data dictionary cover?": onto_coverage.
+- "What is a share certificate in FIBO?", "What does FIBO call a HELOC?": onto_lookup with the word or phrase; the answer names the FIBO class and how closely it matches.
+- "How much does the data dictionary cover?", "How does DI line up with FIBO?": onto_coverage.
 - The graph comes from lineage metadata, and meanings from DI's ontology. Never work out lineage or a meaning from table or column names. Connection secrets are never shown.`,
     plan: (text) => {
       const t = clean(text);
       if (onto && ONTOLOGY_REQUEST.test(t)) {
         const term = ontologyTerm(t);
-        return term ? { tool: 'onto_lookup', args: { term } } : { tool: 'onto_coverage', args: {} };
+        return term && !/^(?:DI|we|us|our (?:data|ontology|data dictionary)|(?:the|DI'?s) (?:data dictionary|ontology))$/i.test(term) ? { tool: 'onto_lookup', args: { term } } : { tool: 'onto_coverage', args: {} };
       }
       const diTarget = /\b[a-z]+_[a-z_]+(?:\.[a-z_0-9]+)?\b/.test(t);
       if (onto && !diTarget && CONCEPT_IMPACT.test(t)) {
@@ -181,6 +186,9 @@ function ontoImpactTool(spec: ModuleSpec, onto: OntologyService, lineage: Lineag
 const KIND_WORD: Record<ConceptView['kind'], string> = { class: 'a concept', property: 'a property', value_set: 'a code list', value: 'a code' };
 const TYPE_WORD: Record<string, string> = { identifier: 'an identifier', reference: 'a link to another record', text: 'text', code: 'a code', money: 'dollars', rate: 'a yearly rate', percent: 'a percent', ratio: 'a ratio', count: 'a count', date: 'a date', flag: 'yes or no', score: 'a score', number: 'a number' };
 const PRIVACY_WORD: Record<string, string> = { direct: 'identifies a person on its own', quasi: 'can identify a person together with other fields', financial: 'is financial information', none: '' };
+const FIBO_MATCH: Record<ConceptView['fibo'][number]['match'], string> = { exact: 'the same meaning', close: 'close in meaning', broader: 'FIBO’s broader term', narrower: 'FIBO’s narrower term' };
+const fiboLine = (c: ConceptView) =>
+  c.fibo.length ? `In FIBO, the industry’s standard financial ontology, it is ${list(c.fibo.map((f) => `*${f.label}* (${FIBO_MATCH[f.match]})`), 2)}.` : c.fiboNone ?? '';
 const list = (xs: string[], n = 4) => (xs.length <= n ? xs.join(', ') : `${xs.slice(0, n).join(', ')} and ${xs.length - n} more`);
 
 function ontoLookupTool(spec: ModuleSpec, onto: OntologyService, need: (ctx: ModuleContext) => void, sources: ModuleSpec['sources']) {
@@ -212,6 +220,7 @@ function ontoLookupTool(spec: ModuleSpec, onto: OntologyService, need: (ctx: Mod
         c.columns.length ? `DI keeps it in ${list(c.columns.map((x) => `\`${x}\``), 3)}.` : '',
         c.metrics.length ? `${c.metrics.length === 1 ? 'One measure uses it' : `${c.metrics.length} measures use it`}: ${list(c.metrics.map((m) => m.label), 3)}.` : '',
         c.core.length ? `From the core: ${list(c.core.map((x) => `${x.system} \`${x.column}\``), 3)}.` : '',
+        fiboLine(c),
         c.kind === 'class' && c.properties.length ? `It has ${plural(c.properties.length, 'property', 'properties')}.` : '',
         others.length ? `Other matches: ${list(others, 4)}.` : '',
       ].filter(Boolean);
@@ -221,6 +230,7 @@ function ontoLookupTool(spec: ModuleSpec, onto: OntologyService, need: (ctx: Mod
         ...c.metrics.map((m) => ({ kind: 'Measure', name: m.label, note: m.name })),
         ...c.core.map((x) => ({ kind: `${x.system} column`, name: x.column, note: x.description ?? '' })),
         ...c.relations.map((r) => ({ kind: 'Related', name: r.label, note: r.predicate })),
+        ...c.fibo.map((f) => ({ kind: 'FIBO', name: f.label, note: `${FIBO_MATCH[f.match]}: ${f.iri}` })),
         ...c.properties.map((p) => ({ kind: 'Property', name: p.label, note: p.id })),
       ];
       if (detail.length) blocks.push(moduleTable(spec, `${c.label} in DI`, ctx.runId, 'catalog.ontology.concept', [{ field: 'kind', headerName: 'Kind', type: 'text' }, { field: 'name', headerName: 'Name', type: 'text' }, { field: 'note', headerName: 'Detail', type: 'text' }], detail));
@@ -242,7 +252,7 @@ function ontoCoverageTool(spec: ModuleSpec, onto: OntologyService, need: (ctx: M
       if (!x) return { text: 'DI’s data dictionary isn’t loaded for this institution yet.' };
       const vendors = x.vendors.map((v) => `${v.system === 'symitar' ? 'Symitar' : v.system}, ${v.columns} columns`).join('; ');
       return {
-        text: `DI’s data dictionary (version ${x.version}) has **${x.classes} concepts** and **${x.properties} properties**, with ${x.valueSets} code lists and ${x.codes} codes. It ties **${x.columns.toLocaleString('en-US')} DI columns** to what they mean and **${x.metrics} measures** to what they measure.${vendors ? ` Core mappings as data: ${vendors}.` : ''} The build fails if a main table gains a column the dictionary doesn’t cover.`,
+        text: `DI’s data dictionary (version ${x.version}) has **${x.classes} concepts** and **${x.properties} properties**, with ${x.valueSets} code lists and ${x.codes} codes. It ties **${x.columns.toLocaleString('en-US')} DI columns** to what they mean and **${x.metrics} measures** to what they measure.${vendors ? ` Core mappings as data: ${vendors}.` : ''} ${x.fibo.classes ? ` **${x.fibo.classes} of ${x.classes} concepts** and ${x.fibo.codes} codes are linked to FIBO, the industry’s standard financial ontology, each checked against FIBO’s own definition.` : ''} The build fails if a main table gains a column the dictionary doesn’t cover.`,
         blocks: [moduleTable(spec, 'What the data dictionary covers', ctx.runId, 'catalog.ontology.coverage', [{ field: 'what', headerName: 'What', type: 'text' }, { field: 'count', headerName: 'Count', type: 'count' }], [
           { what: 'Concepts', count: x.classes },
           { what: 'Properties', count: x.properties },
@@ -250,10 +260,12 @@ function ontoCoverageTool(spec: ModuleSpec, onto: OntologyService, need: (ctx: M
           { what: 'Codes', count: x.codes },
           { what: 'DI columns bound', count: x.columns },
           { what: 'Measures tied to a concept', count: x.metrics },
+          { what: 'Concepts linked to FIBO', count: x.fibo.classes },
+          { what: 'Codes linked to FIBO', count: x.fibo.codes },
           ...x.vendors.map((v) => ({ what: `${v.system === 'symitar' ? 'Symitar' : v.system} columns mapped`, count: v.columns })),
         ])],
         sources,
-        suggestions: ['What does DI mean by a share draft?', 'Which Symitar column is the loan balance?'],
+        suggestions: ['What does DI mean by a share draft?', 'What is a home equity line in FIBO?', 'Which Symitar column is the loan balance?'],
       };
     },
   };

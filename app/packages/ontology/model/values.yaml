@@ -7,22 +7,22 @@ value_sets:
   deposit_category:
     label: Share or deposit type
     codes:
-      savings: { label: Savings, labels_by_type: { credit_union: Share savings }, synonyms: { credit_union: [regular share, primary share, savings account], bank: [savings account, statement savings] }, values: [Share Savings, Savings] }
-      checking: { label: Checking, labels_by_type: { credit_union: Share draft }, synonyms: { credit_union: [share draft, checking account, demand deposit], bank: [checking account, demand deposit, share draft] }, values: [Checking] }
-      money_market: { label: Money market, synonyms: { credit_union: [money market account, money market share], bank: [money market account, money market deposit account] }, values: [Money Market] }
-      certificate: { label: Certificate, labels_by_type: { credit_union: Share certificate, bank: Certificate of deposit }, synonyms: { credit_union: [term share, time deposit, certificate of deposit], bank: [time deposit, term deposit, share certificate] }, values: [Certificates, Certificates of Deposit] }
+      savings: { label: Savings, labels_by_type: { credit_union: Share savings }, synonyms: { credit_union: [regular share, primary share, savings account], bank: [savings account, statement savings] }, fibo: [{ id: FBC/ProductsAndServices/ClientsAndAccounts/NonTransactionDepositAccount, match: broader }], values: [Share Savings, Savings] }
+      checking: { label: Checking, labels_by_type: { credit_union: Share draft }, synonyms: { credit_union: [share draft, checking account, demand deposit], bank: [checking account, demand deposit, share draft] }, fibo: [{ id: FBC/ProductsAndServices/ClientsAndAccounts/TransactionDepositAccount, match: exact }], values: [Checking] }
+      money_market: { label: Money market, synonyms: { credit_union: [money market account, money market share], bank: [money market account, money market deposit account] }, fibo: [{ id: FBC/ProductsAndServices/ClientsAndAccounts/NonTransactionDepositAccount, match: broader }], values: [Money Market] }
+      certificate: { label: Certificate, labels_by_type: { credit_union: Share certificate, bank: Certificate of deposit }, synonyms: { credit_union: [term share, time deposit, certificate of deposit], bank: [time deposit, term deposit, share certificate] }, fibo: [{ id: FBC/ProductsAndServices/ClientsAndAccounts/TimeDepositAccount, match: close }], values: [Certificates, Certificates of Deposit] }
       ira: { label: IRA, synonyms: { credit_union: [retirement account, individual retirement account], bank: [retirement account, individual retirement account] }, values: [IRA] }
   loan_category:
     label: Loan type
     codes:
-      auto: { label: Auto, synonyms: { credit_union: [car loan, vehicle loan, auto loan], bank: [car loan, vehicle loan, auto loan] }, values: [Auto] }
-      consumer: { label: Personal or consumer, synonyms: { credit_union: [personal loan, signature loan, unsecured loan, unsecured], bank: [personal loan, consumer loan, unsecured loan, unsecured] }, values: [Personal, Consumer] }
-      mortgage: { label: First mortgage, synonyms: { credit_union: [home loan, first mortgage, real estate loan], bank: [home loan, first mortgage, residential mortgage] }, values: [Mortgage] }
-      heloc: { label: Home equity line, synonyms: { credit_union: [home equity, home equity line of credit], bank: [home equity, home equity line of credit] }, values: [HELOC] }
-      credit_card: { label: Credit card, synonyms: { credit_union: [visa, mastercard, credit card loan], bank: [visa, mastercard, credit card loan] }, values: [Credit Card] }
-      business: { label: Business, values: [Business] }
-      commercial_industrial: { label: Commercial and industrial, values: [Commercial & Industrial] }
-      commercial_real_estate: { label: Commercial real estate, values: [Commercial Real Estate] }
+      auto: { label: Auto, synonyms: { credit_union: [car loan, vehicle loan, auto loan], bank: [car loan, vehicle loan, auto loan] }, fibo: [{ id: LOAN/LoansSpecific/ConsumerLoans/MotorVehicleLoan, match: exact }], values: [Auto] }
+      consumer: { label: Personal or consumer, synonyms: { credit_union: [personal loan, signature loan, unsecured loan, unsecured], bank: [personal loan, consumer loan, unsecured loan, unsecured] }, fibo: [{ id: LOAN/LoansSpecific/ConsumerLoans/ConsumerLoan, match: close }], values: [Personal, Consumer] }
+      mortgage: { label: First mortgage, synonyms: { credit_union: [home loan, first mortgage, real estate loan], bank: [home loan, first mortgage, residential mortgage] }, fibo: [{ id: LOAN/RealEstateLoans/Mortgages/ClosedEndMortgageLoan, match: close }], values: [Mortgage] }
+      heloc: { label: Home equity line, synonyms: { credit_union: [home equity, home equity line of credit], bank: [home equity, home equity line of credit] }, fibo: [{ id: LOAN/LoansSpecific/ConsumerLoans/HomeEquityLineOfCredit, match: exact }], values: [HELOC] }
+      credit_card: { label: Credit card, synonyms: { credit_union: [visa, mastercard, credit card loan], bank: [visa, mastercard, credit card loan] }, fibo: [{ id: LOAN/LoansSpecific/CardAccounts/CreditCardAccount, match: exact }], values: [Credit Card] }
+      business: { label: Business, fibo: [{ id: LOAN/LoansSpecific/CommercialLoans/CommercialLoan, match: close }], values: [Business] }
+      commercial_industrial: { label: Commercial and industrial, fibo: [{ id: LOAN/LoansSpecific/CommercialLoans/CommercialLoan, match: broader }], values: [Commercial & Industrial] }
+      commercial_real_estate: { label: Commercial real estate, fibo: [{ id: LOAN/LoansSpecific/CommercialLoans/CommercialLoan, match: broader }], values: [Commercial Real Estate] }
   member_segment:
     label: Segment
     codes:
@@ -49,13 +49,13 @@ value_sets:
   role_on_account:
     label: Role on an account
     codes:
-      primary: { label: Primary owner, definition: Owns the account and is responsible for it; statements and tax forms go to them., values: [Primary] }
-      joint: { label: Joint owner, definition: Owns the account equally with the primary owner and can transact on it., values: [Joint] }
-      beneficiary: { label: Beneficiary, definition: Receives the funds when the owner dies; has no access before then., values: [Beneficiary] }
-      trustee: { label: Trustee, definition: Manages the account for a trust under the trust's terms., values: [Trustee] }
+      primary: { label: Primary owner, definition: Owns the account and is responsible for it; statements and tax forms go to them., fibo: [{ id: FBC/ProductsAndServices/ClientsAndAccounts/AccountHolder, match: close }], values: [Primary] }
+      joint: { label: Joint owner, definition: Owns the account equally with the primary owner and can transact on it., fibo: [{ id: FBC/ProductsAndServices/ClientsAndAccounts/AccountHolder, match: broader }], values: [Joint] }
+      beneficiary: { label: Beneficiary, definition: Receives the funds when the owner dies; has no access before then., fibo: [{ id: FND/Agreements/Agreements/Beneficiary, match: broader }], values: [Beneficiary] }
+      trustee: { label: Trustee, definition: Manages the account for a trust under the trust's terms., fibo: [{ id: BE/Trusts/Trusts/Trustee, match: exact }], values: [Trustee] }
       representative_payee: { label: Representative payee, definition: Receives and manages benefit payments on the owner's behalf; must use them for the owner., values: [Rep payee, Representative payee] }
-      authorized_signer: { label: Authorized signer, definition: Can transact on the account but doesn't own it., values: [Authorized signer, Signer] }
-      co_borrower: { label: Co-borrower, definition: Equally responsible for repaying the loan., values: [Co-borrower] }
+      authorized_signer: { label: Authorized signer, definition: Can transact on the account but doesn't own it., fibo: [{ id: BE/OwnershipAndControl/Executives/Signatory, match: close }], values: [Authorized signer, Signer] }
+      co_borrower: { label: Co-borrower, definition: Equally responsible for repaying the loan., fibo: [{ id: FBC/DebtAndEquities/Debt/Borrower, match: broader }], values: [Co-borrower] }
   holding_kind:
     label: Holding kind
     codes:
@@ -64,8 +64,8 @@ value_sets:
   card_kind:
     label: Card kind
     codes:
-      debit: { label: Debit, values: [Debit] }
-      credit: { label: Credit, values: [Credit] }
+      debit: { label: Debit, fibo: [{ id: LOAN/LoansSpecific/CardAccounts/DebitCard, match: exact }], values: [Debit] }
+      credit: { label: Credit, fibo: [{ id: LOAN/LoansSpecific/CardAccounts/CreditCard, match: exact }], values: [Credit] }
   card_status:
     label: Card status
     codes:
@@ -76,14 +76,14 @@ value_sets:
   rate_type:
     label: Rate type
     codes:
-      fixed: { label: Fixed, values: [Fixed] }
-      variable: { label: Variable, values: [Variable] }
+      fixed: { label: Fixed, fibo: [{ id: FBC/DebtAndEquities/Debt/FixedInterestRate, match: exact }], values: [Fixed] }
+      variable: { label: Variable, fibo: [{ id: FBC/DebtAndEquities/Debt/VariableInterestRate, match: exact }], values: [Variable] }
       either: { label: Fixed or variable, values: [Either] }
   loan_structure:
     label: Loan structure
     codes:
       amortizing: { label: Amortizing, values: [Amortizing] }
-      line: { label: Line of credit, values: [Line] }
+      line: { label: Line of credit, fibo: [{ id: FBC/DebtAndEquities/Debt/RevolvingLineOfCredit, match: close }], values: [Line] }
   delinquency_bucket:
     label: Delinquency bucket
     codes:

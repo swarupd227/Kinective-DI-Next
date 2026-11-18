@@ -74,6 +74,14 @@ Matching now allows for the slips people make on forms: a name one slip from the
 
 The data quality checks now run on the month-end rollups too (`hist_*`), and the first run found a binding error: `hist_deposit_month.rate_weighted` and `hist_loan_month.new_rate_weighted` are balance-weighted totals (balance times rate, added up), not rates, yet were bound as rates, so every row failed the 0% to 20% range. They are now their own aggregate properties.
 
+## FIBO alignment (phase 9)
+
+Each class links to FIBO, the EDM Council's Financial Industry Business Ontology, or says why it can't (`fibo_none`: FIBO has no household, no select employee group, no delinquency), and the main codes link too (a HELOC is FIBO's home equity line of credit, a share draft its transaction deposit account). A link reads as a SKOS mapping does: `exact` (the same meaning), `close` (the same in most uses), `broader` (FIBO's class is broader: a charge-off is a kind of write-down) or `narrower` (FIBO's loan application is narrower than an application to join or borrow); `type` limits a link to a credit union or a bank (the institution is FIBO's credit union at one and its bank at the other).
+
+Every link was chosen against FIBO's own definition, read from its source. `scripts/fibo-snapshot.ts` reads each linked class from github.com/edmcouncil/fibo at one commit and writes `model/fibo-snapshot.json` with its label and definition; the loader fails on a link that isn't in the snapshot and on a class with neither links nor a reason, so a link can't name a class FIBO doesn't have. A newer FIBO is a review: run the script with the new commit and reread each changed definition.
+
+25 of 41 classes and 23 codes are linked; the classes' 27 links are 16 exact, 4 close, 6 broader and 1 narrower. Party and organization come from the OMG Commons ontology FIBO builds on, not FIBO itself, so they aren't linked. The data dictionary answers with the link ("What is a share certificate in FIBO?": *time deposit account*, close in meaning) and counts them; the links are read from the loaded model, so they need no reseed.
+
 ## Not yet
 
-FIBO alignment (the `fibo` field is empty until each reference is checked); masking by privacy class everywhere a value is shown (Member 360 and records still use their own rules); checks on history tables. The raw zone's tables are created with each stand-in core at seed time, so a real new core's raw tables need a seed step too.
+Masking by privacy class everywhere a value is shown (Member 360 and records still use their own rules); FIBO links for properties (a loan's rate, a share's balance) and an export of DI's ontology as OWL with them. The raw zone's tables are created with each stand-in core at seed time, so a real new core's raw tables need a seed step too.

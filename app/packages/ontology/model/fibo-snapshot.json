@@ -1,0 +1,217 @@
+{
+ "source": "https://github.com/edmcouncil/fibo",
+ "commit": "33a92cd34285d532c158da97bb42add089f135d3",
+ "read": "2026-11-18",
+ "classes": {
+  "BE/OwnershipAndControl/Executives/Signatory": {
+   "label": "signatory",
+   "definition": "responsible party authorized to sign agreements on behalf of themselves, another person, or an organization",
+   "file": "BE/OwnershipAndControl/Executives.rdf"
+  },
+  "BE/Trusts/Trusts/Trustee": {
+   "label": "trustee",
+   "definition": "party that holds and manages assets for the benefit of another",
+   "file": "BE/Trusts/Trusts.rdf"
+  },
+  "FBC/DebtAndEquities/CreditEvents/WriteDown": {
+   "label": "write-down",
+   "definition": "obligation-specific credit event whereby the book value of the obligation, such as the outstanding principal amount, is reduced",
+   "file": "FBC/DebtAndEquities/CreditEvents.rdf"
+  },
+  "FBC/DebtAndEquities/Debt/Borrower": {
+   "label": "borrower",
+   "definition": "party to a credit agreement that is obligated to repay the amount borrowed (principal) with interest and other fees according to the terms of the instrument",
+   "file": "FBC/DebtAndEquities/Debt.rdf"
+  },
+  "FBC/DebtAndEquities/Debt/Collateral": {
+   "label": "collateral",
+   "definition": "something pledged as security to ensure fulfillment of an obligation to another party, to lend money, extend credit, or provision securities",
+   "file": "FBC/DebtAndEquities/Debt.rdf"
+  },
+  "FBC/DebtAndEquities/Debt/DebtTerms": {
+   "label": "debt terms",
+   "definition": "contract terms that specify the formal rights and obligations of borrower and lender under a contract in which funds are lent from the one party to the other",
+   "file": "FBC/DebtAndEquities/Debt.rdf"
+  },
+  "FBC/DebtAndEquities/Debt/FixedInterestRate": {
+   "label": "fixed interest rate",
+   "definition": "interest rate that does not fluctuate over the lifetime of a loan or other debt instrument",
+   "file": "FBC/DebtAndEquities/Debt.rdf"
+  },
+  "FBC/DebtAndEquities/Debt/RevolvingLineOfCredit": {
+   "label": "revolving line of credit",
+   "definition": "credit facility that enables the borrower to withdraw funds, repay, and withdraw again",
+   "file": "FBC/DebtAndEquities/Debt.rdf"
+  },
+  "FBC/DebtAndEquities/Debt/VariableInterestRate": {
+   "label": "variable interest rate",
+   "definition": "an interest rate that is allowed to vary over the maturity of a loan or other debt instrument",
+   "file": "FBC/DebtAndEquities/Debt.rdf"
+  },
+  "FBC/FunctionalEntities/FinancialServicesEntities/Bank": {
+   "label": "bank",
+   "definition": "depository institution, usually a corporation, that accepts deposits, makes loans, pays checks, and performs related services, for individual members of the public, businesses or other organizations",
+   "file": "FBC/FunctionalEntities/FinancialServicesEntities.rdf"
+  },
+  "FBC/FunctionalEntities/FinancialServicesEntities/BankingProduct": {
+   "label": "banking product",
+   "definition": "product provided to consumers and businesses by a depository institution",
+   "file": "FBC/FunctionalEntities/FinancialServicesEntities.rdf"
+  },
+  "FBC/FunctionalEntities/FinancialServicesEntities/CreditUnion": {
+   "label": "credit union",
+   "definition": "not-for-profit depository institution that makes personal loans and offers other consumer banking services, organized for the purpose of promoting thrift among its members and creating a source of credit for provident or productive purposes",
+   "file": "FBC/FunctionalEntities/FinancialServicesEntities.rdf"
+  },
+  "FBC/FunctionalEntities/NorthAmericanEntities/USFinancialServicesEntities/BranchOfADepositoryInstitution": {
+   "label": "branch of a depository institution",
+   "definition": "any office or any place of business located in any State of the United States at which deposits are received",
+   "file": "FBC/FunctionalEntities/NorthAmericanEntities/USFinancialServicesEntities.rdf"
+  },
+  "FBC/ProductsAndServices/ClientsAndAccounts/Account": {
+   "label": "account",
+   "definition": "container for records associated with a business arrangement for regular transactions and services",
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf"
+  },
+  "FBC/ProductsAndServices/ClientsAndAccounts/AccountHolder": {
+   "label": "account holder",
+   "definition": "party that owns an account",
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf"
+  },
+  "FBC/ProductsAndServices/ClientsAndAccounts/CustomerAccount": {
+   "label": "customer account",
+   "definition": "account that represents an identified, named collection of balances and cumulative totals used to summarize customer transaction-related activity over a designated period of time",
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf"
+  },
+  "FBC/ProductsAndServices/ClientsAndAccounts/DepositAccount": {
+   "label": "deposit account",
+   "definition": "account that provides a record of money placed with a depository institution for safekeeping and management",
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf"
+  },
+  "FBC/ProductsAndServices/ClientsAndAccounts/IndividualTransaction": {
+   "label": "individual transaction",
+   "definition": "event that has a monetary impact and is documented in the records associated with an account",
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf"
+  },
+  "FBC/ProductsAndServices/ClientsAndAccounts/NonTransactionDepositAccount": {
+   "label": "non-transaction deposit account",
+   "definition": "any deposit account that is not explicitly considered a transaction account",
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf"
+  },
+  "FBC/ProductsAndServices/ClientsAndAccounts/TimeDepositAccount": {
+   "label": "time deposit account",
+   "definition": "deposit account that the depositor does not have a right, and is not permitted, to make withdrawals from within six days after the date of deposit unless the deposit is subject to an early withdrawal penalty of at least seven days' simple interest on amounts withdrawn within the first six days after deposit",
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf"
+  },
+  "FBC/ProductsAndServices/ClientsAndAccounts/TransactionDepositAccount": {
+   "label": "transaction deposit account",
+   "definition": "deposit account from which the depositor / account holder is permitted to make transfers or withdrawals by negotiable / transferable instruments, payment orders of withdrawal, telephone transfers, and so forth, and that may be accessible via an electronic device such as an automated teller machine (ATM), remote service unit (RSU), mobile device, and by debit card",
+   "file": "FBC/ProductsAndServices/ClientsAndAccounts.rdf"
+  },
+  "FBC/ProductsAndServices/FinancialProductsAndServices/Dealer": {
+   "label": "dealer",
+   "definition": "any party that purchases goods or services for resale and acts on their own behalf in a transaction",
+   "file": "FBC/ProductsAndServices/FinancialProductsAndServices.rdf"
+  },
+  "FND/AgentsAndPeople/People/Person": {
+   "label": "person",
+   "definition": "individual human being, with consciousness of self",
+   "file": "FND/AgentsAndPeople/People.rdf"
+  },
+  "FND/Agreements/Agreements/Beneficiary": {
+   "label": "beneficiary",
+   "definition": "party that receives some benefit or advantage or profits from something",
+   "file": "FND/Agreements/Agreements.rdf"
+  },
+  "FND/Arrangements/Ratings/QuantitativeRatingScore": {
+   "label": "quantitative rating score",
+   "definition": "rating score that is a simple numeric value on some scale, such as a credit rating for an individual",
+   "file": "FND/Arrangements/Ratings.rdf"
+  },
+  "FND/Arrangements/Reporting/Report": {
+   "label": "report",
+   "definition": "document that provides a structured description of something, prepared on ad hoc, periodic, recurring, regular, or as required basis",
+   "file": "FND/Arrangements/Reporting.rdf"
+  },
+  "FND/Organizations/FormalOrganizations/Employee": {
+   "label": "employee",
+   "definition": "person in the service of another under any contract of hire, express or implied, oral or written, where the employer has the right to control and direct that person in the material details of how the work is to be performed",
+   "file": "FND/Organizations/FormalOrganizations.rdf"
+  },
+  "FND/Organizations/FormalOrganizations/Employer": {
+   "label": "employer",
+   "definition": "party that provides compensation, including wages or a salary and potentially other benefits, in exchange for work performed by one or more people, and that has the right to control and direct the employee in the material details of how the work is to be performed",
+   "file": "FND/Organizations/FormalOrganizations.rdf"
+  },
+  "FND/ProductsAndServices/ProductsAndServices/Customer": {
+   "label": "customer",
+   "definition": "party that receives or consumes products (goods or services) and has the ability to choose between different products and suppliers",
+   "file": "FND/ProductsAndServices/ProductsAndServices.rdf"
+  },
+  "LOAN/LoansGeneral/LoanApplications/LoanApplication": {
+   "label": "loan application",
+   "definition": "request by a potential borrower to a potential lender to borrow money containing information used to decide whether to grant the loan",
+   "file": "LOAN/LoansGeneral/LoanApplications.rdf"
+  },
+  "LOAN/LoansGeneral/Loans/Loan": {
+   "label": "loan",
+   "definition": "debt instrument whereby one party extends money or credit to another party (or parties) with the understanding that the borrowed money will be repaid according to the terms of the contract",
+   "file": "LOAN/LoansGeneral/Loans.rdf"
+  },
+  "LOAN/LoansSpecific/CardAccounts/CardProduct": {
+   "label": "card product",
+   "definition": "financial product involving the issuance of credit, debit, or other payment cards",
+   "file": "LOAN/LoansSpecific/CardAccounts.rdf"
+  },
+  "LOAN/LoansSpecific/CardAccounts/CreditCard": {
+   "label": "credit card",
+   "definition": "card issued by a financial service provider that enables the cardholder to borrow funds",
+   "file": "LOAN/LoansSpecific/CardAccounts.rdf"
+  },
+  "LOAN/LoansSpecific/CardAccounts/CreditCardAccount": {
+   "label": "credit card account",
+   "definition": "card account whose terms and conditions are defined in a credit card agreement that is represented by a credit card",
+   "file": "LOAN/LoansSpecific/CardAccounts.rdf"
+  },
+  "LOAN/LoansSpecific/CardAccounts/DebitCard": {
+   "label": "debit card",
+   "definition": "payment card issued by a financial service provider that enables the cardholder to access funds in a demand deposit account",
+   "file": "LOAN/LoansSpecific/CardAccounts.rdf"
+  },
+  "LOAN/LoansSpecific/CardAccounts/PaymentCard": {
+   "label": "payment card",
+   "definition": "legal document issued by a financial services provider that enables the cardholder to access the funds in the customer's designated bank accounts, or through a credit account and make payments by electronic funds transfer and access automated teller machines (ATMs)",
+   "file": "LOAN/LoansSpecific/CardAccounts.rdf"
+  },
+  "LOAN/LoansSpecific/CommercialLoans/CommercialLoan": {
+   "label": "commercial loan",
+   "definition": "loan extended to a corporation, commercial enterprise, joint venture, or other organization as opposed to a consumer",
+   "file": "LOAN/LoansSpecific/CommercialLoans.rdf"
+  },
+  "LOAN/LoansSpecific/ConsumerLoans/ConsumerLoan": {
+   "label": "consumer loan",
+   "definition": "loan to one or more individuals for household, family, or other personal expenditures, excluding mortgages and student loans",
+   "file": "LOAN/LoansSpecific/ConsumerLoans.rdf"
+  },
+  "LOAN/LoansSpecific/ConsumerLoans/HomeEquityLineOfCredit": {
+   "label": "home equity line of credit",
+   "definition": "line of credit granted to a homeowner secured by the equity value in a borrower's home or other property",
+   "file": "LOAN/LoansSpecific/ConsumerLoans.rdf"
+  },
+  "LOAN/LoansSpecific/ConsumerLoans/MotorVehicleLoan": {
+   "label": "motor vehicle loan",
+   "definition": "collateralized, simple-interest loan that is repaid in monthly installments over a period of typically three to five years, for the purpose of purchasing a vehicle",
+   "file": "LOAN/LoansSpecific/ConsumerLoans.rdf"
+  },
+  "LOAN/LoansSpecific/LoanProducts/LoanProduct": {
+   "label": "loan product",
+   "definition": "financial product that is realized as a loan that a party may acquire from a lending institution with specific characteristics and terms",
+   "file": "LOAN/LoansSpecific/LoanProducts.rdf"
+  },
+  "LOAN/RealEstateLoans/Mortgages/ClosedEndMortgageLoan": {
+   "label": "closed-end mortgage loan",
+   "definition": "loan secured by real estate with no ability for the borrower to receive additional funds under the loan at a later date",
+   "file": "LOAN/RealEstateLoans/Mortgages.rdf"
+  }
+ }
+}

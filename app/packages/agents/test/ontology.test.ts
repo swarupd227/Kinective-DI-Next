@@ -30,6 +30,9 @@ describe('data dictionary questions', () => {
       ['What do banks call a share certificate?', 'share certificate'],
       ['Look up DDA in the data dictionary', 'DDA'],
       ['How much does the data dictionary cover?', ''],
+      ['What is a share certificate in FIBO?', 'share certificate'],
+      ['What does FIBO call a HELOC?', 'HELOC'],
+      ['FIBO term for collateral', 'collateral'],
     ];
     for (const [q, term] of cases) {
       expect(ONTOLOGY_REQUEST.test(q), q).toBe(true);
@@ -117,6 +120,22 @@ describe.skipIf(!up)('the data dictionary against the warehouse', () => {
     const r = await ask(cu, 'How much does the data dictionary cover?', 'o3');
     expect(r.texts[0]).toMatch(/\*\*\d+ concepts\*\*/);
     expect(r.texts[0]).toContain('Symitar, 31 columns');
+  });
+
+  it('names the FIBO class, how closely it matches, and why FIBO has none (phase 9)', async () => {
+    const r = await ask(cu, 'What is a share draft in FIBO?', 'o5');
+    expect(r.texts[0]).toContain('**Share draft**');
+    expect(r.texts[0]).toContain('In FIBO, the industry’s standard financial ontology, it is *transaction deposit account* (the same meaning).');
+    const table = r.blocks.find((x) => x.type === 'table') as unknown as { data: { rows: { kind: string; name: string; note: string }[] } };
+    expect(table.data.rows.find((x) => x.kind === 'FIBO')?.note).toBe('the same meaning: https://spec.edmcouncil.org/fibo/ontology/FBC/ProductsAndServices/ClientsAndAccounts/TransactionDepositAccount');
+    // The institution is a credit union at one and a bank at the other.
+    const inst = await cu.svc.lookup('institution');
+    expect(inst![0]!.fibo.map((f) => f.label)).toEqual(['credit union']);
+    expect((await bank.svc.lookup('institution'))![0]!.fibo.map((f) => f.label)).toEqual(['bank']);
+    const h = await ask(cu, 'What does FIBO call a household?', 'o6');
+    expect(h.texts[0]).toContain('FIBO has no household');
+    const c = await ask(bank, 'How does DI line up with FIBO?', 'o7');
+    expect(c.texts[0]).toMatch(/\*\*\d+ of \d+ concepts\*\* and \d+ codes are linked to FIBO/);
   });
 
   it('says plainly when a word isn’t in the dictionary', async () => {

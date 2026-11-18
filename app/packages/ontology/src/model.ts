@@ -19,12 +19,28 @@ const synonyms = z.object({ credit_union: z.array(z.string()).optional(), bank: 
 export const SEMANTIC_TYPES = ['identifier', 'reference', 'text', 'code', 'money', 'rate', 'percent', 'ratio', 'count', 'date', 'flag', 'score', 'number'] as const;
 export const PRIVACY = ['direct', 'quasi', 'financial', 'none'] as const;
 
+/**
+ * A link to FIBO, the EDM Council's Financial Industry Business Ontology (phase 9), by the class's path
+ * under https://spec.edmcouncil.org/fibo/ontology/. match reads as SKOS mapping does: exact (the same
+ * meaning), close (the same in most uses), broader (FIBO's class is broader than DI's) or narrower.
+ * type limits it to a credit union or a bank. Every link must be in model/fibo-snapshot.json.
+ */
+const FiboLink = z.object({
+  id: z.string().regex(/^(?:FND|FBC|BE|LOAN|SEC|IND|DER|BP|CAE|MD)(?:\/[A-Za-z]+)+\/[A-Z][A-Za-z0-9-]*$/),
+  match: z.enum(['exact', 'close', 'broader', 'narrower']),
+  type: z.enum(['credit_union', 'bank']).optional(),
+}).strict();
+export type FiboLink = z.infer<typeof FiboLink>;
+export const FIBO_BASE = 'https://spec.edmcouncil.org/fibo/ontology/';
+
 const ClassSchema = z.object({
   label: z.string(),
   labels_by_type: byType,
   parent: ident.optional(),
   definition: z.string(),
-  fibo: z.string().optional(),
+  fibo: z.array(FiboLink).min(1).optional(),
+  /** Why FIBO has nothing for this class: each class has links or a reason. */
+  fibo_none: z.string().optional(),
   synonyms,
   relations: z.array(z.object({ predicate: ident, to: ident }).strict()).default([]),
 }).strict();
@@ -50,7 +66,7 @@ const PropertySchema = z.object({
 const ValueSetSchema = z.object({
   label: z.string(),
   open: z.boolean().default(false),
-  codes: z.record(ident, z.object({ label: z.string(), labels_by_type: byType, synonyms, definition: z.string().optional(), values: z.array(z.string()).min(1) }).strict()),
+  codes: z.record(ident, z.object({ label: z.string(), labels_by_type: byType, synonyms, definition: z.string().optional(), fibo: z.array(FiboLink).min(1).optional(), values: z.array(z.string()).min(1) }).strict()),
 }).strict();
 
 export const TRANSFORMS = ['same', 'number', 'date8', 'code', 'rate1000', 'daysPast', 'not', 'nonzero'] as const;
@@ -98,6 +114,15 @@ export interface Ontology {
   nicknames: Map<string, Set<string>>;
   /** One spelling for the words of a street address (street: st), for matching people (phase 8). */
   addressWords: Map<string, string>;
+  /** FIBO's classes as checked: label and definition by path, and the FIBO commit read (phase 9). */
+  fibo: FiboSnapshot;
+}
+
+export interface FiboSnapshot {
+  source: string;
+  commit: string;
+  read: string;
+  classes: Record<string, { label: string; definition: string | null; file: string }>;
 }
 
 /** The core tables in a vendor mapping's FROM, by alias: "ACCOUNT a JOIN NAME n ON ..." gives a and n. */
@@ -178,9 +203,19 @@ export function loadOntology(dir = MODEL_DIR): Ontology {
       values.set(v.toLowerCase(), code);
     }
   }
+  // Every FIBO link names a class in the snapshot read from FIBO's source; every class has links or a reason.
+  const fibo = JSON.parse(readFileSync(join(dir, 'fibo-snapshot.json'), 'utf8')) as FiboSnapshot;
+  const checkFibo = (what: string, links: FiboLink[] | undefined) => {
+    for (const l of links ?? []) if (!fibo.classes[l.id]) errors.push(`${what}: FIBO ${l.id} isn't in fibo-snapshot.json (run scripts/fibo-snapshot.ts)`);
+  };
+  for (const c of classes.values()) {
+    if (!c.fibo === !c.fibo_none) errors.push(`class ${c.id}: needs fibo links or fibo_none with the reason, not ${c.fibo ? 'both' : 'neither'}`);
+    checkFibo(`class ${c.id}`, c.fibo);
+  }
+  for (const vs of valueSets.values()) for (const [code, c] of Object.entries(vs.codes)) checkFibo(`${vs.id}.${code}`, c.fibo);
   if (errors.length) throw new Error(`The ontology doesn't load:\n- ${errors.join('\n- ')}`);
   const abbr = z.object({ abbreviations: z.record(z.string().regex(/^[a-z]+$/), z.string()), code_words: z.record(z.string().regex(/^[a-z]+$/), z.string()).default({}), nicknames: z.record(z.string().regex(/^[a-z]+$/), z.array(z.string().regex(/^[a-z]+$/))).default({}), address_words: z.record(z.string().regex(/^[a-z]+$/), z.string().regex(/^[a-z]+$/)).default({}), words: z.array(z.string().regex(/^[a-z]+$/)) }).strict().parse(read(join(dir, 'abbreviations.yaml')));
-  return { version: top.version, classes, properties, valueSets, vendors, columnIndex, abbreviations: new Map(Object.entries(abbr.abbreviations)), words: new Set(abbr.words), codeWords: new Map(Object.entries(abbr.code_words)), nicknames: nicknameIndex(abbr.nicknames), addressWords: new Map(Object.entries(abbr.address_words)) };
+  return { version: top.version, classes, properties, valueSets, vendors, columnIndex, abbreviations: new Map(Object.entries(abbr.abbreviations)), words: new Set(abbr.words), codeWords: new Map(Object.entries(abbr.code_words)), nicknames: nicknameIndex(abbr.nicknames), addressWords: new Map(Object.entries(abbr.address_words)), fibo };
 }
 
 /** Each name to every name it can stand for: robert to bob and bobby, and bob back to robert. */

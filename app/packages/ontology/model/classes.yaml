@@ -11,19 +11,23 @@ classes:
   party:
     label: Party
     definition: A person or organization the institution has a relationship with, or could have.
+    fibo_none: 'FIBO takes party from the OMG Commons ontology rather than defining its own.'
   person:
     label: Person
     parent: party
     definition: A natural person.
+    fibo: [{ id: FND/AgentsAndPeople/People/Person, match: exact }]
   organization:
     label: Organization
     parent: party
     definition: A business, trust, government body or other non-person party.
+    fibo_none: 'FIBO takes organization from the OMG Commons ontology rather than defining its own.'
   member:
     label: Member
     labels_by_type: { credit_union: Member, bank: Customer }
     parent: party
     definition: A party with a relationship at the institution. At a credit union, a member owns a share in it; at a bank, a customer holds an account.
+    fibo: [{ id: FND/ProductsAndServices/ProductsAndServices/Customer, match: close, type: credit_union }, { id: FND/ProductsAndServices/ProductsAndServices/Customer, match: exact, type: bank }]
     synonyms:
       credit_union: [member, membership, owner]
       bank: [customer, client, relationship]
@@ -35,11 +39,13 @@ classes:
   household:
     label: Household
     definition: People at one address treated as one relationship, with a head of household.
+    fibo_none: 'FIBO has no household; it relates parties one at a time.'
     relations:
       - { predicate: headed_by, to: member }
   account_role:
     label: Role on an account
     definition: How a party stands on an account or holding, such as primary owner, joint owner, trustee, representative payee or authorized signer.
+    fibo_none: 'FIBO models each role as its own kind of party (account holder, beneficiary, trustee), not one list of roles; the codes link to those.'
     relations:
       - { predicate: played_by, to: party }
       - { predicate: on, to: account }
@@ -47,6 +53,7 @@ classes:
     label: Insider
     parent: person
     definition: A director, executive officer, principal shareholder or employee whose loans fall under NCUA 701.21(d) at a credit union or Regulation O at a bank.
+    fibo_none: 'FIBO has no insider in the Regulation O or NCUA 701.21(d) sense.'
     synonyms:
       credit_union: [insider, official, director]
       bank: [insider, Regulation O, Reg O, director]
@@ -54,11 +61,13 @@ classes:
     label: Employer
     parent: organization
     definition: The organization a person works for, as recorded on their profile.
+    fibo: [{ id: FND/Organizations/FormalOrganizations/Employer, match: exact }]
   seg:
     label: Select employee group
     labels_by_type: { credit_union: SEG, bank: Commercial relationship }
     parent: organization
     definition: An employer whose employees are eligible for membership, with a sponsor contact and payroll deduction.
+    fibo_none: 'FIBO has no select employee group; it is particular to credit union membership.'
     synonyms:
       credit_union: [SEG, select employee group, employer group, field of membership]
     relations:
@@ -69,6 +78,7 @@ classes:
     label: Account
     labels_by_type: { credit_union: Membership account, bank: Account relationship }
     definition: The membership or account number that sits between a party and their shares, deposits and loans.
+    fibo: [{ id: FBC/ProductsAndServices/ClientsAndAccounts/Account, match: broader }]
     synonyms:
       credit_union: [membership, membership number, account number, member number]
       bank: [account number, relationship, CIF]
@@ -79,6 +89,7 @@ classes:
   holding:
     label: Holding
     definition: One share, deposit, loan or card held under an account; the unit products, balances and rates belong to.
+    fibo: [{ id: FBC/ProductsAndServices/ClientsAndAccounts/CustomerAccount, match: close }]
     relations:
       - { predicate: held_in, to: account }
       - { predicate: instance_of, to: product }
@@ -88,6 +99,7 @@ classes:
     labels_by_type: { credit_union: Share, bank: Deposit }
     parent: holding
     definition: Money a party keeps at the institution, payable on demand or at a set maturity.
+    fibo: [{ id: FBC/ProductsAndServices/ClientsAndAccounts/DepositAccount, match: exact }]
     synonyms:
       credit_union: [share, shares, share account, savings]
       bank: [deposit, deposits, deposit account]
@@ -98,6 +110,7 @@ classes:
     labels_by_type: { credit_union: Share certificate, bank: Certificate of deposit }
     parent: deposit
     definition: A deposit for a fixed term at a fixed rate, with a penalty for early withdrawal.
+    fibo: [{ id: FBC/ProductsAndServices/ClientsAndAccounts/TimeDepositAccount, match: close }]
     synonyms:
       credit_union: [share certificate, certificate, certs]
       bank: [CD, certificate of deposit, time deposit]
@@ -106,6 +119,7 @@ classes:
     labels_by_type: { credit_union: Share draft, bank: Checking }
     parent: deposit
     definition: A transaction deposit account with checks, debit card and payments.
+    fibo: [{ id: FBC/ProductsAndServices/ClientsAndAccounts/TransactionDepositAccount, match: exact }]
     synonyms:
       credit_union: [share draft, checking, draft account]
       bank: [checking, DDA, demand deposit]
@@ -113,6 +127,7 @@ classes:
     label: Loan
     parent: holding
     definition: Money lent to a party, repaid with interest on agreed terms.
+    fibo: [{ id: LOAN/LoansGeneral/Loans/Loan, match: exact }]
     synonyms:
       credit_union: [loan, loans, lending]
       bank: [loan, loans, credit, note]
@@ -126,78 +141,98 @@ classes:
     label: Line of credit
     parent: loan
     definition: A revolving loan the borrower draws on up to a credit limit, such as a HELOC or a credit card.
+    fibo: [{ id: FBC/DebtAndEquities/Debt/RevolvingLineOfCredit, match: exact }]
   card:
     label: Card
     parent: holding
     definition: A debit or credit card issued to a party, linked to their accounts.
+    fibo: [{ id: LOAN/LoansSpecific/CardAccounts/PaymentCard, match: exact }]
   deposit_terms:
     label: Deposit terms
     definition: The contract terms on a share or deposit, such as term, opening amount and renewal.
+    fibo_none: 'FIBO has contract terms for debt but none for a deposit as such.'
   loan_terms:
     label: Loan terms
     definition: The contract terms on a loan, such as structure, rate type, APR, payment and maturity.
+    fibo: [{ id: FBC/DebtAndEquities/Debt/DebtTerms, match: close }]
   collateral:
     label: Collateral
     definition: Property pledged to secure a loan, with its value, lien position and eligibility to pledge onward.
+    fibo: [{ id: FBC/DebtAndEquities/Debt/Collateral, match: exact }]
   dealer:
     label: Dealer
     parent: organization
     definition: A dealer that arranges indirect loans on the institution's behalf.
+    fibo: [{ id: FBC/ProductsAndServices/FinancialProductsAndServices/Dealer, match: broader }]
 
   # ---- Products ---------------------------------------------------------------------------------
   product:
     label: Product
     definition: What the institution offers, with its rates, terms and fees; every holding is an instance of one.
+    fibo: [{ id: FBC/FunctionalEntities/FinancialServicesEntities/BankingProduct, match: exact }]
   deposit_product:
     label: Share or deposit product
     labels_by_type: { credit_union: Share product, bank: Deposit product }
     parent: product
     definition: A share or deposit product, such as regular savings, checking, money market or a certificate.
+    fibo_none: 'FIBO has no deposit product class; a deposit account is itself a banking product there.'
   loan_product:
     label: Loan product
     parent: product
     definition: A loan product, such as a new auto loan or a business line of credit, with its regulatory reporting codes.
+    fibo: [{ id: LOAN/LoansSpecific/LoanProducts/LoanProduct, match: exact }]
   card_product:
     label: Card product
     parent: product
     definition: A debit or credit card program, with its network, fees and rewards.
+    fibo: [{ id: LOAN/LoansSpecific/CardAccounts/CardProduct, match: exact }]
 
   # ---- Activity and outcomes --------------------------------------------------------------------
   transaction:
     label: Transaction
     definition: A posted movement of money on a holding, with its channel and code.
+    fibo: [{ id: FBC/ProductsAndServices/ClientsAndAccounts/IndividualTransaction, match: exact }]
   charge_off:
     label: Charge-off
     definition: A loan, or an overdrawn share, written off as a loss.
+    fibo: [{ id: FBC/DebtAndEquities/CreditEvents/WriteDown, match: broader }]
   recovery:
     label: Recovery
     definition: Money collected on a loan after it was charged off.
+    fibo_none: 'FIBO has no recovery on a charged-off loan.'
     relations:
       - { predicate: recovers, to: charge_off }
   credit_score:
     label: Credit score
     definition: A credit bureau score for a person at a date.
+    fibo: [{ id: FND/Arrangements/Ratings/QuantitativeRatingScore, match: broader }]
   delinquency:
     label: Delinquency
     definition: How far a loan is behind on its payments, in days past due and in the reporting buckets.
+    fibo_none: 'FIBO has no delinquency or days-past-due concept in its released loan ontologies.'
   application:
     label: Application
     definition: A request to join, or to borrow, with its status and decision.
+    fibo: [{ id: LOAN/LoansGeneral/LoanApplications/LoanApplication, match: narrower }]
   alert:
     label: Alert
     definition: An event on an account or a person worth acting on, such as a large deposit or a maturing certificate.
+    fibo_none: 'FIBO has no alert; it is an operational concept.'
   campaign:
     label: Campaign
     definition: A marketing campaign and each send to a person.
+    fibo_none: 'FIBO has no marketing campaign.'
 
   # ---- The institution --------------------------------------------------------------------------
   institution:
     label: Institution
     parent: organization
     definition: The credit union or bank DI serves.
+    fibo: [{ id: FBC/FunctionalEntities/FinancialServicesEntities/CreditUnion, match: exact, type: credit_union }, { id: FBC/FunctionalEntities/FinancialServicesEntities/Bank, match: exact, type: bank }]
   branch:
     label: Branch
     definition: A location of the institution that owns accounts and relationships, grouped into regions.
+    fibo: [{ id: FBC/FunctionalEntities/NorthAmericanEntities/USFinancialServicesEntities/BranchOfADepositoryInstitution, match: exact }]
     synonyms:
       credit_union: [branch, office, location]
       bank: [branch, banking center, office]
@@ -205,26 +240,32 @@ classes:
     label: Employee
     parent: person
     definition: A person who works at the institution, such as a member service representative or loan officer.
+    fibo: [{ id: FND/Organizations/FormalOrganizations/Employee, match: broader }]
   census_tract:
     label: Census tract
     definition: A census tract with its FFIEC income level, used for lending in low- and moderate-income areas.
+    fibo_none: 'FIBO has no census tract.'
 
   # ---- Reporting --------------------------------------------------------------------------------
   reporting_period:
     label: Reporting period
     definition: A month-end, quarter-end or build date that a figure is stated as of.
+    fibo_none: 'FIBO has no reporting period class; it states periods as dates.'
   regulatory_return:
     label: Regulatory return
     labels_by_type: { credit_union: NCUA 5300 Call Report, bank: FFIEC Call Report }
     definition: The quarterly return filed with the regulator.
+    fibo: [{ id: FND/Arrangements/Reporting/Report, match: broader }]
     synonyms:
       credit_union: ['5300', call report, NCUA 5300]
       bank: [call report, FFIEC 041, FFIEC 031, FFIEC report]
   regulatory_line:
     label: Regulatory line
     definition: One line of the regulatory return, identified by its account code (5300) or MDRM code (Call Report).
+    fibo_none: 'FIBO has no line of a regulatory return.'
     relations:
       - { predicate: part_of, to: regulatory_return }
   custom_field:
     label: Custom field
     definition: A value an institution maps in beyond Kinective's standard mapping, such as a Symitar tracking record.
+    fibo_none: 'FIBO has no custom field; it is particular to DI.'

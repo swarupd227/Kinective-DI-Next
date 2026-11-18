@@ -42,6 +42,8 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-ONT-007', set: 'golden', persona: 'bank_cfo', q: 'How much is in DDA accounts?', agent: 'Analytics Q&A', contains: ['Checking'], approval: 'none' },
   { id: 'GQ-ONT-008', set: 'golden', persona: 'executive', q: 'What changes if the core changes how it codes loan type?', agent: 'Data Lineage', contains: ['Loan type', 'LOAN.TYPE', 'measures'], approval: 'none' },
   { id: 'GQ-ONT-009', set: 'golden', persona: 'executive', q: 'What breaks if LOAN.TYPE changes?', agent: 'Data Lineage', contains: ['Loan type', 'reports'], approval: 'none' },
+  // FIBO alignment (phase 9): the dictionary names the FIBO class and how closely it matches.
+  { id: 'GQ-ONT-010', set: 'golden', persona: 'executive', q: 'What is a share certificate in FIBO?', agent: 'Data Lineage', contains: ['Share certificate', 'time deposit account', 'close in meaning'], approval: 'none' },
   // People and roles from the ontology (phase 7).
   { id: 'GQ-PPL-001', set: 'golden', persona: 'executive', q: 'Which membership applicants are already members?', agent: 'Identity and Roles', contains: ['membership applicants', 'same person', 'birth date 30%'], approval: 'none' },
   { id: 'GQ-PPL-002', set: 'golden', persona: 'executive', q: 'Who is on loan 13?', agent: 'Identity and Roles', contains: ['primary owner'], approval: 'none' },
