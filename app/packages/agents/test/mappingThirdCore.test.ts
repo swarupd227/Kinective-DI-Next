@@ -18,6 +18,8 @@ describe('reading a code the core writes in words', () => {
     expect(unitOf('BalanceCents')).toBe('cents');
     expect(unitOf('rate_bps')).toBe('bps');
     expect(unitOf('DIVRATE')).toBeNull();
+    const freeze = coreMappingModule(null as never, () => '2026-11-19').plan!('Freeze the proposed mapping for the Core C stand-in');
+    expect(freeze).toEqual({ tool: 'map_freeze', args: { connection: 'Core C stand-in' } });
   });
 });
 
@@ -108,7 +110,8 @@ describe.skipIf(!up)('a third core, end to end, with no seed step', () => {
   it('freezes the proposals on approval, pulls in dollars and percents, holds what it can’t read, and fills the raw zone', async () => {
     // Before anything is frozen there's nothing to pull, and DI says so rather than pulling no rows.
     await expect(sources.pull(connectionId, { approvalId: 'apr_corec_pull0' })).rejects.toThrow(/nothing mapped yet/);
-    const done = await approve((await ask('Freeze the proposed mapping for the Core C test connection', 'thr_corec2')).out);
+    // Said plainly, as a person would right after mapping it: the connection DI mapped last, not the Symitar replica.
+    const done = await approve((await ask('Freeze the proposed mapping', 'thr_corec2')).out);
     expect(done).toContain('mapping version 1');
     const p = await sources.pull(connectionId, { approvalId: 'apr_corec_pull1' });
     expect(p.version).toBe(1);

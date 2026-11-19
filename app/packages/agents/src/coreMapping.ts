@@ -103,7 +103,11 @@ export function coreMappingModule(sources: SourceService | null, today: () => st
       if (parts) return { tool: /\b(?:try|preview|test|what would)\b/i.test(ask) ? 'map_preview' : 'map_add', args: { target: parts.target ?? 'members', label: parts.label, expression: parts.expression, type: parts.type ?? 'text' } };
       const cw = crosswalkFrom(ask);
       if (cw) return { tool: 'map_code', args: cw };
-      if (/\b(?:freeze|approve|use) the proposed mapping\b/i.test(ask)) return { tool: 'map_freeze', args: {} };
+      if (/\b(?:freeze|approve|use) the proposed mapping\b/i.test(ask)) {
+        // "Freeze the proposed mapping for the Core C stand-in (connection)": that connection; else the one mapped last.
+        const named = /\bproposed mapping (?:for|of) (?:the |our )?(.+?)(?: connection)?\s*[.?!]?$/i.exec(ask)?.[1]?.trim();
+        return { tool: 'map_freeze', args: named ? { connection: named } : {} };
+      }
       if (VERSION_REQUEST.test(ask)) return { tool: /\bversions?\b/i.test(ask) ? 'map_versions' : 'map_drift', args: {} };
       if (DISCOVER_REQUEST.test(ask)) {
         if (/\bwhy\b|\bexplain\b/i.test(ask)) {
@@ -292,7 +296,7 @@ function versionTools(spec: ModuleSpec, need: (ctx: ModuleContext) => SourceServ
     },
     {
       name: 'map_freeze',
-      description: 'Prepare recording the latest proposed mapping for a core Kinective hasn’t mapped as its next mapping version: the core tables each DI table reads (with joins and the class code that splits a shared table), every proposed column (close calls named), and each code list’s crosswalk; codes nothing fits are held on pulls until someone maps them. Returns approval_required.',
+      description: 'Prepare recording the latest proposed mapping for a core Kinective hasn’t mapped as its next mapping version: the core tables each DI table reads (with joins and the class code that splits a shared table), every proposed column (close calls named), and each code list’s crosswalk; codes nothing fits are held on pulls until someone maps them. connection: the one named; omit it to freeze the connection DI proposed a mapping for most recently. Returns approval_required.',
       input: z.object({ connection: z.string().min(2).max(80).optional() }).strict(),
       run: async (a: { connection?: string }, ctx: ModuleContext) => {
         const s = need(ctx);

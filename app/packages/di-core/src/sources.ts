@@ -825,6 +825,17 @@ export class SourceService {
   }
 
   /** Every mapping version of a connection, newest first. */
+  /** The core Kinective hasn't mapped that DI proposed a mapping for most recently, if any. */
+  private async latestProposed() {
+    const runs = await rows<{ connection_id: number }>(this.pool, "SELECT connection_id FROM map_run WHERE mode = 'propose' ORDER BY run_id DESC LIMIT 20").catch(() => []);
+    const all = await this.connections();
+    for (const r of runs) {
+      const c = all.find((x) => x.connectionId === r.connection_id);
+      if (c && !c.system.mappings?.length) return c.connectionId;
+    }
+    return null;
+  }
+
   /** The connection a mapping question is about: the one named, else the one feeding DI, else the newest. */
   private async mappingTarget(connectionId?: number) {
     if (connectionId) return this.connection(connectionId);
@@ -913,7 +924,11 @@ export class SourceService {
    * are left out, except the key), and each code column's crosswalk, with the codes nothing fits.
    */
   async checkFreeze(connectionRef?: string | number) {
-    const conn = await this.mappingTarget(typeof connectionRef === 'number' ? connectionRef : connectionRef ? (await this.connection(connectionRef)).connectionId : undefined);
+    // With no connection named, the one DI proposed a mapping for most recently among the cores Kinective
+    // hasn't mapped: "Freeze the proposed mapping" right after "Map the Core C stand-in connection" means
+    // Core C, not the Symitar replica the builds read.
+    const named = typeof connectionRef === 'number' ? connectionRef : connectionRef ? (await this.connection(connectionRef)).connectionId : undefined;
+    const conn = await this.mappingTarget(named ?? (await this.latestProposed()) ?? undefined);
     if (conn.system.mappings?.length) throw new CoreError('INVALID', `Kinective’s standard ${conn.system.short} mapping is in use for the ${conn.name}. Freezing proposals is for a core Kinective hasn’t mapped.`);
     const [run] = await rows<{ run_id: number; summary: string | Record<string, unknown> }>(this.pool, "SELECT run_id, summary FROM map_run WHERE connection_id = ? AND mode = 'propose' ORDER BY run_id DESC LIMIT 1", [conn.connectionId]);
     if (!run) throw new CoreError('NOT_FOUND', `DI hasn’t proposed a mapping for the ${conn.name} yet. Ask me to map it first.`);
