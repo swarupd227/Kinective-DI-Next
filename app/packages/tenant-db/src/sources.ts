@@ -173,9 +173,15 @@ export const landingTable = (diTable: string) => `src_land_${diTable.replace(/^c
 const LANDING_DDL = SOURCE_TARGETS.map((t) => `CREATE TABLE IF NOT EXISTS ${landingTable(t)} LIKE ${t}`);
 
 export const SOURCES_WRITE_TABLES = ['src_credential', 'src_connection', 'src_mapping', 'src_sync_run', 'src_column_map', 'cdm_custom_field', 'map_run', 'map_profile', 'map_candidate', 'map_version', 'map_drift'];
-/** The raw zone: the replica's mapped tables as they came, so existing reports on core tables keep working. A pull replaces them. */
-export const RAW_TABLES = ['ACCOUNT', 'NAME', 'SAVINGS', 'LOAN'] as const;
-export const rawTable = (coreTable: string) => `src_raw_${coreTable.toLowerCase()}`;
+/**
+ * The raw zone (Core Mapping and Ontology, phase 12): a database per core connection, beside the
+ * tenant's, holding the core's tables as they came under the core's own names, so reports written
+ * against core tables keep working. DI creates it when a core is connected, from the core's own
+ * columns, so a core Kinective has never seen needs no seed step. A pull replaces the rows.
+ */
+export const rawDatabase = (schema: string, connectionId: number) => `${schema}_raw_${connectionId}`;
+/** The grant pattern that covers every raw-zone database of a tenant (an underscore is a wildcard in a grant). */
+const rawPattern = (schema: string) => `${schema.replace(/_/g, '\\_')}\\_raw\\_%`;
 /** A pull replaces what landed last time, so the landing tables also allow deletes. Nothing else does. */
 export const SOURCES_LANDING_TABLES = SOURCE_TARGETS.map(landingTable);
 
@@ -184,6 +190,9 @@ export const replicaDatabase = (schema: string) => `${schema}_symitar`;
 /** The second stand-in core (Core Mapping and Ontology, phase 4): a different shape, with no standard mapping. */
 export const secondCoreDatabase = (schema: string) => `${schema}_coreb`;
 export const SECOND_CORE_TABLES = ['person', 'acct'] as const;
+/** The third stand-in core (Core Mapping and Ontology, phase 12): yet another shape, connected with no seed step on DI's side. */
+export const thirdCoreDatabase = (schema: string) => `${schema}_corec`;
+export const THIRD_CORE_TABLES = ['Customer', 'DepositAccount', 'LoanAccount'] as const;
 export const CORE_READER = 'core_reader';
 export const coreReaderPassword = () => process.env.DI_CORE_READER_PASSWORD ?? 'core_reader_demo';
 
@@ -214,15 +223,17 @@ export async function createSourceTables(admin: mysql.Connection, schema: string
 }
 
 /**
- * The raw zone for a tenant: an empty copy of each mapped replica table, in the tenant's database,
- * which a pull fills as it reads the core. The app may replace their rows and nothing else.
+ * Lets the app keep a raw zone for each core connection: create, fill, empty and drop databases named
+ * <tenant>_raw_<connection>, and nothing else outside the tenant. Granted once per tenant, not per core.
+ * A reseed starts the connections again, so it drops the raw zones of the connections it replaces,
+ * and the raw tables earlier phases kept in the tenant's own schema.
  */
-export async function createRawTables(admin: mysql.Connection, schema: string, replica: string, tables: readonly string[] = RAW_TABLES) {
-  for (const t of tables) {
-    await admin.query(`DROP TABLE IF EXISTS \`${schema}\`.\`${rawTable(t)}\``);
-    await admin.query(`CREATE TABLE \`${schema}\`.\`${rawTable(t)}\` LIKE \`${replica}\`.\`${t}\``);
-    await admin.query(`GRANT SELECT, INSERT, DELETE ON \`${schema}\`.\`${rawTable(t)}\` TO 'dinext'@'%'`);
-  }
+export async function grantRawZone(admin: mysql.Connection, schema: string) {
+  const [dbs] = (await admin.query(`SHOW DATABASES LIKE '${schema.replace(/_/g, '\\_')}\\_raw\\_%'`)) as unknown as [Record<string, string>[]];
+  for (const d of dbs) await admin.query(`DROP DATABASE IF EXISTS \`${Object.values(d)[0]}\``);
+  const [old] = (await admin.query("SELECT TABLE_NAME AS t FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME LIKE 'src\\_raw\\_%'", [schema])) as unknown as [{ t: string }[]];
+  for (const o of old) await admin.query(`DROP TABLE IF EXISTS \`${schema}\`.\`${o.t}\``);
+  await admin.query(`GRANT SELECT, INSERT, DELETE, CREATE, DROP ON \`${rawPattern(schema)}\`.* TO 'dinext'@'%'`);
 }
 
 /**
@@ -287,7 +298,6 @@ export async function seedCoreReplica(admin: mysql.Connection, schema: string) {
   await admin.query(`CREATE USER IF NOT EXISTS '${CORE_READER}'@'%' IDENTIFIED BY ?`, [coreReaderPassword()]);
   await admin.query(`ALTER USER '${CORE_READER}'@'%' IDENTIFIED BY ?`, [coreReaderPassword()]);
   await admin.query(`GRANT SELECT ON \`${db}\`.* TO '${CORE_READER}'@'%'`);
-  await createRawTables(admin, schema, db);
   await admin.query(`USE ${src}`);
   return { database: db, processDate: asOf };
 }
@@ -326,6 +336,39 @@ export async function seedSecondCore(admin: mysql.Connection, schema: string) {
   );
   await admin.query(`CREATE USER IF NOT EXISTS '${CORE_READER}'@'%' IDENTIFIED BY ?`, [coreReaderPassword()]);
   await admin.query(`GRANT SELECT ON \`${db}\`.* TO '${CORE_READER}'@'%'`);
-  await createRawTables(admin, schema, db, SECOND_CORE_TABLES);
+  return { database: db, processDate: asOf };
+}
+
+/**
+ * A third stand-in core for one tenant (Core Mapping and Ontology, phase 12), built from the curated
+ * tables in yet another shape, not any vendor's, that the engine has to read without help:
+ * - PascalCase names (Customer, DepositAccount, LoanAccount; GivenName, CustomerSince, HomeBranchId);
+ * - amounts in whole cents (BalanceCents) and rates in basis points (RateBps), named as such;
+ * - dates as US-style text, MM/DD/YYYY, empty when there's none;
+ * - product and customer types as descriptions ("Share Draft Checking", "Auto Loan"), and a T/F member flag.
+ * Only the core is built here: DI's side (the raw zone, the mapping) comes when someone connects it.
+ */
+export async function seedThirdCore(admin: mysql.Connection, schema: string) {
+  const db = thirdCoreDatabase(schema);
+  const [[build]] = (await admin.query(`SELECT DATE_FORMAT(as_of_date, '%Y-%m-%d') AS as_of FROM \`${schema}\`.meta_build ORDER BY as_of_date DESC LIMIT 1`)) as unknown as [{ as_of: string }[]];
+  const asOf = build?.as_of ?? '2026-10-25';
+  await admin.query(`DROP DATABASE IF EXISTS \`${db}\``);
+  await admin.query(`CREATE DATABASE \`${db}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
+  const src = `\`${schema}\``;
+  const q = (t: string) => `\`${db}\`.\`${t}\``;
+  const us = (c: string) => `IFNULL(DATE_FORMAT(${c}, '%m/%d/%Y'), '')`;
+  await admin.query(`CREATE TABLE ${q('SystemInfo')} (ProcessingDate VARCHAR(10) NOT NULL, InstitutionName VARCHAR(60) NOT NULL)`);
+  await admin.query(`CREATE TABLE ${q('Customer')} (CustomerId INT PRIMARY KEY, GivenName VARCHAR(40) NOT NULL, FamilyName VARCHAR(40) NOT NULL, DateOfBirth VARCHAR(10) NOT NULL, CustomerSince VARCHAR(10) NOT NULL, HomeBranchId SMALLINT NOT NULL, CustomerType VARCHAR(30) NOT NULL, HouseholdId INT NULL, IsMember CHAR(1) NOT NULL, LastChanged VARCHAR(10) NOT NULL)`);
+  await admin.query(`CREATE TABLE ${q('DepositAccount')} (DepositAccountId INT PRIMARY KEY, CustomerId INT NOT NULL, BranchId SMALLINT NOT NULL, ProductDescription VARCHAR(40) NOT NULL, OpenedOn VARCHAR(10) NOT NULL, ClosedOn VARCHAR(10) NOT NULL, MaturesOn VARCHAR(10) NOT NULL, BalanceCents BIGINT NOT NULL, RateBps INT NOT NULL, KEY ix_dep_customer (CustomerId))`);
+  await admin.query(`CREATE TABLE ${q('LoanAccount')} (LoanAccountId INT PRIMARY KEY, CustomerId INT NOT NULL, BranchId SMALLINT NOT NULL, OfficerId INT NOT NULL, DealerId INT NULL, ProductDescription VARCHAR(40) NOT NULL, OpenedOn VARCHAR(10) NOT NULL, ClosedOn VARCHAR(10) NOT NULL, ChargedOffOn VARCHAR(10) NOT NULL, OriginalAmountCents BIGINT NOT NULL, BalanceCents BIGINT NOT NULL, RateBps INT NOT NULL, DaysPastDue SMALLINT NOT NULL, KEY ix_loan_customer (CustomerId))`);
+  await admin.query(`INSERT INTO ${q('SystemInfo')} VALUES (DATE_FORMAT(?, '%m/%d/%Y'), ?)`, [asOf, schema]);
+  await admin.query(`INSERT INTO ${q('Customer')} SELECT party_id, first_name, last_name, ${us('birth_date')}, ${us('join_date')}, primary_branch_id, CASE segment_code WHEN 'Retail' THEN 'Retail Member' WHEN 'Young Adult' THEN 'Young Adult Member' WHEN 'Senior' THEN 'Senior Member' WHEN 'Small Business' THEN 'Business Member' ELSE 'Other' END, household_id, IF(is_member = 1, 'T', 'F'), ${us('join_date')} FROM ${src}.cdm_party`);
+  await admin.query(`INSERT INTO ${q('DepositAccount')} SELECT account_id, party_id, branch_id, CASE deposit_category WHEN 'Share Savings' THEN 'Regular Share Savings' WHEN 'Checking' THEN 'Share Draft Checking' WHEN 'Money Market' THEN 'Money Market Share' WHEN 'Certificates' THEN 'Share Certificate' WHEN 'IRA' THEN 'Traditional IRA' ELSE 'Other Share' END, ${us('open_date')}, ${us('close_date')}, ${us('maturity_date')}, ROUND(balance * 100), ROUND(rate * 100) FROM ${src}.cdm_deposit_account`);
+  await admin.query(
+    `INSERT INTO ${q('LoanAccount')} SELECT loan_id, party_id, branch_id, officer_id, IF(is_indirect = 1, 4000 + MOD(loan_id, 37), NULL), CASE loan_category WHEN 'Auto' THEN 'Auto Loan' WHEN 'Personal' THEN 'Signature Loan' WHEN 'Mortgage' THEN 'First Mortgage' WHEN 'HELOC' THEN 'Home Equity Line' WHEN 'Credit Card' THEN 'Visa Platinum' WHEN 'Business' THEN 'Business Term Loan' ELSE 'Other Loan' END,
+       ${us('open_date')}, ${us('close_date')}, ${us('charge_off_date')}, ROUND(original_amount * 100), ROUND(balance * 100), ROUND(rate * 100), days_delinquent FROM ${src}.cdm_loan`,
+  );
+  await admin.query(`CREATE USER IF NOT EXISTS '${CORE_READER}'@'%' IDENTIFIED BY ?`, [coreReaderPassword()]);
+  await admin.query(`GRANT SELECT ON \`${db}\`.* TO '${CORE_READER}'@'%'`);
   return { database: db, processDate: asOf };
 }

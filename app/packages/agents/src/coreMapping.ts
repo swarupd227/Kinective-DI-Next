@@ -27,10 +27,11 @@ export const VERSION_REQUEST =
 
 /** "Map share type 14 to money market" → the code list, the code and the value. */
 export function crosswalkFrom(text: string): { set: string; code: string; value: string } | null {
-  const m = /\bmap (share|savings|deposit|loan|member|account) (?:type|code|product) ([A-Za-z0-9_-]{1,12}) (?:to|as) (?:an? |the )?(.+?)\s*[.?!]?$/i.exec(text.trim());
+  // A code is a number, a short code (VISA), or a core's description of up to five words, quoted or not ("Visa Platinum").
+  const m = /\bmap (share|savings|deposit|loan|member|account) (?:type|code|product) (?:["“']([^"”']{1,40})["”']|([A-Za-z0-9_-]+(?: [A-Za-z0-9_-]+){0,4}?)) (?:to|as) (?:an? |the )?(.+?)\s*[.?!]?$/i.exec(text.trim());
   if (!m) return null;
   const set = /^(?:share|savings|deposit)$/i.test(m[1]!) ? 'shareType' : /^loan$/i.test(m[1]!) ? 'loanType' : 'memberType';
-  return { set, code: m[2]!, value: m[3]!.trim() };
+  return { set, code: (m[2] ?? m[3]!).trim(), value: m[4]!.trim() };
 }
 
 export const MAPPING_REQUEST =
@@ -324,8 +325,8 @@ function versionTools(spec: ModuleSpec, need: (ctx: ModuleContext) => SourceServ
     },
     {
       name: 'map_code',
-      description: 'Prepare adding a code to the core mapping’s crosswalk, such as share type 14 as money market: DI checks the value against DI’s code list, and on approval records a new mapping version; the next pull maps the held rows. set: shareType, loanType or memberType (or the code list’s own name, such as loan_category); code: a number or a short code such as VISA. Returns approval_required.',
-      input: z.object({ set: z.string().min(3).max(40), code: z.string().regex(/^[A-Za-z0-9_-]{1,12}$/), value: z.string().min(2).max(60) }).strict(),
+      description: 'Prepare adding a code to the core mapping’s crosswalk, such as share type 14 as money market: DI checks the value against DI’s code list, and on approval records a new mapping version; the next pull maps the held rows. set: shareType, loanType or memberType (or the code list’s own name, such as loan_category); code: a number, a short code such as VISA, or the core’s description of a few words such as Visa Platinum. Returns approval_required.',
+      input: z.object({ set: z.string().min(3).max(40), code: z.string().max(40).regex(/^[A-Za-z0-9_-]+(?: [A-Za-z0-9_-]+){0,4}$/), value: z.string().min(2).max(60) }).strict(),
       run: async (a: { set: string; code: string; value: string }, ctx: ModuleContext) => {
         const s = need(ctx);
         const c = await s.checkCrosswalk(a);
@@ -361,7 +362,7 @@ function versionTools(spec: ModuleSpec, need: (ctx: ModuleContext) => SourceServ
 
 const BAND_WORD: Record<string, string> = { standard: 'Kinective’s standard', auto: 'Ready to approve', review: 'Review', person: 'Needs you' };
 const TABLE_WORD: Record<string, string> = { cdm_party: 'members', cdm_deposit_account: 'shares and deposits', cdm_loan: 'loans' };
-const TRANSFORM_WORD: Record<string, string> = { same: 'as is', number: 'number', date8: 'YYYYMMDD date', code: 'code list', rate1000: 'thousandths of a percent', daysPast: 'days past the due date', not: 'reversed yes or no', nonzero: 'yes when not zero' };
+const TRANSFORM_WORD: Record<string, string> = { same: 'as is', number: 'number', date8: 'YYYYMMDD date', code: 'code list', rate1000: 'thousandths of a percent', daysPast: 'days past the due date', not: 'reversed yes or no', nonzero: 'yes when not zero', mdy: 'MM/DD/YYYY date', cents: 'cents to dollars', bps: 'basis points to percent', flag: 'yes or no' };
 const usd = (x: number) => (Math.abs(x) >= 1e9 ? `$${(x / 1e9).toFixed(3)}B` : Math.abs(x) >= 1e6 ? `$${(x / 1e6).toFixed(1)}M` : n(Math.round(x)));
 const tieWord = (t: { property: string; core: number; reported: number; code: string; pass: boolean }) =>
   `${t.property === 'member.id' ? `${n(t.core)} members` : usd(t.core)} against line ${t.code}’s ${t.property === 'member.id' ? n(t.reported) : usd(t.reported)}${t.pass ? '' : ', which doesn’t tie out'}`;

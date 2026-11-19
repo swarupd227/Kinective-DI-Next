@@ -7,7 +7,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateBlock, type Block } from '@dinext/block-schemas';
 import { ApprovalStore, SourceService, compareWith, secretKeyFrom } from '@dinext/di-core';
-import { createPool, secondCoreDatabase, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
+import { createPool, rawDatabase, secondCoreDatabase, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { coreMappingModule, crosswalkFrom, DISCOVER_REQUEST, ModuleGateway, runModuleOffline, sourcesModule, type ModuleSpec, type ModuleTurn, type RunSink } from '../src/index.ts';
 
 describe('reading second-core requests', () => {
@@ -77,6 +77,7 @@ describe.skipIf(!up)('mapping a core Kinective hasn’t mapped', () => {
     for (const t of ['map_drift', 'map_version', 'src_sync_run', 'src_mapping']) await admin.query(`DELETE FROM ${t} WHERE connection_id IN (SELECT connection_id FROM src_connection WHERE created_by = ?)`, [SAM.id]);
     await admin.query('DELETE FROM src_connection WHERE created_by = ?', [SAM.id]);
     await admin.query('DELETE FROM src_credential WHERE created_by = ?', [SAM.id]);
+    if (connectionId) await admin.query(`DROP DATABASE IF EXISTS \`${rawDatabase(SCHEMA, connectionId)}\``);
     await pool.end();
     await admin.end();
   });

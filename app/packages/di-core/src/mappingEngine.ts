@@ -11,8 +11,8 @@
 // - tie-out: whether the mapped values add up to the regulatory return (worked out by the caller).
 import type { Ontology, OntologyProperty } from '@dinext/ontology';
 
-export type ColumnKind = 'date' | 'key' | 'reference' | 'flag' | 'money' | 'rate1000' | 'pctrate' | 'code' | 'number' | 'text' | 'empty';
-export type MapTransform = 'same' | 'number' | 'date8' | 'code' | 'rate1000' | 'daysPast' | 'not' | 'nonzero';
+export type ColumnKind = 'date' | 'key' | 'reference' | 'flag' | 'money' | 'cents' | 'rate1000' | 'bps' | 'pctrate' | 'code' | 'number' | 'text' | 'empty';
+export type MapTransform = 'same' | 'number' | 'date8' | 'code' | 'rate1000' | 'daysPast' | 'not' | 'nonzero' | 'mdy' | 'cents' | 'bps' | 'flag';
 
 export interface ColumnProfile {
   table: string;
@@ -30,6 +30,8 @@ export interface ColumnProfile {
   dateShare: number;
   /** Share of filled values that are an ISO date (YYYY-MM-DD), as a DATE column reads. */
   isoDateShare?: number;
+  /** Share of filled values that are a US date written as text (MM/DD/YYYY). */
+  usDateShare?: number;
   numericShare: number;
   fractionShare: number;
   flagShare: number;
@@ -90,8 +92,12 @@ export const BANDS = { auto: 0.9, review: 0.6, margin: 0.05 } as const;
 /** What a column holds, from its profile alone. */
 export function kindOf(c: ColumnProfile): ColumnKind {
   if (!c.filled) return 'empty';
-  if (c.dateShare + (c.isoDateShare ?? 0) >= 0.9) return 'date';
+  if (c.dateShare + (c.isoDateShare ?? 0) + (c.usDateShare ?? 0) >= 0.9) return 'date';
   if (c.refersTo && c.refersTo.share >= 0.95) return 'reference';
+  // A unit the core names on the column, on whole numbers: BalanceCents, RateBps. Magnitude alone can't
+  // tell 525 basis points (5.25%) from 525 thousandths (0.525%), so only the name decides.
+  const unit = unitOf(c.column);
+  if (unit && c.numericShare >= 0.99 && c.fractionShare === 0) return unit;
   const seen = c.sampled ?? c.rows;
   if (c.distinct === seen && c.numericShare >= 0.99 && seen > 1) return 'key';
   if (c.distinct <= 2 && c.flagShare >= 0.99) return 'flag';
@@ -106,6 +112,14 @@ export function kindOf(c: ColumnProfile): ColumnKind {
   if (c.distinct <= 40) return 'code';
   if (c.numericShare >= 0.95) return 'number';
   return 'text';
+}
+
+/** The unit a column's name gives, if any: cents (BalanceCents, bal_cents) or basis points (RateBps, rate_basis_points). */
+export function unitOf(column: string): 'cents' | 'bps' | null {
+  const w = column.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/);
+  if (w.includes('cents') || w.includes('cent')) return 'cents';
+  if (w.includes('bps') || w.includes('bp') || (w.includes('basis') && w.some((x) => x.startsWith('point')))) return 'bps';
+  return null;
 }
 
 /**
@@ -127,7 +141,8 @@ export function entities(p: CoreProfile) {
 
 // ---- words ------------------------------------------------------------------------------------
 
-const STOP = new Set(['a', 'an', 'the', 'of', 'to', 'in', 'on', 'or', 'and', 'for', 'is', 'it', 'its', 'by', 'at', 'as', 'with', 'one', 'per', 'each', 'none', 'while', 'set', 'this', 'that', 'be', 'when', 'what', 'how']);
+// Units (cents, basis points) say how a value is kept, not what it is, so names are read without them.
+const STOP = new Set(['cent', 'cents', 'bps', 'bp', 'basis', 'a', 'an', 'the', 'of', 'to', 'in', 'on', 'or', 'and', 'for', 'is', 'it', 'its', 'by', 'at', 'as', 'with', 'one', 'per', 'each', 'none', 'while', 'set', 'this', 'that', 'be', 'when', 'what', 'how']);
 const stem = (w: string) => (w.length > 4 && w.endsWith('ies') ? `${w.slice(0, -3)}y` : w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w);
 export const wordsOf = (text: string) => text.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter((w) => w && !STOP.has(w)).map(stem);
 
@@ -208,8 +223,8 @@ const COMPAT: Record<string, Partial<Record<ColumnKind, number>>> = {
   identifier: { key: 1, reference: 0.3, number: 0.2 },
   reference: { reference: 1, code: 0.6, number: 0.4, key: 0.2 },
   date: { date: 1 },
-  money: { money: 1, number: 0.4, pctrate: 0.2 },
-  rate: { rate1000: 1, pctrate: 1, money: 0.3, number: 0.3 },
+  money: { money: 1, cents: 1, number: 0.4, pctrate: 0.2 },
+  rate: { rate1000: 1, bps: 1, pctrate: 1, money: 0.3, number: 0.3 },
   percent: { number: 0.7, money: 0.5, pctrate: 0.6 },
   ratio: { number: 0.7, money: 0.5 },
   code: { code: 1, flag: 0.5, number: 0.2 },
@@ -219,11 +234,11 @@ const COMPAT: Record<string, Partial<Record<ColumnKind, number>>> = {
   number: { number: 0.7, money: 0.5, code: 0.3 },
   text: { text: 1, code: 0.3 },
 };
-const KIND_WORD: Record<ColumnKind, string> = { date: 'dates', key: 'a unique key', reference: 'references to another table', flag: 'yes or no values', money: 'dollar amounts', rate1000: 'rates in thousandths of a percent', pctrate: 'rates as percents', code: 'a short list of codes', number: 'numbers', text: 'text', empty: 'nothing' };
-const KIND_FROM: Record<ColumnKind, string> = { date: 'date', key: 'key', reference: 'reference', flag: 'flag', money: 'money', rate1000: 'number', pctrate: 'number', code: 'code', number: 'number', text: 'text', empty: 'text' };
+const KIND_WORD: Record<ColumnKind, string> = { date: 'dates', key: 'a unique key', reference: 'references to another table', flag: 'yes or no values', money: 'dollar amounts', cents: 'amounts in cents', bps: 'rates in basis points', rate1000: 'rates in thousandths of a percent', pctrate: 'rates as percents', code: 'a short list of codes', number: 'numbers', text: 'text', empty: 'nothing' };
+const KIND_FROM: Record<ColumnKind, string> = { date: 'date', key: 'key', reference: 'reference', flag: 'flag', money: 'money', cents: 'money', bps: 'number', rate1000: 'number', pctrate: 'number', code: 'code', number: 'number', text: 'text', empty: 'text' };
 
 const plainTransform = (kind: ColumnKind, p: OntologyProperty, c: ColumnProfile): MapTransform =>
-  kind === 'date' ? ((c.isoDateShare ?? 0) > c.dateShare ? 'same' : 'date8') : kind === 'rate1000' ? 'rate1000' : kind === 'pctrate' ? 'number' : p.type === 'code' ? 'code' : ['key', 'reference', 'money', 'number'].includes(kind) || (c.numericShare >= 0.99 && p.type !== 'text') ? 'number' : 'same';
+  kind === 'date' ? ((c.usDateShare ?? 0) > Math.max(c.dateShare, c.isoDateShare ?? 0) ? 'mdy' : (c.isoDateShare ?? 0) > c.dateShare ? 'same' : 'date8') : kind === 'rate1000' ? 'rate1000' : kind === 'cents' ? 'cents' : kind === 'bps' ? 'bps' : kind === 'pctrate' ? 'number' : p.type === 'code' ? 'code' : kind === 'flag' && p.type === 'flag' && c.numericShare < 0.99 ? 'flag' : ['key', 'reference', 'money', 'number'].includes(kind) || (c.numericShare >= 0.99 && p.type !== 'text') ? 'number' : 'same';
 
 export interface ScoreOptions {
   /** Kinective's mapping for this core, "TABLE.COLUMN" to property, used as precedent; omit to hide it. */

@@ -46,7 +46,7 @@ import { depositsByParty, ESP_HISTORY_COLUMNS, ESP_HISTORY_DDL, generateExceptio
 import { ONB_JOURNEY_DDL, ONB_JOURNEY_WRITE_TABLES, generateOnboardingJourney } from './onboardingJourney.ts';
 import { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
 import { TENANT_DDL } from './schema.ts';
-import { createSourceTables, seedCoreReplica, seedSecondCore } from './sources.ts';
+import { createSourceTables, grantRawZone, seedCoreReplica, seedSecondCore, seedThirdCore } from './sources.ts';
 import { ONTOLOGY_COLUMNS, ONTOLOGY_DDL, ONTOLOGY_TABLES, ontology, ontologyRows } from '@dinext/ontology';
 import { createApiTables } from './apis.ts';
 import { createOffcoreTables } from './offcore.ts';
@@ -437,6 +437,8 @@ async function main() {
     for (const table of [...GOVERNANCE_APPEND_TABLES, ...WORDS_APPEND_TABLES]) await admin.query(`GRANT INSERT ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     // Direct core connections: DI's store for every tenant, and a Symitar-style replica for the credit union.
     await createSourceTables(admin, profile.schema);
+    // The raw zone: a database per core connection, which the app creates when a core is connected (phase 12).
+    await grantRawZone(admin, profile.schema);
     // API connections: DI's store, and the simulated marketing platform with the campaigns it already ran.
     await createApiTables(admin, profile.schema);
     // Off-core loans: DI's store, and the build account that publishes them into cdm_loan.
@@ -502,6 +504,8 @@ async function main() {
       await seedCoreReplica(admin, profile.schema);
       // A second stand-in core in another shape, with no standard mapping (Core Mapping and Ontology, phase 4).
       await seedSecondCore(admin, profile.schema);
+      // A third, in yet another shape, connected with no seed step on DI's side (phase 12).
+      await seedThirdCore(admin, profile.schema);
     }
     console.log(`${profile.key}: ${t.parties.length} parties, ${t.loans.length} loans, ${t.deposits.length} deposit accounts, ${t.histLoan.length} loan history rows, ${rm.interactions.length} interactions in ${((Date.now() - started) / 1000).toFixed(1)}s (${[...laps, `core replica ${((Date.now() - lapAt) / 1000).toFixed(0)}s`].join(', ')})`);
   }

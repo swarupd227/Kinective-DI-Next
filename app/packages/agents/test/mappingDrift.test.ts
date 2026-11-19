@@ -6,7 +6,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateBlock, type Block } from '@dinext/block-schemas';
 import { ApprovalStore, SourceService, secretKeyFrom } from '@dinext/di-core';
-import { createPool, replicaDatabase, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
+import { createPool, rawDatabase, replicaDatabase, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { coreMappingModule, crosswalkFrom, ModuleGateway, runModuleOffline, sourcesModule, VERSION_REQUEST, type ModuleSpec, type ModuleTurn, type RunSink } from '../src/index.ts';
 
 describe('reading crosswalk and drift requests', () => {
@@ -65,6 +65,7 @@ describe.skipIf(!up)('a new share type in the core', () => {
     for (const t of ['map_drift', 'map_version', 'src_sync_run', 'src_mapping']) await admin.query(`DELETE FROM ${t} WHERE connection_id IN (SELECT connection_id FROM src_connection WHERE created_by = ?)`, [SAM.id]);
     await admin.query('DELETE FROM src_connection WHERE created_by = ?', [SAM.id]);
     await admin.query('DELETE FROM src_credential WHERE created_by = ?', [SAM.id]);
+    if (connectionId) await admin.query(`DROP DATABASE IF EXISTS \`${rawDatabase(SCHEMA, connectionId)}\``);
     await pool.end();
     await admin.end();
     await core.end();
@@ -97,8 +98,9 @@ describe.skipIf(!up)('a new share type in the core', () => {
     expect(r.held![0]!.proposal!.value).toBe('Money Market');
     // Held rows land without a share type, never as a wrong one.
     expect(await count('SELECT COUNT(*) AS n FROM src_land_deposit_account WHERE account_id > ? AND deposit_category IS NULL', [NEW_SERIAL])).toBe(added);
-    // The raw zone has the core's table as it is, new rows included.
-    expect(await count('SELECT COUNT(*) AS n FROM src_raw_savings')).toBe(await count(`SELECT COUNT(*) AS n FROM \`${REPLICA}\`.SAVINGS`));
+    // The raw zone, made when the replica was connected, has the core's table as it is, new rows included.
+    expect(r.rawZone).toBe(rawDatabase(SCHEMA, connectionId));
+    expect(await count(`SELECT COUNT(*) AS n FROM \`${r.rawZone}\`.SAVINGS`)).toBe(await count(`SELECT COUNT(*) AS n FROM \`${REPLICA}\`.SAVINGS`));
     const { items } = await sources.drift(connectionId);
     expect(items.map((d) => `${d.kind} ${d.table}.${d.column}${d.value ? `=${d.value}` : ''}`).sort()).toEqual(['new_code SAVINGS.TYPE=14', 'new_column ACCOUNT.EMAILOPTIN']);
 

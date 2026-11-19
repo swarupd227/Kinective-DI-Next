@@ -328,7 +328,7 @@ function pullView(spec: ModuleSpec, ctx: ModuleContext, r: PullResult, lead: str
     : '';
   const otherDrift = (r.drift ?? 0) - held.length;
   const versionText = r.version ? ` It used mapping version ${r.version}.` : '';
-  const rawText = r.raw?.length ? ` The raw zone has the core’s ${r.raw.map((x) => x.table).join(', ')} tables as they came.` : '';
+  const rawText = r.raw?.length ? ` The raw zone${r.rawZone ? ` (database ${r.rawZone})` : ''} has the core’s ${r.raw.map((x) => x.table).join(', ')} tables as they came.` : '';
   return {
     text: `${lead}Pulled **${n(r.rows)} rows** on ${when(r.at)}${process} and checked them against DI. ${parts.join('. ')}.${odd ? ' Those are the rows to look at before the build uses this source.' : ''}${versionText}${heldText}${otherDrift > 0 ? ` ${plural(otherDrift, 'other change')} in the core to look at.` : ''}${rawText}`,
     blocks: [reconcileTable(spec, ctx, r), ...(odd && offerNext ? [differenceTable(spec, ctx, r)] : [])],

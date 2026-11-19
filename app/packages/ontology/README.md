@@ -35,7 +35,7 @@ Each connection's mapping is versioned in `map_version`: version 1 is Kinective'
 - a column that appeared in a mapped table, or one the mapping reads that's gone (the pull then stops and replaces nothing);
 - open loan or share balances that no longer tie out to the 5300.
 
-"Map share type 14 to money market" adds the code in a new version through an approval card, and resolves the drift; the next pull maps the held rows. Each pull also copies the core's mapped tables as they are into the raw zone (`src_raw_account`, `src_raw_name`, `src_raw_savings`, `src_raw_loan`), so reports written against core tables can read them.
+"Map share type 14 to money market" adds the code in a new version through an approval card, and resolves the drift; the next pull maps the held rows. Each pull also copies the core's mapped tables as they are into the raw zone, so reports written against core tables can read them (since phase 12, a database per connection; see below).
 
 ## A core Kinective hasn't mapped (phase 4)
 
@@ -98,6 +98,16 @@ Every property that can identify a person (privacy `direct` or `quasi`) now says
 
 Routing uses the concepts too: a figure about certificates ("How much is in CDs?", "Total certificate balance by branch"), named in words or read by the ontology as the certificate code, with none of Deposit Retention's own words (maturing, renew, at risk, offer rules), goes to Analytics Q&A instead of Retention.
 
+## A new core, end to end (phase 12)
+
+The raw zone is now a database per core connection, `<tenant>_raw_<connection>`, holding the core's tables under the core's own names. DI creates it when a core is connected, from the core's own `information_schema` (each column's declared type, or text where the type isn't a plain one; every column may be empty), so a core Kinective has never seen needs no seed step on DI's side; a pull makes any table it reads that isn't there yet (for a connection made before this phase). The seed grants the app, once per tenant, create, fill, empty and drop on databases matching that name and nothing else, drops the raw zones of the connections a reseed replaces, and drops the `src_raw_*` tables earlier phases kept in the tenant's schema.
+
+The seed builds a third stand-in core (`<tenant>_corec`, "Core C stand-in"), in yet another shape: PascalCase names (`Customer`, `DepositAccount`, `LoanAccount`; `GivenName`, `CustomerSince`); amounts in whole cents and rates in basis points, named as such (`BalanceCents`, `RateBps`); dates as US-style text (`MM/DD/YYYY`, empty when there's none); product and customer types as descriptions ("Share Draft Checking", "Visa Platinum"); and a T/F member flag. Only the core is built; the demo connects it like any other core.
+
+For it the engine learned: a unit named on a whole-number column (cents, basis points: magnitude alone can't tell 525 basis points from 525 thousandths of a percent, so only the name decides), with unit words left out when reading names; US text dates; a yes/no flag written T/F; tie-outs that read cents as dollars and T/F as yes/no; and crosswalk requests for a code of a few words ("Map loan type Visa Platinum to credit card", quoted or not, in any case).
+
+Measured against an answer key the engine never sees: 29 of 31 DI columns right on the first run, every transform right for those; 31 of 31 after adding "given name", "forename", "family name" and "surname" as synonyms. Loan, share and member totals tie out to the 5300. The proposed crosswalks read every share type, three of four customer types and half the loan types from the descriptions; after freezing, shares reconcile row for row, the codes nothing fits (Visa Platinum, Signature Loan and Business Term Loan, and the customer type Business Member) are held with DI's unused types as the options, and approving the three loan types brings loans to row-for-row. The raw zone keeps the core's cents and text dates as they came.
+
 ## Not yet
 
-FIBO links for the aggregate history properties; a full parse of the OWL file by an RDF library in the tests. The raw zone's tables are created with each stand-in core at seed time, so a real new core's raw tables need a seed step too.
+FIBO links for the aggregate history properties; a full parse of the OWL file by an RDF library in the tests. A core on a server other than MySQL (the raw zone and profiling read MySQL's `information_schema`).

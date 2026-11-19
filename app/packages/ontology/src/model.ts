@@ -72,7 +72,7 @@ const PropertySchema = z.object({
   mask: z.enum(MASKS).optional(),
   fibo: z.array(FiboLink).min(1).optional(),
   match: z.object({ weight: z.number().gt(0).max(1), how: z.enum(['name', 'date', 'text', 'digits', 'exact']) }).strict().optional(),
-  derive: z.array(z.object({ transform: z.enum(['same', 'number', 'date8', 'code', 'rate1000', 'daysPast', 'not', 'nonzero']), from: z.enum(['date', 'flag', 'code', 'number', 'money', 'text', 'key', 'reference']), words: z.array(z.string()).min(1) }).strict()).default([]),
+  derive: z.array(z.object({ transform: z.enum(['same', 'number', 'date8', 'code', 'rate1000', 'daysPast', 'not', 'nonzero', 'mdy', 'cents', 'bps', 'flag']), from: z.enum(['date', 'flag', 'code', 'number', 'money', 'text', 'key', 'reference']), words: z.array(z.string()).min(1) }).strict()).default([]),
   realized_by: z.array(column).min(1),
 }).strict();
 
@@ -82,7 +82,7 @@ const ValueSetSchema = z.object({
   codes: z.record(ident, z.object({ label: z.string(), labels_by_type: byType, synonyms, definition: z.string().optional(), fibo: z.array(FiboLink).min(1).optional(), values: z.array(z.string()).min(1) }).strict()),
 }).strict();
 
-export const TRANSFORMS = ['same', 'number', 'date8', 'code', 'rate1000', 'daysPast', 'not', 'nonzero'] as const;
+export const TRANSFORMS = ['same', 'number', 'date8', 'code', 'rate1000', 'daysPast', 'not', 'nonzero', 'mdy', 'cents', 'bps', 'flag'] as const;
 
 const VendorSchema = z.object({
   id: ident,

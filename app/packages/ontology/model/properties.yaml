@@ -10,9 +10,9 @@ properties:
   member:
     id: { label: Member ID, type: identifier, privacy: none, definition: DI's key for a party., realized_by: [cdm_party.party_id, cdm_party_detail.party_id, cdm_party_address.party_id, cdm_party_contact.party_id] }
     member_number: { label: Member number, labels_by_type: { bank: Customer number }, type: identifier, privacy: quasi, definition: The number the institution and the party know the relationship by., synonyms: { credit_union: [member number, membership number], bank: [customer number, CIF number] }, mask: last4, realized_by: [cdm_party_detail.member_number] }
-    first_name: { label: First name, type: text, privacy: direct, match: { weight: 0.15, how: name }, mask: full, fibo: [{ id: FND/AgentsAndPeople/People/hasFirstName, match: exact }], realized_by: [cdm_party.first_name] }
+    first_name: { label: First name, type: text, privacy: direct, match: { weight: 0.15, how: name }, mask: full, fibo: [{ id: FND/AgentsAndPeople/People/hasFirstName, match: exact }], synonyms: { credit_union: [given name, forename], bank: [given name, forename] }, realized_by: [cdm_party.first_name] }
     middle_name: { label: Middle name, type: text, privacy: direct, mask: full, fibo: [{ id: FND/AgentsAndPeople/People/hasMiddleNameOrInitial, match: exact }], realized_by: [cdm_party_detail.middle_name] }
-    last_name: { label: Last name, type: text, privacy: direct, match: { weight: 0.25, how: name }, mask: full, fibo: [{ id: FND/AgentsAndPeople/People/hasLastName, match: exact }], realized_by: [cdm_party.last_name] }
+    last_name: { label: Last name, type: text, privacy: direct, match: { weight: 0.25, how: name }, mask: full, fibo: [{ id: FND/AgentsAndPeople/People/hasLastName, match: exact }], synonyms: { credit_union: [family name, surname], bank: [family name, surname] }, realized_by: [cdm_party.last_name] }
     preferred_name: { label: Preferred name, type: text, privacy: direct, mask: full, realized_by: [cdm_party_detail.preferred_name] }
     name_prefix: { label: Name prefix, type: text, privacy: none, fibo: [{ id: FND/AgentsAndPeople/People/hasNamePrefix, match: exact }], realized_by: [cdm_party_detail.name_prefix] }
     name_suffix: { label: Name suffix, type: text, privacy: none, fibo: [{ id: FND/AgentsAndPeople/People/hasNameSuffix, match: exact }], realized_by: [cdm_party_detail.name_suffix] }

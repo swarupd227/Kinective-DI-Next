@@ -7,7 +7,7 @@
 // returned by any call, and never reaches an agent: agents refer to it by number.
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'node:crypto';
 import mysql from 'mysql2/promise';
-import { landingTable, SOURCE_TARGETS, SYMITAR_CODES, type Pool } from '@dinext/tenant-db';
+import { landingTable, rawDatabase, SOURCE_TARGETS, SYMITAR_CODES, type Pool } from '@dinext/tenant-db';
 import { CoreError } from './referrals.ts';
 import { compileMapExpr, MapExprError } from './mapExpr.ts';
 import { fromAliases, ontology } from '@dinext/ontology';
@@ -25,7 +25,11 @@ export type Transform =
   | { kind: 'rate1000' }
   | { kind: 'daysPast' }
   | { kind: 'not' }
-  | { kind: 'nonzero' };
+  | { kind: 'nonzero' }
+  | { kind: 'mdy' }
+  | { kind: 'cents' }
+  | { kind: 'bps' }
+  | { kind: 'flag' };
 
 export interface ColumnMap {
   /** DI's column. */
@@ -100,6 +104,14 @@ export function describeTransform(t: Transform) {
       return 'non-member flag reversed';
     case 'nonzero':
       return 'a dealer number means indirect';
+    case 'mdy':
+      return 'MM/DD/YYYY to date';
+    case 'cents':
+      return 'cents to dollars';
+    case 'bps':
+      return 'basis points to percent';
+    case 'flag':
+      return 'Y, T or 1 is yes';
   }
 }
 
@@ -107,6 +119,11 @@ type Raw = string | number | null;
 const date8 = (v: Raw) => {
   const s = v === null ? '' : String(v).trim();
   return /^\d{8}$/.test(s) && s !== '00000000' ? `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}` : null;
+};
+/** A US-style date, MM/DD/YYYY, as an ISO date; anything else is blank. */
+const mdy = (v: Raw) => {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v === null ? '' : String(v).trim());
+  return m ? `${m[3]}-${m[1]}-${m[2]}` : null;
 };
 const dayNumber = (iso: string) => Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10))) / 86_400_000;
 
@@ -138,12 +155,20 @@ export function transform(v: Raw, t: Transform, processDate: string | null): Raw
     case 'rate1000':
       return v === null ? null : Math.round(Number(v)) / 1000;
     case 'daysPast': {
-      const due = date8(v) ?? (/^\d{4}-\d{2}-\d{2}/.test(String(v ?? '')) ? String(v).slice(0, 10) : null);
+      const due = date8(v) ?? mdy(v) ?? (/^\d{4}-\d{2}-\d{2}/.test(String(v ?? '')) ? String(v).slice(0, 10) : null);
       return due && processDate ? Math.max(0, dayNumber(processDate) - dayNumber(due)) : 0;
     }
     case 'not':
       return truthy(v) ? 0 : 1;
     case 'nonzero':
+      return truthy(v) ? 1 : 0;
+    case 'mdy':
+      return mdy(v);
+    case 'cents':
+      return v === null || String(v).trim() === '' ? null : Math.round(Number(v)) / 100;
+    case 'bps':
+      return v === null || String(v).trim() === '' ? null : Number(v) / 100;
+    case 'flag':
       return truthy(v) ? 1 : 0;
   }
 }
@@ -216,6 +241,8 @@ export interface PullResult {
   held?: HeldCodes[];
   /** Raw-zone tables the pull refreshed, with their rows. */
   raw?: { table: string; rows: number }[];
+  /** The connection's raw-zone database, where those tables are. */
+  rawZone?: string;
   /** How many drift items the pull found. */
   drift?: number;
 }
@@ -603,6 +630,9 @@ export class SourceService {
     if (t.mappings && !maps.length) throw new CoreError('INVALID', 'None of the tables to map can be read with this login.');
     const [r] = (await this.pool.query("INSERT INTO src_connection (name, system_id, credential_id, schedule, state, in_use, created_by, created_name, created_on, approval_id) VALUES (?, ?, ?, ?, 'Connected', 0, ?, ?, ?, ?)", [p.name.slice(0, 80), t.login.system.id, p.credentialId, p.schedule.slice(0, 40), owner.userId, owner.name, meta.on, meta.approvalId])) as unknown as [{ insertId: number }];
     for (const m of maps) await this.pool.query('INSERT INTO src_mapping (connection_id, di_table, their_tables, definition) VALUES (?, ?, ?, ?)', [r.insertId, m.map.diTable, m.map.theirTables.join(', '), JSON.stringify(m.map)]);
+    // The raw zone, from the core's own columns, so a core Kinective has never seen needs no seed step.
+    // If it can't be made now (a tenant without the grant), the first pull tries again.
+    await this.withCore(p.credentialId, (core) => this.createRawZone(core, r.insertId)).catch((e: unknown) => console.warn(`[sources] the raw zone for connection ${r.insertId} wasn’t created: ${(e as Error).message}`));
     return r.insertId;
   }
 
@@ -674,7 +704,7 @@ export class SourceService {
       const customValues: { diTable: string; rows: { record: number; field: string; text: string | null; num: number | null }[]; fields: { field: string; label: string; filled: number }[] }[] = [];
       const held: HeldCodes[] = [];
       const raw: { table: string; rows: number }[] = [];
-      const rawTables = new Set((await rows<{ t: string }>(this.pool, "SELECT TABLE_NAME AS t FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME LIKE 'src\\_raw\\_%'")).map((r) => r.t.toLowerCase()));
+      let rawZone: string | null = null;
       await this.withCore(cred!.credential_id, async (core) => {
         processDate = await this.processDate(core, conn.system);
         // The core's columns now, against the ones the mapping was made for.
@@ -746,11 +776,11 @@ export class SourceService {
           total += typed.length;
           const mine = custom.filter((c) => c.di_table === map.diTable);
           if (mine.length) customValues.push(await this.readCustom(core, map, mine, processDate));
-          // The raw zone: each core table this mapping reads, copied as it is.
-          for (const t of map.theirTables) {
-            const target = `src_raw_${t.toLowerCase()}`;
-            if (!rawTables.has(target) || raw.some((x) => x.table === t)) continue;
-            raw.push({ table: t, rows: await this.copyRaw(core, t, target) });
+          // The raw zone: each core table this mapping reads, copied as it is (made now if the connection predates it).
+          const toCopy = map.theirTables.filter((t) => !raw.some((x) => x.table === t));
+          if (toCopy.length) {
+            rawZone = await this.createRawZone(core, connectionId, toCopy).then((z) => z.database, () => null);
+            if (rawZone) for (const t of toCopy) raw.push({ table: t, rows: await this.copyRaw(core, t, rawZone) });
           }
         }
       });
@@ -759,7 +789,7 @@ export class SourceService {
       // Landed totals against the regulatory return.
       for (const t of await this.landedTieOuts(maps)) if (!t.pass) findings.push({ kind: 'tie_out', table: t.table, column: t.column, value: t.code, detail: t });
       await this.recordDrift(connectionId, version?.versionId ?? 0, runId, findings);
-      const detail = { processDate, version: version?.versionNo ?? null, held, raw, drift: findings.length, ...recon, customFields: customValues.flatMap((c) => c.fields.map((f) => ({ ...f, diTable: c.diTable }))) };
+      const detail = { processDate, version: version?.versionNo ?? null, held, raw, rawZone, drift: findings.length, ...recon, customFields: customValues.flatMap((c) => c.fields.map((f) => ({ ...f, diTable: c.diTable }))) };
       await this.pool.query("UPDATE src_sync_run SET finished_at = ?, state = 'Done', rows_pulled = ?, detail = ? WHERE run_id = ?", [nowSql(), total, JSON.stringify(detail), runId]);
       return this.run(runId);
     } catch (e) {
@@ -838,8 +868,13 @@ export class SourceService {
       const sets = [...new Set(version.definition.tables.flatMap((m) => m.columns.map((c) => (c.how.kind === 'code' ? c.how.set : undefined)).filter((x): x is string => !!x)))];
       throw new CoreError('INVALID', `The mapping has no ${codeSetWords(p.set)} list. It has ${sets.map(codeSetWords).join(', ')}.`);
     }
-    const code = codeKey(p.code);
-    if (!/^[A-Za-z0-9_-]{1,12}$/.test(code)) throw new CoreError('INVALID', 'A core code is a number or a short code, such as 14 or VISA.');
+    // A number, a short code (VISA) or a core's description of a few words (Visa Platinum), spelled as the
+    // core holds it: a held code or one the crosswalk has, in any case.
+    const asked = codeKey(p.code);
+    if (!/^[A-Za-z0-9_-]+(?: [A-Za-z0-9_-]+){0,4}$/.test(asked) || asked.length > 40) throw new CoreError('INVALID', 'A core code is a number, a short code such as 14 or VISA, or the core’s description of a few words, such as Visa Platinum.');
+    const { items: drifted } = await this.drift(conn.connectionId);
+    const known = [...new Set([...Object.keys((cols[0]!.col.how as { codes: Record<string, string> }).codes), ...drifted.filter((d) => d.kind === 'new_code').map((d) => d.value)])];
+    const code = known.find((k) => k === asked) ?? known.find((k) => k.toLowerCase() === asked.toLowerCase()) ?? asked;
     const set = (cols[0]!.col.how as { set?: string }).set!;
     const current = (cols[0]!.col.how as { codes: Record<string, string> }).codes;
     // The value in DI's terms: one the crosswalk already uses, or a code of the ontology's list for this set.
@@ -853,8 +888,7 @@ export class SourceService {
       if (hit) value = hit.values.find((v) => used.includes(v)) ?? hit.values[0]!;
     }
     if (!value) throw new CoreError('INVALID', `“${p.value}” isn’t a ${codeSetWords(set)} DI knows. It can be ${used.join(', ')}.`);
-    const { items } = await this.drift(conn.connectionId);
-    const heldItems = items.filter((d) => d.kind === 'new_code' && d.value === code && cols.some(({ col }) => col.their.endsWith(`.${d.column}`)));
+    const heldItems = drifted.filter((d) => d.kind === 'new_code' && d.value === code && cols.some(({ col }) => col.their.endsWith(`.${d.column}`)));
     return { conn, version, set, code, value, before: current[code] ?? null, columns: cols.map(({ map, col }) => `${map.diTable}.${col.di}`), held: heldItems.reduce((s, d) => s + Number((d.detail as { count?: number }).count ?? 0), 0), driftIds: heldItems.map((d) => d.driftId) };
   }
 
@@ -960,10 +994,41 @@ export class SourceService {
     return { ...c, versionNo, replayed: false };
   }
 
+  /**
+   * The connection's raw zone (Core Mapping and Ontology, phase 12): a database beside the tenant's
+   * with an empty table for each core table (or the ones named), under the core's own names, its
+   * columns as the core declares them and every one allowed to be empty. Made from the core's
+   * information_schema, so it works for any core; a table already there is left as it is.
+   */
+  async createRawZone(core: mysql.Connection, connectionId: number, only?: string[]) {
+    const [{ db: theirs }] = (await rows<{ db: string }>(core, 'SELECT DATABASE() AS db')) as [{ db: string }];
+    const [{ db: mine }] = (await rows<{ db: string }>(this.pool, 'SELECT DATABASE() AS db')) as [{ db: string }];
+    const database = rawDatabase(mine, connectionId);
+    const q = (x: string) => `\`${x.replaceAll('`', '')}\``;
+    await this.pool.query(`CREATE DATABASE IF NOT EXISTS ${q(database)} CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`);
+    const want = only ? new Set(only.map((t) => t.toUpperCase())) : null;
+    const cols = (await rows<{ t: string; c: string; ty: string; k: string }>(core, "SELECT TABLE_NAME AS t, COLUMN_NAME AS c, COLUMN_TYPE AS ty, COLUMN_KEY AS k FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND EXTRA NOT LIKE '%INVISIBLE%' ORDER BY TABLE_NAME, ORDINAL_POSITION", [theirs])).filter((x) => !want || want.has(x.t.toUpperCase()));
+    const have = new Set((await rows<{ t: string }>(this.pool, 'SELECT TABLE_NAME AS t FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?', [database])).map((r) => r.t.toUpperCase()));
+    const made: string[] = [];
+    for (const t of [...new Set(cols.map((x) => x.t))].slice(0, 80)) {
+      if (have.has(t.toUpperCase())) continue;
+      const mineCols = cols.filter((x) => x.t === t);
+      // A plain type is kept (INT, DECIMAL(14,2), VARCHAR(40), DATE); anything else (ENUM, a spatial type) is kept as text.
+      const type = (ty: string) => (/^[a-z]+( ?\(\d+(,\d+)?\))?( unsigned)?$/i.test(ty.trim()) ? ty.trim() : 'TEXT');
+      const pk = mineCols.filter((x) => x.k === 'PRI').map((x) => q(x.c));
+      await this.pool.query(`CREATE TABLE IF NOT EXISTS ${q(database)}.${q(t)} (${[...mineCols.map((x) => `${q(x.c)} ${type(x.ty)} NULL`), ...(pk.length ? [`KEY ix_raw_key (${pk.join(', ')})`] : [])].join(', ')})`);
+      made.push(t);
+    }
+    return { database, made };
+  }
+
   /** Replaces a raw-zone table with the core table's rows, as they are, in one transaction. */
-  private async copyRaw(core: mysql.Connection, coreTable: string, target: string) {
+  private async copyRaw(core: mysql.Connection, coreTable: string, database: string) {
+    const [found0] = await rows<{ t: string }>(this.pool, 'SELECT TABLE_NAME AS t FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND UPPER(TABLE_NAME) = ?', [database, coreTable.toUpperCase()]);
+    if (!found0) return 0;
+    const target = `${database}\`.\`${found0.t}`;
     // Only the columns both sides have: a column new in the core is drift to decide on, not a reason to fail the pull.
-    const mine = new Set((await rows<{ c: string }>(this.pool, 'SELECT COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?', [target])).map((r) => r.c.toUpperCase()));
+    const mine = new Set((await rows<{ c: string }>(this.pool, 'SELECT COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?', [database, found0.t])).map((r) => r.c.toUpperCase()));
     const [{ db }] = (await rows<{ db: string }>(core, 'SELECT DATABASE() AS db')) as [{ db: string }];
     const theirs = (await rows<{ c: string }>(core, 'SELECT COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND EXTRA NOT LIKE \'%INVISIBLE%\' AND UPPER(TABLE_NAME) = ? ORDER BY ORDINAL_POSITION', [db, coreTable.toUpperCase()])).map((r) => r.c).filter((c) => mine.has(c.toUpperCase()));
     if (!theirs.length) return 0;
@@ -1069,11 +1134,11 @@ export class SourceService {
   }
 
   private async run(runId: number): Promise<PullResult> {
-    type Detail = { processDate: string | null; tables: TableReconcile[]; differences: Difference[]; version?: number | null; held?: HeldCodes[]; raw?: { table: string; rows: number }[]; drift?: number };
+    type Detail = { processDate: string | null; tables: TableReconcile[]; differences: Difference[]; version?: number | null; held?: HeldCodes[]; raw?: { table: string; rows: number }[]; rawZone?: string | null; drift?: number };
     const [r] = await rows<{ connection_id: number; at: string; rows_pulled: number; detail: string | Detail }>(this.pool, "SELECT connection_id, DATE_FORMAT(COALESCE(finished_at, started_at), '%Y-%m-%d %H:%i') AS at, rows_pulled, detail FROM src_sync_run WHERE run_id = ?", [runId]);
     const conn = (await this.connections()).find((x) => x.connectionId === r!.connection_id)!;
     const detail: Detail = (typeof r!.detail === 'string' ? JSON.parse(r!.detail) : r!.detail) ?? { processDate: null, tables: [], differences: [] };
-    return { runId, connection: conn, at: r!.at, rows: Number(r!.rows_pulled), processDate: detail.processDate ?? null, tables: detail.tables ?? [], differences: detail.differences ?? [], version: detail.version ?? null, held: detail.held ?? [], raw: detail.raw ?? [], drift: detail.drift ?? 0 };
+    return { runId, connection: conn, at: r!.at, rows: Number(r!.rows_pulled), processDate: detail.processDate ?? null, tables: detail.tables ?? [], differences: detail.differences ?? [], version: detail.version ?? null, held: detail.held ?? [], raw: detail.raw ?? [], rawZone: detail.rawZone ?? undefined, drift: detail.drift ?? 0 };
   }
 
   /** The latest finished pull for a connection, if any. */
@@ -1302,7 +1367,7 @@ export class SourceService {
     }
     for (const c of columns) {
       const own = tables.find((t) => t.table === c.table);
-      if (own?.key === c.column || c.distinct < 50 || c.dateShare + (c.isoDateShare ?? 0) >= 0.9 || c.fractionShare > 0.05) continue;
+      if (own?.key === c.column || c.distinct < 50 || c.dateShare + (c.isoDateShare ?? 0) + (c.usDateShare ?? 0) >= 0.9 || c.fractionShare > 0.05) continue;
       const s = coreSource(c.table);
       const filter = `${s.where ? `${s.where} AND ` : ''}${q(c.column)} IS NOT NULL`;
       const sample = (await rows<{ v: string }>(core, `SELECT DISTINCT CAST(${q(c.column)} AS CHAR) AS v FROM (SELECT ${q(c.column)} FROM ${q(s.table)} WHERE ${filter} LIMIT ${PROFILE_SAMPLE}) x LIMIT 5000`)).map((r) => String(r.v));
@@ -1343,6 +1408,7 @@ export class SourceService {
         `COUNT(DISTINCT ${v}) AS d${i}`,
         `SUM(${has} AND ${v} REGEXP '^(19|20)[0-9]{2}(0[1-9]|1[0-2])(0[1-9]|[12][0-9]|3[01])$') AS dt${i}`,
         `SUM(${has} AND ${v} REGEXP '^(19|20)[0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])') AS iso${i}`,
+        `SUM(${has} AND ${v} REGEXP '^(0[1-9]|1[0-2])/(0[1-9]|[12][0-9]|3[01])/(19|20)[0-9]{2}$') AS us${i}`,
         `SUM(${has} AND ${num}) AS nu${i}`,
         `SUM(${has} AND ${v} REGEXP '^-?[0-9]+\\\\.[0-9]*[1-9]') AS fr${i}`,
         `SUM(${has} AND UPPER(TRIM(${v})) IN ('0', '1', 'Y', 'N', 'T', 'F', 'TRUE', 'FALSE')) AS fl${i}`,
@@ -1372,6 +1438,7 @@ export class SourceService {
         max: pick(numeric ? `mx${i}` : `tmx${i}`),
         dateShare: share(`dt${i}`),
         isoDateShare: share(`iso${i}`),
+        usDateShare: share(`us${i}`),
         numericShare: share(`nu${i}`),
         fractionShare: share(`fr${i}`),
         flagShare: share(`fl${i}`),
@@ -1470,14 +1537,14 @@ export class SourceService {
           // Open rows: no close date (and no charge-off date) as the first pass maps them; members also not flagged as non-members.
           const conds = firstPass.filter((p) => p.coreTable === c.coreTable && ['loan.close_date', 'loan.charge_off_date', 'deposit.close_date'].includes(p.property)).map((p) => empty(p.coreColumn));
           if (prop === 'member.id') {
-            for (const p of firstPass.filter((x) => x.coreTable === c.coreTable && x.property === 'member.is_member')) conds.push(`\`${p.coreColumn}\` ${p.transform === 'not' ? "IN ('0', 'N')" : "IN ('1', 'Y')"}`);
+            for (const p of firstPass.filter((x) => x.coreTable === c.coreTable && x.property === 'member.is_member')) conds.push(`UPPER(TRIM(\`${p.coreColumn}\`)) ${p.transform === 'not' ? "IN ('0', 'N', 'F', 'FALSE')" : "IN ('1', 'Y', 'T', 'TRUE')"}`);
             // A membership's close date isn't a DI column, so it's found by name among the table's dates.
             const close = profile.columns.find((x) => x.table === c.coreTable && x.kind === 'date' && /close/i.test(x.column));
             if (close) conds.push(empty(close.column));
           }
           const src = coreSource(c.coreTable);
           if (src.where) conds.push(src.where);
-          const sql = prop === 'member.id' ? `SELECT COUNT(DISTINCT \`${c.coreColumn}\`) AS v FROM \`${src.table}\`` : `SELECT SUM(\`${c.coreColumn}\` + 0) AS v FROM \`${src.table}\``;
+          const sql = prop === 'member.id' ? `SELECT COUNT(DISTINCT \`${c.coreColumn}\`) AS v FROM \`${src.table}\`` : `SELECT SUM(\`${c.coreColumn}\` + 0)${c.transform === 'cents' ? ' / 100' : ''} AS v FROM \`${src.table}\``;
           const [r] = await rows<{ v: number | null }>(core, `${sql}${conds.length ? ` WHERE ${conds.join(' AND ')}` : ''}`).catch(() => []);
           const v = Number(r?.v ?? 0);
           const pass = fig.amount > 0 && Math.abs(v - fig.amount) / fig.amount <= 0.03;

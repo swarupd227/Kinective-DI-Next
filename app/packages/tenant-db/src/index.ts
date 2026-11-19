@@ -18,7 +18,7 @@ export { PIPELINE_DDL, PIPELINE_WRITE_TABLES, LAP_CYCLE_DAYS, LAP_PULL_THROUGH, 
 export { WORKFLOW_DDL, WORKFLOW_WRITE_TABLES, REFERRAL_TYPES, workflowSeed, referralSeed, type ReferralType, type FormField, type RouteRule } from './workflow.ts';
 // Email notifications: the simulated outbox and each person's preferences.
 export { NOTIFY_DDL, NOTIFY_WRITE_TABLES } from './notifications.ts';
-export { CORE_READER, RAW_TABLES, SECOND_CORE_TABLES, SOURCES_DDL, SOURCES_LANDING_TABLES, SOURCES_WRITE_TABLES, SOURCE_TARGETS, SYMITAR_CODES, coreReaderPassword, createRawTables, createSourceTables, landingTable, rawTable, replicaDatabase, secondCoreDatabase, seedCoreReplica, seedSecondCore } from './sources.ts';
+export { CORE_READER, SECOND_CORE_TABLES, SOURCES_DDL, SOURCES_LANDING_TABLES, SOURCES_WRITE_TABLES, SOURCE_TARGETS, SYMITAR_CODES, THIRD_CORE_TABLES, coreReaderPassword, createSourceTables, grantRawZone, landingTable, rawDatabase, replicaDatabase, secondCoreDatabase, seedCoreReplica, seedSecondCore, seedThirdCore, thirdCoreDatabase } from './sources.ts';
 export { AGE_BANDS, generateMemberHistory } from './membership.ts';
 export { BENCHMARK_DDL, BUDGET_WRITE_TABLES, benchmarks, budgetSeed, capitalPlanSeed, ceclSeed, shareSeed } from './benchmarks.ts';
 export { FFIEC_FILING, FFIEC_QUARTERS, generateFfiecCallReport } from './ffiecCallReport.ts';
