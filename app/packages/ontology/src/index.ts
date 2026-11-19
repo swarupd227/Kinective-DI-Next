@@ -3,6 +3,8 @@ export * from './rows.ts';
 export * from './concepts.ts';
 export * from './quality.ts';
 export * from './owl.ts';
+export * from './text.ts';
+export * from './words.ts';
 
 /** DI's hub tables: every column of each must be bound to a property (the build fails otherwise). */
 export const HUB_TABLES = [

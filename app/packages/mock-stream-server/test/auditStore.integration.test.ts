@@ -58,7 +58,7 @@ describe.skipIf(!available)('AI audit store', () => {
     const kept = (await keepRealUsage(admin, SCRATCH))!;
     await build();
     await admin.query('INSERT INTO ai_run VALUES ?', [[run('R-demo', 'demo')]]);
-    expect(await restoreRealUsage(admin, kept)).toEqual({ runs: 1, approvals: 2, feedback: 1 });
+    expect(await restoreRealUsage(admin, kept)).toEqual({ runs: 1, approvals: 2, feedback: 1, words: 0 });
 
     const [runs] = (await admin.query('SELECT run_id, at, tool_calls FROM ai_run ORDER BY run_id')) as unknown as [{ run_id: string; at: Date; tool_calls: unknown }[]];
     expect(runs.map((r) => r.run_id)).toEqual(['R-demo', 'R-real']);

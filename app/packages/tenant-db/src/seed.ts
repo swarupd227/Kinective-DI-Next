@@ -6,6 +6,7 @@ import { ADMIN_DB_URL, DEFAULT_DB_URL, dbSsl } from './db.ts';
 import { AS_OF, BUILD, generate, TENANTS } from './generate.ts';
 import { DATALOG_TYPES, generateModules, MODULE_FIXTURES, MODULES_DDL, MODULES_WRITE_TABLES } from './modules.ts';
 import { generateGovernance, GOVERNANCE_APPEND_TABLES, GOVERNANCE_DDL } from './governance.ts';
+import { unreadDemo, WORDS_APPEND_TABLES, WORDS_DDL } from './words.ts';
 import { GROWTH_DDL, GROWTH_WRITE_TABLES, seedGrowth } from './growth.ts';
 import { TASKS_DDL, TASKS_WRITE_TABLES, seedTasks } from './tasks.ts';
 import { WORKFLOW_DEF_DDL, WORKFLOW_DEF_WRITE_TABLES, seedWorkflowDefs } from './workflowDefs.ts';
@@ -396,6 +397,8 @@ async function main() {
     await insert(admin, 'cmp_attribution', ['campaign_id', 'party_id', 'account_kind', 'account_id', 'product', 'opened', 'amount'], attribution(t, allCampaigns));
     for (const ddl of WORKFLOW_DDL) await admin.query(ddl);
     for (const ddl of GOVERNANCE_DDL) await admin.query(ddl);
+    // An institution's own words, added by approval and kept across reseeds (phase 11).
+    for (const ddl of WORDS_DDL) await admin.query(ddl);
     for (const ddl of GROWTH_DDL) await admin.query(ddl);
     await seedGrowth(admin);
     for (const ddl of TASKS_DDL) await admin.query(ddl);
@@ -412,11 +415,11 @@ async function main() {
     for (const ddl of NOTIFY_DDL) await admin.query(ddl);
     for (const table of NOTIFY_WRITE_TABLES) await admin.query(`GRANT INSERT, UPDATE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     const usage = generateGovernance();
-    await insert(admin, 'ai_run', ['run_id', 'at', 'user_id', 'thread_id', 'agent', 'intent', 'mode', 'question', 'outcome', 'model', 'input_tokens', 'output_tokens', 'cache_read_tokens', 'cost_usd', 'tool_calls', 'source'], usage.runs);
+    await insert(admin, 'ai_run', ['run_id', 'at', 'user_id', 'thread_id', 'agent', 'intent', 'mode', 'question', 'outcome', 'model', 'input_tokens', 'output_tokens', 'cache_read_tokens', 'cost_usd', 'tool_calls', 'source'], [...usage.runs, ...unreadDemo(profile.institutionType)]);
     await insert(admin, 'ai_approvals', ['approval_id', 'operation', 'payload', 'payload_hash', 'risk_tier', 'requested_by', 'run_id', 'thread_id', 'status', 'created_at', 'expires_at', 'decided_by', 'decided_at', 'channel'], usage.approvals);
     if (kept) {
       const back = await restoreRealUsage(admin, kept);
-      console.log(`${profile.schema}: kept ${back.runs} runs, ${back.approvals} approvals and ${back.feedback} ratings from before the reseed`);
+      console.log(`${profile.schema}: kept ${back.runs} runs, ${back.approvals} approvals, ${back.feedback} ratings and ${back.words} word changes from before the reseed`);
     }
     const wf = workflowSeed(profile, t.employees);
     await insert(admin, 'mod_ref_types', ['type_id', 'category', 'label', 'description', 'route_rule', 'fields', 'active'], wf.types);
@@ -431,7 +434,7 @@ async function main() {
     await admin.query(`GRANT SELECT ON \`${profile.schema}\`.* TO 'dinext'@'%'`);
     for (const table of [...WORKFLOW_WRITE_TABLES, ...PIPELINE_WRITE_TABLES, ...GOALS_WRITE_TABLES, ...MODULES_WRITE_TABLES, ...GROWTH_WRITE_TABLES, ...TASKS_WRITE_TABLES, ...WORKFLOW_DEF_WRITE_TABLES, ...WORKSPACE_WRITE_TABLES, ...CALENDAR_SERIES_WRITE_TABLES, ...TABLES_WRITE_TABLES, ...BUDGET_WRITE_TABLES, ...LOAN_GROWTH_WRITE_TABLES, ...SEG_DETAIL_WRITE_TABLES, ...MEMBER360_EXTRA_WRITE_TABLES, ...ONB_DESK_WRITE_TABLES, ...CR_EXTRA_WRITE_TABLES, ...ONB_JOURNEY_WRITE_TABLES]) await admin.query(`GRANT INSERT, UPDATE ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     // Add-only: a run record or a rating can't be changed once written (AI-GRD-090).
-    for (const table of GOVERNANCE_APPEND_TABLES) await admin.query(`GRANT INSERT ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
+    for (const table of [...GOVERNANCE_APPEND_TABLES, ...WORDS_APPEND_TABLES]) await admin.query(`GRANT INSERT ON \`${profile.schema}\`.\`${table}\` TO 'dinext'@'%'`);
     // Direct core connections: DI's store for every tenant, and a Symitar-style replica for the credit union.
     await createSourceTables(admin, profile.schema);
     // API connections: DI's store, and the simulated marketing platform with the campaigns it already ran.

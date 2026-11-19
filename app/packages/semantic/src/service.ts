@@ -1,6 +1,8 @@
 // Semantic Layer service (spec 13.3 service 7, 16.8 Execute and return). Runs compiled parts
 // through the read-only tenant pool with a statement timeout and row cap, merges them, and returns
 // rows plus the model version, build, lineage, plain-English explanation and SQL hash.
+import type { InstitutionWord } from '@dinext/ontology';
+import { WordStore } from './words.ts';
 import { listRecords, recordKindFor, type RecordKind, type RecordsResult } from './records.ts';
 import { createHash } from 'node:crypto';
 import type { Pool } from 'mysql2/promise';
@@ -64,6 +66,10 @@ const STATEMENT_TIMEOUT_MS = 30_000;
 export const AGENT_ROW_CAP = 10_000;
 
 export class SemanticService {
+  /** The institution's own words (phase 11), read from onto_word; see refreshWords. */
+  words: InstitutionWord[] = [];
+  private wordsAt = 0;
+
   private constructor(
     readonly model: SemanticModel,
     private readonly pool: Pool,
@@ -91,7 +97,20 @@ export class SemanticService {
       }
     }
     const [locs] = (await pool.query('SELECT int_id, name FROM cdm_location')) as unknown as [{ int_id: number; name: string }[]];
-    return new SemanticService(model, pool, { buildId: b.build_id, asOf, completedAt: b.completed_at.replace(' ', 'T'), latestMonthEnd }, dimensionValues, Object.fromEntries(locs.map((l) => [l.name, l.int_id])));
+    const svc = new SemanticService(model, pool, { buildId: b.build_id, asOf, completedAt: b.completed_at.replace(' ', 'T'), latestMonthEnd }, dimensionValues, Object.fromEntries(locs.map((l) => [l.name, l.int_id])));
+    await svc.refreshWords(true);
+    return svc;
+  }
+
+  /**
+   * Reads the institution's own words again, at most once a minute unless forced (after an approved
+   * change). A tenant without the table has none.
+   */
+  async refreshWords(force = false) {
+    if (!force && Date.now() - this.wordsAt < 60_000) return this.words;
+    this.words = (await new WordStore(this.pool).current()).map(({ term, concept }) => ({ term, concept }));
+    this.wordsAt = Date.now();
+    return this.words;
   }
 
   private get env(): CompileEnv {

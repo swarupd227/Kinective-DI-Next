@@ -30,7 +30,7 @@ export function planOffline(question: string, catalog: CatalogResult, svc: Seman
 export async function runOffline(question: string, svc: SemanticService, ctx: { purviewBranches?: string[]; canViewSql: boolean }, runId: string, sink: RunSink, type: 'credit_union' | 'bank' = 'credit_union') {
   sink.routing(OFFLINE_AGENT, 'Language model unavailable: deterministic planner');
   // DI's ontology reads the words first, as in the live agent: "CDs" are Certificates, "owners" are members.
-  const { concepts, hints } = readConcepts(question, type, svc.dimensionValues);
+  const { concepts, hints } = readConcepts(question, type, svc.dimensionValues, await svc.refreshWords());
   const catalog = svc.search(question, hints);
   const read = conceptLine(concepts);
   const fresh = freshnessAnswer(question, svc);

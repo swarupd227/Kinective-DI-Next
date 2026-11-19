@@ -22,6 +22,22 @@ const MAX_TOOL_CALLS = 8;
 /** Asks about certificates, as opposed to members at risk of leaving in general. */
 export const RETENTION_REQUEST = /\bcertificates?\b|\bCDs?\b|\bmaturing\b|\brenewals?\b|\boffer rules?\b/;
 
+/** Retention's own words: certificates as money to keep, not as a figure. */
+const RETENTION_WORDS = /\bmatur(?:ing|e|es|ity|ities)\b|\brenew(?:al|als|s|ing)?\b|\boffer rules?\b|\bat risk\b|\bleav(?:e|es|ing)\b|\broll(?:s|ing)? over\b|\bretain|\bretention\b|\bkeep\b|\bwin(?:ning)? back\b|\brate (?:match|offer)/i;
+/** Asking for a figure: "how much", "total", "by branch". */
+const FIGURE = /\bhow (?:much|many)\b|\btotal\b|\bbalances?\b|\bcount\b|\bnumber of\b|\bby (?:branch|region|product|month|quarter|segment)\b|\btrend\b|\bgrowth\b|\baverage\b|\bmix\b/i;
+
+/**
+ * Whether a message is for Deposit Retention. A figure about certificates, named in words or read by
+ * DI's ontology as the certificate code, with none of retention's own words, is a data question for
+ * Analytics Q&A (phase 11): "How much is in CDs?" is a balance, "Which CDs mature this month?" is retention.
+ */
+export function wantsRetention(text: string, concepts: { id: string }[] = []) {
+  if (!RETENTION_REQUEST.test(text)) return false;
+  const certificates = /\bcertificates?\b|\bCDs?\b/i.test(text) || concepts.some((c) => c.id === 'deposit_category.certificate');
+  return !(certificates && FIGURE.test(text) && !RETENTION_WORDS.test(text));
+}
+
 export interface RetentionInput {
   runId: string;
   threadId: string;

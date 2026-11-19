@@ -26,7 +26,7 @@ import { runReportAgent, runReportOffline, type ReportOutcome } from './reportAg
 import { SETTINGS_FOLLOW_UP } from './reportSettings.ts';
 import type { RunSink, StepUpdate } from './sink.ts';
 import { runToday, TODAY_REQUEST, type TodayOutcome } from './today.ts';
-import { RETENTION_AGENT, RETENTION_REQUEST, runRetention, runRetentionOffline, type RetentionInput, type RetentionOutcome } from './retention.ts';
+import { RETENTION_AGENT, runRetention, wantsRetention, runRetentionOffline, type RetentionInput, type RetentionOutcome } from './retention.ts';
 import { runModule, runModuleOffline, type ModuleContext, type ModuleGateway, type ModuleOutcome, type ModuleSpec } from './moduleAgent.ts';
 import { conceptTags, readConcepts, type Concept } from './concepts.ts';
 import { asksAboutStaff, GI_AGENT, GI_REQUEST, incentivesSources, runIncentives, runIncentivesOffline, type IncentivesInput, type IncentivesOutcome } from './incentives.ts';
@@ -158,12 +158,12 @@ const REPORT_FOLLOW_UP = /^(make|add|move|remove|delete|drop|save|export|downloa
 const MEMBER_LOOKUP = /^\/(member|customer)\b|\b(pull up|look up)\b|\bdeclined\b|\bhousehold\b/i;
 const ABOUT_MEMBER = /\b(her|him|his|their|she|he|they|this (member|customer)|attrition|next best|talk(ing)? (to|about|points)|bring up|what should i (offer|say|talk|bring))\b/i;
 
-function keywordClassify(text: string, memberInContext = false): Classification {
+function keywordClassify(text: string, memberInContext = false, concepts: { id: string }[] = []): Classification {
   const t = text.toLowerCase();
   const base = { confidence: 0.7, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' as const };
   if (BUILD_REPORT.test(text)) return { ...base, intent: 'report_request', agent: 'report_builder' };
   if (GI_REQUEST.test(text)) return { ...base, intent: 'module_task', agent: 'goals_incentives' };
-  if (RETENTION_REQUEST.test(text)) return { ...base, intent: 'module_task', agent: 'deposit_retention' };
+  if (wantsRetention(text, concepts)) return { ...base, intent: 'module_task', agent: 'deposit_retention' };
   if (GOAL_REQUEST.test(text)) return { ...base, intent: 'goal_request', agent: 'goal' };
   if (INBOX_REQUEST.test(text)) return { ...base, intent: 'inbox', agent: 'referral_inbox' };
   if (PIPELINE_REQUEST.test(text)) return { ...base, intent: 'pipeline', agent: 'loan_pipeline' };
@@ -301,7 +301,7 @@ export class Concierge {
         outcome = 'not_supported';
         return { kind: 'handled' };
       }
-      concepts = readConcepts(screened.text, turn.tenant.institutionType, svc?.dimensionValues ?? {}).concepts;
+      concepts = readConcepts(screened.text, turn.tenant.institutionType, svc?.dimensionValues ?? {}, (await svc?.refreshWords()) ?? []).concepts;
       // A goal in progress takes the next message: an added instruction, an answer, or a change to the note.
       const goal = this.goalThreads.get(turn.threadId);
       if (goal?.status === 'running') {
@@ -448,7 +448,7 @@ export class Concierge {
       const aboutStaff = turn.apps.includes('gi') && !memberChip && asksAboutStaff(screened.text, turn.tenant.staff ?? []);
       classification = aboutStaff
         ? { intent: 'module_task', agent: 'goals_incentives', confidence: 1, needs_clarification: false, options: [], requires_data: true, risk_hint: 'read' }
-        : this.deps.model && !GI_REQUEST.test(screened.text) && !RETENTION_REQUEST.test(screened.text) && !GOAL_REQUEST.test(screened.text) && !INBOX_REQUEST.test(screened.text) && !PIPELINE_REQUEST.test(screened.text) ? await this.classify(turn, screened.text, usage, concepts) : keywordClassify(screened.text, memberChip);
+        : this.deps.model && !GI_REQUEST.test(screened.text) && !wantsRetention(screened.text, concepts) && !GOAL_REQUEST.test(screened.text) && !INBOX_REQUEST.test(screened.text) && !PIPELINE_REQUEST.test(screened.text) ? await this.classify(turn, screened.text, usage, concepts) : keywordClassify(screened.text, memberChip, concepts);
       // A vague "Build me a report" goes to the Report Builder, which asks what the report should show.
       if (classification.agent === 'report_builder' && BUILD_REPORT.test(screened.text)) classification = { ...classification, needs_clarification: false, confidence: Math.max(classification.confidence, CONFIDENCE_THRESHOLD) };
       if (classification.needs_clarification || classification.confidence < CONFIDENCE_THRESHOLD) {
@@ -1125,9 +1125,9 @@ export class Concierge {
       const r = await this.deps.model!.structured({ role: 'router_fast', system: routerPrompt(turn), user, schema: Classification });
       usage.push(r.usage);
       // Output that does not validate is treated as unclear by the keyword router (spec 23.3.2).
-      return r.value ?? keywordClassify(text, Boolean(chip));
+      return r.value ?? keywordClassify(text, Boolean(chip), concepts);
     } catch {
-      return keywordClassify(text, Boolean(chip));
+      return keywordClassify(text, Boolean(chip), concepts);
     }
   }
 

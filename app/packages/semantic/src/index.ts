@@ -4,3 +4,4 @@ export { compile, resolvePeriods, type CompiledQuery, type Period } from './comp
 export { searchCatalog, MATCH_THRESHOLD, type CatalogHints, type CatalogResult, type CatalogHit } from './catalog.ts';
 export { SemanticService, type SemanticResult, type ResultColumn, type ResultRow, type MetricDefinition, type BuildInfo } from './service.ts';
 export type { RecordKind, RecordsResult } from './records.ts';
+export { WordStore, type UnreadQuestion, type WordChange } from './words.ts';

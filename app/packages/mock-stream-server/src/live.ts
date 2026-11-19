@@ -45,7 +45,7 @@ import { renderExport, renderTableExport, type TableExport } from './exports.ts'
 import { callReportFile, type CallReportFileKind } from './callReportExport.ts';
 import type { AppId } from '@dinext/block-schemas';
 import type { ModuleContext } from '@dinext/agents';
-import { SemanticService } from '@dinext/semantic';
+import { SemanticService, WordStore } from '@dinext/semantic';
 import { notificationsModule } from '@dinext/agents';
 import { peopleModule } from '@dinext/agents';
 import { EmailOutbox, tenantDomain, type EmailKind } from '@dinext/di-core';
@@ -456,7 +456,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
         (r) => r && console.log(`[sources] ${t.key}: connected the demo Symitar replica for ${PERSONAS.admin.session.user.name}`),
         (e: unknown) => console.warn(`[sources] ${t.key}: the demo replica wasn’t connected: ${(e as Error).message}`),
       );
-    const governanceModules = governance ? [lineageModule(new LineageService(pool, semantic.model, undefined, sources ? () => sources.feeds() : undefined, offcore ? () => offcore.feeds() : undefined), (await new OntologyService(pool, institutionType).loaded()) ? new OntologyService(pool, institutionType) : null), governanceModule(governance, () => new Date().getFullYear(), () => tenants.get(tenantId)?.trail)] : [];
+    const governanceModules = governance ? [lineageModule(new LineageService(pool, semantic.model, undefined, sources ? () => sources.feeds() : undefined, offcore ? () => offcore.feeds() : undefined), (await new OntologyService(pool, institutionType).loaded()) ? new OntologyService(pool, institutionType) : null, { store: new WordStore(pool), semantic, type: institutionType }), governanceModule(governance, () => new Date().getFullYear(), () => tenants.get(tenantId)?.trail)] : [];
     // Indirect Lending and Prospecting exist once the tenant was seeded with Slice 21 or later.
     const growth = await Promise.all([pool.query('SELECT name FROM ind_dealer ORDER BY dealer_id'), pool.query('SELECT company FROM prs_prospect ORDER BY prospect_id'), pool.query('SELECT name FROM prs_stage ORDER BY position')]).then(
       ([d, p, s]) => ({ dealers: (d[0] as { name: string }[]).map((x) => x.name), companies: (p[0] as { company: string }[]).map((x) => x.company), stages: (s[0] as { name: string }[]).map((x) => x.name) }),

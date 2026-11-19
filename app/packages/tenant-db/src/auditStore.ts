@@ -38,6 +38,8 @@ export interface KeptUsage {
   runs: Rows;
   approvals: Rows;
   feedback: Rows;
+  /** The institution's own words (phase 11). */
+  words: Rows;
 }
 
 /**
@@ -52,6 +54,7 @@ export async function keepRealUsage(admin: mysql.Connection, schema: string): Pr
       runs: await read(`SELECT * FROM \`${schema}\`.ai_run WHERE source <> 'demo'`),
       approvals: await read(`SELECT * FROM \`${schema}\`.ai_approvals WHERE approval_id NOT LIKE 'apr\\_demo\\_%'`),
       feedback: await read(`SELECT * FROM \`${schema}\`.ai_feedback`),
+      words: await read(`SELECT * FROM \`${schema}\`.onto_word`).catch(() => []),
     };
   } catch {
     return null;
@@ -76,5 +79,6 @@ export async function restoreRealUsage(admin: mysql.Connection, kept: KeptUsage)
   await put('ai_run', kept.runs);
   await put('ai_approvals', kept.approvals.map((a) => (a.status === 'pending' ? { ...a, status: 'expired' } : a)));
   await put('ai_feedback', kept.feedback);
-  return { runs: kept.runs.length, approvals: kept.approvals.length, feedback: kept.feedback.length };
+  await put('onto_word', kept.words);
+  return { runs: kept.runs.length, approvals: kept.approvals.length, feedback: kept.feedback.length, words: kept.words.length };
 }

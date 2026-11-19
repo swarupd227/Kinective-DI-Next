@@ -47,6 +47,11 @@ export const EVAL_ITEMS: EvalItem[] = [
   // Phase 10: FIBO for properties, a personal value's mask, and the ontology as OWL.
   { id: 'GQ-ONT-011', set: 'golden', persona: 'executive', q: 'What does DI mean by birth date?', agent: 'Data Lineage', contains: ['date of birth', 'DI shows only the year'], approval: 'none' },
   { id: 'GQ-ONT-012', set: 'golden', persona: 'executive', q: 'Export the ontology as OWL', agent: 'Data Lineage', contains: ['/v1/exports/di-ontology.ttl', 'SKOS mappings to FIBO'], approval: 'none' },
+  // Phase 11: the institution's own words, and certificate figures routed to Analytics Q&A.
+  { id: 'GQ-ONT-013', set: 'golden', persona: 'executive', q: 'How much is in CDs?', agent: 'Analytics Q&A', contains: ['Certificates'], approval: 'none' },
+  { id: 'GQ-ONT-014', set: 'golden', persona: 'executive', q: 'Which questions couldn’t DI read?', agent: 'Data Lineage', contains: ['didn’t map to a defined measure', '“delinquincy” could mean **delinquency**'], approval: 'none' },
+  { id: 'GQ-ONT-015', set: 'golden', persona: 'executive', q: 'Treat “delinquincy” as delinquency', agent: 'Data Lineage', approval: 'medium' },
+  { id: 'GQ-ONT-016', set: 'golden', persona: 'branch', q: 'Treat “delinquincy” as delinquency', agent: 'Data Lineage', contains: ['isn’t part of your DI access'], approval: 'none' },
   // People and roles from the ontology (phase 7).
   { id: 'GQ-PPL-001', set: 'golden', persona: 'executive', q: 'Which membership applicants are already members?', agent: 'Identity and Roles', contains: ['membership applicants', 'same person', 'birth date 30%'], approval: 'none' },
   { id: 'GQ-PPL-002', set: 'golden', persona: 'executive', q: 'Who is on loan 13?', agent: 'Identity and Roles', contains: ['primary owner'], approval: 'none' },

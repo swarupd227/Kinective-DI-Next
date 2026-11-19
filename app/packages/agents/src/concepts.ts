@@ -1,6 +1,6 @@
 // What DI's ontology reads in a question (Core Mapping and Ontology, phase 5), for every agent: the
 // concepts named, the catalog hints Analytics Q&A searches with, and the tags routing sees.
-import { conceptsIn, ontology, type Concept } from '@dinext/ontology';
+import { conceptsIn, ontology, type Concept, type InstitutionWord } from '@dinext/ontology';
 import type { CatalogHints } from '@dinext/semantic';
 
 export type { Concept } from '@dinext/ontology';
@@ -15,10 +15,11 @@ export interface ReadConcepts {
  * data ("DDA" adds Checking), a class's own word ("owners" adds members), and the metrics that read a
  * property the question names ("past due" favors the delinquency metrics).
  */
-export function readConcepts(question: string, type: 'credit_union' | 'bank', dimensionValues: Record<string, string[]>): ReadConcepts {
+export function readConcepts(question: string, type: 'credit_union' | 'bank', dimensionValues: Record<string, string[]>, words: InstitutionWord[] = []): ReadConcepts {
   let concepts: Concept[];
   try {
-    concepts = conceptsIn(ontology(), question, type, dimensionValues);
+    // The institution's own words count too (phase 11): "owners" at a bank that approved it.
+    concepts = conceptsIn(ontology(), question, type, dimensionValues, words);
   } catch {
     // The ontology helps; it is never a reason a question goes unanswered.
     return { concepts: [], hints: {} };

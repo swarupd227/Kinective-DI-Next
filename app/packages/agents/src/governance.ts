@@ -6,6 +6,7 @@ import { CoreError, type ConceptView, type GovernanceService, type LineageServic
 import { ontology } from '@dinext/ontology';
 import { newBlockId } from './answer.ts';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
+import { WORDS_REQUEST, wordsPlan, wordsTools, type WordsDeps } from './words.ts';
 
 const clean = (t: string) => t.trim().replace(/[.!?]+$/, '').replace(/’/g, "'");
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
@@ -59,7 +60,7 @@ export function ontologyTerm(text: string) {
   return '';
 }
 
-export function lineageModule(lineage: LineageService, onto: OntologyService | null = null): ModuleSpec {
+export function lineageModule(lineage: LineageService, onto: OntologyService | null = null, words: WordsDeps | null = null): ModuleSpec {
   const noAccess = 'Data lineage isn’t part of your DI access.';
   const need = (ctx: ModuleContext) => {
     if (!ctx.modules.includes('lineage')) throw new CoreError('NO_ACCESS', noAccess);
@@ -69,7 +70,7 @@ export function lineageModule(lineage: LineageService, onto: OntologyService | n
     id: 'lineage',
     prefix: 'lin',
     agent: 'Data Lineage',
-    request: new RegExp(`${/^(?![\s\S]*\b(?:diversif\w*|share of revenue|how much|mix|fee income|non-?interest income|noninterest income)\b)[\s\S]*?\bwhere does\b.*\bcome from\b|\blineage\b|\btrace\b.*\bsources?\b|\bwhat breaks if\b|\bwhat depends on\b/.source}|${ONTOLOGY_REQUEST.source}|${CONCEPT_IMPACT.source}`, 'i'),
+    request: new RegExp(`${/^(?![\s\S]*\b(?:diversif\w*|share of revenue|how much|mix|fee income|non-?interest income|noninterest income)\b)[\s\S]*?\bwhere does\b.*\bcome from\b|\blineage\b|\btrace\b.*\bsources?\b|\bwhat breaks if\b|\bwhat depends on\b/.source}|${ONTOLOGY_REQUEST.source}|${CONCEPT_IMPACT.source}|${WORDS_REQUEST.source}`, 'i'),
     noAccess,
     sources: [{ kind: 'table', label: 'Lineage catalog', ref: 'table:meta_lineage' }],
     prompt: ({ tenant, user, title }) => `You are the Data Lineage agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) wants to know where data comes from.
@@ -81,9 +82,12 @@ export function lineageModule(lineage: LineageService, onto: OntologyService | n
 - "What is a share certificate in FIBO?", "What does FIBO call a HELOC?": onto_lookup with the word or phrase; the answer names the FIBO class and how closely it matches.
 - "How much does the data dictionary cover?", "How does DI line up with FIBO?": onto_coverage.
 - "Export the ontology as OWL", "Download the data dictionary for Protégé": onto_export.
+- "Which questions couldn't DI read?": onto_unread. "Treat “owners” as customers", "“brnch” means branch": onto_word_add with the word and its meaning. "Stop treating “owners” as customers": onto_word_remove. "Which words have we added?": onto_words. Adding or removing a word changes how DI reads everyone's questions, so it goes through approval.
 - The graph comes from lineage metadata, and meanings from DI's ontology. Never work out lineage or a meaning from table or column names. Connection secrets are never shown.`,
     plan: (text) => {
       const t = clean(text);
+      const w = words ? wordsPlan(t) : null;
+      if (w) return w;
       if (onto && OWL_EXPORT.test(t)) return { tool: 'onto_export', args: {} };
       if (onto && ONTOLOGY_REQUEST.test(t)) {
         const term = ontologyTerm(t);
@@ -138,6 +142,7 @@ export function lineageModule(lineage: LineageService, onto: OntologyService | n
     ],
   };
   if (onto) spec.tools.push(ontoLookupTool(spec, onto, need, ontoSources), ontoCoverageTool(spec, onto, need, ontoSources), ontoImpactTool(spec, onto, lineage, need, ontoSources), ontoExportTool(need, ontoSources));
+  if (onto && words) spec.tools.push(...wordsTools(spec, words, need, ontoSources));
   return spec;
 }
 

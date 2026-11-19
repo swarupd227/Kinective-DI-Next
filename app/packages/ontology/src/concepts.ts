@@ -6,6 +6,13 @@ import { metricBindings, type Ontology } from './model.ts';
 
 export type InstitutionType = 'credit_union' | 'bank';
 
+/** A word an institution added for one of DI's concepts (phase 11): "owners" for its customers. */
+export interface InstitutionWord {
+  term: string;
+  /** A class (member), a property (loan.days_delinquent) or a code (deposit_category.certificate). */
+  concept: string;
+}
+
 export interface Concept {
   /** The words as the person wrote them. */
   said: string;
@@ -23,7 +30,7 @@ export interface Concept {
   metrics?: string[];
 }
 
-interface Phrase {
+export interface Phrase {
   words: string;
   /** One concept, or several of one kind that the rest of the question must choose between. */
   concepts: Omit<Concept, 'said'>[];
@@ -35,8 +42,10 @@ interface Phrase {
  * and the one a figure can be filtered by. A phrase concepts of one kind share ("balance" of a loan or a
  * share) keeps them all, for the rest of the question to settle.
  */
-function phrases(o: Ontology, type: InstitutionType, dimensions: Record<string, string[]>): Phrase[] {
+function phrases(o: Ontology, type: InstitutionType, dimensions: Record<string, string[]>, words: InstitutionWord[] = []): Phrase[] {
   const out = new Map<string, Omit<Concept, 'said'>[]>();
+  // Every concept a word can name, by id, so an institution's own words can point at one.
+  const byId = new Map<string, Omit<Concept, 'said'>>();
   const add = (words: string, concept: Omit<Concept, 'said'>) => {
     const w = norm(words);
     if (w.length < 2) return;
@@ -58,12 +67,14 @@ function phrases(o: Ontology, type: InstitutionType, dimensions: Record<string, 
       const value = c.values.map((v) => lower.get(v.toLowerCase())).find((v) => v !== undefined);
       if (!value) continue;
       const concept = { kind: 'value' as const, id: `${set}.${code}`, label: c.labels_by_type?.[type] ?? c.label, class: owner.get(set) ?? set, set, value };
+      byId.set(concept.id, concept);
       for (const w of [c.label, c.labels_by_type?.credit_union, c.labels_by_type?.bank, ...(c.synonyms?.credit_union ?? []), ...(c.synonyms?.bank ?? [])]) if (w) add(w, concept);
       for (const [abbr, meaning] of o.codeWords) if (norm(meaning) === norm(c.label) || norm(meaning) === code.replace(/_/g, ' ')) add(abbr, concept);
     }
   }
   for (const c of o.classes.values()) {
     const concept = { kind: 'class' as const, id: c.id, label: c.labels_by_type?.[type] ?? c.label, class: c.id };
+    byId.set(c.id, concept);
     for (const w of scoped(c.synonyms)) add(w, concept);
   }
   const reads = new Map<string, string[]>();
@@ -73,14 +84,21 @@ function phrases(o: Ontology, type: InstitutionType, dimensions: Record<string, 
     const metrics = reads.get(p.id);
     if (!metrics?.length) continue;
     const concept = { kind: 'property' as const, id: p.id, label: p.labels_by_type?.[type] ?? p.label, class: p.class, metrics };
+    byId.set(p.id, concept);
     for (const w of scoped(p.synonyms)) add(w, concept);
+  }
+  // The institution's own words come last and take the phrase: they are its explicit choice (phase 11).
+  for (const w of words) {
+    const concept = byId.get(w.concept);
+    const n = norm(w.term);
+    if (concept && n.length >= 2) out.set(n, [concept]);
   }
   return [...out].map(([words, concepts]) => ({ words, concepts })).sort((a, b) => b.words.length - a.words.length);
 }
 
 const RANK = { value: 3, property: 2, class: 1 } as const;
 
-const norm = (s: string) => s.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9&]+/g, ' ').trim();
+export const norm = (s: string) => s.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9&]+/g, ' ').trim();
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 let boundCache: { o: Ontology; b: ReturnType<typeof metricBindings> } | null = null;
@@ -88,14 +106,19 @@ const bindings = (o: Ontology) => (boundCache?.o === o ? boundCache.b : (boundCa
 
 const phraseCache = new WeakMap<Ontology, Map<string, Phrase[]>>();
 
+/** Every phrase DI reads for an institution type, longest first, with the concepts each names; cached. */
+export function vocabulary(o: Ontology, type: InstitutionType, dimensions: Record<string, string[]>, words: InstitutionWord[] = []): Phrase[] {
+  const key = `${type}|${Object.entries(dimensions).map(([k, v]) => `${k}:${v.join(',')}`).join(';')}|${words.map((w) => `${w.term}=${w.concept}`).join(';')}`;
+  const byKey = phraseCache.get(o) ?? phraseCache.set(o, new Map()).get(o)!;
+  return byKey.get(key) ?? byKey.set(key, phrases(o, type, dimensions, words)).get(key)!;
+}
+
 /**
  * The concepts a question names, in the order they appear. Each span of words counts once, for its
  * longest phrase: "home equity line" is the code, not "line". Plurals count ("share drafts", "CDs").
  */
-export function conceptsIn(o: Ontology, question: string, type: InstitutionType, dimensions: Record<string, string[]>): Concept[] {
-  const key = `${type}|${Object.entries(dimensions).map(([k, v]) => `${k}:${v.join(',')}`).join(';')}`;
-  const byKey = phraseCache.get(o) ?? phraseCache.set(o, new Map()).get(o)!;
-  const list = byKey.get(key) ?? byKey.set(key, phrases(o, type, dimensions)).get(key)!;
+export function conceptsIn(o: Ontology, question: string, type: InstitutionType, dimensions: Record<string, string[]>, words: InstitutionWord[] = []): Concept[] {
+  const list = vocabulary(o, type, dimensions, words);
   const text = ` ${question.replace(/[’']s\b/g, '').replace(/[^A-Za-z0-9&]+/g, ' ')} `;
   // Every place each phrase occurs; then, reading left to right, the longest one starting at each place
   // that doesn't overlap one already taken: "car loan balances" is a car loan, not a loan balance.

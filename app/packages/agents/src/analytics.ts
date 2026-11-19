@@ -208,7 +208,7 @@ export async function runAnalytics(input: AnalyticsInput, deps: { model: ModelCl
   // DI's ontology reads the person's words first (phase 5): "DDA" is Checking, "owners" are members,
   // "past due" is days past due. The catalog searches with both; the person's words still decide.
   const asked = [input.question, ...input.contextLabels].join(' ');
-  const { concepts, hints } = readConcepts(asked, input.tenant.institutionType, svc.dimensionValues);
+  const { concepts, hints } = readConcepts(asked, input.tenant.institutionType, svc.dimensionValues, await svc.refreshWords());
   const catalog = svc.search(asked, hints);
   const top = catalog.metrics[0];
   const read = conceptLine(concepts);
