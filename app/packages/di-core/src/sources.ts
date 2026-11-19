@@ -693,6 +693,7 @@ export class SourceService {
     // The mapping the pull uses: the connection's current version, or the mapping recorded when it was connected.
     const version = await this.currentVersion(conn);
     const maps = version?.definition.tables ?? (await rows<{ definition: string | TableMap }>(this.pool, 'SELECT definition FROM src_mapping WHERE connection_id = ? ORDER BY mapping_id', [connectionId])).map((m) => (typeof m.definition === 'string' ? (JSON.parse(m.definition) as TableMap) : m.definition));
+    if (!maps.length) throw new CoreError('INVALID', `The ${conn.name} has nothing mapped yet, so there’s nothing to pull. Propose a mapping and freeze it first.`);
     const started = nowSql();
     const [ins] = (await this.pool.query("INSERT INTO src_sync_run (connection_id, started_at, state, approval_id) VALUES (?, ?, 'Running', ?)", [connectionId, started, meta.approvalId])) as unknown as [{ insertId: number }];
     const runId = ins.insertId;

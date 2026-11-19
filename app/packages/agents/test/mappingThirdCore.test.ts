@@ -106,6 +106,8 @@ describe.skipIf(!up)('a third core, end to end, with no seed step', () => {
   }, 180_000);
 
   it('freezes the proposals on approval, pulls in dollars and percents, holds what it can’t read, and fills the raw zone', async () => {
+    // Before anything is frozen there's nothing to pull, and DI says so rather than pulling no rows.
+    await expect(sources.pull(connectionId, { approvalId: 'apr_corec_pull0' })).rejects.toThrow(/nothing mapped yet/);
     const done = await approve((await ask('Freeze the proposed mapping for the Core C test connection', 'thr_corec2')).out);
     expect(done).toContain('mapping version 1');
     const p = await sources.pull(connectionId, { approvalId: 'apr_corec_pull1' });

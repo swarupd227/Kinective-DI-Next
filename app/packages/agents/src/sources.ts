@@ -137,6 +137,8 @@ export function sourcesModule(sources: SourceService | null, today: () => string
         input: z.object({ connection: z.string().max(80).optional() }).strict(),
         run: async (a: { connection?: string }, ctx) => {
           const c = await need(ctx).connection(a.connection);
+          // A core Kinective hasn't mapped has nothing to pull until a proposed mapping is frozen (phase 12).
+          if (await unmapped(need(ctx), c)) throw new CoreError('INVALID', `The ${c.name} has nothing mapped yet, so a pull would bring nothing in. Ask me to “Map the ${c.name} connection”: I propose how its columns map to DI’s. Then “Freeze the proposed mapping”, which needs an approval, and the pull lands members, shares and loans.`);
           return {
             change: {
               summary: `Pull from the ${c.name} now`,
@@ -183,6 +185,7 @@ export function sourcesModule(sources: SourceService | null, today: () => string
           const s = need(ctx);
           const c = await s.connection(a.connection);
           const tables = list(c.tables.map((t) => t.label));
+          if (!a.stop && (await unmapped(s, c))) throw new CoreError('INVALID', `The ${c.name} has nothing mapped yet, so builds can’t read anything from it. Ask me to “Map the ${c.name} connection”: I propose how its columns map to DI’s. Then “Freeze the proposed mapping”, which needs an approval, and pull from it before builds use it.`);
           if (a.stop) {
             if (!c.inUse) throw new CoreError('INVALID', `Builds don’t use the ${c.name}; they already read the core extract file.`);
             return {
@@ -312,6 +315,11 @@ function differenceTable(spec: ModuleSpec, ctx: ModuleContext, r: PullResult) {
 /** What a held code may be: the type its rows look like, when they really do, or DI's types the core hasn't used yet. */
 export const heldGuess = (p: { value: string; close?: boolean; options?: string[] } | null | undefined) =>
   !p ? '' : p.close && p.value ? ` looks most like ${p.value}` : p.options?.length ? ` could be ${p.options.length === 1 ? p.options[0] : `${p.options.slice(0, -1).join(', ')} or ${p.options[p.options.length - 1]}`}` : '';
+
+/** A connection with nothing to pull: no standard mapping for its tables and no mapping version yet. */
+async function unmapped(s: SourceService, c: Awaited<ReturnType<SourceService['connection']>>) {
+  return !c.tables.length && !(await s.currentVersion(c));
+}
 
 function pullView(spec: ModuleSpec, ctx: ModuleContext, r: PullResult, lead: string, offerNext = true): ModuleView {
   const parts = r.tables.map((t) => {
