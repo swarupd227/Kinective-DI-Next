@@ -198,7 +198,7 @@ export interface LiveRuntime {
    * or refused it; `onDone` fires when any follow-on work (executing the write) has streamed.
    */
   decide(persona: PersonaId, req: { approvalId: string; threadId: string; runId: string; body: ApprovalDecisionRequest }, emit: (e: Emit) => void, onDone: (result: unknown) => void, speed: number): Promise<ApprovalDecisionResult>;
-  home(persona: PersonaId): Promise<{ kpis: KpiGroupBlock; narrative: string; lookAt: ListBlock; scheduled: ListBlock | null; jump: JumpCard[]; pinned: { templateId: string; name: string; audience: string; pinnedBy: string; tab?: string | null; canvas: ReportCanvasBlock }[]; referrals: { open: number; overdue: number } | null; branch?: BranchHome | null } | null>;
+  home(persona: PersonaId): Promise<{ kpis: KpiGroupBlock; narrative: string; lookAt: ListBlock; scheduled: ListBlock | null; jump: JumpCard[]; pinned: { templateId: string; name: string; audience: string; pinnedBy: string; tab?: string | null; canvas: ReportCanvasBlock }[]; referrals: { open: number; overdue: number; business?: { open: number; overdue: number } } | null; branch?: BranchHome | null } | null>;
   /**
    * A member's 360 for the workspace or the member page (GET /v1/members/{token}). Null when the
    * relationship data is not loaded; NO_ACCESS for a token outside the purview. Logged as an access.
@@ -1070,7 +1070,12 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
           }),
         )
       ).filter((x) => x !== null);
-      const referrals = open && { open: open.length, overdue: open.filter((i) => i.overdue).length };
+      // DI's Business Banking Referrals tile: open business referrals across the queues, within the
+      // person's purview (they're worked in the Business Banking queue, which few roles belong to). Past
+      // the normal 5 days to work a referral counts as overdue.
+      const businessRows = open ? (await new ReferralReportService(tenant.pool).list({ open: true }, { purviewBranches: purview }, 5000).catch(() => ({ items: [] }))).items.filter((r) => r.typeId.startsWith('business')) : [];
+      const due = Date.now() - 5 * 86_400_000;
+      const referrals = open && { open: open.length, overdue: open.filter((i) => i.overdue).length, business: { open: businessRows.length, overdue: businessRows.filter((r) => new Date(r.created).getTime() < due).length } };
       // Frontline staff (no Reports) see their own figures, not a smaller copy of the branch's.
       // Frontline staff have their own work to show; an administrator without Reports has neither
       // goals nor referrals, so their Home keeps the institution figures.

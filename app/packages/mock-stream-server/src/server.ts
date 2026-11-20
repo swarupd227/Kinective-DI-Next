@@ -94,10 +94,19 @@ export interface MockServerOptions {
 const id = (prefix: string, n = 16) => `${prefix}${randomBytes(n).toString('base64').replace(/[^A-Za-z0-9]/g, '').slice(0, n).padEnd(n, '0')}`;
 
 /** "Your work" with the real referral counts in place of the placeholder line. */
-const yourReferrals = (block: ListBlock, r: { open: number; overdue: number }): ListBlock => ({
+const yourReferrals = (block: ListBlock, r: { open: number; overdue: number; business?: { open: number; overdue: number } }): ListBlock => ({
   ...block,
   // Only the real referrals line: the sample tasks and meetings beside it are left out.
-  data: { ...block.data, items: block.data.items.filter((item) => item.id === 'w1').map(({ badge: _badge, ...item }) => ({ ...item, meta: `${r.open} open`, subtitle: r.overdue ? `${r.overdue} overdue` : 'Nothing overdue', ...(r.overdue ? { badge: { label: 'Overdue', tone: 'danger' as const } } : {}) })) },
+  data: {
+    ...block.data,
+    items: [
+      ...block.data.items.filter((item) => item.id === 'w1').map(({ badge: _badge, ...item }) => ({ ...item, meta: `${r.open} open`, subtitle: r.overdue ? `${r.overdue} overdue` : 'Nothing overdue', ...(r.overdue ? { badge: { label: 'Overdue', tone: 'danger' as const } } : {}) })),
+      // DI's Business Banking Referrals tile, where the queue has any: opens the business referrals in DI.
+      ...(r.business?.open
+        ? [{ id: 'w1b', icon: 'referral' as const, title: 'Business banking referrals', meta: `${r.business.open} open`, subtitle: r.business.overdue ? `${r.business.overdue} overdue` : 'Nothing overdue', link: `/c/new?q=${encodeURIComponent('List the open business banking referrals')}`, ...(r.business.overdue ? { badge: { label: 'Overdue', tone: 'danger' as const } } : {}) }]
+        : []),
+    ],
+  },
 });
 
 export function startMockServer({ port, speed = 1, live = null, voice = null, staticDir, accessCode, perBrowser = false, store = null }: MockServerOptions) {

@@ -221,7 +221,9 @@ export function member360(p: MemberProfile, runId?: string, take?: DiTake): Memb
           ],
           scores: scores(p),
           facts: [
-            { label: 'Segment', value: p.segment },
+            { label: 'Segment', value: `${p.segment} (${p.standing.segmentGroup.toLowerCase()})` },
+            { label: 'Opening branch', value: p.standing.openingBranch ? `${p.standing.openingBranch}, ${longDate(p.standing.openedOn!)}` : 'No accounts on file' },
+            { label: 'Standing', value: [p.standing.closed ? 'Closed: no open accounts' : 'Open', p.standing.indirectLoans ? `Indirect: ${p.standing.indirectLoans} ${p.standing.indirectLoans === 1 ? 'loan' : 'loans'} through a dealer` : null].filter(Boolean).join(' · ') },
             { label: `${p.person === 'customer' ? 'Customer' : 'Member'} since`, value: longDate(p.joined) },
             { label: 'Preferred contact', value: p.contact.preferred },
             { label: 'Born', value: `${p.identity.born} (age ${p.identity.age}, ${p.identity.generation})` },

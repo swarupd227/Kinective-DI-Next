@@ -4,6 +4,8 @@
 // institution. Working a stalled application stays with the Loan Pipeline agent.
 import { z } from 'zod';
 import { CoreError, PipelineService, type PipelineView } from '@dinext/di-core';
+import type { Block } from '@dinext/block-schemas';
+import { newBlockId } from './answer.ts';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 export const PIPELINE_FORECAST_REQUEST =
@@ -85,9 +87,31 @@ export function pipelineForecastModule(svc: PipelineService): ModuleSpec {
           const label = { channel: 'Direct or indirect', region: 'Region', branch: 'Branch', officer: 'Loan officer' }[h.level as 'channel' | 'region' | 'branch' | 'officer'];
           const top = h.rows[0]!;
           const nextAsk = h.level === 'channel' ? `Drill into ${top.name} loans by region` : h.level === 'region' ? `Show ${a.channel} loans in ${top.name} by branch` : h.level === 'branch' ? `Show ${a.channel} loans at ${top.name} by loan officer` : null;
+          // From the top, DI's Hierarchy Viewer as a sunburst: direct or indirect, then region, then branch.
+          const tree = h.level === 'channel' ? await svc.hierarchyTree(ctx, a.from) : [];
+          const sunburst: Block[] = tree.length
+            ? [
+                {
+                  id: newBlockId('cht'),
+                  type: 'chart',
+                  version: '2.0.0',
+                  title: 'Loans booked: direct or indirect, region and branch',
+                  subtitle: `Original amount since ${h.from}; click a ring to drill in`,
+                  provenance: { agent: spec.agent, runId: ctx.runId, operations: ['lap.hierarchy'], sources: [{ kind: 'table', label: 'Loans booked, from the core', ref: 'table:cdm_loan' }] },
+                  freshness: { kind: 'nightly_build', asOf: `${h.asOf}T00:00:00Z` },
+                  a11y: { summary: `Sunburst of ${mm(h.total)} in loans booked since ${h.from}: ${h.rows.map((r) => `${r.name} ${r.sharePct}%`).join(', ')}, each split by region and branch.` },
+                  data: {
+                    chartType: 'sunburst',
+                    dataset: { dimensions: [{ name: 'channel', displayName: 'Direct or indirect', type: 'ordinal' }, { name: 'region', displayName: 'Region', type: 'ordinal' }, { name: 'branch', displayName: 'Branch', type: 'ordinal' }, { name: 'dollars', displayName: 'Dollars' }], source: tree.map((r) => [r.channel, r.region, r.branch, r.dollars]) },
+                    series: [{ name: 'Dollars', encode: { x: 'channel', y: 'dollars' } }],
+                    axes: { y: [{ unit: 'currency' }] },
+                  },
+                } as Block,
+              ]
+            : [];
           return {
             text: `${where === 'All loans' ? 'For the institution' : where}: **${mm(h.total)}** booked since ${h.from}. By ${label.toLowerCase()}, **${top.name}** leads with ${mm(top.dollars)} (${top.sharePct}%).`,
-            blocks: [moduleTable(spec, `${where}, by ${label.toLowerCase()}`, ctx.runId, 'lap.hierarchy', [text('name', label), { field: 'loans', headerName: 'Loans', type: 'count' }, { field: 'dollars', headerName: 'Dollars', type: 'currency' }, text('share', 'Share')], h.rows.map((r) => ({ ...r, share: `${r.sharePct}%` })))],
+            blocks: [...sunburst, moduleTable(spec, `${where}, by ${label.toLowerCase()}`, ctx.runId, 'lap.hierarchy', [text('name', label), { field: 'loans', headerName: 'Loans', type: 'count' }, { field: 'dollars', headerName: 'Dollars', type: 'currency' }, text('share', 'Share')], h.rows.map((r) => ({ ...r, share: `${r.sharePct}%` })))],
             sources: [{ kind: 'table', label: 'Loans booked, from the core', ref: 'table:cdm_loan' }],
             ...(nextAsk ? { suggestions: [nextAsk] } : {}),
           };

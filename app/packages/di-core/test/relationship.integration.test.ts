@@ -86,6 +86,13 @@ describe.skipIf(!available)('relationship.profile.get (FE-RM-001, BE-RM-001)', (
     // The birth date shows only its year, as DI's ontology classes it (phase 10); the age is still worked out from the full date.
     expect(p.identity.born).toMatch(/^(19|20)\d\d$/);
     expect(p.identity.age).toBeGreaterThan(17);
+    // DI's header flags: the segment's group, where the first account was opened, dealer loans, and closed.
+    expect(['Consumer', 'Business']).toContain(p.standing.segmentGroup);
+    expect(p.standing.segmentGroup).toBe(/business|commercial/i.test(p.segment) ? 'Business' : 'Consumer');
+    expect(p.standing.openingBranch).toBeTruthy();
+    expect(p.standing.openedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(p.standing.closed).toBe(false);
+    expect(p.standing.indirectLoans).toBeGreaterThanOrEqual(0);
     // Maria Gomez shares the household but banks at Downtown: counted, never named.
     expect(p.household).toEqual([{ name: null, branch: null, last4: null, inPurview: false }]);
     expect((await rm.profile(1, {})).household[0]).toMatchObject({ name: 'Maria Gomez', inPurview: true });

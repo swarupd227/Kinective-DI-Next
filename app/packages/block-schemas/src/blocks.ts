@@ -40,7 +40,8 @@ export const kpiGroupData = z.strictObject({
 
 // ---- chart ------------------------------------------------------------------------------------
 export const chartData = z.strictObject({
-  chartType: z.enum(['line', 'bar', 'stacked_bar', 'area', 'pie', 'donut', 'scatter', 'heatmap', 'combo']),
+  /** sunburst: each row is a path (its ordinal dimensions, outermost ring last) ending in the measure series[0] encodes as y. */
+  chartType: z.enum(['line', 'bar', 'stacked_bar', 'area', 'pie', 'donut', 'scatter', 'heatmap', 'combo', 'sunburst']),
   dataset: z.strictObject({
     dimensions: z
       .array(z.strictObject({ name: z.string(), displayName: z.string().optional(), type: z.enum(['ordinal', 'number', 'time']).optional() }))
@@ -332,7 +333,7 @@ const accountRow = z.strictObject({
 
 /** The Relationship Dashboard's sections, in its order [BK p11] (FE-RM-001). */
 export const member360Section = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('overview'), figures: z.array(figure).max(8), scores: z.array(memberScore).max(3), facts: z.array(labelValue).max(8) }),
+  z.strictObject({ kind: z.literal('overview'), figures: z.array(figure).max(8), scores: z.array(memberScore).max(3), facts: z.array(labelValue).max(12) }),
   z.strictObject({ kind: z.literal('accounts'), deposits: z.array(accountRow).max(40), loans: z.array(accountRow).max(40) }),
   z.strictObject({ kind: z.literal('digital'), services: z.array(z.strictObject({ id: z.string().max(40), label: z.string().max(40), enrolled: z.boolean(), detail: z.string().max(80).optional() })).max(12) }),
   z.strictObject({

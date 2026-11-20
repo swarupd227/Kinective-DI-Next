@@ -87,16 +87,58 @@ export function buildOption(block: ChartBlock, theme: ChartTheme, reducedMotion:
     dataset: { dimensions: dims, source: dataset.source },
     tooltip: {
       renderMode: 'richText',
-      trigger: chartType === 'pie' || chartType === 'donut' || chartType === 'scatter' ? 'item' : 'axis',
+      trigger: chartType === 'pie' || chartType === 'donut' || chartType === 'scatter' || chartType === 'sunburst' ? 'item' : 'axis',
       backgroundColor: theme.surface,
       borderColor: theme.border,
       textStyle: { ...textStyle, color: theme.text },
       valueFormatter: tooltipValue,
-      ...(chartType === 'pie' || chartType === 'donut' || chartType === 'scatter' ? {} : { formatter: axisTooltip }),
+      ...(chartType === 'pie' || chartType === 'donut' || chartType === 'scatter' || chartType === 'sunburst' ? {} : { formatter: axisTooltip }),
     },
     // Legend sits top right so the y-axis title (with its unit, spec 10.4) can sit top left.
     legend: legend === false ? { show: false } : { show: series.length > 1 || chartType === 'pie' || chartType === 'donut', top: 0, right: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8, textStyle },
   };
+
+  if (chartType === 'sunburst') {
+    // Rows are paths, innermost ring first ("Direct", "North", "Westport", 1_250_000): sums roll up to each ring.
+    const s = series[0]!;
+    const at = dims.indexOf(s.encode.y);
+    const levels = dims.map((_, i) => i).filter((i) => i !== at);
+    type Node = { name: string; value: number; children: Node[] };
+    const root: Node = { name: '', value: 0, children: [] };
+    for (const row of dataset.source) {
+      const v = typeof row[at] === 'number' ? (row[at] as number) : Number(row[at] ?? 0);
+      let node = root;
+      node.value += v;
+      for (const i of levels) {
+        const name = row[i] === null || row[i] === undefined || row[i] === '' ? null : String(row[i]);
+        if (name === null) break;
+        let child = node.children.find((c) => c.name === name);
+        if (!child) node.children.push((child = { name, value: 0, children: [] }));
+        child.value += v;
+        node = child;
+      }
+    }
+    const strip = (n: Node): object => (n.children.length ? { name: n.name, value: n.value, children: n.children.sort((a, b) => b.value - a.value).map(strip) } : { name: n.name, value: n.value });
+    return {
+      ...base,
+      tooltip: { ...(base.tooltip as object), trigger: 'item', formatter: undefined },
+      legend: { show: false },
+      color: theme.palette,
+      series: [
+        {
+          type: 'sunburst',
+          radius: ['12%', '92%'],
+          center: ['50%', '52%'],
+          sort: undefined,
+          nodeClick: 'rootToNode',
+          data: root.children.sort((a, b) => b.value - a.value).map(strip),
+          itemStyle: { borderColor: theme.surface, borderWidth: 2 },
+          label: { color: theme.text, fontFamily: theme.fontFamily, fontSize: 11, minAngle: 12, rotate: 'radial' },
+          levels: [{}, { label: { rotate: 0 } }, {}, { label: { show: false } }],
+        },
+      ],
+    };
+  }
 
   if (chartType === 'pie' || chartType === 'donut') {
     const s = series[0]!;

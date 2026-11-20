@@ -7,7 +7,7 @@ import { REFERRAL_EXPIRE_DAYS } from '@dinext/tenant-db';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
 
 export const REFERRAL_REPORT_REQUEST =
-  /\breferral (?:reports?|conversion|performance|history|list|funnel|stats|statistics)\b|\bconversion\b[^.?!]*\breferrals?\b|\breferrals?\b[^.?!]*\b(?:by (?:type|branch|staff|sender|employee|person|product|officer)|convert(?:ed|s)?|conversion|expired?|expiring|stale|history|export)\b|\bwho (?:sends|refers|made|makes) the most referrals\b|\ball (?:the )?referrals\b|\b(?:sold|closed) referrals\b|\ball (?:the )?(?:sold|closed|expired|declined)\b[^.?!]{0,30}\breferrals\b|\breferrals? (?:that|which) (?:sold|didn'?t open|never opened)\b|\bhow many referrals\b/i;
+  /\breferral (?:reports?|conversion|performance|history|list|funnel|stats|statistics)\b|\bconversion\b[^.?!]*\breferrals?\b|\breferrals?\b[^.?!]*\b(?:by (?:type|branch|staff|sender|employee|person|product|officer)|convert(?:ed|s)?|conversion|expired?|expiring|stale|history|export)\b|\bwho (?:sends|refers|made|makes) the most referrals\b|\ball (?:the )?referrals\b|\b(?:sold|closed) referrals\b|\ball (?:the )?(?:sold|closed|expired|declined)\b[^.?!]{0,30}\breferrals\b|\breferrals? (?:that|which) (?:sold|didn'?t open|never opened)\b|\bhow many referrals\b|\b(?:list|show)(?: me)? (?:all |the )?(?:open )?business (?:account |banking )?referrals\b/i;
 
 const NO_ACCESS = 'Referral reports aren’t part of your DI access.';
 const text = (field: string, headerName: string) => ({ field, headerName, type: 'text' as const });
@@ -37,8 +37,8 @@ export function referralReportPlan(t: string) {
   if (stage) f.stage = stage;
   if (/\bsold\b/.test(s)) f.stage = 'Sold';
   if (/\bopen\b/.test(s) && !f.stage) f.open = true;
-  const type = /\b(heloc|auto loan|first mortgage|mortgage|credit card|certificate|business account|retention)\b/.exec(s)?.[1];
-  if (type) f.type = type === 'mortgage' ? 'First mortgage' : type === 'retention' ? 'Retention follow-up' : type.replace(/\b\w/, (c) => c.toUpperCase()).replace('Heloc', 'HELOC');
+  const type = /\b(heloc|auto loan|first mortgage|mortgage|credit card|certificate|business(?: account| banking)?|retention)\b/.exec(s)?.[1];
+  if (type) f.type = type === 'mortgage' ? 'First mortgage' : type === 'retention' ? 'Retention follow-up' : type === 'business account' ? 'Business account' : type.startsWith('business') ? 'Business' : type.replace(/\b\w/, (c) => c.toUpperCase()).replace('Heloc', 'HELOC');
   const branch = /\b(?:at|in|for) ([A-Z][a-z]+)(?: branch)?\b/.exec(t)?.[1];
   if (branch && !['September', 'October', 'November', 'December', 'January'].includes(branch)) f.branch = branch;
   if (/\bthis year\b/.test(s)) f.from = '2026-01-01';

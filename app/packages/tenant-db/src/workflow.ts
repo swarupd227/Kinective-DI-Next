@@ -234,6 +234,14 @@ export function referralHistory(t: GeneratedTenant, asOf: string) {
     const party = members.find((p, i) => i > k * 500 && p[5] !== 1)?.[0] as number;
     add(types[k % types.length]!, party, end - (50 + k * 6) * DAY, ['New Referral', 'Active', 'Follow Up', 'Left Message', 'Not Contacted', 'Loan App Taken', 'Active', 'New Referral'][k]!, null, 90_000 + k, 'Waiting on a call back.');
   }
+  // Business banking referrals still open in the Business Banking queue (DI's Business Banking
+  // Referrals tile on Home): six from the last two weeks, two past the 5 days to work one.
+  if (types.includes('business_account')) {
+    for (let k = 0; k < 6; k++) {
+      const party = members[Math.floor(unit(95_000 + k, 1231) * members.length)]![0] as number;
+      add('business_account', party, end - (1 + k * 2) * DAY, ['New Referral', 'Active', 'Follow Up', 'New Referral', 'Left Message', 'Active'][k]!, null, 95_000 + k, 'The owner asked about business checking and a line of credit.');
+    }
+  }
   return rows;
 }
 

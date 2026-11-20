@@ -320,6 +320,8 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-REF-R01', set: 'golden', persona: 'executive', q: 'Show referral conversion by type', agent: 'Referral Reports', contains: ['In the last 12 months'], approval: 'none' },
   { id: 'GQ-REF-R02', set: 'golden', persona: 'branch', q: 'Who makes the most referrals?', agent: 'Referral Reports', contains: ['referrals**'], approval: 'none' },
   { id: 'GQ-REF-R03', set: 'golden', persona: 'executive', q: 'Which referrals have gone stale?', agent: 'Referral Reports', approval: 'medium' },
+  // Home's Business Banking Referrals tile opens this.
+  { id: 'GQ-REF-R04', set: 'golden', persona: 'executive', q: 'List the open business banking referrals', agent: 'Referral Reports', approval: 'none' },
   { id: 'GQ-LOG-001', set: 'golden', persona: 'msr', q: 'Log a call with Suzanne Jackson: she asked about a HELOC for a kitchen remodel, follow up on Friday', agent: 'Interaction Log', approval: 'low' },
   { id: 'GQ-LOG-002', set: 'golden', persona: 'branch', q: 'I just spoke with Suzanne Jackson in the branch about direct deposit', agent: 'Interaction Log', approval: 'low' },
   { id: 'GQ-GL-001', set: 'golden', persona: 'bank_cfo', q: 'Show the balance sheet', agent: 'General Ledger', contains: ['The balance sheet balances.'], approval: 'none' },

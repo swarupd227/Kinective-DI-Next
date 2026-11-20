@@ -2,12 +2,13 @@
 // Tooltips use richText mode so nothing is written as HTML (spec 11.9 CSP and Trusted Types).
 import { useEffect, useRef } from 'react';
 import * as echarts from 'echarts/core';
-import { BarChart, LineChart, PieChart, ScatterChart } from 'echarts/charts';
+import { BarChart, LineChart, PieChart, ScatterChart, SunburstChart } from 'echarts/charts';
 import { AriaComponent, DatasetComponent, GridComponent, LegendComponent, MarkLineComponent, TooltipComponent } from 'echarts/components';
 import { CanvasRenderer, SVGRenderer } from 'echarts/renderers';
 import type { EChartsCoreOption } from 'echarts/core';
 
 echarts.use([
+  SunburstChart,
   BarChart,
   LineChart,
   PieChart,

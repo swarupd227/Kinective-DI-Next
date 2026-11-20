@@ -4,6 +4,8 @@
 import { describe, expect, it } from 'vitest';
 import { CampaignService, PipelineService, PredictiveService, ProfitabilityService } from '@dinext/di-core';
 import { tenantPool, warehouseAvailable } from '@dinext/tenant-db';
+import { validateBlock, type Block, type ChartBlock } from '@dinext/block-schemas';
+import { buildOption } from '../../blocks/src/chart/buildOption.ts';
 import { PIPELINE_FORECAST_REQUEST, PREDICTIVE_REQUEST, pipelineForecastModule, predictiveModule } from '../src/index.ts';
 
 describe('routing the new questions', () => {
@@ -41,6 +43,20 @@ describe.skipIf(!up)('against the warehouse', () => {
     const direct = await lap.hierarchy({ channel: 'Direct' }, {});
     expect(direct.level).toBe('region');
     expect(direct.total).toBeLessThanOrEqual(top.total);
+    // The whole tree, for the sunburst, adds up to the same total as the top level.
+    const tree = await lap.hierarchyTree({});
+    // Each branch is rounded to the dollar, so the sums agree within a dollar a branch.
+    expect(Math.abs(tree.reduce((s, r) => s + r.dollars, 0) - top.total)).toBeLessThanOrEqual(tree.length);
+    const spec = pipelineForecastModule(lap);
+    const view = (await spec.tools.find((t) => t.name === 'lap_hierarchy')!.run({} as never, { runId: 'R-sunburst', modules: ['lapforecast'], user: { id: 'u', name: 'U', title: 'CEO' } } as never)) as { blocks: Block[] };
+    const sunburst = view.blocks.find((b) => b.type === 'chart');
+    expect(sunburst, 'a sunburst above the drill table').toBeTruthy();
+    expect(validateBlock(sunburst!).ok, JSON.stringify(validateBlock(sunburst!))).toBe(true);
+    const option = buildOption(sunburst as ChartBlock, { palette: ['#111', '#222', '#333'], text: '#000', muted: '#666', grid: '#ddd', surface: '#fff', border: '#ccc', fontFamily: 'sans-serif' } as never, true) as { series: { type: string; data: { name: string; value: number; children?: { children?: unknown[] }[] }[] }[] };
+    expect(option.series[0]!.type).toBe('sunburst');
+    expect(option.series[0]!.data.map((d) => d.name).sort()).toEqual(top.rows.map((r) => r.name).sort());
+    expect(Math.abs(option.series[0]!.data.reduce((s, d) => s + d.value, 0) - top.total)).toBeLessThanOrEqual(tree.length);
+    expect(option.series[0]!.data[0]!.children?.[0]?.children?.length).toBeGreaterThan(0);
     const q = await lap.quality('institution', { leads: true, details: true }, {}, 'product');
     expect(q.total.applications).toBeGreaterThan(0);
     expect(q.total.approvedPct).toBeGreaterThan(0);

@@ -358,6 +358,21 @@ export class PipelineService {
     return { asOf, from: start, level, path, total, rows: list.map((r) => ({ ...r, sharePct: total ? Math.round((r.dollars / total) * 1000) / 10 : 0 })) };
   }
 
+  /** The whole hierarchy at once, for a sunburst: booked dollars by direct or indirect, region and branch. */
+  async hierarchyTree(ctx: CoreContext, from?: string) {
+    const { asOf } = await this.freshness();
+    const start = from ?? `${asOf.slice(0, 4)}-01-01`;
+    const where: string[] = ['l.open_date >= ?', 'l.open_date <= ?'];
+    const params: unknown[] = [start, asOf];
+    if (ctx.purviewBranches) where.push('b.name IN (?)'), params.push(ctx.purviewBranches.length ? ctx.purviewBranches : ['']);
+    const [rows] = await this.pool.query(
+      `SELECT CASE WHEN l.is_indirect = 1 THEN 'Indirect' ELSE 'Direct' END AS channel, b.region, b.name AS branch, SUM(l.original_amount) AS dollars
+         FROM cdm_loan l JOIN cdm_location b ON b.int_id = l.branch_id WHERE ${where.join(' AND ')} GROUP BY channel, b.region, b.name ORDER BY channel, dollars DESC`,
+      params,
+    );
+    return (rows as { channel: string; region: string; branch: string; dollars: unknown }[]).map((r) => ({ channel: r.channel, region: String(r.region), branch: r.branch, dollars: Math.round(Number(r.dollars)) }));
+  }
+
   /** Applications by credit tier over the last 120 days: how many, dollars, and how often each tier is approved. */
   async creditTiers(view: PipelineView, who: PipelineWho, ctx: CoreContext) {
     const { asOf } = await this.freshness();

@@ -35,7 +35,9 @@ export class ReferralReportService {
     const where: string[] = ["c.definition = 'referral'", "c.type_id <> 'loan_follow_up'"];
     const params: unknown[] = [];
     const add = (sql: string, ...v: unknown[]) => (where.push(sql), params.push(...v));
-    if (f.type) add('(t.label = ? OR c.type_id = ?)', f.type, f.type);
+    // "Business" or "business banking" means every business referral type (account and loan), as Home's tile counts them.
+    if (f.type && /^business(?: banking| referrals?)?$/i.test(f.type.trim())) add("t.category = 'Business'");
+    else if (f.type) add('(t.label = ? OR c.type_id = ?)', f.type, f.type);
     if (f.stage) add('c.stage = ?', f.stage);
     if (f.branch) add('b.name = ?', f.branch);
     if (f.sender) add('c.sender_name LIKE ?', `%${f.sender}%`);

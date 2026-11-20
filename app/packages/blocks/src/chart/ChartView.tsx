@@ -65,7 +65,8 @@ export default function ChartView({ block, complete, view, onDrill, onPointAsk, 
   const theme = useChartTheme();
   const { reducedMotion } = usePreferences();
   // Scatter has no categories and a heatmap shows as a table, so neither offers the point menu.
-  const askable = !!onPointAsk && block.data.chartType !== 'scatter' && block.data.chartType !== 'heatmap';
+  // A sunburst's click drills into its own rings instead.
+  const askable = !!onPointAsk && block.data.chartType !== 'scatter' && block.data.chartType !== 'heatmap' && block.data.chartType !== 'sunburst';
   // The chart's own width, so its axis labels fit it: a phone has a third of a desktop's room.
   const box = useRef<HTMLDivElement>(null);
   const width = useWidth(box);

@@ -121,6 +121,8 @@ export interface MemberProfile {
   /** Birth date, age and generation, from the member file. */
   /** Born: the birth date as its privacy class allows (the year), with the age and generation worked out from the full date. */
   identity: { born: string; age: number; generation: string };
+  /** DI's header flags: the segment's group, where the first account was opened, whether any loan came through a dealer, and whether nothing is open any more. */
+  standing: { segmentGroup: 'Consumer' | 'Business'; openingBranch: string | null; openedOn: string | null; indirectLoans: number; closed: boolean };
   /** The latest credit score on file, from the person's most recent loan. */
   creditScore: { score: number; asOf: string; from: string } | null;
   /** Loans charged off, with when and the amount lent. */
@@ -433,6 +435,16 @@ export class RelationshipService {
       [partyId],
     );
     if (!base) throw new CoreError('NOT_FOUND', `That ${this.person} has no relationship data in this build.`);
+    // Where the relationship began: the branch of the earliest account, open or closed.
+    const [opening] = await q<{ branch: string; open_date: unknown }>(
+      `SELECT b.name AS branch, x.open_date FROM (SELECT branch_id, open_date FROM cdm_deposit_account WHERE party_id = ? UNION ALL SELECT branch_id, open_date FROM cdm_loan WHERE party_id = ?) x JOIN cdm_location b ON b.int_id = x.branch_id ORDER BY x.open_date, x.branch_id LIMIT 1`,
+      [partyId, partyId],
+    );
+    const [flags] = await q<{ indirect: number; open_accounts: number }>(
+      `SELECT (SELECT COUNT(*) FROM cdm_loan WHERE party_id = ? AND is_indirect = 1) AS indirect,
+              (SELECT COUNT(*) FROM cdm_deposit_account WHERE party_id = ? AND close_date IS NULL) + (SELECT COUNT(*) FROM cdm_loan WHERE party_id = ? AND close_date IS NULL AND charge_off_date IS NULL) AS open_accounts`,
+      [partyId, partyId, partyId],
+    );
 
     const deps = await q<{ account_id: number; deposit_category: string; open_date: string; maturity_date: string | null; balance: number; rate: number; balance_30d: number; fees_30d: number }>(
       `SELECT a.account_id, a.deposit_category, a.open_date, a.maturity_date, a.balance, a.rate, COALESCE(x.balance_30d, a.balance) AS balance_30d, COALESCE(x.fees_30d, 0) AS fees_30d
@@ -649,6 +661,13 @@ export class RelationshipService {
         const age = a.getUTCFullYear() - b.getUTCFullYear() - (a.getUTCMonth() < b.getUTCMonth() || (a.getUTCMonth() === b.getUTCMonth() && a.getUTCDate() < b.getUTCDate()) ? 1 : 0);
         return { born: showProperty(ontology(), 'member.birth_date', birthDate), age, generation: generationOf(birthDate) };
       })(),
+      standing: {
+        segmentGroup: /business|commercial/i.test(base.segment_code) ? 'Business' : 'Consumer',
+        openingBranch: opening?.branch ?? null,
+        openedOn: opening ? day10(opening.open_date) : null,
+        indirectLoans: Number(flags?.indirect ?? 0),
+        closed: Number(flags?.open_accounts ?? 0) === 0,
+      },
       creditScore: score?.credit_score ? { score: score.credit_score, asOf: day10(score.open_date), from: `the ${label(score.loan_category).toLowerCase()} application` } : null,
       chargeOffs: { count: chargedOff.length, original: chargedOff.reduce((s, x) => s + Number(x.original_amount), 0), items: chargedOff.map((x) => ({ product: label(x.loan_category), chargedOff: day10(x.charge_off_date), original: Number(x.original_amount), amount: x.amount === null ? null : Number(x.amount), recovered: Number(x.recovered ?? 0) })) },
       balanceHistory: months.map((x) => ({ monthEnd: day10(x.month_end), deposits: Number(x.deposit_balance), loans: Number(x.loan_balance) })),
