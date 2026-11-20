@@ -204,6 +204,27 @@
   box-shadow: var(--elevation-1);
 }
 
+/* "+" at the end of the tabs: a tab-sized button that starts "Add a tab to my Home called …". */
+.addTab {
+  justify-content: center;
+  min-width: var(--target-min);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.addTab:focus-visible {
+  outline: 2px solid var(--color-focus-ring, currentColor);
+  outline-offset: 1px;
+}
+
+.pinnedEmpty {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--type-body-sm-size, var(--type-caption-size));
+}
+
 /* A 12-column dashboard grid: charts take half, tables the full width (spec 6.5). */
 .pinned {
   display: grid;

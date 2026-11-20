@@ -55,6 +55,8 @@ interface Run {
   abort?: AbortController;
 }
 
+/** A named Home tab's place in the address, the same rule as the Report Builder's homeTabId: "Branch ops" is tab-branch-ops. */
+const homeTabId = (tab: string) => `tab-${tab.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
 const SETTLED = { approved: 'Approved', denied: 'Approval denied', returned: 'Sent back', expired: 'Approval expired' };
 
 interface PendingApproval {
@@ -546,8 +548,16 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
             home.sections.splice(at + 1, 0, { id: 'branch_targets', title: real.branch.title, blocks: real.branch.ops.data.items.length ? [real.branch.kpis, real.branch.ops] : [real.branch.kpis] });
           }
           home.jump = real.jump;
-          // Pinned holds only reports someone actually put on Home, one tab each.
-          home.tabs = real.pinned.map((p) => ({ id: `pin-${p.templateId}`, label: p.name, blocks: [p.canvas] }));
+          // Pinned holds only reports someone actually put on Home: the named tabs (DI's "+" tab), in the
+          // order they were made, each with its reports; then each report pinned on its own, one tab each.
+          const named = new Map<string, { id: string; label: string; blocks: typeof real.pinned[number]['canvas'][] }>();
+          for (const p of [...real.pinned].reverse()) {
+            if (!p.tab) continue;
+            const key = p.tab.toLowerCase();
+            const t = named.get(key) ?? named.set(key, { id: homeTabId(p.tab), label: p.tab, blocks: [] }).get(key)!;
+            t.blocks.push(p.canvas);
+          }
+          home.tabs = [...named.values(), ...real.pinned.filter((p) => !p.tab).map((p) => ({ id: `pin-${p.templateId}`, label: p.name, blocks: [p.canvas] }))];
         }
         // An administrator runs the platform: Platform health follows "Needs you", and the balance-sheet
         // figures and "Worth a look" are for the people who run the institution.

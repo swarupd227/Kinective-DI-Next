@@ -493,8 +493,12 @@ export const REPORT_TOOLS = [
   { name: 'report_schedule_cancel', operation: 'report.schedule.cancel', description: 'Stop one of the user’s schedules. Returns approval_required.', input: z.object({ schedule_id: z.number().int().positive() }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 1, agents: [] },
   { name: 'report_share', operation: 'report.share', description: 'Send the report on screen once, with a covering note, to delivery groups or "me". Returns approval_required with the note shown in full; nothing is sent until the user approves.', input: z.object({ recipients: z.array(z.string().min(2).max(120)).min(1).max(6), subject: z.string().min(3).max(200), body: z.string().min(10).max(3000) }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: [] },
   { name: 'report_export', operation: 'report.export', description: 'Export the report on screen, as run, to Excel, CSV, PDF (print-ready, for a board or examiner pack) or Word (to edit into a memo). Exports are logged and need approval.', input: z.object({ format: z.enum(['xlsx', 'csv', 'pdf', 'docx']) }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: [] },
-  { name: 'report_pin', operation: 'report.pin', description: 'Put a saved report (the one on screen, or template_id) on Home: for "me", or published to everyone in a user class (Executive, Manager, Analyst, Administrator). Each person sees it with their own data access. Returns approval_required.', input: z.object({ template_id: tpl.optional(), audience: z.string().min(2).max(40).default('me').describe('"me" or a user class name') }).strict(), sideEffect: 'write', riskTier: 'low', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: [] },
+  { name: 'report_pin', operation: 'report.pin', description: 'Put a saved report (the one on screen, or template_id) on Home: for "me", or published to everyone in a user class (Executive, Manager, Analyst, Administrator). With tab, it goes on that named Home tab (made if it isn’t there yet), beside the other reports on it; without, it gets a tab of its own. Each person sees it with their own data access. Returns approval_required.', input: z.object({ template_id: tpl.optional(), audience: z.string().min(2).max(40).default('me').describe('"me" or a user class name'), tab: z.string().trim().min(2).max(40).regex(/^[\p{L}\p{N} &’'()-]+$/u, 'A tab name is a few words: letters, numbers, spaces, & or -').optional().describe('A named Home tab, such as "Branch"') }).strict(), sideEffect: 'write', riskTier: 'low', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: [] },
   { name: 'report_unpin', operation: 'report.unpin', description: 'Take a report (the one on screen, or template_id) off Home: the pins this user made, for themselves or for a class. Returns approval_required.', input: z.object({ template_id: tpl.optional() }).strict(), sideEffect: 'write', riskTier: 'low', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 1, agents: [] },
+  { name: 'report_tab_list', operation: 'report.tab.list', description: 'The named Home tabs the user made, with how many reports each holds and who sees it.', input: z.object({}).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 20, agents: [] },
+  { name: 'report_tab_rename', operation: 'report.tab.rename', description: 'Rename one of the user’s named Home tabs. Returns approval_required.', input: z.object({ tab: z.string().trim().min(2).max(40).regex(/^[\p{L}\p{N} &’'()-]+$/u, 'A tab name is a few words: letters, numbers, spaces, & or -'), new_name: z.string().trim().min(2).max(40).regex(/^[\p{L}\p{N} &’'()-]+$/u, 'A tab name is a few words: letters, numbers, spaces, & or -') }).strict(), sideEffect: 'write', riskTier: 'low', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 1, agents: [] },
+  { name: 'report_tab_remove', operation: 'report.tab.remove', description: 'Take one of the user’s named Home tabs off Home, with every report they put on it (for themselves and for any class). The reports stay in Reports. Returns approval_required.', input: z.object({ tab: z.string().trim().min(2).max(40).regex(/^[\p{L}\p{N} &’'()-]+$/u, 'A tab name is a few words: letters, numbers, spaces, & or -') }).strict(), sideEffect: 'write', riskTier: 'low', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 1, agents: [] },
+  { name: 'report_tab_publish', operation: 'report.tab.publish', description: 'Publish one of the user’s own named Home tabs, with its reports, to everyone in a user class (Executive, Manager, Analyst, Administrator): which classes see the tab. Each person sees it with their own data access. Returns approval_required.', input: z.object({ tab: z.string().trim().min(2).max(40).regex(/^[\p{L}\p{N} &’'()-]+$/u, 'A tab name is a few words: letters, numbers, spaces, & or -'), audience: z.string().min(2).max(40) }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 1, agents: [] },
   { name: 'report_delete', operation: 'report.delete', description: 'Move one of the user’s own saved reports (the one on screen, or template_id) to the Recycle Bin. It leaves every Home and folder and can be restored. Stock reports can’t be deleted. Returns approval_required.', input: z.object({ template_id: tpl.optional() }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 1, agents: [] },
   { name: 'report_bin_list', operation: 'report.bin.list', description: 'The user’s reports in the Recycle Bin, with template_id.', input: z.object({}).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 20, agents: [] },
   { name: 'report_restore', operation: 'report.restore', description: 'Bring a report back from the Recycle Bin to its folder. Use a template_id from report_bin_list. Returns approval_required.', input: z.object({ template_id: tpl }).strict(), sideEffect: 'write', riskTier: 'low', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 1, agents: [] },
@@ -541,7 +545,10 @@ export type CancelPayload = { scheduleId: number; templateName: string };
 export type SharePayload = ShareDraft & { templateName: string };
 export type ExportPayload = { templateId: string; format: 'xlsx' | 'csv' | 'pdf' | 'docx'; controls: Record<string, string> };
 export type PinPayload = PinDraft & { templateName: string };
+/** A named Home tab's place in the address: "Branch ops" is /home/tab-branch-ops. The server keeps the same rule. */
+export const homeTabId = (tab: string) => `tab-${tab.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
 export type UnpinPayload = { templateId: string; templateName: string; pinIds: string[]; audiences: string[] };
+export type TabPayload = { tab: string; pinIds: string[]; reports: string[]; newName?: string; audience?: string; templates?: { templateId: string; templateName: string }[] };
 export type BinPayload = { templateId: string; templateName: string; folder: string };
 
 export type ReportResult =
@@ -554,8 +561,11 @@ export type ReportExecuted =
   | { operation: 'report.schedule.cancel'; schedule: ScheduleRow }
   | { operation: 'report.share'; shareId: string; recipientCount: number; templateName: string }
   | { operation: 'report.export'; exportId: string; format: 'xlsx' | 'csv' | 'pdf' | 'docx'; templateName: string }
-  | { operation: 'report.pin'; pinId: string; templateId: string; templateName: string; audience: string }
+  | { operation: 'report.pin'; pinId: string; templateId: string; templateName: string; audience: string; tab?: string }
   | { operation: 'report.unpin'; removed: number; templateName: string }
+  | { operation: 'report.tab.rename'; tab: string; newName: string }
+  | { operation: 'report.tab.remove'; tab: string; removed: number }
+  | { operation: 'report.tab.publish'; tab: string; audience: string; reports: number }
   | { operation: 'report.delete'; templateId: string; templateName: string }
   | { operation: 'report.restore'; templateId: string; templateName: string; folder: string }
   | { operation: 'report.settings.update'; templateId: string; templateName: string; changes: { label: string; before: string; after: string }[]; turnedOff: boolean; replayed: boolean };
@@ -930,7 +940,8 @@ export class ReportGateway {
           const me = /^(me|myself|my home|mine)$/i.test(asked);
           const cls = me ? 'me' : REPORT_CLASSES.find((k) => asked.toLowerCase().replace(/^the /, '').replace(/ (class|team|users?|group)$/, '').replace(/s$/, '') === k.toLowerCase());
           if (!cls) return { ok: false, code: 'INVALID', content: { error: 'INVALID', message: `I can’t publish it to the ${asked.charAt(0).toUpperCase()}${asked.slice(1).replace(/ class$/i, '')} class: only the ${REPORT_CLASSES.join(', ')} classes include Reports, so only they can open it on Home.` } };
-          const payload: PinPayload = { templateId: t.templateId, templateName: t.name, audience: cls };
+          const tab = a.tab ? String(a.tab).trim() : null;
+          const payload: PinPayload = { templateId: t.templateId, templateName: t.name, audience: cls, ...(tab ? { tab } : {}) };
           const people = me ? 1 : ((await this.deps.classSize?.(cls)) ?? 0);
           const { approval, superseded } = await approve(payload, tierOf(me ? undefined : 'medium'));
           const c = card(
@@ -939,10 +950,10 @@ export class ReportGateway {
               runId: ctx.runId,
               user: ctx.user,
               title: me ? 'Pin to Home' : 'Publish to Home',
-              summary: me ? `Pin “${t.name}” to your Home` : `Publish “${t.name}” to Home for the ${cls} class`,
+              summary: `${me ? `Pin “${t.name}” to your Home` : `Publish “${t.name}” to Home for the ${cls} class`}${tab ? `, on the ${tab} tab` : ''}`,
               fields: [
                 { label: 'Report', value: t.name },
-                { label: 'Where', value: me ? 'Your Home, under Pinned' : `Home for everyone in the ${cls} class${people ? ` (${people} ${people === 1 ? 'person' : 'people'})` : ''}, under Pinned` },
+                { label: 'Where', value: `${me ? 'Your Home' : `Home for everyone in the ${cls} class${people ? ` (${people} ${people === 1 ? 'person' : 'people'})` : ''}`}, under Pinned, ${tab ? `on the ${tab} tab` : 'on a tab of its own'}` },
                 { label: 'Data', value: 'Each person sees the latest period, limited to their own purview' },
                 { label: 'Undo', value: 'Ask DI to take it off Home at any time' },
               ],
@@ -972,6 +983,45 @@ export class ReportGateway {
           const { approval, superseded } = await approve(payload, tierOf(shared ? 'medium' : undefined));
           const c = card({ approval, runId: ctx.runId, user: ctx.user, title: 'Take off Home', summary: `Take “${t.name}” off ${audiences.join(' and ')}`, fields: [{ label: 'Report', value: t.name }, { label: 'From', value: audiences.join(', ') }, { label: 'The report itself', value: `Stays in ${t.folder}` }], records: mine.length, users: shared ? 0 : 1, external: 0 }, def.operation);
           return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId, removes: audiences }, card: c, approval, superseded };
+        }
+        case 'report.tab.list': {
+          const tabs = await store.tabsOf(ctx.user.id);
+          return { ok: true, content: { tabs: tabs.map((x) => ({ tab: x.tab, reports: x.reports, seen_by: x.audiences.map((au) => (au === 'me' ? 'you' : `the ${au} class`)) })) } };
+        }
+        case 'report.tab.rename':
+        case 'report.tab.remove':
+        case 'report.tab.publish': {
+          const asked = String(a.tab).trim();
+          const pins = await store.tabPins(ctx.user.id, asked);
+          if (!pins.length) {
+            const tabs = await store.tabsOf(ctx.user.id);
+            return { ok: false, code: 'NOT_FOUND', content: { error: 'NOT_FOUND', message: tabs.length ? `You have no ${asked} tab on Home. Your tabs: ${tabs.map((x) => x.tab).join(', ')}.` : `You have no named tabs on Home yet. Say “add a ${asked} tab with the branch scorecard” to make one.` } };
+          }
+          const tab = pins[0]!.tab ?? asked;
+          const reports = [...new Set(pins.map((p) => p.templateName))];
+          if (def.operation === 'report.tab.rename') {
+            const newName = String(a.new_name).trim();
+            const payload: TabPayload = { tab, pinIds: pins.map((p) => p.pinId), reports, newName };
+            const { approval, superseded } = await approve(payload, tierOf());
+            const c = card({ approval, runId: ctx.runId, user: ctx.user, title: 'Rename Home tab', summary: `Rename the ${tab} tab to ${newName}`, fields: [{ label: 'Tab', value: `${tab} → ${newName}` }, { label: 'Reports on it', value: reports.join(', ') }], records: pins.length, users: 1, external: 0 }, def.operation);
+            return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId }, card: c, approval, superseded };
+          }
+          if (def.operation === 'report.tab.remove') {
+            const shared = [...new Set(pins.filter((p) => p.audience !== 'me').map((p) => p.audience))];
+            const payload: TabPayload = { tab, pinIds: pins.map((p) => p.pinId), reports };
+            const { approval, superseded } = await approve(payload, tierOf(shared.length ? 'medium' : undefined));
+            const c = card({ approval, runId: ctx.runId, user: ctx.user, title: 'Remove Home tab', summary: `Take the ${tab} tab off Home`, fields: [{ label: 'Tab', value: tab }, { label: 'Reports on it', value: reports.join(', ') }, { label: 'From', value: ['your Home', ...shared.map((s) => `the ${s} class`)].join(', ') }, { label: 'The reports themselves', value: 'Stay in Reports' }], records: pins.length, users: shared.length ? 0 : 1, external: 0 }, def.operation);
+            return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId }, card: c, approval, superseded };
+          }
+          const want = String(a.audience).trim();
+          const cls = REPORT_CLASSES.find((k) => want.toLowerCase().replace(/^the /, '').replace(/ (class|team|users?|group)$/, '').replace(/s$/, '') === k.toLowerCase());
+          if (!cls) return { ok: false, code: 'INVALID', content: { error: 'INVALID', message: `I can’t publish the ${tab} tab to ${want}: only the ${REPORT_CLASSES.join(', ')} classes include Reports, so only they can open it on Home.` } };
+          const templates = [...new Map(pins.map((p) => [p.templateId, { templateId: p.templateId, templateName: p.templateName }])).values()];
+          const people = (await this.deps.classSize?.(cls)) ?? 0;
+          const payload: TabPayload = { tab, pinIds: [], reports, audience: cls, templates };
+          const { approval, superseded } = await approve(payload, tierOf('medium'));
+          const c = card({ approval, runId: ctx.runId, user: ctx.user, title: 'Publish Home tab', summary: `Publish the ${tab} tab to Home for the ${cls} class`, fields: [{ label: 'Tab', value: tab }, { label: 'Reports on it', value: reports.join(', ') }, { label: 'Who sees it', value: `Everyone in the ${cls} class${people ? ` (${people} ${people === 1 ? 'person' : 'people'})` : ''}, under Pinned` }, { label: 'Data', value: 'Each person sees the latest period, limited to their own purview' }], records: templates.length, users: people, external: 0 }, def.operation);
+          return { ok: true, content: { status: 'approval_required', approval_id: approval.approvalId, audience: cls }, card: c, approval, superseded };
         }
         case 'report.delete': {
           const templateId = a.template_id ? String(a.template_id) : current?.templateId;
@@ -1050,7 +1100,19 @@ export class ReportGateway {
       } else if (approval.operation === 'report.pin') {
         const p = approval.payload as PinPayload;
         const r = await this.deps.store.pin(p, meta);
-        out = { operation: 'report.pin', pinId: r.pinId, templateId: p.templateId, templateName: p.templateName, audience: p.audience };
+        out = { operation: 'report.pin', pinId: r.pinId, templateId: p.templateId, templateName: p.templateName, audience: p.audience, ...(p.tab ? { tab: p.tab } : {}) };
+      } else if (approval.operation === 'report.tab.rename') {
+        const p = approval.payload as TabPayload;
+        await this.deps.store.renameTab(p.pinIds, p.newName!);
+        out = { operation: 'report.tab.rename', tab: p.tab, newName: p.newName! };
+      } else if (approval.operation === 'report.tab.remove') {
+        const p = approval.payload as TabPayload;
+        out = { operation: 'report.tab.remove', tab: p.tab, removed: await this.deps.store.unpin(p.pinIds, meta) };
+      } else if (approval.operation === 'report.tab.publish') {
+        const p = approval.payload as TabPayload;
+        // One pin per report, each its own approval key so a retry repeats nothing.
+        for (const [i, t] of (p.templates ?? []).entries()) await this.deps.store.pin({ templateId: t.templateId, audience: p.audience!, tab: p.tab }, { ...meta, approvalId: `${meta.approvalId}.${i}`.slice(0, 40) });
+        out = { operation: 'report.tab.publish', tab: p.tab, audience: p.audience!, reports: p.templates?.length ?? 0 };
       } else if (approval.operation === 'report.unpin') {
         const p = approval.payload as UnpinPayload;
         await this.deps.store.unpin(p.pinIds, meta);

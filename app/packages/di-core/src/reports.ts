@@ -74,6 +74,8 @@ export interface ShareRow {
 export interface PinDraft {
   templateId: string;
   audience: string;
+  /** The named Home tab it goes on ("Branch"); none gives the report a tab of its own. */
+  tab?: string | null;
 }
 
 export interface PinRow extends PinDraft {
@@ -263,14 +265,34 @@ export class ReportStore {
     return (rows as Row[])
       // A report turned off, or limited to other classes, leaves this person's Home with it.
       .filter((r) => openableBy({ status: r.t_status as TemplateRow['status'], ownerUserId: r.t_owner as string, definition: parse<ReportDefinition>(r.t_definition) }, userId, { userClass }))
-      .map((r) => ({ pinId: r.pin_id as string, templateId: r.template_id as string, templateName: r.name as string, audience: r.audience as string, pinnedBy: r.user_name as string, pinnedById: r.user_id as string, createdAt: iso(r.created_at as string) }))
-      .filter((p) => !seen.has(p.templateId) && seen.add(p.templateId));
+      .map((r) => ({ pinId: r.pin_id as string, templateId: r.template_id as string, templateName: r.name as string, audience: r.audience as string, tab: (r.tab_name as string | null) ?? null, pinnedBy: r.user_name as string, pinnedById: r.user_id as string, createdAt: iso(r.created_at as string) }))
+      // The same report can sit on two tabs, but only once on each.
+      .filter((p) => !seen.has(`${p.templateId}|${p.tab ?? ''}`) && seen.add(`${p.templateId}|${p.tab ?? ''}`));
+  }
+
+  /** The live pins on one named Home tab that this person made, for themselves or for a class. */
+  async tabPins(userId: string, tab: string): Promise<PinRow[]> {
+    const [rows] = await this.pool.query('SELECT p.*, t.name FROM esp_report_pins p JOIN esp_report_templates t ON t.template_id = p.template_id WHERE p.user_id = ? AND p.removed_at IS NULL AND LOWER(p.tab_name) = LOWER(?) ORDER BY p.created_at', [userId, tab.trim()]);
+    return (rows as Row[]).map((r) => ({ pinId: r.pin_id as string, templateId: r.template_id as string, templateName: r.name as string, audience: r.audience as string, tab: (r.tab_name as string | null) ?? null, pinnedBy: r.user_name as string, pinnedById: r.user_id as string, createdAt: iso(r.created_at as string) }));
+  }
+
+  /** The named Home tabs this person made, with how many reports each holds and who sees it. */
+  async tabsOf(userId: string): Promise<{ tab: string; reports: number; audiences: string[] }[]> {
+    const [rows] = await this.pool.query("SELECT tab_name AS tab, COUNT(DISTINCT template_id) AS n, GROUP_CONCAT(DISTINCT audience ORDER BY audience) AS a FROM esp_report_pins WHERE user_id = ? AND removed_at IS NULL AND tab_name IS NOT NULL GROUP BY tab_name ORDER BY MIN(created_at)", [userId]);
+    return (rows as Row[]).map((r) => ({ tab: r.tab as string, reports: Number(r.n), audiences: String(r.a ?? '').split(',').filter(Boolean) }));
+  }
+
+  /** report.tab.rename: renames one of this person's named Home tabs, on every pin they made on it. */
+  async renameTab(pinIds: string[], name: string): Promise<number> {
+    if (!pinIds.length) return 0;
+    const [r] = await this.pool.query('UPDATE esp_report_pins SET tab_name = ? WHERE pin_id IN (?) AND removed_at IS NULL', [name.trim(), pinIds]);
+    return (r as { affectedRows: number }).affectedRows;
   }
 
   /** Every live pin of one report, whoever made it: what "take it off Home" would remove. */
   async pinsOf(templateId: string): Promise<PinRow[]> {
     const [rows] = await this.pool.query("SELECT p.*, t.name FROM esp_report_pins p JOIN esp_report_templates t ON t.template_id = p.template_id WHERE p.template_id = ? AND p.removed_at IS NULL", [templateId]);
-    return (rows as Row[]).map((r) => ({ pinId: r.pin_id as string, templateId: r.template_id as string, templateName: r.name as string, audience: r.audience as string, pinnedBy: r.user_name as string, pinnedById: r.user_id as string, createdAt: iso(r.created_at as string) }));
+    return (rows as Row[]).map((r) => ({ pinId: r.pin_id as string, templateId: r.template_id as string, templateName: r.name as string, audience: r.audience as string, tab: (r.tab_name as string | null) ?? null, pinnedBy: r.user_name as string, pinnedById: r.user_id as string, createdAt: iso(r.created_at as string) }));
   }
 
   /** report.pin: puts a report on Home. Idempotent on the approval ID; an existing identical pin is kept. */
@@ -280,11 +302,12 @@ export class ReportStore {
     if (prior) return { pinId: prior.pin_id as string, replayed: true };
     const t = await this.get(p.templateId, meta.userId);
     if (t.status === 'draft') throw new CoreError('INVALID', 'Save the draft before putting it on Home.');
-    const [same] = await this.pool.query("SELECT pin_id FROM esp_report_pins WHERE template_id = ? AND audience = ? AND removed_at IS NULL AND (audience <> 'me' OR user_id = ?)", [p.templateId, p.audience, meta.userId]);
+    const tab = p.tab?.trim() || null;
+    const [same] = await this.pool.query("SELECT pin_id FROM esp_report_pins WHERE template_id = ? AND audience = ? AND removed_at IS NULL AND (audience <> 'me' OR user_id = ?) AND LOWER(COALESCE(tab_name, '')) = LOWER(?)", [p.templateId, p.audience, meta.userId, tab ?? '']);
     const existing = (same as Row[])[0];
     if (existing) return { pinId: existing.pin_id as string, replayed: true };
     const pinId = `pin_${randomBytes(6).toString('hex')}`;
-    await this.pool.query('INSERT INTO esp_report_pins (pin_id, template_id, user_id, user_name, audience, approval_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [pinId, p.templateId, meta.userId, meta.userName, p.audience, meta.approvalId, sqlTime(new Date())]);
+    await this.pool.query('INSERT INTO esp_report_pins (pin_id, template_id, user_id, user_name, audience, tab_name, approval_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [pinId, p.templateId, meta.userId, meta.userName, p.audience, tab, meta.approvalId, sqlTime(new Date())]);
     return { pinId, replayed: false };
   }
 

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { CircleCheck, TriangleAlert } from 'lucide-react';
+import { CircleCheck, Plus, TriangleAlert } from 'lucide-react';
 import { BlockHostProvider, BlockRenderer, formatAsOf } from '@dinext/blocks';
 import { Button, Skeleton } from '@dinext/ui';
 import type { ApprovalCardBlock, Block, HomeSection } from '@dinext/block-schemas';
@@ -74,6 +74,10 @@ export function HomePage() {
   const yourWork = section('your_work');
   const scheduled = section('scheduled_reports');
   const activeTab = h.tabs.find((t) => t.id === tabId) ?? h.tabs[0];
+  // Named tabs (DI's "+" tab and Add Item) are made by asking DI: the buttons start the request in the
+  // conversation bar, and DI asks for approval before anything changes on Home.
+  const canPin = session.apps.includes('reports');
+  const draft = (text: string) => useUi.getState().setPrefill(text);
   const title = (s: HomeSection) => (s.id === 'approvals' ? 'Needs you' : s.id === 'what_changed' ? (s.title.startsWith('Since the ') || s.title === 'Your month' ? s.title : 'Since yesterday') : s.id === 'look_at' ? 'Worth a look' : s.title);
 
   const changed = section('what_changed');
@@ -183,22 +187,35 @@ export function HomePage() {
 
         <JumpBackIn cards={h.jump ?? []} ask={(t) => void ask(t)} />
 
-        {activeTab && (
+        {(activeTab || canPin) && (
           <section className={styles.section} aria-labelledby="h-pinned">
             <div className={styles.pinnedHead}>
               <h2 id="h-pinned" className={styles.sectionTitle}>
                 Pinned
               </h2>
-              <nav aria-label="Home tabs" className={styles.tabs}>
-                {h.tabs.map((t) => (
-                  <Link key={t.id} to={`/home/${t.id}`} className={clsx(styles.tab, t.id === activeTab.id && styles.tabActive)} aria-current={t.id === activeTab.id ? 'page' : undefined}>
-                    {t.label}
-                  </Link>
-                ))}
-              </nav>
+              {(h.tabs.length > 0 || canPin) && (
+                <nav aria-label="Home tabs" className={styles.tabs}>
+                  {h.tabs.map((t) => (
+                    <Link key={t.id} to={`/home/${t.id}`} className={clsx(styles.tab, t.id === activeTab?.id && styles.tabActive)} aria-current={t.id === activeTab?.id ? 'page' : undefined}>
+                      {t.label}
+                    </Link>
+                  ))}
+                  {canPin && (
+                    <button type="button" className={clsx(styles.tab, styles.addTab)} aria-label="Add a tab to Home" title="Add a tab to Home" onClick={() => draft('Add a tab to my Home called ')}>
+                      <Plus size={14} aria-hidden />
+                    </button>
+                  )}
+                </nav>
+              )}
+              {canPin && activeTab?.id.startsWith('tab-') && (
+                <Button size="sm" variant="ghost" icon={<Plus size={14} aria-hidden />} onClick={() => draft(`Add a report to my ${activeTab.label} tab: `)}>
+                  Add item
+                </Button>
+              )}
             </div>
+            {!activeTab && <p className={styles.pinnedEmpty}>Put the reports you check often on Home. Add a tab with “+”, or ask DI: “Add a Branch tab with the branch scorecard”.</p>}
             <div className={styles.pinned}>
-              {activeTab.blocks.map((b) => (
+              {(activeTab?.blocks ?? []).map((b) => (
                 <div key={b.id} className={clsx(styles.pin, (b.type === 'table' || b.type === 'report_canvas') && styles.pinWide)}>
                   <BlockRenderer block={b} />
                 </div>

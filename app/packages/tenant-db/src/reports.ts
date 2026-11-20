@@ -128,13 +128,15 @@ export const REPORT_DDL = [
      created_at DATETIME(3) NOT NULL,
      UNIQUE KEY ux_share_approval (approval_id)
    )`,
-  // A report on Home: for the person who pinned it ('me') or for everyone in a user class.
+  // A report on Home: for the person who pinned it ('me') or for everyone in a user class. Pins that
+  // share a tab name show together on one named Home tab (DI's "+" tab); a pin without one gets a tab of its own.
   `CREATE TABLE esp_report_pins (
      pin_id VARCHAR(40) PRIMARY KEY,
      template_id VARCHAR(60) NOT NULL,
      user_id VARCHAR(40) NOT NULL,
      user_name VARCHAR(80) NOT NULL,
      audience VARCHAR(40) NOT NULL,
+     tab_name VARCHAR(40) NULL,
      approval_id VARCHAR(40) NOT NULL,
      created_at DATETIME(3) NOT NULL,
      removed_at DATETIME(3) NULL,

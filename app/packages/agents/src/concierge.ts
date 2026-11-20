@@ -21,7 +21,7 @@ import { describeRecent, recordShown, resolvePerson, spellOut, type Shown } from
 import { answeredBy, newTrace, traceSink } from './trace.ts';
 import { newReferralThread, REFERRAL_AGENT, runReferral, runReferralOffline, type ReferralOutcome, type ReferralThread } from './referral.ts';
 import { newRelationshipThread, runRelationship, runRelationshipOffline, type RelationshipOutcome, type RelationshipThread } from './relationship.ts';
-import { describeSchedule, newReportThread, REPORT_AGENT, type ReportGateway, type ReportThread } from './report.ts';
+import { describeSchedule, homeTabId, newReportThread, REPORT_AGENT, type ReportGateway, type ReportThread } from './report.ts';
 import { runReportAgent, runReportOffline, type ReportOutcome } from './reportAgent.ts';
 import { SETTINGS_FOLLOW_UP } from './reportSettings.ts';
 import type { RunSink, StepUpdate } from './sink.ts';
@@ -143,7 +143,7 @@ const naming = (text: string, label: string) => (THE_RECORD.test(text) ? text.re
 /** A thread with an open referral keeps routing there for answers like "by email" (spec 23.3). */
 const REFERRAL_FOLLOW_UP = /\b(change|make it|instead|switch|use|add|set|update|remove|send it|cancel|never ?mind|email|phone|call|text|evening|morning|afternoon|note)\b/i;
 
-const REPORT_WORDS = /\breports?\b|\bpack\b|scorecard|\bschedul|\bexport\b|\bdownload\b|executive summary|executive dashboard|\b(pin|publish)\b.*\bhome\b|\boff (my |the )?home\b/;
+const REPORT_WORDS = /\breports?\b|\bpack\b|scorecard|\bschedul|\bexport\b|\bdownload\b|executive summary|executive dashboard|\b(pin|publish)\b.*\bhome\b|\boff (my |the )?home\b|\b(?:add|make|create|rename|remove|delete|publish|share|show)\b[^.?!]*\btab\b|\bhome tabs?\b|\b(?:what|which) tabs\b|\bmy tabs\b/;
 /**
  * Asking to build a report is a report request whatever it contains: "a quarterly ALCO report with
  * certificates maturing" is for the Report Builder, not the certificate agent its words also match.
@@ -991,7 +991,7 @@ export class Concierge {
       later(async () => {
         try {
           const x = await gw.execute(approval, { user: d.user });
-          const ref = x.operation === 'report.template.create' ? `report:${x.template.templateId}` : x.operation === 'report.export' ? `export:${x.exportId}` : x.operation === 'report.share' ? `share:${x.shareId}` : x.operation === 'report.pin' ? `pin:${x.pinId}` : x.operation === 'report.unpin' || x.operation === 'report.delete' || x.operation === 'report.restore' || x.operation === 'report.settings.update' ? `report:${x.operation === 'report.unpin' ? x.templateName : x.templateId}` : `schedule:${x.schedule.scheduleId}`;
+          const ref = x.operation === 'report.template.create' ? `report:${x.template.templateId}` : x.operation === 'report.export' ? `export:${x.exportId}` : x.operation === 'report.share' ? `share:${x.shareId}` : x.operation === 'report.pin' ? `pin:${x.pinId}` : x.operation === 'report.tab.rename' || x.operation === 'report.tab.remove' || x.operation === 'report.tab.publish' ? `tab:${x.tab}` : x.operation === 'report.unpin' || x.operation === 'report.delete' || x.operation === 'report.restore' || x.operation === 'report.settings.update' ? `report:${x.operation === 'report.unpin' ? x.templateName : x.templateId}` : `schedule:${x.schedule.scheduleId}`;
           void this.deps.audit.event({ eventType: 'ai.action.executed', tenant: d.tenant.key, userId: d.user.id, threadId: d.threadId, runId: d.runId, approvalId: d.approvalId, operation: approval.operation, resultRef: ref });
           const source = [{ kind: 'template' as const, label: 'Reports', ref: 'report:library' }];
           // The saved report replaces the draft as the one on screen, so "schedule it" means it.
@@ -1002,7 +1002,12 @@ export class Concierge {
           else if (x.operation === 'report.share') {
             closeGoal({ state: 'done', resultSummary: `Sent to ${x.recipientCount} ${x.recipientCount === 1 ? 'person' : 'people'}` });
             await sink.text(`Sent the **${x.templateName}** and your note to ${x.recipientCount} ${x.recipientCount === 1 ? 'person' : 'people'}. Each of them opens it in DI under their own access. Delivery is simulated in this demo.`, GOAL_AGENT, source);
-          } else if (x.operation === 'report.pin') await sink.text(x.audience === 'me' ? `Pinned **${x.templateName}** to your [Home](/home/pin-${x.templateId}).` : `Published **${x.templateName}** to Home for the ${x.audience} class. Each of them sees it under Pinned, with their own data access.`, REPORT_AGENT, source);
+          } else if (x.operation === 'report.pin') {
+            const where = x.tab ? `/home/${homeTabId(x.tab)}` : `/home/pin-${x.templateId}`;
+            await sink.text(x.audience === 'me' ? `Pinned **${x.templateName}** to your [Home](${where})${x.tab ? `, on the ${x.tab} tab` : ''}.` : `Published **${x.templateName}** to Home for the ${x.audience} class${x.tab ? `, on the ${x.tab} tab` : ''}. Each of them sees it under Pinned, with their own data access.`, REPORT_AGENT, source);
+          } else if (x.operation === 'report.tab.rename') await sink.text(`Renamed the ${x.tab} tab to [**${x.newName}**](/home/${homeTabId(x.newName)}).`, REPORT_AGENT, source);
+          else if (x.operation === 'report.tab.remove') await sink.text(`Took the **${x.tab}** tab off Home (${x.removed} ${x.removed === 1 ? 'pin' : 'pins'}). The reports themselves are still in Reports.`, REPORT_AGENT, source);
+          else if (x.operation === 'report.tab.publish') await sink.text(`Published the **${x.tab}** tab, with its ${x.reports} ${x.reports === 1 ? 'report' : 'reports'}, to Home for the ${x.audience} class. Each of them sees it under Pinned, with their own data access.`, REPORT_AGENT, source);
           else if (x.operation === 'report.unpin') await sink.text(`Took **${x.templateName}** off Home. The report itself is still in Reports.`, REPORT_AGENT, source);
           else if (x.operation === 'report.delete') {
             if (rs?.current?.templateId === x.templateId) rs.current = undefined;

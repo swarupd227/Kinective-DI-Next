@@ -62,6 +62,7 @@ How you work:
 - To change the draft on screen ("make the deposit chart a donut", "move it to the top", "add a branch table"): report_draft_update with widget ids from the last result. The user accepts or reverts each change on the canvas.
 - "Save it", "schedule it", "stop the weekly email", "export to Excel", "export it as a PDF": report_save, report_schedule_create, report_schedule_cancel or report_export, then outcome "approval". report_export exports the report on screen: if the user names a different report, report_run it first. Nothing happens until the user approves. Schedules always run after the nightly build. Speak only about the card this turn prepares: never tell the user to approve an earlier request or say it is still separate, because you can't see whether it was already approved (its own card shows that).
 - "Which reports are scheduled for me?": report_schedule_list, outcome "list". "What reports are there?": report_template_list, outcome "list".
+- Named Home tabs (DI's "+" tab): "Add a Branch tab with the deposit portfolio report" or "put the branch scorecard on my Branch tab": report_pin with tab "Branch" (the tab is made with its first report). "Rename my Branch tab to Branches": report_tab_rename. "Remove the Branch tab": report_tab_remove. "Show my Branch tab to managers": report_tab_publish with the class. "What tabs do I have?": report_tab_list, outcome "answer". A tab with no report named: outcome "clarify", asking which report goes on it.
 - "Pin this to my Home", "publish the branch scorecard to Home for managers": report_pin with audience "me" or the user class (Executive, Manager, Analyst, Administrator), outcome "approval". "Take it off Home": report_unpin. "Delete the Westport review report": report_delete (it goes to the Recycle Bin). "What's in the Recycle Bin?": report_bin_list, outcome "list". "Restore …": report_bin_list, then report_restore with its template_id.
 - Settings (today's DI Build Reports form): "What are the settings for the branch scorecard?": report_settings_show, outcome "answer". "Make it quarterly", "use the previous period by default", "turn off the branch control", "only Managers and Executives can run it", "disable this report", "rename it to …", "show the queries": report_settings_update with only what changes. On a draft it changes at once (outcome "report"); on a saved report it returns approval_required (outcome "approval"). Stock reports can't be changed: offer report_copy, which makes a private draft copy.
 - Finish every turn with finish_turn, exactly once.
@@ -186,7 +187,7 @@ export async function runReportAgent(input: ReportInput, deps: { model: ModelCli
     ...visible.map((t) => ({ name: t.name, description: t.description, input_schema: jsonSchema(t.input), eager_input_streaming: true })),
     { name: 'finish_turn', description: 'Finish the turn: what to show and a short message.', input_schema: jsonSchema(ReportFinish), eager_input_streaming: true },
   ];
-  const LABELS: Record<string, string> = { report_template_list: 'Finding the report', report_run: 'Running the report', semantic_search: 'Matching terms to defined metrics', report_draft_create: 'Building the draft with live data', report_draft_update: 'Changing the draft', report_save: 'Preparing the save for your approval', report_schedule_create: 'Preparing the schedule for your approval', report_schedule_list: 'Reading your schedules', report_schedule_cancel: 'Preparing the change for your approval', report_export: 'Preparing the export for your approval', report_pin: 'Preparing Home for your approval', report_unpin: 'Preparing the change for your approval', report_delete: 'Preparing the delete for your approval', report_bin_list: 'Reading the Recycle Bin', report_restore: 'Preparing the restore for your approval', report_settings_show: 'Reading the report settings', report_settings_update: 'Changing the settings', report_copy: 'Making a draft copy' };
+  const LABELS: Record<string, string> = { report_template_list: 'Finding the report', report_run: 'Running the report', semantic_search: 'Matching terms to defined metrics', report_draft_create: 'Building the draft with live data', report_draft_update: 'Changing the draft', report_save: 'Preparing the save for your approval', report_schedule_create: 'Preparing the schedule for your approval', report_schedule_list: 'Reading your schedules', report_schedule_cancel: 'Preparing the change for your approval', report_export: 'Preparing the export for your approval', report_pin: 'Preparing Home for your approval', report_unpin: 'Preparing the change for your approval', report_tab_list: 'Reading your Home tabs', report_tab_rename: 'Preparing the change for your approval', report_tab_remove: 'Preparing the change for your approval', report_tab_publish: 'Preparing Home for your approval', report_delete: 'Preparing the delete for your approval', report_bin_list: 'Reading the Recycle Bin', report_restore: 'Preparing the restore for your approval', report_settings_show: 'Reading the report settings', report_settings_update: 'Changing the settings', report_copy: 'Making a draft copy' };
   sink.routing(REPORT_AGENT, 'Report request');
   const plan = sink.plan('Working on the report', REPORT_AGENT, [{ id: 'read', label: 'Reading your request', agent: REPORT_AGENT, state: 'running' }]);
   const deadline = new AbortController();
@@ -269,12 +270,56 @@ export type ReportIntent =
   | { intent: 'edit'; edit: 'add'; item: string }
   | { intent: 'list' }
   | { intent: 'pin'; audience: string }
+  | { intent: 'tab_pin'; tab: string | null; report: string | null; audience: string }
+  | { intent: 'tab_list' }
+  | { intent: 'tab_rename'; tab: string; newName: string }
+  | { intent: 'tab_remove'; tab: string }
+  | { intent: 'tab_publish'; tab: string; audience: string }
   | { intent: 'unpin' }
   | { intent: 'delete' }
   | { intent: 'bin' }
   | { intent: 'restore' }
   | SettingsAsk
   | { intent: 'run'; words: string };
+
+const cap = (s: string) => s.trim().replace(/^["“']|["”']$/g, '').replace(/^./, (x) => x.toUpperCase());
+const AUDIENCE = /\s+for (?:the |all |every )?(?:of )?(executives?|managers?|analysts?|administrators?)(?: class| team| users?| group)?$/i;
+
+/**
+ * Named Home tabs (DI's "+" tab and Add Item), from plain words. Exported for tests. A tab is made with
+ * its first report: "Add a Branch tab with the deposit portfolio report", "Add a tab called Branch",
+ * "Put the branch scorecard on my Branch tab", "Add a report to my Branch tab: deposit portfolio".
+ */
+export function parseTabRequest(text: string): ReportIntent | null {
+  const t = text.trim().replace(/[.!?]+$/, '');
+  if (!/\btabs?\b/i.test(t)) return null;
+  if (/^(?:what|which) (?:home )?tabs\b|\b(?:list|show) (?:me )?my (?:home )?tabs\b|^my (?:home )?tabs$/i.test(t)) return { intent: 'tab_list' };
+  const rename = /\brename (?:my |the )?(.+?) tab to (?:the )?(.+?)(?: tab)?$/i.exec(t);
+  if (rename) return { intent: 'tab_rename', tab: cap(rename[1]!), newName: cap(rename[2]!) };
+  const publish = /\b(?:publish|share|show) (?:my |the )?(.+?) tab (?:to|with|for) (?:the |all |every )?(?:of )?(.+?)(?: class| team| users?| group)?$/i.exec(t);
+  if (publish && !/\bhome\b/i.test(publish[1]!)) return { intent: 'tab_publish', tab: cap(publish[1]!), audience: publish[2]! };
+  const remove = /^(?:remove|delete|drop|close|take (?:off|away)) (?:my |the )?(.+?) tab(?: (?:off|from) (?:my |the )?home)?$|^take (?:my |the )?(.+?) tab (?:off|from) (?:my |the )?home$/i.exec(t);
+  if (remove) return { intent: 'tab_remove', tab: cap(remove[1] ?? remove[2]!) };
+  const forWho = AUDIENCE.exec(t);
+  const audience = forWho ? forWho[1]!.toLowerCase() : 'me';
+  const u = forWho ? t.slice(0, forWho.index) : t;
+  // "Add a report to my Branch tab: deposit portfolio" (Add Item on a tab).
+  const item = /^add (?:a |another )?reports? to (?:my |the )?(.+?) tab(?:\s*[:,-]\s*(?:the )?(.+))?$/i.exec(u);
+  if (item) return { intent: 'tab_pin', tab: cap(item[1]!), report: item[2]?.trim() || null, audience };
+  // "Add a tab called Branch (to my Home) (with the deposit report)" ("+" on Home).
+  const called = /^add (?:a |an )?(?:new )?(?:home )?tab(?: to (?:my |the )?home)? (?:called|named) ["“']?(.+?)["”']?(?: to (?:my |the )?home)?(?: (?:with|showing|holding) (?:the )?(.+))?$/i.exec(u);
+  if (called) return { intent: 'tab_pin', tab: cap(called[1]!), report: called[2]?.trim() || null, audience };
+  // "Add a tab to my Home" with no name yet.
+  if (/^add (?:a |an )?(?:new )?(?:home )?tab(?: to (?:my |the )?home)?$/i.test(u)) return { intent: 'tab_pin', tab: null, report: null, audience };
+  // "Add a Branch tab (to my Home) with the deposit portfolio report".
+  const named = /^(?:add|make|create) (?:a |an )?(?:new )?(.+?) tab(?: (?:to|on) (?:my |the )?home)?(?: (?:with|showing|holding) (?:the )?(.+))?$/i.exec(u);
+  if (named && !/^(?:home|new)$/i.test(named[1]!)) return { intent: 'tab_pin', tab: cap(named[1]!), report: named[2]?.trim() || null, audience };
+  // "Put the branch scorecard on my Branch tab".
+  const onto = /^(?:put|add|pin|move|place) (?:the |my )?(.+?) (?:on|to|onto|into) (?:my |the )?(.+?) tab(?: on (?:my |the )?home)?$/i.exec(u);
+  if (onto && !/^(?:it|this)$/i.test(onto[1]!)) return { intent: 'tab_pin', tab: cap(onto[2]!), report: onto[1]!.trim(), audience };
+  if (onto) return { intent: 'tab_pin', tab: cap(onto[2]!), report: 'this', audience };
+  return null;
+}
 
 /** Reads simple report requests from plain words. Exported for tests. */
 export function parseReportRequest(text: string, hasDraft: boolean): ReportIntent {
@@ -283,6 +328,9 @@ export function parseReportRequest(text: string, hasDraft: boolean): ReportInten
   if (/which reports.*schedul|my schedules|scheduled for me|what.*scheduled/.test(lower)) return { intent: 'schedule_list' };
   // Settings ("make it quarterly", "turn off the branch control", "disable this report") come before
   // draft edits, which would read "make" and "remove" as changes to a section.
+  // Named Home tabs come first: "rename my Branch tab to …" renames a tab, not the report on screen.
+  const tabAsk = parseTabRequest(t);
+  if (tabAsk) return tabAsk;
   const settings = parseSettingsRequest(t);
   if (settings) return settings;
   // Home and the Recycle Bin come before "stop", "remove" and "move", which mean other things here.
@@ -438,6 +486,37 @@ export async function runReportOffline(input: ReportInput, deps: { gateway: Repo
     case 'list': {
       await call('report_template_list', {});
       return show('list', '', shown, c);
+    }
+    case 'tab_list': {
+      const r = await call('report_tab_list', {});
+      const tabs = r.ok ? ((r.content as { tabs: { tab: string; reports: number; seen_by: string[] }[] }).tabs ?? []) : [];
+      return show('answer', tabs.length ? `Your Home tabs: ${tabs.map((x) => `**${x.tab}** (${x.reports} ${x.reports === 1 ? 'report' : 'reports'}, seen by ${x.seen_by.join(' and ')})`).join('; ')}.` : 'You have no named tabs on Home yet. Say “add a Branch tab with the branch scorecard” to make one.', shown, c);
+    }
+    case 'tab_rename': {
+      const r = await call('report_tab_rename', { tab: p.tab, new_name: p.newName });
+      return r.ok ? show('approval', '', shown, c) : fail(r);
+    }
+    case 'tab_remove': {
+      const r = await call('report_tab_remove', { tab: p.tab });
+      return r.ok ? show('approval', '', shown, c) : fail(r);
+    }
+    case 'tab_publish': {
+      const r = await call('report_tab_publish', { tab: p.tab, audience: p.audience });
+      return r.ok ? show('approval', '', shown, c) : fail(r);
+    }
+    case 'tab_pin': {
+      if (!p.tab) return show('answer', 'What should the tab be called, and which report goes on it first? For example: “Add a Branch tab with the branch scorecard”.', shown, c);
+      const onScreen = p.report === 'this' && state.current && !isDraft;
+      const list = onScreen || !p.report ? [] : (await deps.gateway.store.list(input.user.id, { userClass: input.userClass })).filter((x) => x.status !== 'draft');
+      // "the branch scorecard report": "report" says what it is, not which, so it doesn't count toward a match.
+      const words = (p.report ?? '').replace(/\breports?\b/gi, ' ');
+      const named = p.report ? list.map((x) => ({ x, n: overlap(x.name, words) })).sort((a, b) => b.n - a.n).find((m) => m.n > 0 && m.n >= namedNeeds(m.x.name))?.x : undefined;
+      if (!onScreen && !named) {
+        await call('report_template_list', {});
+        return show('list', p.report ? `I couldn’t find a report called “${p.report}”. Which of these goes on the ${p.tab} tab?` : `Which report goes on the ${p.tab} tab? Here is what you can open.`, shown, c);
+      }
+      const r = await call('report_pin', { template_id: onScreen ? state.current!.templateId : named!.templateId, audience: p.audience, tab: p.tab });
+      return r.ok ? show('approval', '', shown, c) : fail(r);
     }
     case 'pin':
     case 'unpin':

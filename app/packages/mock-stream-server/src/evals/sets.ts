@@ -122,6 +122,9 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'RF-RPT-001', set: 'refusal', persona: 'executive', q: 'Publish the branch scorecard to Home for lenders', refused: true, approval: 'none', ref: 'the Lender class has no Reports' },
   { id: 'RF-RPT-002', set: 'refusal', persona: 'executive', q: 'Delete the branch scorecard report', refused: true, approval: 'none', ref: 'stock reports are never deleted' },
   { id: 'PM-RPT-001', set: 'permission', persona: 'msr', q: 'Pin the branch scorecard to my Home', refused: true, approval: 'none', ref: 'no Reports access' },
+  // Named Home tabs (DI's "+" tab and Add Item).
+  { id: 'GQ-RPT-010', set: 'golden', persona: 'executive', q: 'Add a Branch tab with the branch scorecard', agent: 'Report Builder', contains: ['on the Branch tab'], approval: 'low' },
+  { id: 'PM-RPT-010', set: 'permission', persona: 'msr', q: 'Add a Branch tab with the branch scorecard', refused: true, approval: 'none', ref: 'no Reports access' },
   // Table Summary report questions, as the Reports page builds them.
   { id: 'GQ-TS-001', set: 'golden', persona: 'executive', q: 'Show total loan balance by branch', agent: 'Analytics Q&A', contains: ['Total loan balance'], approval: 'none' },
   { id: 'GQ-TS-002', set: 'golden', persona: 'executive', q: 'Show number of deposit accounts by deposit category', agent: 'Analytics Q&A', approval: 'none' },

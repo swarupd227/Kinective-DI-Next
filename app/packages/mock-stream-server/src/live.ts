@@ -198,7 +198,7 @@ export interface LiveRuntime {
    * or refused it; `onDone` fires when any follow-on work (executing the write) has streamed.
    */
   decide(persona: PersonaId, req: { approvalId: string; threadId: string; runId: string; body: ApprovalDecisionRequest }, emit: (e: Emit) => void, onDone: (result: unknown) => void, speed: number): Promise<ApprovalDecisionResult>;
-  home(persona: PersonaId): Promise<{ kpis: KpiGroupBlock; narrative: string; lookAt: ListBlock; scheduled: ListBlock | null; jump: JumpCard[]; pinned: { templateId: string; name: string; audience: string; pinnedBy: string; canvas: ReportCanvasBlock }[]; referrals: { open: number; overdue: number } | null; branch?: BranchHome | null } | null>;
+  home(persona: PersonaId): Promise<{ kpis: KpiGroupBlock; narrative: string; lookAt: ListBlock; scheduled: ListBlock | null; jump: JumpCard[]; pinned: { templateId: string; name: string; audience: string; pinnedBy: string; tab?: string | null; canvas: ReportCanvasBlock }[]; referrals: { open: number; overdue: number } | null; branch?: BranchHome | null } | null>;
   /**
    * A member's 360 for the workspace or the member page (GET /v1/members/{token}). Null when the
    * relationship data is not loaded; NO_ACCESS for a token outside the purview. Logged as an access.
@@ -1063,9 +1063,10 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       const pins = gw ? await gw.store.pins(who.userId, PERSONAS[persona].userClass).catch(() => []) : [];
       const pinned = (
         await Promise.all(
-          pins.slice(0, 4).map(async (p) => {
+          // Up to a dozen reports across the named tabs and the reports pinned on their own.
+          pins.slice(0, 12).map(async (p) => {
             const r = await gw!.run(p.templateId, {}, { purviewBranches: purview, canViewSql: false, user: { id: who.userId }, runId: `R-home-${p.pinId}` }).catch(() => null);
-            return r && { templateId: p.templateId, name: p.templateName, audience: p.audience, pinnedBy: p.pinnedBy, canvas: r.canvas };
+            return r && { templateId: p.templateId, name: p.templateName, audience: p.audience, pinnedBy: p.pinnedBy, tab: p.tab ?? null, canvas: r.canvas };
           }),
         )
       ).filter((x) => x !== null);
