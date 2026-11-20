@@ -356,7 +356,7 @@ function versionTools(spec: ModuleSpec, need: (ctx: ModuleContext) => SourceServ
         const s = need(ctx);
         const r = await s.setCrosswalk(p, { userId: ctx.user.id, name: ctx.user.name }, { approvalId: meta.approvalId });
         void today;
-        return { text: `Recorded **mapping version ${r.versionNo}**: ${codeSetWords(r.set)} ${r.code} is ${r.value}.${r.held ? ` The ${n(r.held)} held rows are mapped on the next pull.` : ''}`, suggestions: ['Pull from the Symitar replica now', 'Show the mapping versions'] };
+        return { text: `Recorded **mapping version ${r.versionNo}**: ${codeSetWords(r.set)} ${r.code} is ${r.value}.${r.held ? ` The ${n(r.held)} held rows are mapped on the next pull.` : ''}`, suggestions: [`Pull from the ${r.conn.name} now`, 'Show the mapping versions'] };
       },
     },
   ];

@@ -69,7 +69,8 @@ describe.skipIf(!up)('a new share type in the core', () => {
     await pool.end();
     await admin.end();
     await core.end();
-  });
+    // The restore pull reads the whole replica and fills the raw zone, so the cleanup gets time to finish.
+  }, 180_000);
 
   it('starts at version 1, Kinective’s standard mapping', async () => {
     const { versions } = await sources.versions(connectionId);

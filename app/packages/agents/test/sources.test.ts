@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateBlock, type Block } from '@dinext/block-schemas';
 import { ApprovalStore, LineageService, SourceService, secretKeyFrom, transform } from '@dinext/di-core';
 import { SemanticService } from '@dinext/semantic';
-import { createPool, replicaDatabase, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
+import { createPool, rawDatabase, replicaDatabase, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { ModuleGateway, runModuleOffline, scheduleFrom, sourcesModule, type ModuleSpec, type ModuleTurn, type RunSink } from '../src/index.ts';
 
 const SCHEMA = 'dinext_t_test_cu';
@@ -70,9 +70,11 @@ describe.skipIf(!up)('Data Sources against the replica', () => {
   afterAll(async () => {
     const [ids] = (await admin.query('SELECT connection_id FROM src_connection WHERE created_by = ?', [SAM.id])) as unknown as [{ connection_id: number }[]];
     for (const { connection_id: id } of ids) {
-      await admin.query('DELETE FROM src_sync_run WHERE connection_id = ?', [id]);
-      await admin.query('DELETE FROM src_mapping WHERE connection_id = ?', [id]);
+      for (const t of ['src_sync_run', 'src_mapping', 'map_version', 'map_drift']) await admin.query(`DELETE FROM ${t} WHERE connection_id = ?`, [id]);
     }
+    // Each connection's raw zone (phase 12) goes with it.
+    const [made] = (await admin.query('SELECT connection_id AS id FROM src_connection WHERE created_by = ?', [SAM.id])) as unknown as [{ id: number }[]];
+    for (const m of made) await admin.query(`DROP DATABASE IF EXISTS \`${rawDatabase(SCHEMA, m.id)}\``);
     await admin.query('DELETE FROM src_connection WHERE created_by = ?', [SAM.id]);
     await admin.query('DELETE FROM src_credential WHERE created_by = ?', [SAM.id]);
     await pool.end();
@@ -117,7 +119,7 @@ describe.skipIf(!up)('Data Sources against the replica', () => {
     expect(done.view?.text).toMatch(/2 only in the core/);
     expect(done.view?.text).toMatch(/3 rows with different values/);
     for (const b of done.view?.blocks ?? []) expect(validateBlock(b).ok).toBe(true);
-  }, 120_000);
+  }, 300_000);
 
   it('shows the rows that differ, then switches the build and lineage to the replica', async () => {
     const { r } = await run(`Show the rows that differ in the ${NAME}`, 'thr_src2');

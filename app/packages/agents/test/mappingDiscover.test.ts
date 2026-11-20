@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateBlock, type Block } from '@dinext/block-schemas';
 import { ApprovalStore, SourceService, Vocabulary, kindOf, secretKeyFrom, type CoreColumnProfile as ColumnProfile } from '@dinext/di-core';
 import { ontology } from '@dinext/ontology';
-import { createPool, replicaDatabase, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
+import { createPool, rawDatabase, replicaDatabase, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { coreMappingModule, DISCOVER_REQUEST, ModuleGateway, runModuleOffline, sourcesModule, type ModuleSpec, type ModuleTurn, type RunSink } from '../src/index.ts';
 
 describe('reading a core’s names and values', () => {
@@ -72,6 +72,9 @@ describe.skipIf(!up)('proposing the Symitar mapping from the replica', () => {
     await admin.query('DELETE FROM map_run WHERE run_by = ?', [SAM.id]);
     const [ids] = (await admin.query('SELECT connection_id FROM src_connection WHERE created_by = ?', [SAM.id])) as unknown as [{ connection_id: number }[]];
     for (const { connection_id: id } of ids) await admin.query('DELETE FROM src_mapping WHERE connection_id = ?', [id]);
+    // Each connection's raw zone (phase 12) goes with it.
+    const [made] = (await admin.query('SELECT connection_id AS id FROM src_connection WHERE created_by = ?', [SAM.id])) as unknown as [{ id: number }[]];
+    for (const m of made) await admin.query(`DROP DATABASE IF EXISTS \`${rawDatabase(SCHEMA, m.id)}\``);
     await admin.query('DELETE FROM src_connection WHERE created_by = ?', [SAM.id]);
     await admin.query('DELETE FROM src_credential WHERE created_by = ?', [SAM.id]);
     await pool.end();

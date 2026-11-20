@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateBlock, type Block } from '@dinext/block-schemas';
 import { ApprovalStore, SourceService, secretKeyFrom } from '@dinext/di-core';
-import { createPool, replicaDatabase, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
+import { createPool, rawDatabase, replicaDatabase, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { coreMappingModule, mappingFrom, ModuleGateway, runModuleOffline, sourcesModule, type ModuleSpec, type ModuleTurn, type RunSink } from '../src/index.ts';
 
 const SCHEMA = 'dinext_t_test_cu';
@@ -52,7 +52,7 @@ describe.skipIf(!up)('Core Mapping against the replica', () => {
     // A connection to try mappings on.
     const saved = await sources.saveLogin({ system: 'symitar', host: '127.0.0.1', port: 3307, database: replicaDatabase(SCHEMA), login: 'core_reader', password: process.env.DI_CORE_READER_PASSWORD ?? 'core_reader_demo' }, { userId: SAM.id });
     await sources.create({ credentialId: saved.credentialId, name: 'Harbor test replica', schedule: 'Nightly at 2:00 am', tables: ['cdm_party', 'cdm_deposit_account', 'cdm_loan'] }, { userId: SAM.id, name: SAM.name }, { approvalId: 'apr_maptest_connect', on: '2026-11-07' });
-  });
+  }, 180_000);
   afterAll(async () => {
     await admin.query("DELETE FROM cdm_custom_field WHERE field IN (SELECT field FROM src_column_map WHERE added_by = ?)", [SAM.id]);
     await admin.query('DELETE FROM src_column_map WHERE added_by = ?', [SAM.id]);
@@ -61,11 +61,14 @@ describe.skipIf(!up)('Core Mapping against the replica', () => {
       await admin.query('DELETE FROM src_sync_run WHERE connection_id = ?', [id]);
       await admin.query('DELETE FROM src_mapping WHERE connection_id = ?', [id]);
     }
+    // Each connection's raw zone (phase 12) goes with it.
+    const [made] = (await admin.query('SELECT connection_id AS id FROM src_connection WHERE created_by = ?', [SAM.id])) as unknown as [{ id: number }[]];
+    for (const m of made) await admin.query(`DROP DATABASE IF EXISTS \`${rawDatabase(SCHEMA, m.id)}\``);
     await admin.query('DELETE FROM src_connection WHERE created_by = ?', [SAM.id]);
     await admin.query('DELETE FROM src_credential WHERE created_by = ?', [SAM.id]);
     await pool.end();
     await admin.end();
-  });
+  }, 180_000);
 
   it('routes mapping requests to Core Mapping, and connection requests to Data Sources', () => {
     expect(gateway.match('Show the Symitar mapping')?.prefix).toBe('map');
