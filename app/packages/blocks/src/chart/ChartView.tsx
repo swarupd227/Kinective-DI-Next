@@ -86,10 +86,21 @@ export default function ChartView({ block, complete, view, onDrill, onPointAsk, 
   if (view === 'table' || block.data.chartType === 'heatmap') return <DatasetTable block={block} />;
 
   const openAt = ({ index, seriesIndex, offsetX, offsetY }: { index: number; seriesIndex: number | null; offsetX: number; offsetY: number }) => {
-    const row = block.data.dataset.source[index];
-    if (!row) return;
     // The series clicked, else the first current one (not a prior-period comparison).
     const s = (seriesIndex !== null ? block.data.series[seriesIndex] : undefined) ?? block.data.series.find((x) => !x.comparison) ?? block.data.series[0]!;
+    if (block.data.chartType === 'map') {
+      // A map's series each draw their own rows: the point is the index-th row of its kind. The density layer isn't a place.
+      if (s.role === 'density') return;
+      const dims = block.data.dataset.dimensions.map((d) => d.name);
+      const mine = block.data.dataset.source.filter((r) => r[dims.indexOf('kind')] === s.name);
+      const r = mine[index];
+      if (!r) return;
+      const w = r[dims.indexOf('weight')];
+      setMenu({ point: { x: String(r[dims.indexOf('name')] ?? ''), series: s.name, value: typeof w === 'number' ? w : null }, left: offsetX, top: offsetY });
+      return;
+    }
+    const row = block.data.dataset.source[index];
+    if (!row) return;
     const yAt = block.data.dataset.dimensions.findIndex((d) => d.name === s.encode.y);
     const xAt = block.data.dataset.dimensions.findIndex((d) => d.name === s.encode.x);
     const v = row[yAt];

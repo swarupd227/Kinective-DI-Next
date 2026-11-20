@@ -320,6 +320,9 @@ export const EVAL_ITEMS: EvalItem[] = [
   { id: 'GQ-REF-R01', set: 'golden', persona: 'executive', q: 'Show referral conversion by type', agent: 'Referral Reports', contains: ['In the last 12 months'], approval: 'none' },
   { id: 'GQ-REF-R02', set: 'golden', persona: 'branch', q: 'Who makes the most referrals?', agent: 'Referral Reports', contains: ['referrals**'], approval: 'none' },
   { id: 'GQ-REF-R03', set: 'golden', persona: 'executive', q: 'Which referrals have gone stale?', agent: 'Referral Reports', approval: 'medium' },
+  // DI's SEG map: SEGs, prospects and branches over where members live, and directions to a company.
+  { id: 'GQ-SEG-MAP1', set: 'golden', persona: 'executive', q: 'Show the SEG and prospect map', agent: 'SEG Development', contains: ['30 SEGs'], approval: 'none' },
+  { id: 'GQ-SEG-MAP2', set: 'golden', persona: 'executive', q: 'Directions to Tri-County Electric Co-op', agent: 'SEG Development', contains: ['google.com/maps/dir'], approval: 'none' },
   // Home's Business Banking Referrals tile opens this.
   { id: 'GQ-REF-R04', set: 'golden', persona: 'executive', q: 'List the open business banking referrals', agent: 'Referral Reports', approval: 'none' },
   { id: 'GQ-LOG-001', set: 'golden', persona: 'msr', q: 'Log a call with Suzanne Jackson: she asked about a HELOC for a kitchen remodel, follow up on Friday', agent: 'Interaction Log', approval: 'low' },

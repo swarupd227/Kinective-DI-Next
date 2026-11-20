@@ -89,4 +89,87 @@ export class GeographyService {
     const found = await rows<{ kind: string; n: number }>(this.pool, 'SELECT kind, COUNT(*) AS n FROM brm_business GROUP BY kind ORDER BY COUNT(*) DESC').catch(() => null);
     return found?.map((r) => ({ kind: r.kind, count: Number(r.n) })) ?? null;
   }
+
+  /**
+   * DI's SEG map: the branches (each at the middle of its own members' geocoded addresses), the SEGs and
+   * prospect companies (at their physical address's ZIP centre, spread a little so neighbours don't hide
+   * each other), and where members live, counted on a grid of about a mile and a half for the heatmap.
+   * Everything comes from the institution's own geography, so it fits its market. Within the branches
+   * given, where a person's purview is limited. Null where the geography isn't loaded.
+   */
+  async marketMap(branches?: string[]) {
+    const scope = branches ? { sql: ' AND l.name IN (?)', params: [branches.length ? branches : ['']] } : { sql: '', params: [] as unknown[] };
+    // A branch sits in the ZIP most of its own members live in (members of every branch live all over the
+    // market, so their average would put every branch in the middle).
+    const byZip = await rows<{ name: string; zcta: string; lat: number; lng: number; n: number }>(
+      this.pool,
+      `SELECT l.name, m.zcta, z.centroid_latitude AS lat, z.centroid_longitude AS lng, COUNT(*) AS n FROM cdm_party p JOIN cen_address_map m ON m.party_id = p.party_id JOIN cdm_location l ON l.int_id = p.primary_branch_id JOIN cen_zcta z ON z.zcta = m.zcta
+        WHERE m.latitude IS NOT NULL${scope.sql} GROUP BY l.name, m.zcta, z.centroid_latitude, z.centroid_longitude ORDER BY l.name, n DESC, m.zcta`,
+      scope.params,
+    ).catch(() => null);
+    if (!byZip?.length) return null;
+    const branchRows: { name: string; lat: number; lng: number; n: number }[] = [];
+    const taken = new Set<string>();
+    for (const name of [...new Set(byZip.map((r) => r.name))]) {
+      const mine = byZip.filter((r) => r.name === name);
+      // Two branches whose members mostly share a ZIP each take the first one not taken.
+      const top = mine.find((r) => !taken.has(r.zcta)) ?? mine[0]!;
+      taken.add(top.zcta);
+      branchRows.push({ name, lat: Number(top.lat), lng: Number(top.lng), n: mine.reduce((s, r) => s + Number(r.n), 0) });
+    }
+    const cells = await rows<{ lat: number; lng: number; n: number }>(
+      this.pool,
+      `SELECT ROUND(m.latitude / ${GRID}) * ${GRID} AS lat, ROUND(m.longitude / ${GRID}) * ${GRID} AS lng, COUNT(*) AS n FROM cdm_party p JOIN cen_address_map m ON m.party_id = p.party_id JOIN cdm_location l ON l.int_id = p.primary_branch_id
+        WHERE m.latitude IS NOT NULL AND p.is_member = 1${scope.sql} GROUP BY 1, 2`,
+      scope.params,
+    );
+    const companies = await rows<{ business_id: number; name: string; kind: string; branch: string | null; with_us: number | null; employees: number | null; lat: number | null; lng: number | null }>(
+      this.pool,
+      `SELECT b.business_id, b.name, b.kind, l.name AS branch, b.employees_with_us AS with_us, b.total_employees AS employees, z.centroid_latitude AS lat, z.centroid_longitude AS lng
+         FROM brm_business b LEFT JOIN cdm_location l ON l.int_id = b.assigned_branch_id
+         JOIN brm_location a ON a.location_id = (SELECT MIN(x.location_id) FROM brm_location x WHERE x.business_id = b.business_id AND x.is_physical = 1)
+         JOIN cen_zcta z ON z.zcta = a.zip
+        WHERE b.kind IN ('SEG', 'Prospect')${branches ? ' AND (l.name IS NULL OR l.name IN (?))' : ''} ORDER BY b.kind, b.name`,
+      branches ? [branches.length ? branches : ['']] : [],
+    ).catch(() => []);
+    const near = (id: number, salt: number) => (((id * 9301 + salt * 49297) % 233280) / 233280 - 0.5) * 0.03;
+    return {
+      branches: branchRows.map((b) => ({ name: b.name, lat: Number(b.lat), lng: Number(b.lng), members: Number(b.n) })),
+      density: cells.map((c) => ({ lat: Number(c.lat), lng: Number(c.lng), members: Number(c.n) })),
+      companies: companies.filter((c) => c.lat !== null).map((c) => ({ id: Number(c.business_id), name: c.name, kind: c.kind === 'SEG' ? ('SEG' as const) : ('Prospect' as const), branch: c.branch, withUs: Number(c.with_us ?? 0), employees: c.employees === null ? null : Number(c.employees), lat: Number(c.lat) + near(Number(c.business_id), 1), lng: Number(c.lng) + near(Number(c.business_id), 2) * 1.4 })),
+    };
+  }
+
+  /**
+   * Directions to a SEG or prospect company, from its branch (or the nearest one), as a Google Maps link
+   * between the map's points, with the straight-line distance. Null where it isn't on the map.
+   */
+  async directions(company: string, branches?: string[]) {
+    const map = await this.marketMap(branches);
+    if (!map) return null;
+    const words = company.toLowerCase().split(/\W+/).filter((w) => w.length > 1);
+    const hits = map.companies.filter((c) => words.every((w) => c.name.toLowerCase().includes(w)));
+    const c = hits.find((x) => x.name.toLowerCase() === company.toLowerCase()) ?? hits[0];
+    if (!c) return { found: false as const, names: map.companies.map((x) => x.name) };
+    const from = map.branches.find((b) => b.name === c.branch) ?? [...map.branches].sort((a, b) => miles(a, c) - miles(b, c))[0]!;
+    const fix = (n: number) => n.toFixed(5);
+    return {
+      found: true as const,
+      company: c,
+      from: from.name,
+      assigned: from.name === c.branch,
+      miles: Math.round(miles(from, c) * 10) / 10,
+      link: `https://www.google.com/maps/dir/?api=1&origin=${fix(from.lat)},${fix(from.lng)}&destination=${fix(c.lat)},${fix(c.lng)}&travelmode=driving`,
+    };
+  }
+}
+
+/** The heatmap's grid: about a mile and a half in latitude. */
+const GRID = 0.02;
+
+/** Straight-line miles between two points (haversine). */
+function miles(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
+  const r = (d: number) => (d * Math.PI) / 180;
+  const h = Math.sin(r(b.lat - a.lat) / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(r(b.lng - a.lng) / 2) ** 2;
+  return 2 * 3958.8 * Math.asin(Math.sqrt(h));
 }

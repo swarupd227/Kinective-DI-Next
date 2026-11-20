@@ -25,7 +25,8 @@ const withAlpha = (hex: string, alpha: number) => {
 };
 
 export function pointCount(block: ChartBlock): number {
-  return block.data.dataset.source.length * block.data.series.length;
+  // A map's series each draw their own rows, not every row.
+  return block.data.dataset.source.length * (block.data.chartType === 'map' ? 1 : block.data.series.length);
 }
 
 /** Room the y-axis labels and the grid's margins take from a chart's width, roughly. */
@@ -87,16 +88,62 @@ export function buildOption(block: ChartBlock, theme: ChartTheme, reducedMotion:
     dataset: { dimensions: dims, source: dataset.source },
     tooltip: {
       renderMode: 'richText',
-      trigger: chartType === 'pie' || chartType === 'donut' || chartType === 'scatter' || chartType === 'sunburst' ? 'item' : 'axis',
+      trigger: chartType === 'pie' || chartType === 'donut' || chartType === 'scatter' || chartType === 'sunburst' || chartType === 'map' ? 'item' : 'axis',
       backgroundColor: theme.surface,
       borderColor: theme.border,
       textStyle: { ...textStyle, color: theme.text },
       valueFormatter: tooltipValue,
-      ...(chartType === 'pie' || chartType === 'donut' || chartType === 'scatter' || chartType === 'sunburst' ? {} : { formatter: axisTooltip }),
+      ...(chartType === 'pie' || chartType === 'donut' || chartType === 'scatter' || chartType === 'sunburst' || chartType === 'map' ? {} : { formatter: axisTooltip }),
     },
     // Legend sits top right so the y-axis title (with its unit, spec 10.4) can sit top left.
     legend: legend === false ? { show: false } : { show: series.length > 1 || chartType === 'pie' || chartType === 'donut', top: 0, right: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8, textStyle },
   };
+
+  if (chartType === 'map') {
+    // Points on longitude and latitude, the box padded so a mile is as long across as up and down.
+    const at = (n: string) => dims.indexOf(n);
+    const [kindAt, nameAt, latAt, lngAt, wAt] = ['kind', 'name', 'lat', 'lng', 'weight'].map(at) as [number, number, number, number, number];
+    const num = (v: unknown) => (typeof v === 'number' ? v : Number(v ?? 0));
+    const lats = dataset.source.map((r) => num(r[latAt]));
+    const lngs = dataset.source.map((r) => num(r[lngAt]));
+    const mid = (Math.min(...lats) + Math.max(...lats)) / 2;
+    let latSpan = Math.max(...lats) - Math.min(...lats) || 0.1;
+    let lngSpan = (Math.max(...lngs) - Math.min(...lngs) || 0.1) * Math.cos((mid * Math.PI) / 180);
+    const want = Math.max(1, (opts.width ?? 640) / 280);
+    if (lngSpan / latSpan < want) lngSpan = latSpan * want;
+    else latSpan = lngSpan / want;
+    const cx = (Math.min(...lngs) + Math.max(...lngs)) / 2;
+    const half = { lat: (latSpan * 1.08) / 2, lng: (lngSpan * 1.08) / 2 / Math.cos((mid * Math.PI) / 180) };
+    const axis = (min: number, max: number) => ({ type: 'value', min, max, show: false, scale: true });
+    const peak = Math.max(1, ...dataset.source.map((r) => num(r[wAt])));
+    return {
+      ...base,
+      tooltip: { ...(base.tooltip as object), trigger: 'item', formatter: (p: { seriesName: string; name: string; value: number[] }) => `${p.name || p.seriesName}${p.value?.[2] ? `\n${p.value[2].toLocaleString('en-US')} ${p.name ? 'with us' : 'members'}` : ''}` },
+      legend: { show: true, top: 0, right: 0, icon: 'circle', itemWidth: 10, itemHeight: 10, textStyle },
+      grid: { left: 4, right: 4, top: 28, bottom: 4 },
+      xAxis: axis(cx - half.lng, cx + half.lng),
+      yAxis: axis(mid - half.lat, mid + half.lat),
+      series: series.map((s, i) => {
+        const mine = dataset.source.filter((r) => r[kindAt] === s.name);
+        const color = theme.palette[i % theme.palette.length]!;
+        const density = s.role === 'density';
+        const wPeak = Math.max(1, ...mine.map((r) => num(r[wAt])));
+        return {
+          type: 'scatter',
+          name: s.name,
+          silent: density,
+          z: density ? 1 : 3,
+          data: mine.map((r) => ({ name: density ? '' : String(r[nameAt] ?? ''), value: [num(r[lngAt]), num(r[latAt]), num(r[wAt])] })),
+          // Density: soft circles that grow and deepen with the members in each cell. Points: a size for how many bank with us.
+          symbolSize: density ? (v: number[]) => 10 + Math.sqrt(num(v[2]) / wPeak) * 26 : (v: number[]) => (s.name === 'Branches' ? 14 : 7 + Math.sqrt(num(v[2]) / peak) * 14),
+          symbol: s.name === 'Branches' ? 'pin' : 'circle',
+          itemStyle: density ? { color, opacity: 0.16 } : { color, borderColor: theme.surface, borderWidth: 1, opacity: 0.95 },
+          label: s.name === 'Branches' ? { show: true, position: 'right', formatter: '{b}', color: theme.text, fontFamily: theme.fontFamily, fontSize: 11 } : { show: false },
+          emphasis: density ? { disabled: true } : { focus: 'self', label: { show: true, formatter: '{b}', position: 'top', color: theme.text } },
+        };
+      }),
+    };
+  }
 
   if (chartType === 'sunburst') {
     // Rows are paths, innermost ring first ("Direct", "North", "Westport", 1_250_000): sums roll up to each ring.

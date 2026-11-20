@@ -148,7 +148,8 @@ export function prospectingModule(prs: ProspectService, companies: string[], sta
     prefix: 'prs',
     agent: 'Prospecting',
     // Full names only, or a move to one of its own stages: SEG has an "Acme HR" too.
-    request: new RegExp(`\\bprospects?\\b|\\bprospecting\\b|\\bplan a route\\b|\\blog a call with (${companies.map(escape).join('|')})\\b|\\bmove\\b.*\\bto (${stages.map(escape).join('|')})\\s*$`, 'i'),
+    // The SEG and prospect map belongs to SEG Development, which draws both.
+    request: new RegExp(`^(?![\\s\\S]*\\b(?:heat ?)?map\\b)[\\s\\S]*?(?:\\bprospects?\\b|\\bprospecting\\b|\\bplan a route\\b|\\blog a call with (${companies.map(escape).join('|')})\\b|\\bmove\\b.*\\bto (${stages.map(escape).join('|')})\\s*$)`, 'i'),
     noAccess,
     sources: [{ kind: 'table', label: 'Prospects', ref: 'table:prs_prospect' }],
     prompt: ({ tenant, user, title }) => `You are the Outbound Prospecting agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) develops business prospects.

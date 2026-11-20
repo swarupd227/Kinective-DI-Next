@@ -6,6 +6,11 @@ import { z } from 'zod';
 import { CALL_REPORT_EDITION, CR_ADJUST_REASONS, CR_RESOLUTIONS, type CrAdjustReason, type CrResolution, CAPABILITIES, CLASSES, CoreError, SEG_STAGES, USER_CLASSES, type CallReportLine, type CallReportService, stampUtc, csvCells, type FileStore, type ApiService, type CampaignService, type EngagementService, type GeographyService, type CollectionsService, type WatchedLoan, type OperationsService, type SegService } from '@dinext/di-core';
 import { money } from './pipelineAgent.ts';
 import { moduleTable, type ModuleContext, type ModuleSpec } from './moduleAgent.ts';
+import type { Block } from '@dinext/block-schemas';
+import { newBlockId } from './answer.ts';
+
+/** A map point, to five places (about a metre): enough to place it, without noise in the dataset. */
+const round5 = (n: number) => Math.round(n * 1e5) / 1e5;
 
 const guard = (ctx: ModuleContext, id: string, message: string) => {
   if (!ctx.modules.includes(id)) throw new CoreError('NO_ACCESS', message);
@@ -1097,7 +1102,7 @@ export function segModule(seg: SegService, today: () => string, brm: GeographySe
     id: 'seg',
     prefix: 'seg',
     agent: 'SEG Development',
-    request: new RegExp(`${SEG_REACH_REQUEST.source}|${/\bSEGs?\b|\bsponsor(?:ship|ing)?s?\b|\bdonations?\b|\b[Ww]ho (?:at|from) [A-Z][\w&'-]*(?: [A-Z][\w&'-]*){0,3} banks? with us\b|\blunch-and-learn\b|\bprospect stage\b|\b[Bb][Dd] score ?card\b|\bbusiness development (?:score ?card|goals?|activity)\b|\bemployer groups?\b/.source}`),
+    request: new RegExp(`${SEG_REACH_REQUEST.source}|${/\bSEGs?\b|\bsponsor(?:ship|ing)?s?\b|\bdonations?\b|\b[Ww]ho (?:at|from) [A-Z][\w&'-]*(?: [A-Z][\w&'-]*){0,3} banks? with us\b|\blunch-and-learn\b|\bprospect stage\b|\b[Bb][Dd] score ?card\b|\bbusiness development (?:score ?card|goals?|activity)\b|\bemployer groups?\b|\b[Dd]irections? to\b|\b[Hh]ow (?:do I|to) get to\b|\b[Ww]here (?:do )?(?:our )?members live\b|\b(?:SEG|[Pp]rospect)s? (?:and (?:[Pp]rospect|SEG)s? )?(?:heat ?)?map\b|\b[Mm]ap (?:of )?our SEGs\b/.source}`),
     noAccess,
     sources: [{ kind: 'table', label: 'SEG Management', ref: 'table:seg_company' }],
     prompt: ({ tenant, user, title }) => `You are the SEG/Business Development agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) develops select employee groups.
@@ -1112,10 +1117,16 @@ export function segModule(seg: SegService, today: () => string, brm: GeographySe
 - "Notes on Acme HR": seg_notes. "Add a note to Acme HR: …": seg_note_add.
 - "Sponsorships and donations", "what have we given Riverside Schools?": seg_sponsorships. "Record a $1,500 picnic sponsorship for Acme HR": seg_sponsorship_add.
 - "Who at Riverside Health banks with us?": seg_relationships, members who say they work there.
-- "Add a new SEG: …": seg_company_add. "Retire Valley Courier Service", "reactivate it": seg_company_active. Nothing is deleted.`,
+- "Add a new SEG: …": seg_company_add. "Retire Valley Courier Service", "reactivate it": seg_company_active. Nothing is deleted.
+- "Show the SEG map", "map our SEGs and prospects", "where do our members live?": seg_map, the branches, SEGs and prospects with a heatmap of where members live.
+- "Directions to Acme HR", "how do I get to Riverside Schools?": seg_directions, from the company's branch.`,
     plan: (text) => {
       const t = clean(text);
       if (SEG_REACH_REQUEST.test(t)) return { tool: 'seg_reach', args: {} };
+      // DI's SEG map and directions to a company on it.
+      const to = /\b(?:directions? (?:to|for)|how (?:do I|to) get to)\s+(?:the )?((?:[A-Z][\w&'-]*\s?){1,5})/i.exec(text)?.[1]?.trim();
+      if (/\bdirections?\b|\bhow (?:do I|to) get to\b/i.test(t)) return to ? { tool: 'seg_directions', args: { company: to } } : { say: 'Directions to which SEG or prospect?' };
+      if (/\b(?:heat ?)?map\b|\bwhere (?:do )?(?:our )?members live\b/i.test(t)) return { tool: 'seg_map', args: {} };
       const name = company.exec(t)?.[1]?.trim();
       const stage = SEG_STAGES.find((s) => new RegExp(`\\b${s}\\b`, 'i').test(t));
       if (/\bmove\b/i.test(t) && stage) return { tool: 'seg_stage_prepare', args: { company: /\b[Mm]ove ((?:[A-Z][\w&'-]*\s?){1,4}?)\s+to\b/.exec(t)?.[1]?.trim() ?? '', stage, ...(/[:—]\s*(.+)$/.exec(t)?.[1] ? { note: /[:—]\s*(.+)$/.exec(t)![1] } : {}) } };
@@ -1151,6 +1162,75 @@ export function segModule(seg: SegService, today: () => string, brm: GeographySe
       return { tool: 'seg_performance', args: {} };
     },
     tools: [
+      {
+        name: 'seg_map',
+        description: 'DI’s SEG map: the branches, SEGs and prospect companies, sized by how many of their people bank with us, over a heatmap of where members live. Clicking a company offers directions to it.',
+        input: z.object({}).strict(),
+        run: async (_: unknown, ctx: ModuleContext) => {
+          need(ctx);
+          const m = brm ? await brm.marketMap(ctx.purviewBranches) : null;
+          if (!m) return { text: 'Addresses haven’t been geocoded for this institution yet, so there’s no map to draw.' };
+          const segs = m.companies.filter((c) => c.kind === 'SEG');
+          const prospects = m.companies.filter((c) => c.kind === 'Prospect');
+          const members = m.density.reduce((s, c) => s + c.members, 0);
+          const busiest = [...m.branches].sort((a, b) => b.members - a.members)[0]!;
+          const top = [...segs].sort((a, b) => b.withUs - a.withUs)[0];
+          const block = {
+            id: newBlockId('cht'),
+            type: 'chart',
+            version: '2.0.0',
+            title: 'SEGs and prospects in our market',
+            subtitle: 'Sized by the people who bank with us; shading shows where members live',
+            provenance: { agent: spec.agent, runId: ctx.runId, operations: ['seg.map'], sources: [{ kind: 'table', label: 'Businesses and their addresses', ref: 'table:brm_location' }, { kind: 'table', label: 'Geocoded member addresses', ref: 'table:cen_address_map' }] },
+            freshness: { kind: 'nightly_build', asOf: `${today()}T00:00:00Z` },
+            a11y: { summary: `Map of ${m.branches.length} branches, ${segs.length} SEGs and ${prospects.length} prospects over where ${members.toLocaleString('en-US')} members live; most live around ${busiest.name}.` },
+            data: {
+              chartType: 'map',
+              dataset: {
+                dimensions: [{ name: 'kind', type: 'ordinal' }, { name: 'name', type: 'ordinal' }, { name: 'lat', displayName: 'Latitude' }, { name: 'lng', displayName: 'Longitude' }, { name: 'weight', displayName: 'People' }],
+                source: [
+                  ...m.density.map((c) => ['Members', '', round5(c.lat), round5(c.lng), c.members]),
+                  ...segs.map((c) => ['SEGs', c.name, round5(c.lat), round5(c.lng), c.withUs]),
+                  ...prospects.map((c) => ['Prospects', c.name, round5(c.lat), round5(c.lng), c.withUs]),
+                  ...m.branches.map((b) => ['Branches', b.name, round5(b.lat), round5(b.lng), b.members]),
+                ],
+              },
+              series: [
+                { name: 'Members', encode: { x: 'lng', y: 'lat' }, role: 'density' },
+                { name: 'SEGs', encode: { x: 'lng', y: 'lat' } },
+                { name: 'Prospects', encode: { x: 'lng', y: 'lat' } },
+                { name: 'Branches', encode: { x: 'lng', y: 'lat' } },
+              ],
+              pointActions: [
+                { id: 'dir', kind: 'drill', label: 'Directions to {x}', question: 'Directions to {x}' },
+                { id: 'who', kind: 'rows', label: 'Who at {x} banks with us?', question: 'Who at {x} banks with us?' },
+              ],
+            },
+          } as Block;
+          return {
+            text: `**${segs.length} SEGs** and **${prospects.length} prospects** across ${m.branches.length} branches, over where ${members.toLocaleString('en-US')} members live; most live around **${busiest.name}**.${top ? ` ${top.name} has the most people banking with us (${top.withUs.toLocaleString('en-US')}).` : ''} Click a company for directions.`,
+            blocks: [block],
+            sources: spec.sources,
+            suggestions: top ? [`Directions to ${top.name}`] : [],
+          };
+        },
+      },
+      {
+        name: 'seg_directions',
+        description: 'Directions to a SEG or prospect company from its branch (or the nearest branch), as a Google Maps link, with the straight-line distance.',
+        input: z.object({ company: z.string().min(2).max(80) }).strict(),
+        run: async (a: { company: string }, ctx: ModuleContext) => {
+          need(ctx);
+          const d = brm ? await brm.directions(a.company, ctx.purviewBranches) : null;
+          if (!d) return { text: 'Addresses haven’t been geocoded for this institution yet, so there are no directions to give.' };
+          if (!d.found) return { text: `There’s no SEG or prospect called “${a.company}” on the map.` };
+          return {
+            text: `[Directions from ${d.from} to ${d.company.name}](${d.link}), about **${d.miles} miles** in a straight line${d.assigned ? '' : `; ${d.company.name} has no assigned branch, so this starts from the nearest one`}.`,
+            sources: spec.sources,
+            suggestions: [d.company.kind === 'SEG' ? `Prepare me for my SEG meeting with ${d.company.name}` : 'Show the SEG map'],
+          };
+        },
+      },
       {
         name: 'seg_reach',
         description: 'Across SEGs: each one’s employees, how many bank with us (from the employers on file) and how many of those get paid by direct deposit, its primary contact, who receives its statements and how, and where its payroll comes from.',

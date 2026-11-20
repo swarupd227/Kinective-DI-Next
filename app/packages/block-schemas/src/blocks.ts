@@ -40,8 +40,12 @@ export const kpiGroupData = z.strictObject({
 
 // ---- chart ------------------------------------------------------------------------------------
 export const chartData = z.strictObject({
-  /** sunburst: each row is a path (its ordinal dimensions, outermost ring last) ending in the measure series[0] encodes as y. */
-  chartType: z.enum(['line', 'bar', 'stacked_bar', 'area', 'pie', 'donut', 'scatter', 'heatmap', 'combo', 'sunburst']),
+  /**
+   * sunburst: each row is a path (its ordinal dimensions, outermost ring last) ending in the measure series[0] encodes as y.
+   * map: rows are kind, name, lat, lng, weight; each series draws the rows whose kind is its name, as points or,
+   * with role "density", as a heatmap of weights (members per grid cell).
+   */
+  chartType: z.enum(['line', 'bar', 'stacked_bar', 'area', 'pie', 'donut', 'scatter', 'heatmap', 'combo', 'sunburst', 'map']),
   dataset: z.strictObject({
     dimensions: z
       .array(z.strictObject({ name: z.string(), displayName: z.string().optional(), type: z.enum(['ordinal', 'number', 'time']).optional() }))
@@ -58,6 +62,8 @@ export const chartData = z.strictObject({
         yAxisIndex: z.number().int().min(0).max(1).optional(),
         /** Prior-period series: same hue, lighter, dashed (spec 10.4). */
         comparison: z.boolean().optional(),
+        /** On a map: points (the default) or a density layer that isn't clickable. */
+        role: z.enum(['points', 'density']).optional(),
       }),
     )
     .min(1)
