@@ -74,7 +74,7 @@ export interface ReportSummary {
   name: string;
   folder: string;
   status: TemplateRow['status'];
-  periodType: 'month' | 'quarter';
+  periodType: 'month' | 'quarter' | 'year';
   description: string;
   sections: number;
   owner: string;
@@ -445,7 +445,20 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
         .then(
           (m) => m && console.log(`[${t.key}] survival model v${m.version} fitted and in use`),
           (e: unknown) => console.error(`[${t.key}] survival model:`, e),
-        );
+        )
+        // Monthly rescoring: the models in use score again whenever the build brings a new month-end,
+        // checked now and every six hours (the check itself is one small query per model).
+        .then(() => {
+          const rescore = () =>
+            void attrition
+              .rescoreIfDue()
+              .then((r) => r && console.log(`[${t.key}] attrition model rescored ${r.scored} members for ${r.months.at(-1)}`))
+              .then(() => nextProduct?.rescoreIfDue())
+              .then((r) => r && console.log(`[${t.key}] next-best-product model rescored for ${r.month}`))
+              .catch((e: unknown) => console.error(`[${t.key}] monthly rescoring:`, e));
+          rescore();
+          setInterval(rescore, 6 * 3_600_000).unref();
+        });
     // Data quality checks from the ontology's constraints and code lists (phase 6), run on this tenant's
     // current tables; the data quality page, Operations and lineage read the results with the others.
     if (!process.env.VITEST && process.env.DI_ONTOLOGY_DQ !== '0')

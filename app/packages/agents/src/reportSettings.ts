@@ -11,7 +11,7 @@ export interface SettingsInput {
   template_id?: string;
   name?: string;
   description?: string;
-  period_type?: 'month' | 'quarter';
+  period_type?: 'month' | 'quarter' | 'year';
   use_period?: 'current' | 'previous';
   branch_control?: boolean;
   history_controls?: boolean;
@@ -42,10 +42,10 @@ const onOff = (b: boolean) => (b ? 'On' : 'Off');
 export const whoCanOpen = (classes: string[]) => (classes.length ? `${classes.join(', ')} ${classes.length === 1 ? 'class' : 'classes'}, and you` : 'Everyone with Reports');
 
 function valueText(key: keyof SettingsFields, v: unknown, def: ReportDefinition): string {
-  const period = def.settings.periodType === 'quarter' ? 'quarter' : 'month';
+  const period = def.settings.periodType === 'quarter' ? 'quarter' : def.settings.periodType === 'year' ? 'year' : 'month';
   switch (key) {
     case 'periodType':
-      return v === 'quarter' ? 'Quarterly' : 'Monthly';
+      return v === 'quarter' ? 'Quarterly' : v === 'year' ? 'Annual' : 'Monthly';
     case 'usePeriod':
       return v === 'previous' ? `The ${period} before the latest` : `The latest complete ${period}`;
     case 'addHierarchyControls':
@@ -149,11 +149,11 @@ export function settingsView(t: TemplateRow, who: { userId: string; canViewSql: 
         : mine
           ? 'Ask DI to change a setting. Each change shows on a card, before and after, and happens only when you approve it.'
           : `This report belongs to ${t.ownerName}. Only they can change its settings.`;
-  const period = s.periodType === 'quarter' ? 'quarter' : 'month';
+  const period = s.periodType === 'quarter' ? 'quarter' : s.periodType === 'year' ? 'year' : 'month';
   const restricted = status === 'published' && s.controlClasses.length > 0;
   const field = (label: string, value: string, used = true) => ({ label, value, used });
   const tiles: AppTile[] = [
-    { label: 'Period', value: s.periodType === 'quarter' ? 'Quarterly' : 'Monthly', detail: s.usePeriod === 'previous' ? `Opens on the ${period} before the latest` : `Opens on the latest complete ${period}` },
+    { label: 'Period', value: s.periodType === 'quarter' ? 'Quarterly' : s.periodType === 'year' ? 'Annual' : 'Monthly', detail: s.usePeriod === 'previous' ? `Opens on the ${period} before the latest` : `Opens on the latest complete ${period}` },
     { label: 'Who can open it', value: status === 'draft' ? 'Only you' : restricted ? `${s.controlClasses.length} ${s.controlClasses.length === 1 ? 'class' : 'classes'}` : 'Everyone', detail: status === 'draft' ? 'Private until saved' : restricted ? s.controlClasses.join(', ') : 'With Reports access' },
     { label: 'Status', value: s.enabled === false ? 'Turned off' : 'On', detail: s.enabled === false ? 'Doesn’t run; others can’t see it' : status === 'stock' ? 'Stock report' : status === 'draft' ? 'Draft' : 'Saved report', tone: s.enabled === false ? 'warning' : 'neutral' },
     { label: 'Home and schedules', value: `${extra.pins} · ${extra.schedules}`, detail: `${extra.pins === 1 ? '1 Home pin' : `${extra.pins} Home pins`}, ${extra.schedules === 1 ? '1 schedule' : `${extra.schedules} schedules`}` },
@@ -190,7 +190,7 @@ export function settingsView(t: TemplateRow, who: { userId: string; canViewSql: 
         title: 'Period and hierarchy info',
         fields: [
           field('Choose hierarchy ID', s.addHierarchyControls ? 'Branch' : 'None: the report shows all branches in your access'),
-          field('Period type', s.periodType === 'quarter' ? 'Quarterly' : 'Monthly'),
+          field('Period type', s.periodType === 'quarter' ? 'Quarterly' : s.periodType === 'year' ? 'Annual' : 'Monthly'),
           field('Hierarchy ID', s.addHierarchyControls ? 'branch' : '—'),
           field('Report ID', t.templateId),
           field('Add history controls', `${yesNo(s.addHistoryControls)}. Trend sections show the history; there is no separate history picker.`),
@@ -242,7 +242,7 @@ export function parseSettingsRequest(text: string): SettingsAsk | null {
   if ((m = /^what are (?:the )?(.+?)(?:'s)? settings$/.exec(lower))) return { intent: 'settings_show', target: tgt(m[1]) };
   if ((m = /^(?:make|create) (?:me )?a copy of (.+?)(?: (?:called|named) (.+))?$/i.exec(t)) || (m = /^copy (.+?)(?: as (.+))?$/i.exec(t))) return { intent: 'copy', target: tgt(m[1]!.toLowerCase()), ...(m[2] ? { name: strip(m[2]) } : {}) };
   if ((m = /^rename (.+?) to (.+)$/i.exec(t))) return { intent: 'settings', target: tgt(m[1]!.toLowerCase()), set: { name: strip(m[2]!) } };
-  if ((m = /^(?:make|switch|change|set|turn) (.+?) (?:to |into )?(?:a )?(quarterly|monthly)(?: report)?$/.exec(lower))) return { intent: 'settings', target: tgt(m[1]), set: { period_type: m[2] === 'quarterly' ? 'quarter' : 'month' } };
+  if ((m = /^(?:make|switch|change|set|turn) (.+?) (?:to |into )?(?:an? )?(quarterly|monthly|annual|yearly)(?: report)?$/.exec(lower))) return { intent: 'settings', target: tgt(m[1]), set: { period_type: m[2] === 'quarterly' ? 'quarter' : m[2] === 'annual' || m[2] === 'yearly' ? 'year' : 'month' } };
   if ((m = /^(?:use|default to|open on|start on) (?:the )?(previous|prior|current|latest) (?:period|month|quarter)(?: by default)?(?: (?:for|on|in) (.+))?$/.exec(lower))) return { intent: 'settings', target: tgt(m[2]), set: { use_period: /previous|prior/.test(m[1]!) ? 'previous' : 'current' } };
   if ((m = /^(turn off|remove|hide|drop|turn on|add|show) (?:the |a )?(branch|history) (?:control|controls|picker|filter)(?: (?:on|in|from|for|to) (.+))?$/.exec(lower))) {
     const on = /^(turn on|add|show)$/.test(m[1]!);

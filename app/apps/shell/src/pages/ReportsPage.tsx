@@ -122,7 +122,7 @@ export function ReportsPage() {
                         </span>
                         <span className={styles.detail}>{t.description || `${t.sections} sections`}</span>
                         <span className={styles.meta}>
-                          {t.periodType === 'month' ? 'Monthly' : 'Quarterly'} · {t.sections} sections{t.origin ? ` · ${t.origin}` : t.status === 'stock' ? ' · Standard report' : ` · ${t.owner}`}
+                          {t.periodType === 'month' ? 'Monthly' : t.periodType === 'year' ? 'Annual' : 'Quarterly'} · {t.sections} sections{t.origin ? ` · ${t.origin}` : t.status === 'stock' ? ' · Standard report' : ` · ${t.owner}`}
                         </span>
                         {sched && (
                           <span className={styles.meta}>

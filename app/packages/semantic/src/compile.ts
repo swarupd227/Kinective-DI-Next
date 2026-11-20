@@ -55,7 +55,9 @@ export function resolvePeriods(time: NonNullable<SemanticQueryRequest['time']>, 
   const from = time.from ? (time.from.split('-').map(Number) as [number, number]) : null;
   const to: [number, number] = time.to ? (time.to.split('-').map(Number) as [number, number]) : [ly, lm];
   if (to[0] * 12 + to[1] > ly * 12 + lm) throw new SemanticError('INVALID_TIME', `History runs to ${latestMonthEnd}; ${time.to} has no complete month-end yet.`);
-  for (let i = 0; i < 18; i++) {
+  // 18 month-ends unless the request starts earlier: a year, or a year against the one before, reaches
+  // back as far as history goes (24), while a request with no start keeps the window it always had.
+  for (let i = 0; i < (from ? 24 : 18); i++) {
     const idx = to[0] * 12 + (to[1] - 1) - i;
     const y = Math.floor(idx / 12);
     const m = (idx % 12) + 1;

@@ -73,8 +73,10 @@ export function attritionModule(svc: AttritionModelService): ModuleSpec {
           const hist = await svc.history(m.modelId, ctx.purviewBranches);
           const latest = hist.filter((h) => h.month === hist.at(-1)?.month);
           const high = latest.find((h) => h.band === 'High');
+          // Monthly rescoring: when its scores are from.
+          const run = (await svc.scoreRuns()).find((r) => r.version === m.version);
           return {
-            text: `${modelSummary(m)} It’s been in use since ${m.activatedAt?.slice(0, 10) ?? '—'}${m.approvedBy ? `, approved by ${m.approvedBy}` : ''}. This month ${n(high?.members ?? 0)} ${high?.members === 1 ? 'member is' : 'members are'} in the High band (a ${pct(ATTRITION_BANDS.high)} or greater chance of leaving within 90 days).${candidate ? ` Version ${candidate.version} is a candidate, waiting for approval.` : ''}`,
+            text: `${modelSummary(m)} It’s been in use since ${m.activatedAt?.slice(0, 10) ?? '—'}${m.approvedBy ? `, approved by ${m.approvedBy}` : ''}.${run ? ` Members were last scored on ${run.at.slice(0, 10)} for the ${modelMonthLabel(run.monthEnd)} month-end (${run.reason.toLowerCase()}); it rescores each month the build brings a new month-end.` : ''} This month ${n(high?.members ?? 0)} ${high?.members === 1 ? 'member is' : 'members are'} in the High band (a ${pct(ATTRITION_BANDS.high)} or greater chance of leaving within 90 days).${candidate ? ` Version ${candidate.version} is a candidate, waiting for approval.` : ''}`,
             blocks: [
               moduleTable(spec, 'What drives the model', ctx.runId, 'model.importance', [text('feature', 'What it reads'), text('share', 'Share of what it learned')], m.importance.map((i) => ({ feature: i.label, share: pct(i.share) }))),
               moduleTable(spec, 'Model versions', ctx.runId, 'model.versions', [text('version', 'Version'), text('status', 'Status'), text('trained', 'Trained'), text('window', 'Learned from'), text('captured', 'Top 10% caught'), text('auc', 'AUC'), text('approved', 'Approved by')], all.map((x) => ({ version: `v${x.version}`, status: x.status, trained: `${x.trainedAt.slice(0, 10)} by ${x.trainedBy}`, window: `${modelMonthLabel(x.trainFrom)} to ${modelMonthLabel(x.trainTo)}`, captured: pct(x.metrics.captured10), auc: x.metrics.auc.toFixed(2), approved: x.approvedBy ?? '—' }))),

@@ -264,7 +264,7 @@ export type ReportIntent =
   | { intent: 'export'; format: 'xlsx' | 'csv' | 'pdf' | 'docx' }
   | { intent: 'schedule'; frequency: 'daily' | 'weekly' | 'monthly'; day?: string; recipients: string[]; sendIfEmpty: boolean; format: 'xlsx' | 'csv' | 'pdf' | 'docx'; words: string }
   | { intent: 'save'; folder: string }
-  | { intent: 'build'; name: string; periodType: 'month' | 'quarter'; items: string[] }
+  | { intent: 'build'; name: string; periodType: 'month' | 'quarter' | 'year'; items: string[] }
   | { intent: 'edit'; edit: 'chart'; target: string; chart: 'donut' | 'bar' | 'line' | 'stacked_bar' }
   | { intent: 'edit'; edit: 'remove' | 'top' | 'bottom'; target: string }
   | { intent: 'edit'; edit: 'add'; item: string }
@@ -358,8 +358,8 @@ export function parseReportRequest(text: string, hasDraft: boolean): ReportInten
   if (/^save\b/.test(lower)) return { intent: 'save', folder: /\b(?:in|to) (?:the )?(.+?)(?: folder)?$/i.exec(t)?.[1] ?? 'My Reports' };
   const build = /^(?:build|create|make)(?: me)? (?:a|an) (.+?) (?:with|showing|of|that shows) (.+)$/i.exec(t);
   if (build && /report|pack|dashboard|scorecard|summary/i.test(build[1]!)) {
-    const periodType = /quarter/i.test(build[1]!) ? 'quarter' : 'month';
-    const name = build[1]!.replace(/\b(monthly|quarterly|new)\b/gi, '').replace(/\s+/g, ' ').trim();
+    const periodType = /quarter/i.test(build[1]!) ? 'quarter' : /\b(?:annual|yearly)\b/i.test(build[1]!) ? 'year' : 'month';
+    const name = build[1]!.replace(/\b(monthly|quarterly|annual|yearly|new)\b/gi, '').replace(/\s+/g, ' ').trim();
     return { intent: 'build', name: name.charAt(0).toUpperCase() + name.slice(1), periodType, items: build[2]!.split(/,|\band\b/).map((s) => s.trim()).filter(Boolean) };
   }
   if (hasDraft) {
@@ -377,7 +377,7 @@ export function parseReportRequest(text: string, hasDraft: boolean): ReportInten
 }
 
 /** Turns "loan balance trend", "deposit mix" or "delinquency ratio" into a widget from the catalog. */
-function widgetFor(item: string, gateway: ReportGateway, periodType: 'month' | 'quarter') {
+function widgetFor(item: string, gateway: ReportGateway, periodType: 'month' | 'quarter' | 'year') {
   const svc = gateway.semantic;
   const cleaned = item.replace(/\b(trend|over time|mix|by branch|by category|by product|share|last \d+ months?)\b/gi, ' ').trim();
   const hit = svc.search(cleaned || item).metrics[0];
@@ -385,7 +385,7 @@ function widgetFor(item: string, gateway: ReportGateway, periodType: 'month' | '
   if (!hit || hit.score < 0.5) return { title, kind: 'kpi' as const, metrics: [cleaned.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'unnamed'], compare: true, size: 'third' as const };
   const m = svc.model.metrics[hit.name]!;
   const category = m.dimensionsAllowed.find((d) => d.endsWith('_category'));
-  if (/trend|over time|last \d+/.test(item.toLowerCase()) && !m.currentOnly) return { title, kind: 'chart' as const, chart: 'line' as const, metrics: [m.name], trend: periodType === 'month' ? 13 : 6, size: 'full' as const };
+  if (/trend|over time|last \d+/.test(item.toLowerCase()) && !m.currentOnly) return { title, kind: 'chart' as const, chart: 'line' as const, metrics: [m.name], trend: periodType === 'month' ? 13 : periodType === 'year' ? 12 : 6, size: 'full' as const };
   if (/\bmix\b|by (category|product|type)/.test(item.toLowerCase()) && category) return { title, kind: 'chart' as const, chart: 'donut' as const, metrics: [m.name], by: category, size: 'half' as const };
   if (/by branch/.test(item.toLowerCase()) && m.dimensionsAllowed.includes('branch')) return { title, kind: 'chart' as const, chart: 'bar' as const, metrics: [m.name], by: 'branch', size: 'half' as const };
   return { title, kind: 'kpi' as const, metrics: [m.name], compare: true, size: 'third' as const };
@@ -572,7 +572,7 @@ export async function runReportOffline(input: ReportInput, deps: { gateway: Repo
     }
     default: {
       const list = await deps.gateway.store.list(input.user.id, { userClass: input.userClass });
-      const ranked = list.map((t) => ({ t, n: overlap(t.name, p.words) + (p.words.includes(t.definition.settings.periodType === 'month' ? 'monthly' : 'quarterly') ? 0.5 : 0) })).sort((a, b) => b.n - a.n);
+      const ranked = list.map((t) => ({ t, n: overlap(t.name, p.words) + (p.words.includes(t.definition.settings.periodType === 'month' ? 'monthly' : t.definition.settings.periodType === 'year' ? 'annual' : 'quarterly') ? 0.5 : 0) })).sort((a, b) => b.n - a.n);
       const best = ranked[0];
       if (!best || best.n < 1) {
         await call('report_template_list', {});

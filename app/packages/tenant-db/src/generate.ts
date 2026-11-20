@@ -5,7 +5,14 @@
 export const AS_OF = '2026-10-25';
 export const BUILD = { buildId: 'bld_20261026', completedAt: '2026-10-26 04:10:00' };
 /** Month-ends kept in history: 18 months up to the last complete month before the build. */
-export const HISTORY_MONTHS = 18;
+/**
+ * Month-ends of history: two years, so a full calendar year (2025) is on file for annual reports. The
+ * latest KEPT_MONTHS draw their random numbers as they did when history was 18 months, so adding the
+ * earlier months changes nothing from then on: today's figures, the delinquency paths and every test
+ * built on them stay as they were.
+ */
+export const HISTORY_MONTHS = 24;
+const KEPT_MONTHS = 18;
 
 /**
  * The effective federal funds rate at each month-end: 4.33% until the September, October and December
@@ -619,6 +626,9 @@ export function generate(profile: TenantProfile): GeneratedTenant {
     const at = new Date(`${me}T23:59:59Z`);
     const monthStart = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), 1));
     const monthsAgo = HISTORY_MONTHS - mi;
+    // The month's place among the 18 that history held before (negative for the six added before them).
+    // The first of those starts every path afresh, as it always did, so nothing after it moves.
+    const k = mi - (HISTORY_MONTHS - KEPT_MONTHS);
     for (const l of loans) {
       const key = `${me}|${l.branch + 1}|${l.cat.category}|${l.indirect ? 1 : 0}`;
       const agg = histLoan.get(key) ?? [0, 0, 0, 0, 0, 0];
@@ -630,7 +640,7 @@ export function generate(profile: TenantProfile): GeneratedTenant {
       // Month-end delinquency status. Each loan follows its own path, rolling forward, curing or
       // charging off month by month at rates scaled to its branch's and product's delinquency, so the
       // trends (Northgate's rise) hold and roll rates are real. The 60+ balance above comes from it.
-      const prev = dqState.get(l.id);
+      const prev = k === 0 ? undefined : dqState.get(l.id);
       let state: string | null = null;
       let amount = bal;
       if (bal > 0) {
@@ -638,15 +648,18 @@ export function generate(profile: TenantProfile): GeneratedTenant {
         const toChargeOff = l.chargeOff ? monthsBetween(at, l.chargeOff) : 99;
         // Loans that will be charged off are seriously behind in their last months.
         if (toChargeOff <= 3 && toChargeOff >= 0) state = capByAge(toChargeOff <= 1 ? '180–359 days' : '90–179 days', l.open, at);
-        else state = capByAge(prev ? nextStatus(prev, p / 1.35, unit(l.id, 1000 + mi)) : startStatus(unit(l.id, 0) / p), l.open, at);
+        // The kept months draw as before (1000 + their place, 0 to start); the added ones have draws of their own.
+        else state = capByAge(prev ? nextStatus(prev, p / 1.35, unit(l.id, k >= 0 ? 1000 + k : 960 + k)) : startStatus(unit(l.id, k >= 0 ? 0 : 940) / p), l.open, at);
         if (SIXTY_PLUS.has(state)) {
           agg[1]! += bal;
-          everBehind.add(l.id);
+          // Today's credit terms read "ever behind" from the months they always did.
+          if (k >= 0) everBehind.add(l.id);
         }
       } else if (l.chargeOff && l.chargeOff > monthStart && l.chargeOff <= at && prev) {
         state = 'Charged off';
         amount = lastBal.get(l.id) ?? 0;
-        chargedAmount.set(l.id, amount);
+        // Today's charge-off table takes its amounts from the months it always did.
+        if (k >= 0) chargedAmount.set(l.id, amount);
       }
       if (state) {
         const dk = `${me}|${l.branch + 1}|${l.cat.category}|${l.indirect ? 1 : 0}|${l.open.getUTCFullYear()}|${state}`;

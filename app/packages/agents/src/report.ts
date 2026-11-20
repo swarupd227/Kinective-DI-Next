@@ -6,7 +6,7 @@ import { z } from 'zod';
 import type { ApprovalCardBlock, Block, DiTake, ReportCanvasBlock, ReportControl, ReportWidgetView } from '@dinext/block-schemas';
 import { ApprovalStore, CoreError, DELIVERY_GROUPS, SCHEDULE_RECIPIENT_CAP, type ApprovalRecord, type PinDraft, type Recipient, type ReportStore, type RiskTier, type ScheduleDraft, type ScheduleRow, type SettingsPayload, type ShareDraft, type TemplateRow } from '@dinext/di-core';
 import { SemanticError, type SemanticService } from '@dinext/semantic';
-import type { ReportDefinition, ReportWidget, WidgetSize } from '@dinext/tenant-db';
+import { monthEnds, type ReportDefinition, type ReportWidget, type WidgetSize } from '@dinext/tenant-db';
 import { buildBlock, newBlockId, noticeBlock, type BlockSpec } from './answer.ts';
 import { effectiveTier, reservedKeys, type ToolDef } from './gateway.ts';
 import { applySettings, fieldsFrom, settingsDiff, settingsView, type SettingsInput } from './reportSettings.ts';
@@ -22,9 +22,16 @@ const shift = (y: number, m: number, by: number) => {
   return [Math.floor(t / 12), (t % 12) + 1] as const;
 };
 
-/** Complete periods, newest first: 13 months or 6 quarters ending at the build's last month-end. */
-export function periodOptions(type: 'month' | 'quarter', latestMonthEnd: string) {
+/** Complete periods, newest first: 13 months, 6 quarters, or the calendar years history holds in full, ending at the build's last month-end. */
+export function periodOptions(type: 'month' | 'quarter' | 'year', latestMonthEnd: string) {
   const [y, m] = latestMonthEnd.split('-').map(Number) as [number, number];
+  if (type === 'year') {
+    // Years whose January to December are all in history (as many month-ends back from the build as the warehouse keeps).
+    const first = y * 12 + (m - 1) - (monthEnds().length - 1);
+    const years: { value: string; label: string }[] = [];
+    for (let yy = m === 12 ? y : y - 1; yy * 12 >= first; yy--) years.push({ value: String(yy), label: String(yy) });
+    return years;
+  }
   if (type === 'month') return Array.from({ length: 13 }, (_, i) => shift(y, m, -i)).map(([yy, mm]) => ({ value: ym(yy, mm), label: `${MONTHS[mm - 1]} ${yy}` }));
   let q = Math.floor(m / 3);
   let qy = y;
@@ -35,8 +42,16 @@ export function periodOptions(type: 'month' | 'quarter', latestMonthEnd: string)
   });
 }
 
-/** The semantic time range for `span` periods ending at `period`. */
-export function timeFor(type: 'month' | 'quarter', period: string, span = 1) {
+/**
+ * The semantic time range for `span` periods ending at `period`. A year runs January to December; two
+ * years compare it with the one before; a longer span is that year month by month (a trend through the year).
+ */
+export function timeFor(type: 'month' | 'quarter' | 'year', period: string, span = 1) {
+  if (type === 'year') {
+    const y = Number(period.slice(0, 4));
+    if (span > 2) return { grain: 'month' as const, from: ym(y, 1), to: ym(y, 12) };
+    return { grain: 'year' as const, from: ym(y - (span - 1), 1), to: ym(y, 12) };
+  }
   if (type === 'month') {
     const [y, m] = period.split('-').map(Number) as [number, number];
     const [fy, fm] = shift(y, m, -(span - 1));
@@ -49,9 +64,14 @@ export function timeFor(type: 'month' | 'quarter', period: string, span = 1) {
 }
 
 /** Reads "September", "Sep 2026", "last month", "Q2" or "2026-09" as a period value of the given type. */
-export function parsePeriod(text: string, type: 'month' | 'quarter', latestMonthEnd: string): string | undefined {
+export function parsePeriod(text: string, type: 'month' | 'quarter' | 'year', latestMonthEnd: string): string | undefined {
   const opts = periodOptions(type, latestMonthEnd);
   const t = text.toLowerCase();
+  if (type === 'year') {
+    if (/\b(last|previous) year\b/.test(t)) return opts[0]?.value;
+    const y = /\b(20\d{2})\b/.exec(t)?.[1];
+    return y && opts.some((o) => o.value === y) ? y : undefined;
+  }
   if (/\b(last|previous) (month|quarter)\b/.test(t)) return opts[0]!.value;
   const direct = /\b(\d{4})-(\d{2}|q[1-4])\b/i.exec(text)?.[0]?.toUpperCase().replace('-Q', '-Q');
   if (direct && opts.some((o) => o.value === direct)) return direct;
@@ -131,7 +151,7 @@ export function resolveControls(def: ReportDefinition, input: ReportControls, sv
   // A branch outside the purview is never run; the report says which one it shows instead (spec 20.7).
   if (!allowed) notice = `${input.node} is outside your access. Showing ${nodes[0]!.label}.`;
   const node = input.node && allowed ? input.node : nodes[0]!.value;
-  const controls: ReportControl[] = [{ id: 'period', kind: 'period', label: def.settings.periodType === 'month' ? 'Month' : 'Quarter', value: period, options: periods }];
+  const controls: ReportControl[] = [{ id: 'period', kind: 'period', label: def.settings.periodType === 'month' ? 'Month' : def.settings.periodType === 'year' ? 'Year' : 'Quarter', value: period, options: periods }];
   if (def.settings.addHierarchyControls) controls.push({ id: 'node', kind: 'hierarchy', label: 'Branch', value: node, options: nodes });
   return { period, node: def.settings.addHierarchyControls ? node : ctx.purviewBranches ? branches[0]! : 'all', controls, notice, periodLabel: periods.find((p) => p.value === period)!.label };
 }
@@ -474,7 +494,7 @@ export const REPORT_TOOLS = [
   { name: 'report_template_list', operation: 'report.template.list', description: 'Reports the user can open: stock periodic reports, published reports and their own drafts, with template_id, folder and period type. Optionally filtered by words in the name or folder.', input: z.object({ query: z.string().max(80).optional() }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 20, agents: [] },
   { name: 'report_run', operation: 'report.run', description: 'Run a report for a period and branch and show it. Period is YYYY-MM for monthly reports or YYYY-Qn for quarterly ones; omit for the latest. Branch must be within the user’s purview; omit for the default.', input: z.object({ template_id: tpl, period: z.string().max(10).optional(), branch: z.string().max(40).optional() }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 24, agents: [] },
   { name: 'semantic_search', operation: 'semantic.search', description: 'Find defined metrics and dimensions for a report widget, by the user’s words. Use only metric names this returns.', input: z.object({ query: z.string().min(2).max(120) }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'reports', purviewScope: 'none', maxResultRowsToModel: 12, agents: [] },
-  { name: 'report_draft_create', operation: 'report.draft.save', description: 'Create a private draft report from widgets and show it with live data. Drafts are autosaved privately and are not shared until saved with report_save.', input: z.object({ name: z.string().min(3).max(120), description: z.string().max(300).default(''), period_type: z.enum(['month', 'quarter']).default('month'), branch_control: z.boolean().default(true), widgets: z.array(WidgetInput).min(1).max(12) }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 24, agents: [] },
+  { name: 'report_draft_create', operation: 'report.draft.save', description: 'Create a private draft report from widgets and show it with live data. Drafts are autosaved privately and are not shared until saved with report_save.', input: z.object({ name: z.string().min(3).max(120), description: z.string().max(300).default(''), period_type: z.enum(['month', 'quarter', 'year']).default('month'), branch_control: z.boolean().default(true), widgets: z.array(WidgetInput).min(1).max(12) }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 24, agents: [] },
   { name: 'report_draft_update', operation: 'report.draft.save', description: 'Change the draft on screen: add, change, remove or move widgets. Each change is highlighted for the user to accept or revert. Use widget ids from the last result.', input: z.object({ changes: z.array(EditInput).min(1).max(8), summaries: z.array(z.string().max(160)).max(8).default([]).describe('One short line per change, such as "Made Deposit mix a donut chart"') }).strict(), sideEffect: 'read', riskTier: 'none', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 24, agents: [] },
   { name: 'report_save', operation: 'report.template.create', description: 'Save the draft on screen as a report in a folder, so others with access can open it. Returns approval_required; nothing is saved until the user approves.', input: z.object({ folder: z.string().min(2).max(80).describe('Such as "Finance / ALCO" or "My Reports"'), name: z.string().min(3).max(120).optional() }).strict(), sideEffect: 'write', riskTier: 'medium', requiredApp: 'reports', purviewScope: 'report_viewer', maxResultRowsToModel: 1, agents: [] },
   {
@@ -513,7 +533,7 @@ export const REPORT_TOOLS = [
         template_id: tpl.optional(),
         name: z.string().min(3).max(120).optional(),
         description: z.string().max(300).optional(),
-        period_type: z.enum(['month', 'quarter']).optional().describe('"Make it quarterly"'),
+        period_type: z.enum(['month', 'quarter', 'year']).optional().describe('"Make it quarterly", "make it annual"'),
         use_period: z.enum(['current', 'previous']).optional().describe('Which period it opens on: the latest complete one, or the one before'),
         branch_control: z.boolean().optional().describe('The branch picker on the report'),
         history_controls: z.boolean().optional(),
@@ -763,7 +783,7 @@ export class ReportGateway {
               name: String(a.name),
               description: String(a.description ?? ''),
               folder: 'Drafts',
-              settings: { app: 'reports', controlClasses: [], enabled: true, periodType: a.period_type as 'month' | 'quarter', usePeriod: 'current', allowedPeriodTypes: ['month', 'quarter'], addHierarchyControls: Boolean(a.branch_control), addHistoryControls: true, showQueries: false },
+              settings: { app: 'reports', controlClasses: [], enabled: true, periodType: a.period_type as 'month' | 'quarter' | 'year', usePeriod: 'current', allowedPeriodTypes: ['month', 'quarter', 'year'], addHierarchyControls: Boolean(a.branch_control), addHistoryControls: true, showQueries: false },
               layoutVersion: 1,
               widgets,
               pendingEdits: [],
@@ -807,7 +827,7 @@ export class ReportGateway {
                 { label: 'Report', value: payload.name },
                 { label: 'Folder', value: payload.folder },
                 { label: 'Sections', value: payload.definition.widgets.map((w) => w.title).join(' · ').slice(0, 400) },
-                { label: 'Period', value: payload.definition.settings.periodType === 'month' ? 'Monthly, latest complete month' : 'Quarterly, latest complete quarter' },
+                { label: 'Period', value: payload.definition.settings.periodType === 'month' ? 'Monthly, latest complete month' : payload.definition.settings.periodType === 'year' ? 'Annual, latest complete calendar year' : 'Quarterly, latest complete quarter' },
                 { label: 'Who can open it', value: 'Anyone with Reports access; each person sees only data their purview allows' },
                 { label: 'Origin', value: `Created by ${REPORT_AGENT} for ${ctx.user.name}` },
               ],

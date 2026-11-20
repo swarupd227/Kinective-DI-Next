@@ -17,6 +17,7 @@
 import type { Pool } from '@dinext/tenant-db';
 import { auc, capture, contributions, importance, predict, train, type Gbm, type GbmParams } from './gbm.ts';
 import { CoreError } from './referrals.ts';
+import { recordRun } from './attritionModel.ts';
 
 const rows = async <T>(pool: Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
 const nowSql = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
@@ -277,7 +278,7 @@ export class NextProductModelService {
     const set = (await this.models()).filter((m) => m.version === version && m.status !== 'Not used');
     if (!set.length) throw new CoreError('NOT_FOUND', `There’s no version ${version} of the next-best-product model.`);
     // Scores first, then the switch: no one sees the new version before its scores are written.
-    const scored = await this.score(version);
+    const scored = await this.score(version, 'Put to work');
     const old = (await this.models()).filter((m) => m.status === 'Active').map((m) => m.modelId);
     if (old.length) {
       await this.pool.query("UPDATE ml_model SET status = 'Retired' WHERE model_id IN (?)", [old]);
@@ -288,7 +289,7 @@ export class NextProductModelService {
   }
 
   /** Scores every member at the latest month-end for each product they don't hold, keeping their top three. */
-  async score(version: number) {
+  async score(version: number, why = 'Rescored') {
     const set = (await this.models()).filter((m) => m.version === version && m.status !== 'Not used');
     const loaded = await Promise.all(set.map(async (m) => ({ m, ...(await this.load(m.modelId)) })));
     const month = (await this.months()).at(-1)!;
@@ -315,7 +316,18 @@ export class NextProductModelService {
       }
     }
     for (let i = 0; i < out.length; i += 2000) await this.pool.query('INSERT INTO ml_score (model_id, month_end, party_id, item, probability, probability_90d, expected_months, band, drivers) VALUES ?', [out.slice(i, i + 2000)]);
+    if (set[0]) await recordRun(this.pool, set[0].modelId, month, out.length, why);
     return { version, month, scored: out.length, members: snaps.length };
+  }
+
+  /** Monthly rescoring: when the build brings a month-end the version in use hasn't scored, score it again. */
+  async rescoreIfDue() {
+    const a = await this.active();
+    if (!a?.models.length) return null;
+    const latest = (await this.months()).at(-1);
+    const [r] = await rows<{ m: string | null }>(this.pool, 'SELECT MAX(month_end) AS m FROM ml_score WHERE model_id IN (?)', [a.models.map((m) => m.modelId)]);
+    if (!latest || (r?.m && String(r.m).slice(0, 10) >= latest)) return null;
+    return this.score(a.version, 'Monthly rescoring');
   }
 
   /** For one product, the members likeliest to open it at the latest month-end, in purview, with reasons. */

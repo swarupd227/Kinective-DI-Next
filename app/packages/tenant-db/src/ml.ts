@@ -82,6 +82,18 @@ export const ML_DDL = [
      PRIMARY KEY (model_id, month_end, party_id, item),
      KEY ix_score_party (party_id, month_end)
    )`,
+  // Every time a model scores the members: when it's put to work, and each month after as the build
+  // brings a new month-end (monthly rescoring), so the model's history says when its scores are from.
+  `CREATE TABLE IF NOT EXISTS ml_score_run (
+     run_id INT AUTO_INCREMENT PRIMARY KEY,
+     model_name VARCHAR(40) NOT NULL,
+     model_version INT NOT NULL,
+     month_end DATE NOT NULL,
+     scored INT NOT NULL,
+     reason VARCHAR(40) NOT NULL,
+     run_at DATETIME NOT NULL,
+     KEY ix_score_run_model (model_name, run_at)
+   )`,
   `CREATE TABLE IF NOT EXISTS ml_drift (
      model_id INT NOT NULL,
      month_end DATE NOT NULL,
@@ -91,7 +103,7 @@ export const ML_DDL = [
    )`,
 ];
 
-export const ML_WRITE_TABLES = ['ml_model', 'ml_score', 'ml_drift'];
+export const ML_WRITE_TABLES = ['ml_model', 'ml_score', 'ml_drift', 'ml_score_run'];
 
 /** The 12 month-ends the snapshots cover, oldest first, ending at the last month-end before the build. */
 export function snapshotMonths(asOf = AS_OF, count = 12) {

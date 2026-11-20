@@ -121,6 +121,11 @@ export interface ModelRecord {
 export const ATTRITION_BANDS = { high: 0.1, medium: 0.03 };
 const bandOf = (p90: number) => (p90 >= ATTRITION_BANDS.high ? 'High' : p90 >= ATTRITION_BANDS.medium ? 'Medium' : 'Low');
 
+/** Records one scoring run against the model's name and version (where the table exists: a tenant seeded before it has none). */
+export async function recordRun(pool: Pool, modelId: number, monthEnd: string, scored: number, reason: string) {
+  await pool.query('INSERT INTO ml_score_run (model_name, model_version, month_end, scored, reason, run_at) SELECT name, version, ?, ?, ?, ? FROM ml_model WHERE model_id = ?', [monthEnd, scored, reason.slice(0, 40), nowSql(), modelId]).catch(() => {});
+}
+
 export class AttritionModelService {
   constructor(private readonly pool: Pool) {}
 
@@ -224,14 +229,14 @@ export class AttritionModelService {
     const m = await this.model(modelId);
     if (!m) throw new CoreError('NOT_FOUND', 'That model version no longer exists.');
     // Scores first, then the switch: no one sees the new version before its scores are written.
-    const scored = await this.score(modelId);
+    const scored = await this.score(modelId, 'Put to work');
     await this.pool.query("UPDATE ml_model SET status = 'Retired' WHERE name = ? AND status = 'Active'", [m.name]);
     await this.pool.query("UPDATE ml_model SET status = 'Active', approved_by = ?, approval_id = ?, activated_at = ? WHERE model_id = ?", [by, approvalId, nowSql(), modelId]);
     return scored;
   }
 
   /** Scores every member at each of the last six month-ends: a history to compare against, and this month's reasons. */
-  async score(modelId: number) {
+  async score(modelId: number, why = 'Rescored') {
     const model = await this.load(modelId);
     const months = (await this.months()).slice(-HISTORY_MONTHS);
     await this.pool.query('DELETE FROM ml_score WHERE model_id = ?', [modelId]);
@@ -256,7 +261,26 @@ export class AttritionModelService {
       scored += out.length;
     }
     await this.drift(modelId);
+    await recordRun(this.pool, modelId, months.at(-1)!, scored, why);
     return { modelId, months, scored };
+  }
+
+  /**
+   * Monthly rescoring: when the build brings a month-end the model in use hasn't scored, it scores the
+   * members again with the same version (no retraining, so no approval). Nothing to do returns null.
+   */
+  async rescoreIfDue() {
+    const m = await this.active();
+    if (!m) return null;
+    const latest = (await this.months()).at(-1);
+    const [r] = await rows<{ m: string | null }>(this.pool, 'SELECT MAX(month_end) AS m FROM ml_score WHERE model_id = ?', [m.modelId]);
+    if (!latest || (r?.m && String(r.m).slice(0, 10) >= latest)) return null;
+    return this.score(m.modelId, 'Monthly rescoring');
+  }
+
+  /** The model's scoring runs, newest first: when, for which month-end, and why. */
+  async scoreRuns(name = 'attrition', limit = 6) {
+    return (await rows<{ model_version: number; month_end: unknown; scored: number; reason: string; run_at: unknown }>(this.pool, 'SELECT model_version, month_end, scored, reason, run_at FROM ml_score_run WHERE model_name = ? ORDER BY run_id DESC LIMIT ?', [name, limit]).catch(() => [])).map((r) => ({ version: Number(r.model_version), monthEnd: String(r.month_end instanceof Date ? r.month_end.toISOString() : r.month_end).slice(0, 10), scored: Number(r.scored), reason: r.reason, at: String(r.run_at instanceof Date ? r.run_at.toISOString() : r.run_at).slice(0, 16).replace('T', ' ') }));
   }
 
   /** How far the latest month's members have moved from what the model trained on (population stability). */

@@ -103,7 +103,7 @@ export interface SettingsPayload {
 export interface SettingsFields {
   name?: string;
   description?: string;
-  periodType?: 'month' | 'quarter';
+  periodType?: 'month' | 'quarter' | 'year';
   usePeriod?: 'current' | 'previous';
   addHierarchyControls?: boolean;
   addHistoryControls?: boolean;

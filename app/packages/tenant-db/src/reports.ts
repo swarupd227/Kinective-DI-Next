@@ -36,9 +36,9 @@ export interface ReportSettings {
   /** A saved report that is turned off doesn't run, and others can't see it. */
   enabled: boolean;
   /** Period and Hierarchy Info tab. */
-  periodType: 'month' | 'quarter';
+  periodType: 'month' | 'quarter' | 'year';
   usePeriod: 'current' | 'previous';
-  allowedPeriodTypes: ('month' | 'quarter')[];
+  allowedPeriodTypes: ('month' | 'quarter' | 'year')[];
   addHierarchyControls: boolean;
   addHistoryControls: boolean;
   /** Test/Preview tab: generated queries are shown only to Query Browser users. */
@@ -162,13 +162,13 @@ export const REPORT_DDL = [
 
 export const REPORT_WRITE_TABLES = ['esp_report_templates', 'esp_report_schedules', 'esp_report_exports', 'esp_report_shares', 'esp_report_pins', 'esp_report_setting_changes'];
 
-const settings = (periodType: 'month' | 'quarter', controlClasses: string[]): ReportSettings => ({
+const settings = (periodType: 'month' | 'quarter' | 'year', controlClasses: string[]): ReportSettings => ({
   app: 'reports',
   controlClasses,
   enabled: true,
   periodType,
   usePeriod: 'current',
-  allowedPeriodTypes: ['month', 'quarter'],
+  allowedPeriodTypes: ['month', 'quarter', 'year'],
   addHierarchyControls: true,
   addHistoryControls: true,
   showQueries: false,
@@ -708,6 +708,25 @@ export function stockReports(institutionType: 'credit_union' | 'bank'): ReportDe
         { id: 'c1', title: 'Loan balance by category, last 5 quarters', kind: 'chart', chart: 'stacked_bar', metrics: ['loan_balance'], by: 'loan_category', trend: 5, size: 'half' },
         { id: 'c2', title: 'Delinquency 60+, last 5 quarters', kind: 'chart', chart: 'line', metrics: ['delinquency_ratio_60_plus'], trend: 5, size: 'half' },
         { id: 't1', title: 'By region', kind: 'table', metrics: ['loan_balance', 'deposit_balance', 'new_loan_amount', 'delinquency_ratio_60_plus'], by: 'region', size: 'full' },
+      ],
+    },
+    // DI's annual reports: a complete calendar year, now that history holds one.
+    {
+      templateId: 'annual_review',
+      name: 'Annual review',
+      description: `The year in figures: loans, deposits, delinquency and new ${persons} at the year's end against the year before, balances month by month through the year, and new loans by category.`,
+      folder: 'Periodic / Annual',
+      settings: settings('year', ['Executive', 'Finance']),
+      layoutVersion: 1,
+      pendingEdits: [],
+      widgets: [
+        kpi('k1', 'Total loans', 'loan_balance'),
+        kpi('k2', 'Total deposits', 'deposit_balance'),
+        kpi('k3', 'Delinquency 60+', 'delinquency_ratio_60_plus'),
+        kpi('k4', `New ${persons}`, 'new_members'),
+        { id: 'c1', title: 'Loan balance through the year', kind: 'chart', chart: 'line', metrics: ['loan_balance'], trend: 12, size: 'half' },
+        { id: 'c2', title: 'Deposit balance through the year', kind: 'chart', chart: 'line', metrics: ['deposit_balance'], trend: 12, size: 'half' },
+        { id: 'c3', title: 'New loans funded in the year, by category', kind: 'chart', chart: 'bar', metrics: ['new_loan_amount'], by: 'loan_category', size: 'full' },
       ],
     },
   ];
