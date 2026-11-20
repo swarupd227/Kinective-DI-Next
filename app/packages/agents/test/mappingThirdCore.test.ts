@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { validateBlock, type Block } from '@dinext/block-schemas';
 import { ApprovalStore, SourceService, compareWith, secretKeyFrom } from '@dinext/di-core';
 import { unitOf } from '../../di-core/src/mappingEngine.ts';
-import { createPool, rawDatabase, tenantPool, thirdCoreDatabase, warehouseAvailable, type Pool } from '@dinext/tenant-db';
+import { createPool, rawDatabase, replicaDatabase, tenantPool, thirdCoreDatabase, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { coreMappingModule, crosswalkFrom, ModuleGateway, runModuleOffline, sourcesModule, type ModuleSpec, type ModuleTurn, type RunSink } from '../src/index.ts';
 
 describe('reading a code the core writes in words', () => {
@@ -18,7 +18,7 @@ describe('reading a code the core writes in words', () => {
     expect(unitOf('BalanceCents')).toBe('cents');
     expect(unitOf('rate_bps')).toBe('bps');
     expect(unitOf('DIVRATE')).toBeNull();
-    const freeze = coreMappingModule(null as never, () => '2026-11-19').plan!('Freeze the proposed mapping for the Core C stand-in');
+    const freeze = coreMappingModule(null as never, () => '2026-11-19').plan!('Freeze the proposed mapping for the Core C stand-in', {} as never);
     expect(freeze).toEqual({ tool: 'map_freeze', args: { connection: 'Core C stand-in' } });
     // The request reaches Core Mapping at all: a code of a few words, as a person types it.
     for (const q of ['Map loan type Visa Platinum to credit card', 'Map member type Business Member to small business', 'Map loan type “Business Term Loan” as business', 'Map share type 14 to money market']) expect(coreMappingModule(null as never, () => '2026-11-20').request!.test(q), q).toBe(true);
@@ -136,6 +136,11 @@ describe.skipIf(!up)('a third core, end to end, with no seed step', () => {
   it('maps the held loan codes, named as the core writes them, and the next pull reconciles every loan', async () => {
     let version = 1;
     const held = (await sources.pull(connectionId, { approvalId: 'apr_corec_pull1' })).held ?? [];
+    // A Symitar connection made after Core C, so it's the newest, as on the demo: a code Core C holds
+    // still goes to Core C, not to whichever connection happens to be the default.
+    const replica = await sources.saveLogin({ system: 'symitar', host: '127.0.0.1', port: 3307, database: replicaDatabase(SCHEMA), login: 'core_reader', password: process.env.DI_CORE_READER_PASSWORD ?? 'core_reader_demo' }, { userId: PAT.id });
+    await sources.create({ credentialId: replica.credentialId, name: 'Symitar test replica', schedule: 'Nightly at 2:00 am', tables: ['cdm_party', 'cdm_deposit_account', 'cdm_loan'] }, { userId: PAT.id, name: PAT.name }, { approvalId: 'apr_corec_decoy', on: '2026-11-20' });
+    expect((await sources.checkCrosswalk({ set: 'loanType', code: 'visa platinum', value: 'credit card' })).conn.connectionId).toBe(connectionId);
     for (const [set, code, value] of [['loan', 'Visa Platinum', 'credit card'], ['loan', 'Signature Loan', 'personal'], ['loan', 'Business Term Loan', 'business'], ['member', 'Business Member', 'small business']] as const) {
       if (!held.some((h) => h.code === code)) continue;
       const text = `Map ${set} type ${code} to ${value}`;

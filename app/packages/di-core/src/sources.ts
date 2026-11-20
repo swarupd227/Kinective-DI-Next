@@ -825,6 +825,19 @@ export class SourceService {
   }
 
   /** Every mapping version of a connection, newest first. */
+  /** The connection a core code belongs to: one whose pulls hold it now, else one whose latest proposed mapping lists it. */
+  private async connectionOfCode(code: string) {
+    const want = codeKey(code).toLowerCase();
+    const [held] = await rows<{ connection_id: number }>(this.pool, "SELECT connection_id FROM map_drift WHERE kind = 'new_code' AND state <> 'resolved' AND LOWER(value) = ? ORDER BY drift_id DESC LIMIT 1", [want]).catch(() => []);
+    if (held) return held.connection_id;
+    const runs = await rows<{ connection_id: number; summary: string | { crosswalks?: Crosswalk[] } }>(this.pool, "SELECT r.connection_id, r.summary FROM map_run r JOIN (SELECT connection_id, MAX(run_id) AS id FROM map_run WHERE mode = 'propose' GROUP BY connection_id) m ON m.id = r.run_id ORDER BY r.run_id DESC").catch(() => []);
+    for (const r of runs) {
+      const s = (typeof r.summary === 'string' ? JSON.parse(r.summary) : r.summary) as { crosswalks?: Crosswalk[] };
+      if ((s.crosswalks ?? []).some((c) => c.codes.some((x) => codeKey(x.code).toLowerCase() === want))) return r.connection_id;
+    }
+    return null;
+  }
+
   /** The core Kinective hasn't mapped that DI proposed a mapping for most recently, if any. */
   private async latestProposed() {
     const runs = await rows<{ connection_id: number }>(this.pool, "SELECT connection_id FROM map_run WHERE mode = 'propose' ORDER BY run_id DESC LIMIT 20").catch(() => []);
@@ -870,7 +883,9 @@ export class SourceService {
    * value in DI's terms (a DI value, or one of the ontology's code labels), and the rows held for it.
    */
   async checkCrosswalk(p: { set: string; code: string; value: string; connectionId?: number }) {
-    const conn = await this.mappingTarget(p.connectionId);
+    // With no connection named, the one the code belongs to: the connection whose pulls hold it, else the
+    // core whose latest proposed mapping lists it ("Visa Platinum" is Core C's, not the Symitar replica's).
+    const conn = await this.mappingTarget(p.connectionId ?? (await this.connectionOfCode(p.code)) ?? undefined);
     const version = await this.currentVersion(conn);
     if (!version) throw new CoreError('INVALID', `${conn.name} has no mapping version to change yet.`);
     // A code list by its own name, or by the name it answers to (shareType for deposit_category).
