@@ -20,6 +20,8 @@ describe('reading a code the core writes in words', () => {
     expect(unitOf('DIVRATE')).toBeNull();
     const freeze = coreMappingModule(null as never, () => '2026-11-19').plan!('Freeze the proposed mapping for the Core C stand-in');
     expect(freeze).toEqual({ tool: 'map_freeze', args: { connection: 'Core C stand-in' } });
+    // The request reaches Core Mapping at all: a code of a few words, as a person types it.
+    for (const q of ['Map loan type Visa Platinum to credit card', 'Map member type Business Member to small business', 'Map loan type “Business Term Loan” as business', 'Map share type 14 to money market']) expect(coreMappingModule(null as never, () => '2026-11-20').request!.test(q), q).toBe(true);
   });
 });
 
@@ -134,13 +136,15 @@ describe.skipIf(!up)('a third core, end to end, with no seed step', () => {
   it('maps the held loan codes, named as the core writes them, and the next pull reconciles every loan', async () => {
     let version = 1;
     const held = (await sources.pull(connectionId, { approvalId: 'apr_corec_pull1' })).held ?? [];
-    for (const [code, value] of [['Visa Platinum', 'credit card'], ['Signature Loan', 'personal'], ['Business Term Loan', 'business']] as const) {
+    for (const [set, code, value] of [['loan', 'Visa Platinum', 'credit card'], ['loan', 'Signature Loan', 'personal'], ['loan', 'Business Term Loan', 'business'], ['member', 'Business Member', 'small business']] as const) {
       if (!held.some((h) => h.code === code)) continue;
-      expect(await approve((await ask(`Map loan type ${code.toLowerCase()} to ${value}`, `thr_corec_${code.replace(/\W/g, '')}`)).out)).toContain(`mapping version ${++version}`);
+      const text = `Map ${set} type ${code} to ${value}`;
+      expect(gateway.match(text), `${text} reaches Core Mapping`).toBe(spec);
+      expect(await approve((await ask(text, `thr_corec_${code.replace(/\W/g, '')}`)).out)).toContain(`mapping version ${++version}`);
     }
     const p = await sources.pull(connectionId, { approvalId: 'apr_corec_pull2' });
     expect(p.version).toBe(version);
     expect(p.tables.find((t) => t.diTable === 'cdm_loan')).toMatchObject({ pulled: 31_817, matched: 31_817, differ: 0 });
-    expect((p.held ?? []).filter((h) => h.diTable === 'cdm_loan')).toEqual([]);
+    expect(p.held ?? []).toEqual([]);
   }, 240_000);
 });

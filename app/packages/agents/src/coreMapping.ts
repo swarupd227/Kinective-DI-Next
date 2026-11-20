@@ -23,7 +23,7 @@ export const DISCOVER_REQUEST =
 
 /** Mapping versions, drift and code crosswalks (Core Mapping and Ontology, phase 3). */
 export const VERSION_REQUEST =
-  /\bmapping versions?\b|\bversions? of the (?:core |symitar )?mapping\b|\b(?:mapping|core|schema) drift\b|\bwhat changed in the core\b|\bheld (?:rows|records|shares|loans)\b|\bmap (?:share|savings|loan|member|account|deposit) (?:type|code|product) [A-Za-z0-9_-]{1,12} (?:to|as)\b|\b(?:freeze|approve|use) the proposed mapping\b/i;
+  /\bmapping versions?\b|\bversions? of the (?:core |symitar )?mapping\b|\b(?:mapping|core|schema) drift\b|\bwhat changed in the core\b|\bheld (?:rows|records|shares|loans)\b|\bmap (?:share|savings|loan|member|account|deposit) (?:type|code|product) (?:["“'][^"”']{1,40}["”']|[A-Za-z0-9_-]+(?: [A-Za-z0-9_-]+){0,4}) (?:to|as)\b|\b(?:freeze|approve|use) the proposed mapping\b/i;
 
 /** "Map share type 14 to money market" → the code list, the code and the value. */
 export function crosswalkFrom(text: string): { set: string; code: string; value: string } | null {
