@@ -546,6 +546,31 @@ export function generate(profile: TenantProfile): GeneratedTenant {
   const loanScale = profile.targetLoanBalance / rawTotal;
   for (const l of loans) l.original *= loanScale;
 
+  // A loan is made to a member. One drawn for someone before they joined (a 20-year mortgage for a member
+  // of two years) goes to a member of the same branch who had joined by then. It runs after the charge-offs
+  // and the scaling, which look at who holds a loan, so the loan itself (its dates, amounts and delinquency
+  // path) and every total are unchanged; only who holds it moves. Its own random stream, so no other draw
+  // changes. A loan from before anyone on file joined (a 1990s mortgage) stays, and its holder's membership
+  // is dated from it, once the deposits are drawn.
+  const rk = prng(profile.seed ^ 0x51a7);
+  const joinOf = new Map(parties.map((q) => [q.id, q.join.getTime()]));
+  const byJoin = profile.branches.map((_, bi) => parties.filter((q) => q.branch === bi && q.member).sort((a, b) => a.join.getTime() - b.join.getTime()));
+  const joinedEarlier = new Map<number, Date>();
+  for (const l of loans) {
+    if (joinOf.get(l.party)! <= l.open.getTime()) continue;
+    const list = byJoin[l.branch]!;
+    // The members who had joined by the day it opened: the first `lo` in join order.
+    let lo = 0;
+    let hi = list.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (list[mid]!.join.getTime() <= l.open.getTime()) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo) l.party = list[Math.floor(rk() * lo)]!.id;
+    else if (!joinedEarlier.has(l.party) || joinedEarlier.get(l.party)! > l.open) joinedEarlier.set(l.party, l.open);
+  }
+
   /** Probability a loan is 60+ days delinquent in a month; recent months rise in weaker branches. */
   const dqProb = (l: Loan, monthsAgo: number) => {
     const b = profile.branches[l.branch]!;
@@ -582,6 +607,12 @@ export function generate(profile: TenantProfile): GeneratedTenant {
   const rawDep = deps.reduce((s, d) => s + depBalanceAt(d, asOf), 0);
   const depScale = profile.targetDepositBalance / rawDep;
   for (const d of deps) d.balance *= depScale;
+  // Memberships dated from a loan older than anyone else on file (see above), after the deposits, so none moves.
+  for (const [id, at] of joinedEarlier) {
+    const q = parties[id - 1]!;
+    q.join = at;
+    partyRows[id - 1]![4] = ymd(at);
+  }
 
   const depositRows = deps.map((d) => {
     const maturity = d.mix.maturing && !d.close ? ymd(new Date(asOf.getTime() + (unit(d.id, 7) * 540 - 20) * 86_400_000)) : null;
