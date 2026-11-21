@@ -19,7 +19,9 @@ describe('annual periods', () => {
     // A December build makes its own year complete.
     expect(periodOptions('year', '2026-12-31').map((o) => o.value)).toEqual(['2026', '2025']);
     expect(timeFor('year', '2025')).toEqual({ grain: 'year', from: '2025-01', to: '2025-12' });
-    expect(timeFor('year', '2025', 2)).toEqual({ grain: 'year', from: '2024-01', to: '2025-12' });
+    // History begins in October 2024, so 2025 isn't compared with a part of 2024; 2026 will be compared with 2025.
+    expect(timeFor('year', '2025', 2)).toEqual({ grain: 'year', from: '2025-01', to: '2025-12' });
+    expect(timeFor('year', '2026', 2)).toEqual({ grain: 'year', from: '2025-01', to: '2026-12' });
     // A trend in an annual report runs month by month through the year.
     expect(timeFor('year', '2025', 12)).toEqual({ grain: 'month', from: '2025-01', to: '2025-12' });
     expect(parsePeriod('Show the annual review for 2025', 'year', '2026-09-30')).toBe('2025');

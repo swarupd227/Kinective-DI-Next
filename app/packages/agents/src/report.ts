@@ -50,7 +50,11 @@ export function timeFor(type: 'month' | 'quarter' | 'year', period: string, span
   if (type === 'year') {
     const y = Number(period.slice(0, 4));
     if (span > 2) return { grain: 'month' as const, from: ym(y, 1), to: ym(y, 12) };
-    return { grain: 'year' as const, from: ym(y - (span - 1), 1), to: ym(y, 12) };
+    // The year before only when all of it is in history: a year that starts partway (history begins in
+    // October 2024) would make a year's new members look three or four times what they were.
+    const first = monthEnds()[0]?.slice(0, 7) ?? '';
+    const back = span === 2 && ym(y - 1, 1) >= first ? 1 : 0;
+    return { grain: 'year' as const, from: ym(y - back, 1), to: ym(y, 12) };
   }
   if (type === 'month') {
     const [y, m] = period.split('-').map(Number) as [number, number];
