@@ -3,7 +3,7 @@
 // members live, all placed from the institution's own geography, and directions to a company.
 import { describe, expect, it } from 'vitest';
 import { validateBlock, type Block, type ChartBlock } from '@dinext/block-schemas';
-import { GeographyService } from '@dinext/di-core';
+import { GeographyService, IndirectService, ProspectService } from '@dinext/di-core';
 import { tenantPool, warehouseAvailable } from '@dinext/tenant-db';
 import { buildOption } from '../../blocks/src/chart/buildOption.ts';
 import { prospectingModule } from '../src/growth.ts';
@@ -54,6 +54,20 @@ describe.skipIf(!up)('the SEG map against the warehouse', () => {
     expect(option.series.map((s) => [s.name, s.silent])).toEqual([['Members', true], ['SEGs', false], ['Prospects', false], ['Branches', false]]);
     expect(option.series[1]!.data.length).toBe(30);
     for (const s of option.series) for (const d of s.data) expect(d.value[0]! >= option.xAxis.min && d.value[0]! <= option.xAxis.max).toBe(true);
+  });
+
+  it('measures prospecting routes and dealer visits in the same market the map shows', async () => {
+    const m = (await geo.marketMap())!;
+    const westport = m.branches.find((b) => b.name === 'Westport')!;
+    const route = await new ProspectService(pool).route('Westport', 25, {});
+    expect(route.directions).toContain(`origin=${Math.round(westport.lat * 1e5) / 1e5},${Math.round(westport.lng * 1e5) / 1e5}`);
+    expect(route.stops.length).toBeGreaterThan(0);
+    // Every stop is where the map puts that prospect.
+    const onMap = new Map(m.companies.filter((c) => c.prospectId !== null).map((c) => [c.prospectId, [Math.round(c.lat * 1e5) / 1e5, Math.round(c.lng * 1e5) / 1e5]]));
+    for (const s of route.stops) expect(s.at, s.company).toEqual(onMap.get(s.prospectId));
+    // Dealers sit near their branch in the same market, not in another state.
+    const visits = await new IndirectService(pool).planVisits(3, 'Westport', {});
+    for (const s of visits.stops) expect(Math.abs(s.at[0] - westport.lat) < 1 && Math.abs(s.at[1] - westport.lng) < 1, `${s.name} at ${s.at}`).toBe(true);
   });
 
   it('gives directions to a company from its branch', async () => {

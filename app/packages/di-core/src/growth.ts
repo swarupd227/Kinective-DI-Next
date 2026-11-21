@@ -4,6 +4,7 @@
 import { branchPlace } from '@dinext/tenant-db';
 import type { Pool } from '@dinext/tenant-db';
 import { CoreError, type CoreContext } from './referrals.ts';
+import { marketPlaces } from './geography.ts';
 
 const rows = async <T>(pool: Pool, sql: string, params: unknown[] = []) => (await pool.query(sql, params))[0] as T[];
 const day = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v ?? '')).slice(0, 10);
@@ -37,11 +38,34 @@ export const directionsLink = (start: readonly [number, number], stops: readonly
   return `https://www.google.com/maps/dir/?api=1&origin=${p(start)}&destination=${p(last)}${stops.length > 1 ? `&waypoints=${stops.slice(0, -1).map(p).join('%7C')}` : ''}`;
 };
 
+/**
+ * A branch's place: where the SEG map puts it, in the institution's own market (the ZIP most of its
+ * members live in), so routes and miles match the map. The fixed place the seed drew is the fallback
+ * where the geography isn't loaded.
+ */
 async function branchAt(pool: Pool, name: string) {
   const list = await rows<{ name: string }>(pool, 'SELECT name FROM cdm_location ORDER BY int_id');
   const i = list.findIndex((b) => b.name.toLowerCase() === name.toLowerCase());
   if (i < 0) throw new CoreError('NOT_FOUND', `There’s no branch called ${name}. They are: ${list.map((b) => b.name).join(', ')}.`);
-  return { name: list[i]!.name, at: branchPlace(i) };
+  const market = await marketPlaces(pool);
+  return { name: list[i]!.name, at: market?.branches.get(list[i]!.name.toLowerCase()) ?? branchPlace(i) };
+}
+
+/**
+ * Places the seed drew around a fixed point (dealers, which have no address on file), moved into the
+ * market: each keeps where it sat from its own branch, from that branch's place in the market.
+ */
+async function intoMarket(pool: Pool, places: { branch: string; at: readonly [number, number] }[]) {
+  const market = await marketPlaces(pool);
+  if (!market) return places.map((p) => p.at);
+  const list = (await rows<{ name: string }>(pool, 'SELECT name FROM cdm_location ORDER BY int_id')).map((b) => b.name.toLowerCase());
+  return places.map((p) => {
+    const i = list.indexOf(p.branch.toLowerCase());
+    const now = market.branches.get(p.branch.toLowerCase());
+    if (i < 0 || !now) return p.at;
+    const then = branchPlace(i);
+    return [Math.round((now[0] + p.at[0] - then[0]) * 1e5) / 1e5, Math.round((now[1] + p.at[1] - then[1]) * 1e5) / 1e5] as const;
+  });
 }
 
 const latestMonth = async (pool: Pool) => (await rows<{ m: string }>(pool, 'SELECT MAX(month) AS m FROM ind_dealer_month'))[0]?.m ?? '';
@@ -153,8 +177,9 @@ export class IndirectService {
     const start = await branchAt(this.pool, near);
     const { dealers } = await this.performance('month', ctx);
     const chosen = dealers.filter((d) => d.status === 'Active').slice(0, count);
-    const places = await rows<{ dealer_id: number; lat: string; lng: string }>(this.pool, 'SELECT dealer_id, lat, lng FROM ind_dealer');
-    const at = (id: number) => { const p = places.find((x) => x.dealer_id === id)!; return [Number(p.lat), Number(p.lng)] as const; };
+    const places = await rows<{ dealer_id: number; branch: string; lat: string; lng: string }>(this.pool, 'SELECT dealer_id, branch, lat, lng FROM ind_dealer');
+    const moved = await intoMarket(this.pool, places.map((p) => ({ branch: p.branch, at: [Number(p.lat), Number(p.lng)] as const })));
+    const at = (id: number) => moved[places.findIndex((x) => x.dealer_id === id)]!;
     const stops = visitOrder(start.at, chosen.map((d) => ({ ...d, at: at(d.dealerId) })));
     return { start: start.name, stops, total: Math.round(stops.reduce((n, s) => n + s.leg, 0) * 10) / 10, directions: directionsLink(start.at, stops.map((s) => s.at)) };
   }
@@ -208,7 +233,9 @@ export class ProspectService {
 
   async list(f: { stage?: string; minAssets?: number }, ctx: CoreContext) {
     const s = scope(ctx, 'branch');
-    const all = (await rows<Record<string, unknown>>(this.pool, `SELECT * FROM prs_prospect WHERE 1 = 1${s.sql} ORDER BY assets DESC`, s.params)).map(this.toProspect);
+    // Each prospect where the SEG map shows it (its address in the market), not where the seed first drew it.
+    const market = await marketPlaces(this.pool);
+    const all = (await rows<Record<string, unknown>>(this.pool, `SELECT * FROM prs_prospect WHERE 1 = 1${s.sql} ORDER BY assets DESC`, s.params)).map(this.toProspect).map((p) => ({ ...p, at: market?.prospects.get(p.prospectId) ?? p.at }));
     return all.filter((p) => (!f.stage || p.stage.toLowerCase() === f.stage.toLowerCase()) && (f.minAssets === undefined || p.assets >= f.minAssets));
   }
 

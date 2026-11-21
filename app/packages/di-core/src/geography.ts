@@ -123,9 +123,9 @@ export class GeographyService {
         WHERE m.latitude IS NOT NULL AND p.is_member = 1${scope.sql} GROUP BY 1, 2`,
       scope.params,
     );
-    const companies = await rows<{ business_id: number; name: string; kind: string; branch: string | null; with_us: number | null; employees: number | null; lat: number | null; lng: number | null }>(
+    const companies = await rows<{ business_id: number; prospect_id: number | null; name: string; kind: string; branch: string | null; with_us: number | null; employees: number | null; lat: number | null; lng: number | null }>(
       this.pool,
-      `SELECT b.business_id, b.name, b.kind, l.name AS branch, b.employees_with_us AS with_us, b.total_employees AS employees, z.centroid_latitude AS lat, z.centroid_longitude AS lng
+      `SELECT b.business_id, b.prospect_id, b.name, b.kind, l.name AS branch, b.employees_with_us AS with_us, b.total_employees AS employees, z.centroid_latitude AS lat, z.centroid_longitude AS lng
          FROM brm_business b LEFT JOIN cdm_location l ON l.int_id = b.assigned_branch_id
          JOIN brm_location a ON a.location_id = (SELECT MIN(x.location_id) FROM brm_location x WHERE x.business_id = b.business_id AND x.is_physical = 1)
          JOIN cen_zcta z ON z.zcta = a.zip
@@ -136,7 +136,7 @@ export class GeographyService {
     return {
       branches: branchRows.map((b) => ({ name: b.name, lat: Number(b.lat), lng: Number(b.lng), members: Number(b.n) })),
       density: cells.map((c) => ({ lat: Number(c.lat), lng: Number(c.lng), members: Number(c.n) })),
-      companies: companies.filter((c) => c.lat !== null).map((c) => ({ id: Number(c.business_id), name: c.name, kind: c.kind === 'SEG' ? ('SEG' as const) : ('Prospect' as const), branch: c.branch, withUs: Number(c.with_us ?? 0), employees: c.employees === null ? null : Number(c.employees), lat: Number(c.lat) + near(Number(c.business_id), 1), lng: Number(c.lng) + near(Number(c.business_id), 2) * 1.4 })),
+      companies: companies.filter((c) => c.lat !== null).map((c) => ({ id: Number(c.business_id), prospectId: c.prospect_id === null ? null : Number(c.prospect_id), name: c.name, kind: c.kind === 'SEG' ? ('SEG' as const) : ('Prospect' as const), branch: c.branch, withUs: Number(c.with_us ?? 0), employees: c.employees === null ? null : Number(c.employees), lat: Number(c.lat) + near(Number(c.business_id), 1), lng: Number(c.lng) + near(Number(c.business_id), 2) * 1.4 })),
     };
   }
 
@@ -163,6 +163,27 @@ export class GeographyService {
     };
   }
 }
+
+/**
+ * Where the market's branches and prospect companies are, as the SEG map places them, for anything
+ * that measures miles (prospecting routes, dealer visits), so its distances match the map. Kept for ten
+ * minutes per database; null where the geography isn't loaded.
+ */
+export async function marketPlaces(pool: Pool) {
+  const hit = placesCache.get(pool);
+  if (hit && hit.until > Date.now()) return hit.places;
+  const m = await new GeographyService(pool).marketMap().catch(() => null);
+  const places = m
+    ? {
+        branches: new Map(m.branches.map((b) => [b.name.toLowerCase(), [round5(b.lat), round5(b.lng)] as [number, number]])),
+        prospects: new Map(m.companies.filter((c) => c.prospectId !== null).map((c) => [c.prospectId!, [round5(c.lat), round5(c.lng)] as [number, number]])),
+      }
+    : null;
+  placesCache.set(pool, { until: Date.now() + 600_000, places });
+  return places;
+}
+const placesCache = new WeakMap<object, { until: number; places: { branches: Map<string, [number, number]>; prospects: Map<number, [number, number]> } | null }>();
+const round5 = (n: number) => Math.round(n * 1e5) / 1e5;
 
 /** The heatmap's grid: about a mile and a half in latitude. */
 const GRID = 0.02;
