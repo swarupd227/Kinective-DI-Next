@@ -50,6 +50,22 @@ export type DecisionResponse =
   | { ok: false; code: ApprovalErrorCode; message?: string };
 
 /** GET /v1/reports: what the Reports app lists (spec 8.5–8.9). */
+/** Settings › AI connection: where the Anthropic key in use comes from, never the key itself. */
+export interface AiConnection {
+  source: 'settings' | 'deployment' | 'none';
+  last4: string | null;
+  updatedBy: string | null;
+  updatedAt: string | null;
+  lastTest: { at: string; ok: boolean; message: string } | null;
+  /** Whether DI is answering with Claude (false: the offline planner). */
+  live: boolean;
+}
+export interface AiKeyTest {
+  ok: boolean;
+  message: string;
+  ms: number;
+}
+
 export interface ReportsIndex {
   take: DiTake;
   templates: { templateId: string; name: string; folder: string; status: 'stock' | 'published' | 'draft'; periodType: 'month' | 'quarter' | 'year'; description: string; sections: number; owner: string; updatedAt: string; origin?: string; onHome?: boolean }[];
@@ -135,6 +151,19 @@ export function createApiClient({ baseUrl, token }: ApiClientOptions) {
     // Report settings (read-only) and the local stand-in for this morning's emails.
     reportSettings: (templateId: string) => get<ReportSettingsView>(`/v1/reports/${encodeURIComponent(templateId)}/settings`),
     runMorningEmails: () => send<{ emails: number }>('POST', '/v1/emails/morning/run'),
+    // Settings › AI connection (administrators): the key goes in, never comes back; only its last four characters.
+    aiConnection: () => get<AiConnection>('/v1/settings/ai'),
+    async testAiKey(key?: string): Promise<AiKeyTest> {
+      const res = await fetch(`${baseUrl}/v1/settings/ai/test`, { method: 'POST', headers: headers(), body: JSON.stringify(key ? { key } : {}) });
+      const json = (await res.json().catch(() => ({}))) as AiKeyTest;
+      if (!res.ok) throw new Error(json.message ?? 'The test could not run.');
+      return json;
+    },
+    async saveAiKey(key: string): Promise<{ ok: boolean; message: string; status?: AiConnection }> {
+      const res = await fetch(`${baseUrl}/v1/settings/ai`, { method: 'PUT', headers: headers(), body: JSON.stringify({ key }) });
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; status?: AiConnection };
+      return { ok: res.ok && json.ok !== false, message: json.message ?? (res.ok ? 'Saved.' : 'The key was not saved.'), status: json.status };
+    },
     async runQuery(sql: string): Promise<QueryRun> {
       const res = await fetch(`${baseUrl}/v1/queries/run`, { method: 'POST', headers: headers(), body: JSON.stringify({ sql }) });
       const json = (await res.json().catch(() => ({}))) as QueryRun & { message?: string };

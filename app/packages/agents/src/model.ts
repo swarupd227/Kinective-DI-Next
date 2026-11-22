@@ -57,23 +57,25 @@ export interface ModelClient {
 
 const FALLBACK_BETA = 'server-side-fallback-2026-07-01';
 
+const anthropicFor = (apiKey: string | null, opts: { maxRetries: number; timeout: number }) =>
+  new Anthropic({ apiKey, authToken: null, baseURL: process.env.DI_ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com', ...opts });
+
 export class AnthropicModelClient implements ModelClient {
-  private readonly client: Anthropic;
+  private client: Anthropic;
   constructor(
     private readonly roles = modelRoles(),
     client?: Anthropic,
+    /** A key set on screen (Settings › AI connection), used before the deployment's own. */
+    apiKey?: string | null,
   ) {
-    // Only DI_ANTHROPIC_API_KEY (from app/.env) is used. Ambient ANTHROPIC_* variables belong
-    // to whatever tool launched the process and must never carry DI traffic or cost.
-    this.client =
-      client ??
-      new Anthropic({
-        apiKey: process.env.DI_ANTHROPIC_API_KEY ?? null,
-        authToken: null,
-        baseURL: process.env.DI_ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com',
-        maxRetries: 2,
-        timeout: 60_000,
-      });
+    // Only a key set on screen or DI_ANTHROPIC_API_KEY (from app/.env) is used. Ambient ANTHROPIC_*
+    // variables belong to whatever tool launched the process and must never carry DI traffic or cost.
+    this.client = client ?? anthropicFor(apiKey ?? process.env.DI_ANTHROPIC_API_KEY ?? null, { maxRetries: 2, timeout: 60_000 });
+  }
+
+  /** Switches to another key at once (an administrator saved a new one): the next request uses it. */
+  useKey(apiKey: string) {
+    this.client = anthropicFor(apiKey, { maxRetries: 2, timeout: 60_000 });
   }
 
   async turn(req: TurnRequest) {
@@ -126,6 +128,26 @@ export function costUsd(u: Usage): number {
   const p = PRICES[u.model];
   if (!p) return 0;
   return (u.inputTokens * p[0] + u.outputTokens * p[1] + u.cacheReadTokens * p[2] + u.cacheWriteTokens * p[0] * 1.25) / 1_000_000;
+}
+
+/**
+ * Tests an Anthropic API key with the cheapest call there is (listing one model, which uses no tokens),
+ * and says what happened in words an administrator can act on. The key is never logged or returned.
+ */
+export async function testClaudeKey(apiKey: string): Promise<{ ok: boolean; message: string; ms: number }> {
+  const started = Date.now();
+  const ms = () => Date.now() - started;
+  try {
+    await anthropicFor(apiKey, { maxRetries: 0, timeout: 15_000 }).models.list({ limit: 1 });
+    return { ok: true, message: 'Connected to Anthropic: the key works.', ms: ms() };
+  } catch (e) {
+    const status = (e as { status?: number }).status;
+    if (status === 401) return { ok: false, message: 'Anthropic rejected the key: it is wrong, revoked or expired.', ms: ms() };
+    if (status === 403) return { ok: false, message: 'Anthropic accepted the key but refused access: check the key’s workspace and permissions in the Anthropic Console.', ms: ms() };
+    if (status === 429) return { ok: true, message: 'The key works, but Anthropic is limiting requests right now (rate limit).', ms: ms() };
+    if (status && status >= 500) return { ok: false, message: `Anthropic had a problem answering (${status}). Try again in a minute.`, ms: ms() };
+    return { ok: false, message: 'DI couldn’t reach Anthropic from this server. Check its network access.', ms: ms() };
+  }
 }
 
 /** True when the SDK can find credentials; without them the Concierge runs in offline mode. */

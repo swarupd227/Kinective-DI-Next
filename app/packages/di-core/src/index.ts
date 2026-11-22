@@ -95,3 +95,4 @@ export { NEXT_PRODUCT_BANDS, NEXT_PRODUCT_MIN_AUC, NextProductModelService, type
 export { DecisionTableService, PRICING_EXCEPTION_BP, compileTable, parseCell, validateTable, type CellValue, type Decision, type DecisionTable, type TableEdit } from './decisionTables.ts';
 export { SURVIVAL_FEATURES, SURVIVAL_LABELS, SurvivalModelService, fitCox, outlook, type SurvivalRecord } from './survivalModel.ts';
 export { ActivityService } from './activity.ts';
+export { AiConnectionStore, ANTHROPIC_KEY, settingsKeyFrom, type AiConnectionStatus } from './aiSettings.ts';

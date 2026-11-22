@@ -2,7 +2,7 @@
 // notifications. Wider screens keep all of this in the sidebar.
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router';
-import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, LogOut, Mail, Menu as MenuIcon, Monitor, Moon, Rows3, Rows4, Search, Sun, UserRoundCog } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ChevronDown, ChevronRight, KeyRound, LogOut, Mail, Menu as MenuIcon, Monitor, Moon, Rows3, Rows4, Search, Sun, UserRoundCog } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
 import { IconButton, SegmentedControl, usePreferences, type Density, type ThemePreference } from '@dinext/ui';
 import { useSession } from '../session/SessionProvider.tsx';
@@ -216,6 +216,16 @@ export function UserMenu({ withName = false }: { withName?: boolean }) {
                 Email notifications
               </button>
             </Popover.Close>
+            {session.apps.includes('admin') && (
+              <Popover.Close asChild>
+                <button type="button" className={styles.item} onClick={() => navigate('/settings/ai')}>
+                  <span className={styles.check}>
+                    <KeyRound size={14} aria-hidden />
+                  </span>
+                  AI connection
+                </button>
+              </Popover.Close>
+            )}
           </div>
           {session.personas && (
             <div className={styles.group}>

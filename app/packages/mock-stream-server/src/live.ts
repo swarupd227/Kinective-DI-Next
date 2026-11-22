@@ -50,7 +50,9 @@ import { notificationsModule } from '@dinext/agents';
 import { peopleModule } from '@dinext/agents';
 import { EmailOutbox, tenantDomain, type EmailKind } from '@dinext/di-core';
 import type { ReportSettingsView } from '@dinext/block-schemas';
-import { CORE_READER, coreReaderPassword, dbUrl, replicaDatabase, secondCoreDatabase, tenantPool, thirdCoreDatabase, warehouseAvailable, type Pool } from '@dinext/tenant-db';
+import { CONVERSATIONS_SCHEMA, CORE_READER, coreReaderPassword, dbUrl, replicaDatabase, secondCoreDatabase, tenantPool, thirdCoreDatabase, warehouseAvailable, type Pool } from '@dinext/tenant-db';
+import { AiConnectionStore, ANTHROPIC_KEY, type AiConnectionStatus } from '@dinext/di-core';
+import { testClaudeKey } from '@dinext/agents';
 import { PERSONAS, type PersonaId } from './data.ts';
 import { matchesAll, rank } from './search.ts';
 
@@ -274,6 +276,12 @@ export interface LiveRuntime {
   email?(userId: string, n: { kind: EmailKind; title: string; detail?: string; link: string; sourceRef: string }): Promise<void>;
   /** This morning's follow-up reminders and digests for everyone in the person's tenant (local stand-in for the morning job). */
   morningEmails?(persona: PersonaId): Promise<{ emails: number } | null>;
+  /** Settings › AI connection, for administrators: where the Anthropic key comes from, its last four characters and the last test. */
+  aiConnection?(persona: PersonaId): Promise<(AiConnectionStatus & { live: boolean }) | null>;
+  /** Tests a key (one entered, before saving) or, with none, the key in use. Never stores or logs the key. */
+  testAiKey?(persona: PersonaId, key?: string): Promise<{ ok: boolean; message: string; ms: number } | null>;
+  /** Saves a key that passes its test, encrypted, and switches DI to it at once. */
+  saveAiKey?(persona: PersonaId, key: string): Promise<{ ok: boolean; message: string; status?: AiConnectionStatus & { live: boolean } } | null>;
   close(): Promise<void>;
 }
 
@@ -568,7 +576,13 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
   if (keeper) for (const [tenantId, t] of tenants) t.trail = new AuditTrail(t.runtime.key, TENANTS[tenantId]!.schema);
   else console.warn('AI audit store not found: audit lines go to files only. Run the seed (or npm run db:conversations) to create it.');
 
-  const model = hasClaudeCredentials() && !opts.offline ? new AnthropicModelClient() : null;
+  // The Anthropic key: one an administrator set on screen (Settings › AI connection) before the
+  // deployment's own. Kept, encrypted, in the conversations schema the seed creates.
+  const aiPool: Pool = createPool(`${dbUrl()}/${CONVERSATIONS_SCHEMA}`, { connectionLimit: 2 });
+  const aiStore = new AiConnectionStore(aiPool);
+  const storedKey = opts.offline ? null : await aiStore.key().catch(() => null);
+  const model = (storedKey || hasClaudeCredentials()) && !opts.offline ? new AnthropicModelClient(undefined, undefined, storedKey) : null;
+  const isAdmin = (p: PersonaId) => PERSONAS[p].session.apps.includes('admin');
   const concierge = new Concierge({ model, audit, beatMs: process.env.NODE_ENV === 'test' ? 0 : 1600 });
   const tenantFor = (p: PersonaId) => tenants.get(PERSONAS[p].session.tenant.id) ?? null;
   const lapFor = (p: PersonaId) => {
@@ -1160,6 +1174,38 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
       await outbox?.queue({ userId, toName: entry[1].session.user.name, ...n }).catch((err: unknown) => console.error('[email]', err));
     },
 
+    async aiConnection(persona) {
+      if (!isAdmin(persona)) return null;
+      return { ...(await aiStore.status(process.env.DI_ANTHROPIC_API_KEY)), live: Boolean(model) };
+    },
+
+    async testAiKey(persona, key) {
+      if (!isAdmin(persona)) return null;
+      const entered = key?.trim();
+      if (entered && !ANTHROPIC_KEY.test(entered)) return { ok: false, message: 'That doesn’t look like an Anthropic API key: they start with “sk-ant-”.', ms: 0 };
+      const inUse = entered ? null : ((await aiStore.key().catch(() => null)) ?? process.env.DI_ANTHROPIC_API_KEY ?? null);
+      if (!entered && !inUse) return { ok: false, message: 'No key is set yet, so DI answers with its offline planner.', ms: 0 };
+      const r = await testClaudeKey((entered ?? inUse)!);
+      // A test of the key in use is kept, so the page shows when the connection last worked.
+      if (!entered) await aiStore.recordTest(r.ok, r.message);
+      return r;
+    },
+
+    async saveAiKey(persona, key) {
+      if (!isAdmin(persona)) return null;
+      const entered = key.trim();
+      if (!ANTHROPIC_KEY.test(entered)) return { ok: false, message: 'That doesn’t look like an Anthropic API key: they start with “sk-ant-”.' };
+      // Only a key that works is saved, so a typo can't take DI's AI offline.
+      const r = await testClaudeKey(entered);
+      if (!r.ok) return { ok: false, message: `Not saved. ${r.message}` };
+      const who = PERSONAS[persona].session.user;
+      await aiStore.save(entered, `${who.name} (${who.id})`);
+      await aiStore.recordTest(true, r.message);
+      model?.useKey(entered);
+      console.log(`[settings] the Anthropic key was changed by ${who.id} (ending ${entered.slice(-4)})${model ? '' : '; live AI starts after a restart'}`);
+      return { ok: true, message: model ? 'Saved. DI is using the new key now.' : 'Saved. Live AI turns on when DI restarts.', status: { ...(await aiStore.status(process.env.DI_ANTHROPIC_API_KEY)), live: Boolean(model) } };
+    },
+
     async morningEmails(persona) {
       const tenant = tenantFor(persona);
       if (!tenant?.outbox) return null;
@@ -1180,6 +1226,7 @@ export async function startLiveRuntime(opts: { offline?: boolean } = {}): Promis
 
     async close() {
       await Promise.all([...tenants.values()].map((t) => t.pool.end()));
+      await aiPool.end().catch(() => {});
     },
   };
   return rt;

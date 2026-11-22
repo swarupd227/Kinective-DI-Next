@@ -706,6 +706,24 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
           throw err;
         }
       }
+      // Settings › AI connection (administrators only): the Anthropic key, set and tested on screen.
+      // The key goes in, never out; a person without the Admin app gets not found.
+      if (path === '/v1/settings/ai' && method === 'GET') {
+        const r = await live?.aiConnection?.(persona());
+        return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });
+      }
+      if (path === '/v1/settings/ai/test' && method === 'POST') {
+        const body = await readBody<{ key?: string }>(req).catch(() => ({}) as { key?: string });
+        const r = await live?.testAiKey?.(persona(), typeof body.key === 'string' && body.key.trim() ? body.key : undefined);
+        return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });
+      }
+      if (path === '/v1/settings/ai' && method === 'PUT') {
+        const body = await readBody<{ key?: string }>(req).catch(() => ({}) as { key?: string });
+        if (typeof body.key !== 'string' || !body.key.trim()) return json(res, 400, { code: 'INVALID', message: 'Enter the new API key.' });
+        const r = await live?.saveAiKey?.(persona(), body.key);
+        if (!r) return json(res, 404, { code: 'NOT_FOUND' });
+        return json(res, r.ok ? 200 : 400, r);
+      }
       if (method === 'POST' && path === '/v1/emails/morning/run') {
         const r = await live?.morningEmails?.(persona());
         return r ? json(res, 200, r) : json(res, 404, { code: 'NOT_FOUND' });
@@ -939,6 +957,9 @@ export function startMockServer({ port, speed = 1, live = null, voice = null, st
         const threadId = decodeURIComponent(send[1]!);
         if (foreign(threads.get(threadId))) return json(res, 404, { code: 'NOT_FOUND' });
         const body = await readBody<SendMessageRequest>(req);
+        // An API or access key pasted into the chat is dropped here, before the message is saved, shown
+        // back, titled or answered; the Concierge then says where keys go (Settings › AI connection).
+        body.input.text = body.input.text.replace(/\b(?:sk-ant-[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9_-]{32,}|AKIA[0-9A-Z]{16})\b/g, '⟨SECRET⟩');
         const t = thread(threadId);
         if (t.summary.turns === 0 && t.summary.title === 'New conversation') t.summary.title = titleFrom(body.input.text);
         t.summary.turns += 1;

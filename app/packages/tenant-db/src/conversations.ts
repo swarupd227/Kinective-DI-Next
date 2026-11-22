@@ -34,6 +34,18 @@ export const CONVERSATIONS_DDL = [
      decided TEXT NULL,
      KEY ix_thread_approval (thread_id)
    )`,
+  // Platform settings an administrator sets on screen, such as the Anthropic API key (encrypted; only its
+  // last four characters are kept in the clear), with who set it and the last connection test.
+  `CREATE TABLE IF NOT EXISTS \`${CONVERSATIONS_SCHEMA}\`.di_setting (
+     setting VARCHAR(40) PRIMARY KEY,
+     value_sealed TEXT NULL,
+     last4 VARCHAR(4) NULL,
+     updated_by VARCHAR(80) NULL,
+     updated_at DATETIME(3) NULL,
+     tested_at DATETIME(3) NULL,
+     test_ok TINYINT(1) NULL,
+     test_message VARCHAR(200) NULL
+   )`,
 ];
 
 /** Creates the schema and tables if missing (never drops them) and lets the application account use them. */

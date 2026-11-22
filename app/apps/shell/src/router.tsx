@@ -29,6 +29,7 @@ const ReportsPage = lazy(() => import('./pages/ReportsPage.tsx').then((m) => ({ 
 const ReferralsPage = lazy(() => import('./pages/ReferralsPage.tsx').then((m) => ({ default: m.ReferralsPage })));
 const GoalsPage = lazy(() => import('./pages/GoalsPage.tsx').then((m) => ({ default: m.GoalsPage })));
 const PipelinePage = lazy(() => import('./pages/PipelinePage.tsx').then((m) => ({ default: m.PipelinePage })));
+const AiSettingsPage = lazy(() => import('./pages/AiSettingsPage.tsx').then((m) => ({ default: m.AiSettingsPage })));
 const AuditLogPage = lazy(() => import('./pages/AuditLogPage.tsx').then((m) => ({ default: m.AuditLogPage })));
 const RunTracePage = lazy(() => import('./pages/AuditLogPage.tsx').then((m) => ({ default: m.RunTracePage })));
 const ReportPage = lazy(() => import('./pages/ReportsPage.tsx').then((m) => ({ default: m.ReportPage })));
@@ -76,6 +77,7 @@ export const router = createBrowserRouter([
           { path: 'audit/runs/:runId', element: page(<RunTracePage />) },
           // Everyone has email notifications: the person's own outbox and preferences.
           { path: 'settings/email', element: page(<EmailsPage />) },
+          { path: 'settings/ai', element: guarded('admin', <AiSettingsPage />) },
           { path: 'members', element: guarded('rm', <MembersPage />) },
           { path: 'customers', element: guarded('rm', <MembersPage />) },
           { path: 'members/:ref', element: guarded('rm', <MemberPage />) },

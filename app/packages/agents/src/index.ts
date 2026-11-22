@@ -32,7 +32,7 @@ export { planOffline, runOffline } from './offline.ts';
 export { SubmitAnswer, resolveRef, verifyNarrative, buildBlock, formatMetric, noticeBlock, AnswerError } from './answer.ts';
 export { prescreen } from './prescreen.ts';
 export { AuditLog, type AuditRecord } from './audit.ts';
-export { AnthropicModelClient, modelRoles, costUsd, hasClaudeCredentials, type ModelClient, type ModelRole, type TurnRequest, type Usage } from './model.ts';
+export { AnthropicModelClient, modelRoles, costUsd, hasClaudeCredentials, testClaudeKey, type ModelClient, type ModelRole, type TurnRequest, type Usage } from './model.ts';
 export type { RunSink, StepUpdate } from './sink.ts';
 // Report settings (today's DI Build Reports form) and email notifications.
 export { classesNamed, fieldsFrom, parseSettingsRequest, settingsDiff, settingsView, SETTINGS_FOLLOW_UP, whoCanOpen, type SettingsAsk, type SettingsInput } from './reportSettings.ts';

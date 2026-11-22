@@ -301,6 +301,12 @@ export class Concierge {
         outcome = 'not_supported';
         return { kind: 'handled' };
       }
+      // A key pasted into the chat was dropped by the pre-screen; DI says where keys go instead of answering.
+      if (screened.findings.some((f) => f.kind === 'secret')) {
+        await sink.block(noticeBlock('warning', 'I removed what looked like an API key from your message and didn’t keep it.', 'DI Concierge', turn.runId, { detail: 'Keys are never typed into a chat. An administrator sets DI’s Anthropic key under Settings › AI connection (in the menu under your initials), where it is tested, encrypted and never shown again.' }));
+        outcome = 'not_supported';
+        return { kind: 'handled' };
+      }
       concepts = readConcepts(screened.text, turn.tenant.institutionType, svc?.dimensionValues ?? {}, (await svc?.refreshWords()) ?? []).concepts;
       // A goal in progress takes the next message: an added instruction, an answer, or a change to the note.
       const goal = this.goalThreads.get(turn.threadId);

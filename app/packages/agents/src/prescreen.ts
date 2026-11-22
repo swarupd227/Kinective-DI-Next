@@ -5,7 +5,8 @@ export interface Prescreened {
   text: string;
   /** Token to original value, kept server-side only. */
   tokens: Record<string, string>;
-  findings: { kind: 'ssn' | 'card' | 'account'; token: string }[];
+  /** secret: an API key or access key pasted into the chat, dropped and never kept (Settings › AI connection is where keys go). */
+  findings: { kind: 'ssn' | 'card' | 'account' | 'secret'; token: string }[];
   blocked: boolean;
 }
 
@@ -38,6 +39,14 @@ export function prescreen(input: string, counter = { n: 0 }): Prescreened {
   // Zero-width and control characters are stripped (spec 26.3 sanitising).
   // eslint-disable-next-line no-control-regex -- stripping control characters is the point
   text = text.replace(/[\u200B-\u200D\uFEFF\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+  // API and access keys (Anthropic, other sk- keys, AWS) are dropped, not tokenised: nothing keeps them,
+  // so they never reach a model, a log or the audit.
+  text = text.replace(/\b(?:sk-ant-[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9_-]{32,}|AKIA[0-9A-Z]{16})\b/g, () => {
+    findings.push({ kind: 'secret', token: '⟨SECRET⟩' });
+    return '⟨SECRET⟩';
+  });
+  // The server already drops a key before it saves the message, leaving this mark.
+  if (text.includes('⟨SECRET⟩') && !findings.some((f) => f.kind === 'secret')) findings.push({ kind: 'secret', token: '⟨SECRET⟩' });
   text = text.replace(/\b\d{3}-\d{2}-\d{4}\b/g, (m) => mint('ssn', m));
   text = text.replace(/\b(?:\d[ -]?){13,19}\b/g, (m) => {
     const digits = m.replace(/\D/g, '');
