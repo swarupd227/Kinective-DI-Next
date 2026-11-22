@@ -653,6 +653,9 @@ export class Concierge {
       }
       outcome = sink.signal.aborted ? 'cancelled' : 'failed';
       error = e instanceof Error ? e.message : String(e);
+      // Also in the server log, under the reference the person sees, so a failure on the cloud can be
+      // read without the audit page. The message and where it came from, never the question or any data.
+      if (!sink.signal.aborted) console.error(`[run ${turn.runId.slice(-12)}] failed: ${error.slice(0, 300)}${e instanceof Error && e.stack ? `\n${e.stack.split('\n').slice(1, 6).join('\n')}` : ''}`);
       if (!sink.signal.aborted) {
         const msg = e instanceof SemanticError ? e.message : 'Something went wrong while answering. The details are in the audit log.';
         await sink.block(noticeBlock(e instanceof SemanticError && e.code === 'NO_ACCESS' ? 'no_access' : 'error', msg, 'DI Concierge', turn.runId, { referenceId: turn.runId.slice(-12), retryable: true }));
