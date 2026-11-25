@@ -16,6 +16,9 @@
 
 .list {
   display: grid;
+
+  /* One column that can shrink, so a row's selects never widen the list past the screen. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
   padding: 0;
   margin: 0;
