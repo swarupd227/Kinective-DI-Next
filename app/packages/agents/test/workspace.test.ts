@@ -1,7 +1,7 @@
 // @vitest-environment node
 // Queries, the calendar and files against the seeded warehouse. No model calls.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ApprovalStore, CalendarService, CalendarStore, FileStore, IssueService, OnboardingService, OperationsService, QueryService, RetentionService, checkUpload, findFiles, folderNamed, foldersFor } from '@dinext/di-core';
+import { ApprovalStore, CalendarService, CalendarStore, FileStore, InteractionService, IssueService, OnboardingService, OperationsService, QueryService, RetentionService, checkUpload, findFiles, folderNamed, foldersFor } from '@dinext/di-core';
 import { createPool, tenantPool, warehouseAvailable, type Pool } from '@dinext/tenant-db';
 import { ModuleGateway, calendarModule, filesModule, parseWhen, runModuleOffline, spokenWhen, type ModuleContext, type ModuleOutcome, type ModuleSpec, type ModuleTurn, type RunSink } from '../src/index.ts';
 
@@ -206,6 +206,27 @@ describe.skipIf(!up)('workspace apps against the warehouse', () => {
       expect(mine[0]).toMatchObject({ title: 'Follow-up with Suzanne Jackson', startsAt: '2026-11-03 14:00', endsAt: '2026-11-03 14:30', withWhom: 'Suzanne Jackson', withUserId: null, source: 'HELOC referral', link: '/referrals' });
       const page = await calendar.events({ userId: me.id, canUse: () => false, ctx: {} });
       expect(page).toEqual([expect.objectContaining({ date: '2026-11-03', kind: 'Event', title: '2 pm Follow-up with Suzanne Jackson', detail: 'With Suzanne Jackson · HELOC referral' })]);
+    });
+
+    it('links an event with a member to their record, and asks which when two share a name', async () => {
+      const found = new InteractionService(pool);
+      const linked = calendarModule(async () => ({ today: TODAY, items: [] }), events, async () => [], () => TODAY, (name, ctx) => found.find(name, ctx));
+      const create = linked.tools.find((x) => x.name === 'cal_create')!;
+      const ctx = { user: me, modules: ['calendar'], runId: 'r', threadId: 't' };
+      const [suzanne] = await found.find('Suzanne Jackson', {});
+      const out = (await create.run({ title: 'Review with Suzanne Jackson', when: 'January 12 at 10 am', with: 'Suzanne Jackson' } as never, ctx)) as { change: { changes: { label: string; after: string }[]; apply: unknown; done: string } };
+      expect(out.change.changes.find((c) => c.label === 'With')!.after).toBe(`Suzanne Jackson (…${suzanne!.last4}, ${suzanne!.branch}), linked to their member record`);
+      expect(out.change.done).toContain('It shows on Suzanne Jackson’s member record.');
+      await create.apply!(out.change.apply as never, { approvalId: 'apr_caltest_party', userId: me.id }, ctx);
+      const theirs = await events.forParty(suzanne!.partyId, '2026-11-02');
+      expect(theirs).toEqual([expect.objectContaining({ title: 'Review with Suzanne Jackson', startsAt: '2027-01-12 10:00', ownerName: me.name })]);
+      // Outside the purview, the member isn't found, so the event keeps the name only.
+      const away = (await create.run({ title: 'Call Suzanne Jackson', when: 'January 13 at 10 am', with: 'Suzanne Jackson' } as never, { ...ctx, purviewBranches: ['Nowhere'] })) as { change: { changes: { label: string; after: string }[]; apply: { partyId: number | null } } };
+      expect(away.change.changes.find((c) => c.label === 'With')!.after).toBe('Suzanne Jackson');
+      expect(away.change.apply.partyId).toBeNull();
+      // A first name alone isn't looked up.
+      const first = (await create.run({ title: 'Call Suzanne', when: 'January 13 at 10 am', with: 'Suzanne' } as never, ctx)) as { change: { apply: { partyId: number | null } } };
+      expect(first.change.apply.partyId).toBeNull();
     });
 
     it('is medium risk when it invites a colleague, who then sees it; nobody else does', async () => {

@@ -62,6 +62,7 @@ const isOpen = (stage: string) => !CLOSED_STAGES.includes(stage);
 
 /** Days to work a referral, by priority [Assumption]: until a tenant sets its own SLA. */
 export const DUE_DAYS: Record<string, number> = { Urgent: 1, High: 2, Normal: 5, Low: 10 };
+export const REFERRAL_PRIORITIES = ['Low', 'Normal', 'High', 'Urgent'];
 
 export type InboxBox = 'mine' | 'team' | 'sent' | 'cc';
 
@@ -512,6 +513,27 @@ export class ReferralService {
     await this.pool.query('UPDATE esp_com_items SET assignee_employee_id = ? WHERE com_id = ?', [employeeId, comId]);
     await this.line(comId, 'assign', `${meta.userName} assigned this to ${to.name}.`, meta.userId);
     return this.item(comId, meta, ctx);
+  }
+
+  /** Changes an open referral's priority, from the list or its own view; the change is on its history. */
+  async reprioritize(comId: number, priority: string, meta: ChangeMeta, ctx: CoreContext) {
+    const want = REFERRAL_PRIORITIES.find((p) => p.toLowerCase() === priority.trim().toLowerCase());
+    if (!want) throw new CoreError('INVALID', `Priority must be one of: ${REFERRAL_PRIORITIES.join(', ')}.`);
+    const item = await this.workable(comId, meta, ctx);
+    if (!isOpen(item.stage)) throw new CoreError('INVALID', `Referral #${comId} is closed.`);
+    if (item.priority === want) return item;
+    await this.pool.query('UPDATE esp_com_items SET priority = ? WHERE com_id = ?', [want, comId]);
+    await this.line(comId, 'priority', `${meta.userName} changed the priority from ${item.priority} to ${want}.`, meta.userId);
+    return this.item(comId, meta, ctx);
+  }
+
+  /** Who works each queue, by queue name: the people a referral in that queue can be assigned to. */
+  async teams(queueNames: string[]): Promise<Record<string, { employeeId: number; name: string }[]>> {
+    const wanted = [...new Set(queueNames)];
+    if (!wanted.length) return {};
+    const [qs] = await this.pool.query('SELECT * FROM esp_com_queues WHERE name IN (?)', [wanted]);
+    const names = await this.names();
+    return Object.fromEntries((qs as QueueRow[]).map((q) => [q.name, members(q).map((employeeId) => ({ employeeId, name: names.get(employeeId)! })).filter((m) => m.name)]));
   }
 
   /** referral.get */

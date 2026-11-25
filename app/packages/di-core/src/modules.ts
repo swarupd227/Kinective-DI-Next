@@ -156,6 +156,10 @@ export interface OnbChecklist {
   perksReviewed: boolean;
   loansDiscussed: string | null;
   referralMade: boolean;
+  /** The member's checks arrived (or were ordered). */
+  checksReceived?: boolean;
+  /** e-Pay: person-to-person payments, such as Zelle. Bill pay is its own item. */
+  epay?: boolean;
 }
 
 /** The checklist a note describes ("card activated, set up e-statements, discussed an auto loan"), or null if it names none. */
@@ -168,7 +172,9 @@ export function checklistFrom(note: string | null | undefined): OnbChecklist | n
     onlineBanking: /\bonline banking\b|\benrolled online\b/.test(t),
     mobileApp: /\bmobile\b|\bthe app\b/.test(t),
     estatements: /\be-?statements?\b/.test(t),
-    billPay: /\bbill ?pay\b|\be-?pay\b/.test(t),
+    billPay: /\bbill ?pay\b/.test(t),
+    epay: /\be-?pay\b|\bzelle\b|\bperson[- ]to[- ]person\b|\bp2p\b/.test(t),
+    checksReceived: /\bchecks? (?:have |has )?(?:received|arrived|came|ordered)\b|\b(?:received|got|ordered) (?:their |her |his |the )?checks\b|\bchecks? order(?:ed)?\b|\bcheckbook\b/.test(t),
     directDeposit: /\bdirect deposit\b(?![^.;]*\b(?:not|isn'?t|hasn'?t|no)\b)/.test(t) && !/\bno direct deposit\b|\bwithout direct deposit\b/.test(t),
     perksReviewed: /\bperks\b|\brewards\b|\bbenefits reviewed\b/.test(t),
     loansDiscussed: loan,
@@ -238,8 +244,8 @@ export class OnboardingService {
     if (checklist) {
       const v = (b: boolean) => (b ? 1 : 0);
       await this.pool.query(
-        'INSERT INTO onb_checklist (task_id, debit_card_activated, online_banking, mobile_app, estatements, bill_pay, direct_deposit, perks_reviewed, loans_discussed, referral_made, recorded_by, recorded_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE task_id = task_id',
-        [taskId, v(checklist.debitCard), v(checklist.onlineBanking), v(checklist.mobileApp), v(checklist.estatements), v(checklist.billPay), v(checklist.directDeposit), v(checklist.perksReviewed), checklist.loansDiscussed, v(checklist.referralMade), by ?? 'Staff', on],
+        'INSERT INTO onb_checklist (task_id, debit_card_activated, online_banking, mobile_app, estatements, bill_pay, direct_deposit, perks_reviewed, loans_discussed, referral_made, recorded_by, recorded_on, checks_received, epay) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE task_id = task_id',
+        [taskId, v(checklist.debitCard), v(checklist.onlineBanking), v(checklist.mobileApp), v(checklist.estatements), v(checklist.billPay), v(checklist.directDeposit), v(checklist.perksReviewed), checklist.loansDiscussed, v(checklist.referralMade), by ?? 'Staff', on, v(checklist.checksReceived ?? false), v(checklist.epay ?? false)],
       );
     }
   }
@@ -253,20 +259,20 @@ export class OnboardingService {
     if (!list.length) throw new CoreError('NOT_FOUND', `${member} isn’t a new member you can see.`);
     if (list.length > 1) throw new CoreError('INVALID', `More than one new member is called ${member}. Add their first name.`);
     const p = list[0]!;
-    const [msgs] = await this.pool.query('SELECT step, channel, day_offset, sent_on, opened, clicked FROM onb_message WHERE party_id = ? ORDER BY day_offset', [p.party_id]).catch(() => [[]]);
+    const [msgs] = await this.pool.query('SELECT * FROM onb_message WHERE party_id = ? ORDER BY day_offset', [p.party_id]).catch(() => [[]]);
     const [touches] = await this.pool.query('SELECT t.task_id, t.touch, t.due, t.status, t.done_on, t.note, c.* FROM onb_task t LEFT JOIN onb_checklist c ON c.task_id = t.task_id WHERE t.party_id = ? ORDER BY t.day_offset', [p.party_id]).catch(() => [[]]);
     const d = (v: unknown) => String(v instanceof Date ? v.toISOString() : v).slice(0, 10);
     return {
       name: `${p.first_name} ${p.last_name}`,
       joined: d(p.join_date),
-      messages: (msgs as Record<string, unknown>[]).map((m) => ({ step: m.step as string, channel: m.channel as string, day: Number(m.day_offset), sent: d(m.sent_on), opened: m.opened === null ? null : m.opened === 1, clicked: m.clicked === 1 })),
+      messages: (msgs as Record<string, unknown>[]).map((m) => ({ step: m.step as string, channel: m.channel as string, day: Number(m.day_offset), sent: d(m.sent_on), opened: m.opened === null ? null : m.opened === 1, clicked: m.clicked === 1, returned: m.returned_on ? d(m.returned_on) : null })),
       touches: (touches as Record<string, unknown>[]).map((t) => ({
         touch: t.touch as string,
         due: d(t.due),
         status: t.status as string,
         doneOn: t.done_on ? d(t.done_on) : null,
         note: (t.note as string | null) ?? null,
-        checklist: t.recorded_by ? { debitCard: t.debit_card_activated === 1, onlineBanking: t.online_banking === 1, mobileApp: t.mobile_app === 1, estatements: t.estatements === 1, billPay: t.bill_pay === 1, directDeposit: t.direct_deposit === 1, perksReviewed: t.perks_reviewed === 1, loansDiscussed: (t.loans_discussed as string | null) ?? null, referralMade: t.referral_made === 1 } : null,
+        checklist: t.recorded_by ? { debitCard: t.debit_card_activated === 1, onlineBanking: t.online_banking === 1, mobileApp: t.mobile_app === 1, estatements: t.estatements === 1, billPay: t.bill_pay === 1, directDeposit: t.direct_deposit === 1, perksReviewed: t.perks_reviewed === 1, loansDiscussed: (t.loans_discussed as string | null) ?? null, referralMade: t.referral_made === 1, checksReceived: t.checks_received === 1, epay: t.epay === 1 } : null,
       })),
     };
   }
@@ -307,6 +313,35 @@ export class OnboardingService {
     });
     const o = (opened as { o: unknown; n: unknown }[])[0]!;
     return { asOf, branches, openRatePct: pct(Number(o.o ?? 0), Number(o.n ?? 0)) };
+  }
+
+  /**
+   * Letters the scheduled process mailed to members in onboarding (all on file, or over the last days
+   * given), and the ones the post office sent back undeliverable: each is an address to check with the
+   * member. Within the purview.
+   */
+  async letters(ctx: CoreContext, days?: number) {
+    const asOf = await buildDate(this.pool);
+    const scope = inScope(ctx);
+    const [rows] = await this.pool.query(
+      `SELECT m.step, m.sent_on, m.returned_on, p.party_id, p.first_name, p.last_name, b.name AS branch
+         FROM onb_message m JOIN cdm_party p ON p.party_id = m.party_id
+         JOIN (SELECT party_id, MIN(branch_id) AS branch_id FROM onb_task GROUP BY party_id) o ON o.party_id = m.party_id
+         JOIN cdm_location b ON b.int_id = o.branch_id
+        WHERE m.channel = 'Letter'${days ? ' AND m.sent_on >= DATE_SUB(?, INTERVAL ? DAY)' : ''}${scope.sql}
+        ORDER BY m.returned_on IS NULL, m.returned_on DESC, m.sent_on DESC`,
+      [...(days ? [asOf, days] : []), ...scope.params],
+    ).catch(() => [[]]);
+    const d = (v: unknown) => String(v instanceof Date ? v.toISOString() : v).slice(0, 10);
+    const list = (rows as Record<string, unknown>[]).map((r) => ({ member: `${String(r.first_name)} ${String(r.last_name)}`, last4: memberNumber(r.party_id as number).slice(-4), branch: r.branch as string, step: r.step as string, mailed: d(r.sent_on), returned: r.returned_on ? d(r.returned_on) : null }));
+    const returned = list.filter((l) => l.returned);
+    const branches = [...new Set(list.map((l) => l.branch))].sort().map((branch) => {
+      const mine = list.filter((l) => l.branch === branch);
+      const back = mine.filter((l) => l.returned).length;
+      return { branch, mailed: mine.length, returned: back, returnedPct: mine.length ? Math.round((back / mine.length) * 1000) / 10 : 0 };
+    });
+    const sent = list.map((l) => l.mailed).sort();
+    return { asOf, days: days ?? null, from: sent[0] ?? null, to: sent.at(-1) ?? null, mailed: list.length, returned, branches };
   }
 
   async snooze(taskId: number, days: number) {

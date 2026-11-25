@@ -105,6 +105,16 @@ export class CalendarStore {
     return this.expand(base);
   }
 
+  /**
+   * Scheduled events with one member or customer, from the day given: whoever owns them, since the 360
+   * shows the person's relationship, not one banker's diary. Repeating events count each date. Empty
+   * where events aren't linked to people yet.
+   */
+  async forParty(partyId: number, from: string, limit = 10) {
+    const base = (await rows<Record<string, unknown>>(this.pool, `SELECT ${MEETING_COLUMNS} FROM cal_event WHERE status = 'Scheduled' AND party_id = ? ORDER BY starts_at`, [partyId]).catch(() => [])).map(toMeeting);
+    return (await this.expand(base)).filter((m) => m.startsAt.slice(0, 10) >= from).slice(0, limit);
+  }
+
   /** Each repeating event as its dates, less the ones cancelled, with any moved date at its new time. */
   private async expand(base: Meeting[]) {
     if (!base.length) return base;
@@ -150,8 +160,10 @@ export class CalendarStore {
     return hits[0]!;
   }
 
-  async create(p: { owner: { userId: string; name: string }; title: string; startsAt: string; endsAt: string; withWhom: string | null; withUserId: string | null; source: string | null; link: string | null; rule?: Recurrence | null }, meta: { approvalId: string; on: string }) {
-    await this.pool.query("INSERT IGNORE INTO cal_event (owner_user_id, owner_name, title, starts_at, ends_at, with_whom, with_user_id, source, link, status, created_at, approval_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Scheduled', ?, ?)", [p.owner.userId, p.owner.name, p.title.slice(0, 160), `${p.startsAt}:00`, `${p.endsAt}:00`, p.withWhom, p.withUserId, p.source, p.link, meta.on, meta.approvalId]);
+  async create(p: { owner: { userId: string; name: string }; title: string; startsAt: string; endsAt: string; withWhom: string | null; withUserId: string | null; source: string | null; link: string | null; rule?: Recurrence | null; partyId?: number | null }, meta: { approvalId: string; on: string }) {
+    // An event with a member or customer is linked to their record, so their 360 shows it.
+    const party = p.partyId ? ', party_id' : '';
+    await this.pool.query(`INSERT IGNORE INTO cal_event (owner_user_id, owner_name, title, starts_at, ends_at, with_whom, with_user_id, source, link, status, created_at, approval_id${party}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Scheduled', ?, ?${party ? ', ?' : ''})`, [p.owner.userId, p.owner.name, p.title.slice(0, 160), `${p.startsAt}:00`, `${p.endsAt}:00`, p.withWhom, p.withUserId, p.source, p.link, meta.on, meta.approvalId, ...(p.partyId ? [p.partyId] : [])]);
     if (!p.rule) return;
     // The series hangs on the event this approval made, so a second apply finds it there already.
     const [made] = await rows<{ event_id: number }>(this.pool, 'SELECT event_id FROM cal_event WHERE approval_id = ?', [meta.approvalId]);

@@ -339,7 +339,9 @@
             "donut",
             "scatter",
             "heatmap",
-            "combo"
+            "combo",
+            "sunburst",
+            "map"
           ]
         },
         "dataset": {
@@ -440,6 +442,13 @@
               },
               "comparison": {
                 "type": "boolean"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "points",
+                  "density"
+                ]
               }
             },
             "required": [
@@ -514,6 +523,42 @@
         },
         "sampled": {
           "type": "boolean"
+        },
+        "pointActions": {
+          "maxItems": 4,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "maxLength": 20
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "drill",
+                  "why",
+                  "rows"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 60
+              },
+              "question": {
+                "type": "string",
+                "maxLength": 300
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "label",
+              "question"
+            ],
+            "additionalProperties": false
+          }
         }
       },
       "required": [

@@ -794,7 +794,7 @@ export function campaignModule(cmp: CampaignService, api: ApiService | null = nu
     id: 'campaigns',
     prefix: 'cmp',
     agent: 'Campaigns',
-    request: new RegExp(`${TOUCH_REQUEST.source}|${/\bcampaigns?\b|\baudiences?\b|\bmarketing (roi|return|spend|sources?)\b|\bsales by (?:marketing )?source\b|\b(?:roi|return on spend) (?:history|by quarter|over time)\b|\bcampaign lift\b|\b(?:send|push)\b[^.?!]*\bto (?:the )?(?:relay|marketing platform)\b|\bopen and click\b|\bclick rates?\b|\bhow did the email\b/.source}`, 'i'),
+    request: new RegExp(`${TOUCH_REQUEST.source}|${/\bcampaigns?\b|\baudiences?\b|\bprofit by product hierarch|\bprofit\b[^.?!]*\b(?:by|across) (?:marketing )?channels?\b|\bmarketing (roi|return|spend|sources?)\b|\bsales by (?:marketing )?source\b|\b(?:roi|return on spend) (?:history|by quarter|over time)\b|\bcampaign lift\b|\b(?:send|push)\b[^.?!]*\bto (?:the )?(?:relay|marketing platform)\b|\bopen and click\b|\bclick rates?\b|\bhow did the email\b/.source}`, 'i'),
     noAccess,
     sources: [{ kind: 'table', label: 'Campaign Success', ref: 'table:cmp_campaign' }],
     prompt: ({ tenant, user, title }) => `You are the Campaign agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) reviews campaigns and builds audiences.
@@ -804,7 +804,7 @@ export function campaignModule(cmp: CampaignService, api: ApiService | null = nu
 - "Build an audience of members with no auto loan": cmp_audience_prepare. Suppression is applied by the platform and its counts are shown.
 - "Send the audience of members with no auto loan to Relay", "push it to the marketing platform": cmp_audience_send. It is high risk: contact details leave DI.
 - "Pull back the campaign results": cmp_platform_pull. "How did the email do?", "open and click rates": cmp_platform_results.
-- "How has campaign ROI changed?", "ROI by quarter": cmp_roi_history. "What did campaigns bring in by product and channel?": cmp_product_channel. "Sales by marketing source", "what came from campaigns this month?": cmp_sources. "Campaign timeline", "when did responses come in?": cmp_timeline. "Which accounts came from the summer auto campaign?": cmp_accounts. "Campaign results by age", "by branch", "by month", for one campaign or a period: cmp_breakdown.
+- "How has campaign ROI changed?", "ROI by quarter": cmp_roi_history. "What did campaigns bring in by product and channel?": cmp_product_channel. "Profit by product hierarchy and channel", "campaign profit for Loans › Auto by channel", "drill into HELOC": cmp_profit_hierarchy. "Sales by marketing source", "what came from campaigns this month?": cmp_sources. "Campaign timeline", "when did responses come in?": cmp_timeline. "Which accounts came from the summer auto campaign?": cmp_accounts. "Campaign results by age", "by branch", "by month", for one campaign or a period: cmp_breakdown.
 - "How often do we reach members?", "contact frequency", "who did the campaigns reach?", "did postcards to non-members bring anyone in?": cmp_touches.
 - Exporting an audience as a file isn't available; sending goes through the connected marketing platform.`,
     plan: (text) => {
@@ -822,6 +822,11 @@ export function campaignModule(cmp: CampaignService, api: ApiService | null = nu
       if (by && /\bcampaigns?\b|\bresults\b/i.test(t)) return { tool: 'cmp_breakdown', args: { by, ...(campaignName ? { campaign: campaignName } : {}) } };
       if (/\baccounts?\b[^.?!]*\b(?:credited|attributed|from|opened)\b|\bwho (?:responded|opened)\b|\battribut/i.test(t)) return { tool: 'cmp_accounts', args: campaignName ? { campaign: campaignName } : {} };
       if (/\b(?:sales|accounts?|openings?) by (?:marketing )?source\b|\bmarketing sources?\b|\bcame from (?:a )?campaigns?\b|\bdaily\b/i.test(t)) return { tool: 'cmp_sources', args: {} };
+      if (/\bprofit/i.test(t) && /\bchannel|\bhierarch|\bproduct/i.test(t)) {
+        const drill = /\b(?:for|into|under|in)\s+(?:the\s+)?((?:loans?|deposits?)(?:\s*(?:›|>|\/)\s*[\w &-]+?)*|[\w &-]+?)\s+(?:by channel|by product|across|down)\b/i.exec(t)?.[1]
+          ?? /\bdrill into\s+(?:the\s+)?([\w &›>/-]+?)(?:[.?!]|$)/i.exec(t)?.[1];
+        return { tool: 'cmp_profit_hierarchy', args: drill && !/^(?:the )?products?$|^campaigns?$/i.test(drill.trim()) ? { path: drill.trim() } : {} };
+      }
       if (/\bby product\b[^.?!]*\bchannel\b|\bby channel\b[^.?!]*\bproduct\b|\bproduct and channel\b|\bbrought in\b/i.test(t)) return { tool: 'cmp_product_channel', args: {} };
       if (/\b(?:roi|return)\b[^.?!]*\b(?:history|by quarter|quarter by quarter|over time|trend|changed)\b|\bby quarter\b/i.test(t)) return { tool: 'cmp_roi_history', args: {} };
       if (/\blift\b|\broi\b|\breturn\b|\bincremental\b|\bpa(id|y) (for|off)\b|\bworth it\b|\bprofitab|\bcost per\b|\bspend\b|\bcontrol group\b/i.test(t)) return { tool: 'cmp_roi', args: {} };
@@ -886,6 +891,50 @@ export function campaignModule(cmp: CampaignService, api: ApiService | null = nu
           return {
             text: `Campaigns are credited with **${rows.reduce((s, r) => s + r.accounts, 0).toLocaleString('en-US')} accounts** (opened within 60 days of a campaign for that product), worth about ${dollars(rows.reduce((s, r) => s + r.value, 0))} over their life. The most valuable mix is ${top.product} by ${top.channel.toLowerCase()}, ${dollars(top.value)}.`,
             blocks: [moduleTable(spec, 'Brought in by product and channel', ctx.runId, 'campaign.product_channel', [{ field: 'product', headerName: 'Product', type: 'text' }, { field: 'channel', headerName: 'Channel', type: 'text' }, { field: 'accounts', headerName: 'Accounts', type: 'count' }, { field: 'dollars', headerName: 'Dollars', type: 'currency' }, { field: 'value', headerName: 'Lifetime value', type: 'currency' }], rows)],
+          };
+        },
+      },
+      {
+        name: 'cmp_profit_hierarchy',
+        description: 'Profit from the accounts credited to campaigns, down the product hierarchy (loans or deposits, product group, product) and across channels, from each account’s monthly profit on file. path narrows to one part, such as "Loans › Auto" or "HELOC".',
+        input: z.object({ path: z.string().max(80).optional() }).strict(),
+        run: async (a: { path?: string }, ctx) => {
+          need(ctx);
+          const h = await cmp.profitByHierarchy(a.path);
+          const top = h.at ?? null;
+          const tops = h.rows.filter((r) => r.level === (top ? Math.min(3, top.level + 1) : 1) && r.path !== top?.path);
+          const total = top ? top.profit : h.rows.filter((r) => r.level === 1).reduce((s, r) => s + r.profit, 0);
+          const accounts = top ? top.accounts : h.rows.filter((r) => r.level === 1).reduce((s, r) => s + r.accounts, 0);
+          const totals = top ? top.byChannel : Object.fromEntries(h.channels.map((ch) => [ch, h.rows.filter((r) => r.level === 1).reduce((s, r) => s + (r.byChannel[ch] ?? 0), 0)]));
+          const bestCh = Object.entries(totals).sort((x, y) => y[1] - x[1])[0];
+          const losing = h.rows.filter((r) => r.level === 3 && r.profit < 0);
+          const period = h.from && h.to ? ` from ${h.from} to ${h.to}` : '';
+          const best = tops[0];
+          const next = best && best.level < 3 ? `Campaign profit for ${best.path} by channel` : null;
+          const indent = (r: (typeof h.rows)[number]) => `${' '.repeat(r.level - 1 - (top ? top.level - 1 : 0))}${r.name}`;
+          return {
+            text: [
+              `${top ? `**${top.path}**: the` : 'The'} ${accounts.toLocaleString('en-US')} accounts credited to campaigns earned **${dollars(total)}** in profit${period}.`,
+              bestCh ? `By channel, **${bestCh[0]}** brought in the most profit, ${dollars(bestCh[1])}.` : '',
+              best && top?.level !== 3 ? `${best.name} leads${top ? ` within ${top.name}` : ''} with ${dollars(best.profit)}.` : '',
+              losing.length ? `${losing.map((r) => r.name).join(', ')} ${losing.length === 1 ? 'loses' : 'lose'} money so far: the rate paid and servicing outweigh the funding credit.` : '',
+              'Profit is each account’s own: interest, less funds transfer pricing, expected loss and servicing, plus fees.',
+            ].filter(Boolean).join(' '),
+            blocks: [
+              moduleTable(
+                spec,
+                `Profit by product hierarchy and channel${top ? `: ${top.path}` : ''}`,
+                ctx.runId,
+                'campaign.profit_hierarchy',
+                [{ field: 'name', headerName: 'Product', type: 'text' }, ...h.channels.map((ch, i) => ({ field: `c${i}`, headerName: ch, type: 'currency' as const })), { field: 'profit', headerName: 'Profit', type: 'currency' }, { field: 'accounts', headerName: 'Accounts', type: 'count' }, { field: 'per', headerName: 'Per account', type: 'currency' }],
+                h.rows.map((r) => ({ name: indent(r), path: r.path, ...Object.fromEntries(h.channels.map((ch, i) => [`c${i}`, r.byChannel[ch] ?? 0])), profit: r.profit, accounts: r.accounts, per: r.accounts ? Math.round(r.profit / r.accounts) : 0 })),
+              ),
+            ],
+            sources: [
+              { kind: 'table', label: 'Accounts credited to campaigns', ref: 'table:cmp_attribution' },
+              { kind: 'table', label: 'Monthly profit per loan and share', ref: 'table:hist_loan_profit_month' },
+            ],
+            ...(next ? { suggestions: [next] } : {}),
           };
         },
       },

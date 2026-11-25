@@ -183,10 +183,19 @@ export interface ReferralsIndex {
   counts: { mine: number; team: number; overdue: number };
   /** False for leads and others who look after a team, whose view starts there. */
   hasOwnQueue: boolean;
+  /** For editing in the list: the open stages, in order, and who works each queue. */
+  edit?: { stages: string[]; priorities: string[]; teams: Record<string, { employeeId: number; name: string }[]> };
 }
 
 /** A person's own action in the inbox. Actions an agent proposes go through an approval card instead. */
-export type ReferralAction = { kind: 'start' } | { kind: 'note'; text: string } | { kind: 'close'; stage: 'Sold' | 'Not Interested' | 'Done'; note?: string } | { kind: 'assign'; employeeId: number };
+export type ReferralAction =
+  | { kind: 'start' }
+  | { kind: 'note'; text: string }
+  | { kind: 'close'; stage: 'Sold' | 'Not Interested' | 'Done'; note?: string }
+  | { kind: 'assign'; employeeId: number }
+  /** An open stage from the workflow, such as Left Message or Follow Up, set from the list. */
+  | { kind: 'stage'; stage: string }
+  | { kind: 'priority'; priority: 'Low' | 'Normal' | 'High' | 'Urgent' };
 
 /** DI's view of a page: one sentence, and the next step it would take. Code writes both. */
 export type AppViewId = 'calendar' | 'files' | 'queries' | 'users' | 'admin' | 'datalogs' | 'seg' | 'callreport' | 'irr' | 'delinquency' | 'liquidity' | 'membership' | 'workflows' | 'rm' | 'indirect' | 'prospecting' | 'campaigns' | 'onboarding' | 'compliance' | 'predictive' | 'dq' | 'tasks' | 'integrations' | 'classes' | 'wfbuilder' | 'tables' | 'emails' | 'cfo' | 'coremap' | 'gl';

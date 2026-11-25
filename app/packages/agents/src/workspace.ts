@@ -180,7 +180,15 @@ interface Staff {
   name: string;
 }
 
-export function calendarModule(events: (ctx: ModuleContext) => Promise<{ today: string; items: CalendarEvent[] }>, store: CalendarStore | null, staff: (name: string) => Promise<Staff[]>, today: () => string): ModuleSpec {
+/** A member or customer found by name within the purview, for linking an event to their record. */
+export interface PartyMatch {
+  partyId: number;
+  name: string;
+  branch: string;
+  last4: string;
+}
+
+export function calendarModule(events: (ctx: ModuleContext) => Promise<{ today: string; items: CalendarEvent[] }>, store: CalendarStore | null, staff: (name: string) => Promise<Staff[]>, today: () => string, people: ((name: string, ctx: ModuleContext) => Promise<PartyMatch[]>) | null = null, person = 'member'): ModuleSpec {
   const noAccess = 'The calendar isn’t part of your DI access.';
   const NO_SYNC = 'I can’t sync with Outlook or Google Calendar: external calendar sync isn’t built. I can add, move or cancel events on your DI calendar.';
   const need = (ctx: ModuleContext) => {
@@ -197,6 +205,16 @@ export function calendarModule(events: (ctx: ModuleContext) => Promise<{ today: 
     if (hits.length > 1) throw new CoreError('INVALID', `More than one colleague is called ${name}: ${hits.slice(0, 4).map((h) => h.name).join(', ')}. Which one?`);
     return hits[0]?.userId === ctx.user.id ? null : (hits[0] ?? null);
   };
+  // Someone named who isn't a colleague may be a member: one match links the event to their record;
+  // several ask which; none leaves the name as written.
+  const party = async (name: string | undefined, peer: Staff | null, ctx: ModuleContext) => {
+    if (!name || peer || !people || !/\s/.test(name.trim())) return null;
+    const hits = await people(name.trim(), ctx);
+    if (hits.length > 1) throw new CoreError('INVALID', `More than one ${person} is called ${name}: ${hits.slice(0, 4).map((h) => `…${h.last4} at ${h.branch}`).join(', ')}. Which one? Give the last four of their ${person} number.`);
+    return hits[0] ?? null;
+  };
+  const withRow = (withWhom: string | null, peer: Staff | null, who: PartyMatch | null, invited: string) =>
+    withWhom ? [{ label: 'With', before: '—', after: peer ? `${peer.name}, ${invited}` : who ? `${who.name} (…${who.last4}, ${who.branch}), linked to their ${person} record` : withWhom }] : [];
   /** The day and time someone gave, read in code. Refuses rather than guessing either. */
   const resolve = (w: When, fallback?: { date: string; time: string }) => {
     const date = w.date ?? fallback?.date;
@@ -231,16 +249,17 @@ export function calendarModule(events: (ctx: ModuleContext) => Promise<{ today: 
     const startsAt = `${first} ${w.time}`;
     const minutes = w.minutes ?? 30;
     const peer = await colleague(a.with, ctx);
-    const withWhom = peer?.name ?? a.with ?? null;
+    const who = await party(a.with, peer, ctx);
+    const withWhom = peer?.name ?? who?.name ?? a.with ?? null;
     const repeats = `${describeRule(rule)} at ${clock(w.time)}`;
     const firstDates = `${dates.slice(0, 3).map((d) => spokenDate(d, today())).join(', ')}${dates.length > 3 ? `, then ${dates.length - 3} more` : ''}`;
     return {
       summary: `Add ${a.title}, ${lower(repeats)}`,
-      changes: [{ label: 'Event', before: '—', after: a.title }, { label: 'Repeats', before: '—', after: repeats }, { label: 'First dates', before: '—', after: firstDates }, { label: 'Ends', before: '—', after: describeEnd(rule, dates, today()) }, { label: 'Length', before: '—', after: length(minutes) }, ...(withWhom ? [{ label: 'With', before: '—', after: peer ? `${peer.name}, invited to every date` : withWhom }] : []), ...(a.about ? [{ label: 'About', before: '—', after: a.about }] : [])],
+      changes: [{ label: 'Event', before: '—', after: a.title }, { label: 'Repeats', before: '—', after: repeats }, { label: 'First dates', before: '—', after: firstDates }, { label: 'Ends', before: '—', after: describeEnd(rule, dates, today()) }, { label: 'Length', before: '—', after: length(minutes) }, ...withRow(withWhom, peer, who, 'invited to every date'), ...(a.about ? [{ label: 'About', before: '—', after: a.about }] : [])],
       text: `I’ve prepared **${a.title}** on your calendar, **${lower(repeats)}**: ${dates.length} ${dates.length === 1 ? 'date' : 'dates'} from ${spokenDate(first, today())} to ${spokenDate(dates.at(-1)!, today())}${peer ? `, with **${peer.name}** invited` : ''}.`,
       done: `Added **${a.title}** to your calendar, ${lower(repeats)}, starting ${spokenDate(first, today())}.${peer ? ` ${peer.name} can see it on theirs.` : ''}`,
       risk: peer ? 'medium' : 'low',
-      apply: { owner: { userId: ctx.user.id, name: ctx.user.name }, title: a.title, startsAt, endsAt: addMinutes(startsAt, minutes), withWhom, withUserId: peer?.userId ?? null, source: a.about ?? null, link: /\breferral\b/i.test(a.about ?? '') ? '/referrals' : null, rule },
+      apply: { owner: { userId: ctx.user.id, name: ctx.user.name }, title: a.title, startsAt, endsAt: addMinutes(startsAt, minutes), withWhom, withUserId: peer?.userId ?? null, source: a.about ?? null, link: /\breferral\b/i.test(a.about ?? '') ? '/referrals' : null, rule, partyId: who?.partyId ?? null },
       notify: tell({ withUserId: peer?.userId ?? null }, `${ctx.user.name} invited you: ${a.title}`, `${repeats}, from ${spokenDate(first, today())}`),
     };
   };
@@ -304,16 +323,17 @@ export function calendarModule(events: (ctx: ModuleContext) => Promise<{ today: 
           const startsAt = resolve(w);
           const minutes = w.minutes ?? 30;
           const peer = await colleague(a.with, ctx);
+          const who = await party(a.with, peer, ctx);
           const when = spokenWhen(startsAt, today());
-          const withWhom = peer?.name ?? a.with ?? null;
+          const withWhom = peer?.name ?? who?.name ?? a.with ?? null;
           return {
             change: {
               summary: `Add ${a.title}, ${when}`,
-              changes: [{ label: 'Event', before: '—', after: a.title }, { label: 'When', before: '—', after: when }, { label: 'Length', before: '—', after: length(minutes) }, ...(withWhom ? [{ label: 'With', before: '—', after: peer ? `${peer.name}, invited to it` : withWhom }] : []), ...(a.about ? [{ label: 'About', before: '—', after: a.about }] : [])],
+              changes: [{ label: 'Event', before: '—', after: a.title }, { label: 'When', before: '—', after: when }, { label: 'Length', before: '—', after: length(minutes) }, ...withRow(withWhom, peer, who, 'invited to it'), ...(a.about ? [{ label: 'About', before: '—', after: a.about }] : [])],
               text: `I’ve prepared **${a.title}** on your calendar for **${when}**${peer ? `, with **${peer.name}** invited` : ''}.`,
-              done: `Added **${a.title}** to your calendar for ${when}.${peer ? ` ${peer.name} can see it on theirs.` : ''}`,
+              done: `Added **${a.title}** to your calendar for ${when}.${peer ? ` ${peer.name} can see it on theirs.` : ''}${who ? ` It shows on ${who.name}’s ${person} record.` : ''}`,
               risk: peer ? 'medium' : 'low',
-              apply: { owner: { userId: ctx.user.id, name: ctx.user.name }, title: a.title, startsAt, endsAt: addMinutes(startsAt, minutes), withWhom, withUserId: peer?.userId ?? null, source: a.about ?? null, link: /\breferral\b/i.test(a.about ?? '') ? '/referrals' : null },
+              apply: { owner: { userId: ctx.user.id, name: ctx.user.name }, title: a.title, startsAt, endsAt: addMinutes(startsAt, minutes), withWhom, withUserId: peer?.userId ?? null, source: a.about ?? null, link: /\breferral\b/i.test(a.about ?? '') ? '/referrals' : null, partyId: who?.partyId ?? null },
               notify: tell({ withUserId: peer?.userId ?? null }, `${ctx.user.name} invited you: ${a.title}`, when),
             },
           };

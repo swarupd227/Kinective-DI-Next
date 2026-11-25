@@ -329,8 +329,8 @@ async function main() {
     // The onboarding journey: messages the scheduled process sent and opened, and touch-point checklists.
     for (const ddl of ONB_JOURNEY_DDL) await admin.query(ddl);
     const journey = generateOnboardingJourney(t, mods.tasks as unknown[][], rm.digital as unknown[][]);
-    await insert(admin, 'onb_message', ['party_id', 'step', 'channel', 'day_offset', 'sent_on', 'opened', 'clicked'], journey.messages);
-    await insert(admin, 'onb_checklist', ['task_id', 'debit_card_activated', 'online_banking', 'mobile_app', 'estatements', 'bill_pay', 'direct_deposit', 'perks_reviewed', 'loans_discussed', 'referral_made', 'recorded_by', 'recorded_on'], journey.checklists);
+    await insert(admin, 'onb_message', ['party_id', 'step', 'channel', 'day_offset', 'sent_on', 'opened', 'clicked', 'returned_on'], journey.messages);
+    await insert(admin, 'onb_checklist', ['task_id', 'debit_card_activated', 'online_banking', 'mobile_app', 'estatements', 'bill_pay', 'direct_deposit', 'perks_reviewed', 'loans_discussed', 'referral_made', 'recorded_by', 'recorded_on', 'checks_received', 'epay'], journey.checklists);
     await insert(admin, 'esp_datalog_type', ['type_id', 'label', 'financial', 'requires_approval'], DATALOG_TYPES.map((x) => [...x]));
     await insert(admin, 'esp_datalog', ['log_id', 'type_id', 'title', 'amount', 'branch_id', 'status', 'created_by', 'created_name', 'created_on'], mods.logs);
     await insert(admin, 'esp_datalog_history', ['log_id', 'at', 'actor', 'from_status', 'to_status', 'note'], mods.logHistory);

@@ -17,6 +17,11 @@ describe('campaign history questions', () => {
     expect(plan('Show the campaign timeline')).toEqual({ tool: 'cmp_timeline', args: {} });
     expect(plan('Which campaigns paid for themselves?')).toEqual({ tool: 'cmp_roi', args: {} });
     expect(spec.request.test('Show sales by marketing source')).toBe(true);
+    expect(plan('Show profit by product hierarchy and channel')).toEqual({ tool: 'cmp_profit_hierarchy', args: {} });
+    expect(plan('Campaign profit for Loans › Auto by channel')).toEqual({ tool: 'cmp_profit_hierarchy', args: { path: 'Loans › Auto' } });
+    expect(plan('Show profit for HELOC by channel')).toEqual({ tool: 'cmp_profit_hierarchy', args: { path: 'HELOC' } });
+    expect(spec.request.test('Show profit by product hierarchy and channel')).toBe(true);
+    expect(spec.request.test('What profit did each channel bring in? Profit by channel')).toBe(true);
   });
 });
 
@@ -36,10 +41,26 @@ describe.skipIf(!up)('the credit union’s campaign history', () => {
       for (const d of s.days) expect(d.none + Object.values(d.byChannel).reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(d.total > 0 ? d.total - 0 : 0);
       const t = await svc.timeline();
       expect(t.some((c) => c.accounts > 0)).toBe(true);
+      // Profit down the hierarchy: each level adds up to its parent, across channels too.
+      const ph = await svc.profitByHierarchy();
+      const tops = ph.rows.filter((r) => r.level === 1);
+      expect(tops.map((r) => r.name).sort()).toEqual(['Deposits', 'Loans']);
+      for (const parent of ph.rows.filter((r) => r.level < 3)) {
+        const kids = ph.rows.filter((r) => r.level === parent.level + 1 && r.path.startsWith(`${parent.path} › `));
+        expect(Math.abs(kids.reduce((s2, k) => s2 + k.profit, 0) - parent.profit), parent.path).toBeLessThanOrEqual(kids.length);
+        expect(kids.reduce((s2, k) => s2 + k.accounts, 0), parent.path).toBe(parent.accounts);
+        expect(Math.abs(Object.values(parent.byChannel).reduce((s2, v) => s2 + v, 0) - parent.profit), parent.path).toBeLessThanOrEqual(ph.channels.length);
+      }
+      expect(tops.reduce((s2, r) => s2 + r.accounts, 0)).toBe(pc.reduce((s2, r) => s2 + r.accounts, 0));
+      const auto = await svc.profitByHierarchy('Loans > Auto');
+      expect(auto.at!.path).toBe('Loans › Auto');
+      expect(auto.rows.every((r) => r.path.startsWith('Loans › Auto'))).toBe(true);
+      expect((await svc.profitByHierarchy('auto loans')).at!.path).toBe('Loans › Auto');
+      await expect(svc.profitByHierarchy('Boats')).rejects.toThrow(/no “Boats”/);
 
       const spec = campaignModule(svc);
       const ctx = { user: { id: 'u', name: 'Dana Lee' }, modules: ['campaigns'], runId: 'r', threadId: 't' };
-      for (const name of ['cmp_roi_history', 'cmp_product_channel', 'cmp_sources', 'cmp_timeline']) {
+      for (const name of ['cmp_roi_history', 'cmp_product_channel', 'cmp_profit_hierarchy', 'cmp_sources', 'cmp_timeline']) {
         const out = (await spec.tools.find((x) => x.name === name)!.run({} as never, ctx)) as { text: string; blocks: unknown[] };
         expect(out.text.length, name).toBeGreaterThan(40);
         for (const b of out.blocks) expect(blockSchema.safeParse(b).success, name).toBe(true);
@@ -47,5 +68,5 @@ describe.skipIf(!up)('the credit union’s campaign history', () => {
     } finally {
       await pool.end();
     }
-  });
+  }, 180_000);
 });

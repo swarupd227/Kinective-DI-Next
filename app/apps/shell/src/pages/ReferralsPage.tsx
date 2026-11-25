@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { Check, CircleAlert, Inbox, Landmark, MessageSquarePlus, Play, Send, Sparkles, UserRound, Users, X } from 'lucide-react';
 import { Button, SegmentedControl, Skeleton, TextInput, useAnnouncer, useToast } from '@dinext/ui';
-import type { ContextRef, ReferralAction, ReferralDetail, ReferralStageName, ReferralSummary } from '@dinext/block-schemas';
+import type { ContextRef, ReferralAction, ReferralDetail, ReferralsIndex, ReferralStageName, ReferralSummary } from '@dinext/block-schemas';
 import { ApiError } from '@dinext/stream-client';
 import { useSession } from '../session/SessionProvider.tsx';
 import { DiTake } from '../shell/DiTake.tsx';
@@ -90,7 +90,7 @@ export function ReferralsPage() {
             <ul className={styles.list} aria-label="Referrals">
               {data.items.map((r) => (
                 <li key={r.comId}>
-                  <Row item={r} showAssignee={active !== 'mine'} selected={r.comId === selected} onOpen={() => open(r.comId)} />
+                  <Row item={r} showAssignee={active !== 'mine'} selected={r.comId === selected} onOpen={() => open(r.comId)} edit={data.edit} compact={Boolean(selected)} />
                 </li>
               ))}
             </ul>
@@ -102,28 +102,77 @@ export function ReferralsPage() {
   );
 }
 
-function Row({ item, showAssignee, selected, onOpen }: { item: ReferralSummary; showAssignee: boolean; selected: boolean; onOpen: () => void }) {
+function Row({ item, showAssignee, selected, onOpen, edit, compact }: { item: ReferralSummary; showAssignee: boolean; selected: boolean; onOpen: () => void; edit?: ReferralsIndex['edit']; compact: boolean }) {
+  const { api } = useSession();
+  const toast = useToast();
+  const { announce } = useAnnouncer();
+  const queryClient = useQueryClient();
+  // Editing in the list (DI's inline edit): stage, priority and who has it. Closing a referral, Sold above
+  // all since it can pay incentive credit, is confirmed in its own view.
+  const act = useMutation({
+    mutationFn: (action: ReferralAction) => api.referralAction(item.comId, action),
+    onSuccess: (detail) => {
+      queryClient.setQueryData(['referral', item.comId], detail);
+      void queryClient.invalidateQueries({ queryKey: ['referrals'] });
+      announce(`Referral ${item.comId} updated.`);
+    },
+    onError: (err) => toast.show(err instanceof ApiError ? err.message : 'That didn’t go through. Try again.'),
+  });
+  const team = edit?.teams[item.queueName] ?? [];
+  const inline = edit && !compact && isOpen(item.stage) ? edit : null;
+  const label = `referral #${item.comId}, ${item.name}`;
   return (
-    <button type="button" className={clsx(styles.row, selected && styles.rowSelected)} aria-current={selected || undefined} onClick={onOpen}>
-      <span className={styles.rowMain}>
-        <span className={styles.rowTitle}>{item.name}</span>
-        <span className={styles.rowSub}>
-          {item.typeLabel} · {item.branch}
-          {showAssignee && ` · ${item.assignee?.name ?? 'Not claimed'}`}
-        </span>
-      </span>
-      <span className={styles.rowSide}>
-        {item.overdue ? (
-          <span className={styles.overdue}>
-            <CircleAlert size={12} aria-hidden />
-            Overdue
+    <div className={clsx(styles.row, selected && styles.rowSelected, inline && styles.rowEditable)}>
+      <button type="button" className={styles.rowOpen} aria-current={selected || undefined} onClick={onOpen}>
+        <span className={styles.rowMain}>
+          <span className={styles.rowTitle}>{item.name}</span>
+          <span className={styles.rowSub}>
+            {item.typeLabel} · {item.branch}
+            {showAssignee && !inline && ` · ${item.assignee?.name ?? 'Not claimed'}`}
           </span>
-        ) : (
-          <span className={styles.stage}>{item.stage}</span>
-        )}
-        <span className={styles.rowSub}>{age(item.ageDays)}</span>
-      </span>
-    </button>
+        </span>
+        <span className={styles.rowSide}>
+          {item.overdue ? (
+            <span className={styles.overdue}>
+              <CircleAlert size={12} aria-hidden />
+              Overdue
+            </span>
+          ) : (
+            !inline && <span className={styles.stage}>{item.stage}</span>
+          )}
+          <span className={styles.rowSub}>{age(item.ageDays)}</span>
+        </span>
+      </button>
+      {inline && (
+        <span className={styles.inline}>
+          <select aria-label={`Stage of ${label}`} value={item.stage} disabled={act.isPending} onChange={(e) => act.mutate({ kind: 'stage', stage: e.target.value })}>
+            {[...new Set([item.stage, ...inline.stages.filter((st) => st !== 'New Referral')])].map((st) => (
+              <option key={st} value={st}>
+                {st}
+              </option>
+            ))}
+          </select>
+          <select aria-label={`Priority of ${label}`} value={item.priority} disabled={act.isPending} onChange={(e) => act.mutate({ kind: 'priority', priority: e.target.value as 'Low' | 'Normal' | 'High' | 'Urgent' })}>
+            {inline.priorities.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+          {team.length > 0 && (
+            <select aria-label={`Assignee of ${label}`} value={item.assignee?.employeeId ?? ''} disabled={act.isPending} onChange={(e) => act.mutate({ kind: 'assign', employeeId: Number(e.target.value) })}>
+              {!item.assignee && <option value="">Not claimed</option>}
+              {item.assignee && !team.some((m) => m.employeeId === item.assignee!.employeeId) && <option value={item.assignee.employeeId}>{item.assignee.name}</option>}
+              {team.map((m) => (
+                <option key={m.employeeId} value={m.employeeId}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </span>
+      )}
+    </div>
   );
 }
 

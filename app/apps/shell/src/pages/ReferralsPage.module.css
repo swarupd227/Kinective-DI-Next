@@ -40,6 +40,51 @@
   border-color: var(--color-border-default);
 }
 
+/* The part of a row that opens the referral; the inline selects sit beside it. */
+.rowOpen {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rowEditable {
+  cursor: default;
+}
+
+.inline {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: var(--space-2);
+}
+
+.inline select {
+  min-height: var(--density-control-height);
+  max-width: 12rem;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-input);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  font-size: var(--type-caption-size);
+}
+
+@media (width <= 720px) {
+  .rowEditable {
+    flex-wrap: wrap;
+  }
+}
+
 .rowSelected {
   border-color: var(--color-accent-default);
 }

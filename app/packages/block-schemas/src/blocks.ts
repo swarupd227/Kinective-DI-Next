@@ -387,10 +387,10 @@ export const member360Section = z.discriminatedUnion('kind', [
     enrolled: isoDate.optional(),
     ledger: z.array(z.strictObject({ date: isoDate, description: z.string().max(80), points: z.number().int() })).max(12).optional(),
   }),
-  /** Open referrals, tasks and onboarding touch points about the person. */
+  /** Open referrals, tasks, onboarding touch points and upcoming meetings about the person. */
   z.strictObject({
     kind: z.literal('workflows'),
-    items: z.array(z.strictObject({ kind: z.enum(['Referral', 'Task', 'Onboarding']), title: z.string().max(160), status: z.string().max(30), owner: z.string().max(80).nullable(), due: isoDate.nullable(), opened: isoDate })).max(30),
+    items: z.array(z.strictObject({ kind: z.enum(['Referral', 'Task', 'Onboarding', 'Meeting']), title: z.string().max(160), status: z.string().max(30), owner: z.string().max(80).nullable(), due: isoDate.nullable(), opened: isoDate })).max(30),
   }),
   /** Employment, leisure, and life events and goals the person shared. */
   z.strictObject({

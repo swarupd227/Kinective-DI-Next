@@ -16,8 +16,10 @@ export const WORKSPACE_DDL = [
      status VARCHAR(12) NOT NULL,
      created_at DATE NOT NULL,
      approval_id VARCHAR(40) NULL UNIQUE,
+     party_id INT NULL,
      KEY ix_event_owner (owner_user_id, starts_at),
-     KEY ix_event_with (with_user_id, starts_at)
+     KEY ix_event_with (with_user_id, starts_at),
+     KEY ix_event_party (party_id, starts_at)
    )`,
   `CREATE TABLE fil_file (
      file_id INT AUTO_INCREMENT PRIMARY KEY,

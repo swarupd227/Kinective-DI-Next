@@ -37,7 +37,8 @@ beforeAll(async () => {
   live = await startLiveRuntime();
   server = startMockServer({ port: PORT, speed: 0.02, live: live as never });
   admin = createPool(`${process.env.DI_DB_ADMIN_URL ?? 'mysql://root:dinext_local_root@127.0.0.1:3307'}/dinext_t_test_cu`);
-}, 90_000);
+  // The first start after a reseed trains the attrition model, which takes minutes on a laptop.
+}, 600_000);
 afterAll(async () => {
   if (!available) return;
   if (made.length) {
@@ -77,6 +78,33 @@ describe.skipIf(!available)('Referrals app', () => {
     expect(await seen()).toEqual([]);
     await persona('branch');
     expect((await seen()).map((n) => n.title)).toContain(`Referral #${id} is Sold`);
+  });
+
+  it('edits stage, priority and who has it from the list, but closes only from the referral itself', async () => {
+    const id = await fresh();
+    await persona('msr');
+    const mine = await box('mine');
+    // The list says what can be set in it: open stages only, the priorities, and who works each queue.
+    expect(mine.edit!.stages).toContain('Left Message');
+    expect(mine.edit!.stages).not.toContain('Sold');
+    expect(mine.edit!.priorities).toEqual(['Low', 'Normal', 'High', 'Urgent']);
+    const row = mine.items.find((i) => i.comId === id)!;
+    expect(mine.edit!.teams[row.queueName]!.length).toBeGreaterThan(0);
+    expect((await box('sent')).edit).toBeUndefined();
+
+    const moved = (await (await act(id, { kind: 'stage', stage: 'Left Message' })).json()) as ReferralDetail;
+    expect(moved.stage).toBe('Left Message');
+    const urgent = (await (await act(id, { kind: 'priority', priority: 'Urgent' })).json()) as ReferralDetail;
+    expect(urgent.priority).toBe('Urgent');
+    // Urgent is due a day after it was made, so the due date moves with it.
+    expect(Date.parse(urgent.dueAt) - Date.parse(urgent.createdAt)).toBeLessThanOrEqual(86_400_000 + 1000);
+    expect(urgent.history.map((h) => h.text)).toEqual(expect.arrayContaining([expect.stringContaining('from New Referral to Left Message'), expect.stringContaining('priority from Normal to Urgent')]));
+    // Sold is confirmed in the referral's own view, where it can pay incentive credit.
+    const sold = await act(id, { kind: 'stage', stage: 'Sold' });
+    expect(sold.status).toBe(422);
+    expect(((await sold.json()) as { message: string }).message).toContain('Open the referral to close it');
+    expect((await act(id, { kind: 'priority', priority: 'Whenever' })).status).toBe(422);
+    expect((await act(id, { kind: 'mystery' })).status).toBe(422);
   });
 
   it('fills the bell from real work, with each person’s own overdue referrals', async () => {

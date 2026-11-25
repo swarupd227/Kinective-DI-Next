@@ -730,6 +730,76 @@ export class CampaignService {
     }).sort((a, b) => b.value - a.value);
   }
 
+  /**
+   * Profit from the accounts credited to campaigns, down DI's product hierarchy (loans or deposits, then
+   * the product group, then the product) and across channels. Profit is each account's own monthly profit
+   * on file (interest less funds transfer pricing, expected loss and servicing, plus fees), summed over the
+   * month-ends on file. `path` narrows to one branch of the hierarchy, such as "Loans › Auto".
+   */
+  async profitByHierarchy(path?: string) {
+    const found = await rows<{ kind: string; category: string; product: string; channel: string; n: number; profit: unknown }>(
+      this.pool,
+      // Each credited account's profit is looked up on its own (indexed by account), not summed for every account first.
+      `SELECT kind, category, product, channel, COUNT(*) AS n, SUM(profit) AS profit
+         FROM (SELECT a.account_kind AS kind, g.category, COALESCE(lp.name, dp.name, ap.product_id) AS product, c.channel,
+                      CASE WHEN a.account_kind = 'loan'
+                           THEN (SELECT COALESCE(SUM(h.profit), 0) FROM hist_loan_profit_month h WHERE h.loan_id = a.account_id)
+                           ELSE (SELECT COALESCE(SUM(h.profit), 0) FROM hist_deposit_profit_month h WHERE h.account_id = a.account_id) END AS profit
+                 FROM cmp_attribution a
+                 JOIN cmp_campaign c ON c.campaign_id = a.campaign_id
+                 JOIN cdm_account_product ap ON ap.account_kind = a.account_kind AND ap.account_id = a.account_id
+                 JOIN cdm_product_profit_group pg ON pg.account_kind = a.account_kind AND pg.product_id = ap.product_id
+                 JOIN cdm_profit_group g ON g.group_id = pg.group_id
+                 LEFT JOIN cdm_loan_product lp ON a.account_kind = 'loan' AND lp.product_id = ap.product_id
+                 LEFT JOIN cdm_deposit_product dp ON a.account_kind = 'deposit' AND dp.product_id = ap.product_id) x
+        GROUP BY kind, category, product, channel`,
+    ).catch(() => []);
+    if (!found.length) throw new CoreError('NOT_FOUND', 'Profit for accounts credited to campaigns isn’t on file here yet.');
+    const [span] = await rows<{ a: unknown; b: unknown }>(this.pool, 'SELECT MIN(month_end) AS a, MAX(month_end) AS b FROM hist_loan_profit_month').catch(() => [{ a: null, b: null }]);
+    const d10 = (v: unknown) => (v ? String(v instanceof Date ? v.toISOString() : v).slice(0, 10) : null);
+    const kindName = (k: string) => (k === 'loan' ? 'Loans' : 'Deposits');
+    const channels = [...new Set(found.map((r) => r.channel))].sort();
+    type Node = { path: string; level: 1 | 2 | 3; name: string; accounts: number; profit: number; byChannel: Record<string, number> };
+    const nodes = new Map<string, Node>();
+    const add = (p: string, level: Node['level'], name: string, r: (typeof found)[number]) => {
+      const n = nodes.get(p) ?? { path: p, level, name, accounts: 0, profit: 0, byChannel: Object.fromEntries(channels.map((ch) => [ch, 0])) };
+      const profit = Number(r.profit);
+      n.accounts += Number(r.n);
+      n.profit += profit;
+      n.byChannel[r.channel]! += profit;
+      nodes.set(p, n);
+    };
+    for (const r of found) {
+      const k = kindName(r.kind);
+      add(k, 1, k, r);
+      add(`${k} › ${r.category}`, 2, r.category, r);
+      add(`${k} › ${r.category} › ${r.product}`, 3, r.product, r);
+    }
+    const all = [...nodes.values()].map((n) => ({ ...n, profit: Math.round(n.profit), byChannel: Object.fromEntries(Object.entries(n.byChannel).map(([ch, v]) => [ch, Math.round(v)])) }));
+    // Each level sorted by profit, children under their parent: Loans, Loans › Auto, Loans › Auto › New Auto Loan…
+    const kids = (parent: string | null, level: number) => all.filter((n) => n.level === level && (parent === null || n.path.startsWith(`${parent} › `))).sort((a, b) => b.profit - a.profit);
+    const ordered: typeof all = [];
+    const walk = (parent: string | null, level: number) => {
+      if (level > 3) return;
+      for (const n of kids(parent, level)) {
+        ordered.push(n);
+        walk(n.path, level + 1);
+      }
+    };
+    walk(null, 1);
+    let scope: typeof all = ordered;
+    let at: (typeof all)[number] | null = null;
+    if (path) {
+      const want = path.toLowerCase().replace(/\s*(?:›|>|\/)\s*/g, ' › ').trim();
+      const last = want.split(' › ').at(-1)!.replace(/s$/, '');
+      const named = (s: string) => ordered.find((n) => n.name.toLowerCase().replace(/s$/, '') === s);
+      at = ordered.find((n) => n.path.toLowerCase() === want) ?? named(last) ?? named(last.replace(/ (?:loan|account)$/, '')) ?? null;
+      if (!at) throw new CoreError('NOT_FOUND', `There’s no “${path}” in the product hierarchy. At the top: ${ordered.filter((n) => n.level === 1).map((n) => n.name).join(', ')}; under them: ${ordered.filter((n) => n.level === 2).map((n) => n.name).join(', ')}.`);
+      scope = ordered.filter((n) => n.path === at!.path || n.path.startsWith(`${at!.path} › `));
+    }
+    return { channels, from: d10(span?.a), to: d10(span?.b), at, rows: scope };
+  }
+
   /** Accounts opened each day for the last days, by marketing source: each campaign channel, or no campaign. */
   async sources(days = 30) {
     const [b] = await rows<{ d: unknown }>(this.pool, "SELECT as_of_date AS d FROM meta_build WHERE state = 'completed' ORDER BY as_of_date DESC LIMIT 1");

@@ -147,7 +147,7 @@ export interface MemberProfile {
   /** The rewards program: tier, points and the latest entries. Null when not enrolled; undefined where there's no program. */
   rewards: { tier: string; points: number; enrolled: string; ledger: { date: string; description: string; points: number }[] } | null | undefined;
   /** Open work about the person: referrals, tasks and onboarding touch points. */
-  workflows: { kind: 'Referral' | 'Task' | 'Onboarding'; title: string; status: string; owner: string | null; due: string | null; opened: string }[];
+  workflows: { kind: 'Referral' | 'Task' | 'Onboarding' | 'Meeting'; title: string; status: string; owner: string | null; due: string | null; opened: string }[];
   /** Employment, leisure, and life events and goals the person shared (DI's member tabs). */
   about: { employer: string | null; occupation: string | null; incomeBand: string | null; yearsEmployed: number | null; interests: string[]; lifeEvents: { event: string; date: string }[]; goals: string[] } | null;
   /** Accounts the person is on but doesn't own as primary: joint owner, co-borrower or authorized signer. Not in the totals. */
@@ -516,6 +516,8 @@ export class RelationshipService {
     const ledger = programRows?.length ? await q<{ posted: unknown; description: string; points: number }>('SELECT posted, description, points FROM rwd_ledger WHERE party_id = ? ORDER BY posted DESC, entry_id DESC LIMIT 8', [partyId]) : [];
     const openRefs = await q<{ label: string | null; type_id: string; stage: string; assignee: string | null; created_at: unknown }>("SELECT t.label, c.type_id, c.stage, e.display_name AS assignee, c.created_at FROM esp_com_items c LEFT JOIN mod_ref_types t ON t.type_id = c.type_id LEFT JOIN cdm_employee e ON e.employee_id = c.assignee_employee_id WHERE c.party_id = ? AND c.stage NOT IN (?) ORDER BY c.created_at DESC LIMIT 10", [partyId, CLOSED_STAGES]).catch(() => []);
     const openTasks = await q<{ title: string; status: string; owner_name: string; due: unknown; created_at: unknown }>("SELECT title, status, owner_name, due, created_at FROM tsk_task WHERE party_id = ? AND status <> 'Done' ORDER BY due IS NULL, due LIMIT 10", [partyId]).catch(() => []);
+    // Calendar events about the person, from today on, whoever has them in their diary.
+    const meetings = await q<{ title: string; starts_at: string; owner_name: string; created_at: unknown }>("SELECT title, DATE_FORMAT(starts_at, '%Y-%m-%d %H:%i') AS starts_at, owner_name, created_at FROM cal_event WHERE party_id = ? AND status = 'Scheduled' AND starts_at >= CURDATE() ORDER BY starts_at LIMIT 6", [partyId]).catch(() => []);
     const onbTasks = await q<{ touch: string; status: string; owner: string | null; due: unknown }>("SELECT t.touch, t.status, e.display_name AS owner, t.due FROM onb_task t LEFT JOIN cdm_employee e ON e.employee_id = t.assignee_employee_id WHERE t.party_id = ? AND t.status = 'Open' ORDER BY t.due LIMIT 6", [partyId]).catch(() => []);
     const [aboutRow] = await q<{ employer: string | null; occupation: string | null; income_band: string | null; years_employed: number | null; interests: unknown; life_events: unknown; goals: unknown }>('SELECT employer, occupation, income_band, years_employed, interests, life_events, goals FROM cdm_party_profile WHERE party_id = ?', [partyId]).catch(() => []);
     const parsed = <T>(v: unknown, d: T): T => (v === null || v === undefined ? d : ((typeof v === 'string' ? JSON.parse(v) : v) as T));
@@ -683,6 +685,7 @@ export class RelationshipService {
       workflows: [
         ...openRefs.map((r) => ({ kind: 'Referral' as const, title: `${r.label ?? r.type_id} referral`, status: r.stage, owner: r.assignee, due: null, opened: day10(r.created_at) })),
         ...openTasks.map((t) => ({ kind: 'Task' as const, title: t.title, status: t.status, owner: t.owner_name, due: t.due ? day10(t.due) : null, opened: day10(t.created_at) })),
+        ...meetings.map((m) => ({ kind: 'Meeting' as const, title: m.title, status: `Scheduled, ${m.starts_at.slice(11)}`, owner: m.owner_name, due: m.starts_at.slice(0, 10), opened: day10(m.created_at) })),
         ...onbTasks.map((t) => ({ kind: 'Onboarding' as const, title: `Onboarding: ${t.touch}`, status: t.status, owner: t.owner, due: day10(t.due), opened: day10(t.due) })),
       ],
       about: aboutRow ? { employer: aboutRow.employer, occupation: aboutRow.occupation, incomeBand: aboutRow.income_band, yearsEmployed: aboutRow.years_employed === null ? null : Number(aboutRow.years_employed), interests: parsed<string[]>(aboutRow.interests, []), lifeEvents: parsed<{ event: string; date: string }[]>(aboutRow.life_events, []), goals: parsed<string[]>(aboutRow.goals, []) } : null,

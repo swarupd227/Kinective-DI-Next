@@ -31,7 +31,7 @@ export function onboardingModule(onboarding: OnboardingService, desk?: Onboardin
     id: 'onboarding',
     prefix: 'onb',
     agent: 'Onboarding',
-    request: /\bonboarding\b|\btouch ?points?\b|\bnew members?\b.*\b(direct deposit|calls?)\b|\bwelcome (?:calls?|emails?|letters?|kit|messages?)\b|\bfirst 90 days\b|\bfollow-?up rules?\b/i,
+    request: /\bonboarding\b|\btouch ?points?\b|\bnew members?\b.*\b(direct deposit|calls?)\b|\bwelcome (?:calls?|emails?|letters?|kit|messages?)\b|\bfirst 90 days\b|\bfollow-?up rules?\b|\breturned mail\b|\bundeliverable\b|\bletters?\b[^.?!]*\b(?:came back|returned|bounced)\b/i,
     noAccess: 'Onboarding isn’t part of your DI access.',
     sources: [{ kind: 'table', label: 'Onboarding tasks', ref: 'table:onb_task' }],
     prompt: ({ tenant, user, title }) => `You are the Onboarding agent inside Kinective Data Intelligence (DI) for ${tenant}. ${user} (${title}) works new members' touch points.
@@ -42,6 +42,7 @@ export function onboardingModule(onboarding: OnboardingService, desk?: Onboardin
 - onb_task_snooze and onb_task_reassign change a task.
 - "Show the onboarding messages for Suzanne Jackson", "her journey": onb_journey, what the scheduled process sent and whether it was opened.
 - "Show the onboarding funnel", "early attrition in the first 90 days": onb_funnel.
+- "Which welcome letters came back?", "returned mail", "undeliverable letters": onb_letters, the letters mailed and the ones returned, each an address to check.
 - "Show everyone in onboarding with touch type, priority and whether they're subscribed": onb_records.
 - Follow-up rules: onb_rules lists them by group; onb_rule_create makes one ("after day 21 with no direct deposit, call them, high priority"); onb_rule_copy reuses one; onb_rule_switch turns one on or off; onb_rule_run creates its tasks for who it catches today.
 - "Add Suzanne Jackson to onboarding": onb_add. A list of new members uploaded on the Files page: onb_add_bulk.
@@ -53,6 +54,7 @@ export function onboardingModule(onboarding: OnboardingService, desk?: Onboardin
     },
     plan: (text) => {
       const t = text.trim().replace(/[.!?]+$/, '');
+      if (/\breturned mail\b|\bundeliverable\b|\bletters?\b[^.?!]*\b(?:came back|come back|returned|bounced)\b|\bletters?\b[^.?!]*\b(?:mailed|tracking|tracked)\b/i.test(t)) return { tool: 'onb_letters', args: {} };
       if (/\b(send|email|mail)\b.*\b(letter|email|member|welcome)\b/i.test(t)) return { say: NO_LETTERS };
       const extra = desk ? onboardingDeskPlan(t) : null;
       if (extra) return extra;
@@ -79,11 +81,36 @@ export function onboardingModule(onboarding: OnboardingService, desk?: Onboardin
           const opened = j.messages.filter((m) => m.opened).length;
           const trackable = j.messages.filter((m) => m.opened !== null).length;
           return {
-            text: `**${j.name}** joined ${j.joined}. The scheduled process has sent **${j.messages.length} messages**${trackable ? `, ${opened} of ${trackable} opened` : ''}; ${j.touches.filter((t) => t.status === 'Done').length} of ${j.touches.length} touch points are done. DI shows these; the scheduled process sends them.`,
+            text: `**${j.name}** joined ${j.joined}. The scheduled process has sent **${j.messages.length} messages**${trackable ? `, ${opened} of ${trackable} opened` : ''}; ${j.touches.filter((t) => t.status === 'Done').length} of ${j.touches.length} touch points are done.${j.messages.some((m) => m.returned) ? ` The ${j.messages.find((m) => m.returned)!.step.toLowerCase()} came back undeliverable, so check the address on file with them.` : ''} DI shows these; the scheduled process sends them.`,
             blocks: [
-              moduleTable(spec, `Messages sent to ${j.name}`, ctx.runId, 'onboarding.journey.messages', [{ field: 'day', headerName: 'Day', type: 'number' }, { field: 'step', headerName: 'Message', type: 'text' }, { field: 'channel', headerName: 'Channel', type: 'text' }, { field: 'sent', headerName: 'Sent', type: 'text' }, { field: 'opened', headerName: 'Opened', type: 'text' }], j.messages.map((m) => ({ day: m.day, step: m.step, channel: m.channel, sent: m.sent, opened: m.opened === null ? 'Not tracked' : m.opened ? (m.clicked ? 'Opened, clicked' : 'Opened') : 'Not opened' }))),
-              moduleTable(spec, `${j.name}’s touch points`, ctx.runId, 'onboarding.journey.touches', [{ field: 'touch', headerName: 'Touch point', type: 'text' }, { field: 'due', headerName: 'Due', type: 'text' }, { field: 'status', headerName: 'Status', type: 'text' }, { field: 'checklist', headerName: 'Checklist', type: 'text' }, { field: 'note', headerName: 'Note', type: 'text' }], j.touches.map((t) => ({ touch: t.touch, due: t.due, status: t.doneOn ? `Done ${t.doneOn}` : t.status, checklist: t.checklist ? [t.checklist.debitCard && 'card', t.checklist.onlineBanking && 'online', t.checklist.mobileApp && 'mobile', t.checklist.estatements && 'e-statements', t.checklist.billPay && 'bill pay', t.checklist.directDeposit && 'direct deposit', t.checklist.perksReviewed && 'perks', t.checklist.loansDiscussed, t.checklist.referralMade && 'referral'].filter(Boolean).join(', ') : '', note: t.note ?? '' }))),
+              moduleTable(spec, `Messages sent to ${j.name}`, ctx.runId, 'onboarding.journey.messages', [{ field: 'day', headerName: 'Day', type: 'number' }, { field: 'step', headerName: 'Message', type: 'text' }, { field: 'channel', headerName: 'Channel', type: 'text' }, { field: 'sent', headerName: 'Sent', type: 'text' }, { field: 'opened', headerName: 'Opened or delivered', type: 'text' }], j.messages.map((m) => ({ day: m.day, step: m.step, channel: m.channel, sent: m.sent, opened: m.channel === 'Letter' ? (m.returned ? `Returned undeliverable ${m.returned}` : 'Mailed, not returned') : m.opened === null ? 'Not tracked' : m.opened ? (m.clicked ? 'Opened, clicked' : 'Opened') : 'Not opened' }))),
+              moduleTable(spec, `${j.name}’s touch points`, ctx.runId, 'onboarding.journey.touches', [{ field: 'touch', headerName: 'Touch point', type: 'text' }, { field: 'due', headerName: 'Due', type: 'text' }, { field: 'status', headerName: 'Status', type: 'text' }, { field: 'checklist', headerName: 'Checklist', type: 'text' }, { field: 'note', headerName: 'Note', type: 'text' }], j.touches.map((t) => ({ touch: t.touch, due: t.due, status: t.doneOn ? `Done ${t.doneOn}` : t.status, checklist: t.checklist ? [t.checklist.debitCard && 'card', t.checklist.onlineBanking && 'online', t.checklist.mobileApp && 'mobile', t.checklist.estatements && 'e-statements', t.checklist.billPay && 'bill pay', t.checklist.epay && 'e-Pay', t.checklist.checksReceived && 'checks received', t.checklist.directDeposit && 'direct deposit', t.checklist.perksReviewed && 'perks', t.checklist.loansDiscussed, t.checklist.referralMade && 'referral'].filter(Boolean).join(', ') : '', note: t.note ?? '' }))),
             ],
+          };
+        },
+      },
+      {
+        name: 'onb_letters',
+        description: 'Letters the scheduled process mailed to members in onboarding (the welcome kit), all on file or over the last days given, how many came back undeliverable by branch, and who they were for: each is an address to check.',
+        input: z.object({ days: z.number().int().min(7).max(3650).optional() }).strict(),
+        run: async (a: { days?: number }, ctx) => {
+          need(ctx);
+          const l = await onboarding.letters(ctx, a.days);
+          const span = a.days ? `In the last ${a.days} days` : l.from === l.to ? `On ${l.from}` : `From ${l.from} to ${l.to}`;
+          if (!l.mailed) return { text: a.days ? `No letters were mailed to members in onboarding in the last ${a.days} days.` : 'No letters to members in onboarding are on file.' };
+          const pct = Math.round((l.returned.length / l.mailed) * 1000) / 10;
+          const worst = [...l.branches].filter((b) => b.returned).sort((a, b) => b.returnedPct - a.returnedPct)[0];
+          return {
+            text: [
+              `${span}, the scheduled process mailed **${l.mailed.toLocaleString('en-US')} letters** to members in onboarding; **${l.returned.length}** came back undeliverable (${pct}%).`,
+              worst ? `${worst.branch} has the most coming back, ${worst.returnedPct}%.` : '',
+              l.returned.length ? 'Each is an address to check with the member when they next call or come in. Letters aren’t opened, so DI tracks them as mailed and returned.' : 'Letters aren’t opened, so DI tracks them as mailed and returned.',
+            ].filter(Boolean).join(' '),
+            blocks: [
+              moduleTable(spec, 'Letters mailed and returned, by branch', ctx.runId, 'onboarding.letters', [{ field: 'branch', headerName: 'Branch', type: 'text' }, { field: 'mailed', headerName: 'Mailed', type: 'count' }, { field: 'returned', headerName: 'Returned', type: 'count' }, { field: 'pct', headerName: 'Returned share', type: 'text' }], l.branches.map((b) => ({ branch: b.branch, mailed: b.mailed, returned: b.returned, pct: `${b.returnedPct}%` }))),
+              ...(l.returned.length ? [moduleTable(spec, 'Returned undeliverable', ctx.runId, 'onboarding.letters', [{ field: 'member', headerName: 'Member', type: 'text' }, { field: 'branch', headerName: 'Branch', type: 'text' }, { field: 'step', headerName: 'Letter', type: 'text' }, { field: 'mailed', headerName: 'Mailed', type: 'text' }, { field: 'returned', headerName: 'Returned', type: 'text' }], l.returned.slice(0, 30).map((r) => ({ member: `${r.member} (…${r.last4})`, branch: r.branch, step: r.step, mailed: r.mailed, returned: r.returned! })))] : []),
+            ],
+            sources: [{ kind: 'table', label: 'Onboarding messages', ref: 'table:onb_message' }],
           };
         },
       },
@@ -136,7 +163,7 @@ export function onboardingModule(onboarding: OnboardingService, desk?: Onboardin
           const t = await onboarding.next(a.member, ctx);
           // The interview checklist, from the person's own words: what was set up, discussed and referred.
           const list = checklistFrom(a.note);
-          const ticked = list ? [list.debitCard && 'debit card activated', list.onlineBanking && 'online banking', list.mobileApp && 'mobile app', list.estatements && 'e-statements', list.billPay && 'bill pay', list.directDeposit && 'direct deposit', list.perksReviewed && 'perks reviewed', list.loansDiscussed && `discussed ${list.loansDiscussed}`, list.referralMade && 'referral made'].filter(Boolean).join(', ') : '';
+          const ticked = list ? [list.debitCard && 'debit card activated', list.onlineBanking && 'online banking', list.mobileApp && 'mobile app', list.estatements && 'e-statements', list.billPay && 'bill pay', list.epay && 'e-Pay', list.checksReceived && 'checks received', list.directDeposit && 'direct deposit', list.perksReviewed && 'perks reviewed', list.loansDiscussed && `discussed ${list.loansDiscussed}`, list.referralMade && 'referral made'].filter(Boolean).join(', ') : '';
           return { change: { summary: `Mark ${t.member}’s ${t.touch.toLowerCase()} done`, changes: [{ label: `${t.member}, ${t.touch}`, before: t.state, after: 'Done' }, ...(a.note ? [{ label: 'Note', before: '—', after: a.note }] : []), ...(ticked ? [{ label: 'Checklist', before: '—', after: ticked }] : [])], text: `I’ve prepared **${t.member}**’s ${t.touch.toLowerCase()} as done${ticked ? `, with the checklist: ${ticked}` : ''}.`, done: `Marked **${t.member}**’s ${t.touch.toLowerCase()} done.`, risk: 'low', apply: { taskId: t.taskId, note: a.note ?? null, checklist: list } } };
         },
         apply: async (p: { taskId: number; note: string | null; checklist?: OnbChecklist | null }, _meta, ctx) => onboarding.complete(p.taskId, p.note, p.checklist ?? null, ctx.user.name),
