@@ -79,9 +79,22 @@
   font-size: var(--type-caption-size);
 }
 
+/* Narrow screens: the selects take a line of their own and share it, rather than running off the edge. */
 @media (width <= 720px) {
   .rowEditable {
     flex-wrap: wrap;
+  }
+
+  .inline {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
+
+  .inline select {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
   }
 }
 

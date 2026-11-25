@@ -24,9 +24,17 @@ export const ONB_JOURNEY = [
 const DAY = 86_400_000;
 const LOANS = ['auto loan', 'personal line of credit', 'credit card', 'HELOC', 'signature loan'];
 
-export function generateOnboardingJourney(t: GeneratedTenant, tasks: unknown[][], digital: unknown[][]) {
+export function generateOnboardingJourney(_t: GeneratedTenant, tasks: unknown[][], digital: unknown[][]) {
   const asOf = Date.parse(`${AS_OF}T00:00:00Z`);
-  const joined = new Map((t.parties as unknown[][]).map((p) => [p[0] as number, String(p[4])]));
+  // The journey runs from when onboarding started (each touch point's due date less its day), which is
+  // recent even for someone whose relationship goes back years; the join date alone would date the
+  // welcome email decades ago.
+  const joined = new Map<number, string>();
+  for (const k of tasks) {
+    const start = new Date(Date.parse(`${String(k[4]).slice(0, 10)}T00:00:00Z`) - Number(k[3]) * DAY).toISOString().slice(0, 10);
+    const party = k[1] as number;
+    if (!joined.has(party) || start < joined.get(party)!) joined.set(party, start);
+  }
   const dd = new Map(digital.map((d) => [d[0] as number, d[6] === 'active']));
   const parties = [...new Set(tasks.map((k) => k[1] as number))];
   const messages: unknown[][] = [];
